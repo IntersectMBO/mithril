@@ -445,6 +445,7 @@ jobs:
           mkdir artifacts
 
       - name: Test
+        id: retry
         uses: nick-fields/retry@v4
         with:
           shell: bash
@@ -474,7 +475,13 @@ jobs:
             ./mithril-end-to-end.sh
             EXIT_CODE=$?
             rm ./mithril-end-to-end.sh
+            echo "::group::Artificial group after e2e"
+            echo "This is a test"
+            echo "::endgroup::"
             exit $EXIT_CODE
+
+      - name: Total attempts = ${{ steps.retry.outputs.total_attempts }}
+        run: echo "Exit error = ${{ steps.retry.outputs.exit_error }}"
 
       - name: Upload E2E Tests Artifacts
         if: ${{ failure() }}
