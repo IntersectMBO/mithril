@@ -10,9 +10,7 @@ impl LogGroup {
     pub fn new(name: &str, title: &str) -> Self {
         let group_title = Self::group_title(name, title);
         if is_running_in_github_actions() {
-            // Note: Disabled until we can figure out how to make the logs group work correctly when
-            // the e2e is retry by `nick-fields/retry` (currently the group before the retry are lost)
-            // println!("::group::{group_title}");
+            println!("::group::{group_title}");
         }
         Self::print_header(&group_title);
 
@@ -33,7 +31,7 @@ impl LogGroup {
 impl Drop for LogGroup {
     fn drop(&mut self) {
         if is_running_in_github_actions() {
-            // println!("::endgroup::");
+            println!("::endgroup::");
         }
     }
 }
