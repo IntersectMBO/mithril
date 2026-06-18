@@ -64,10 +64,7 @@ impl MithrilNetworkConfigurationProvider for HttpMithrilNetworkConfigurationProv
         &self,
         epoch: Epoch,
     ) -> StdResult<MithrilNetworkConfiguration> {
-        let aggregation_epoch =
-            epoch.offset_to_signer_retrieval_epoch().with_context(|| {
-                format!("MithrilNetworkConfigurationProvider could not compute aggregation epoch from epoch: {epoch}")
-            })?;
+        let aggregation_epoch = epoch.offset_to_signer_retrieval_epoch_saturating();
         let next_aggregation_epoch = epoch.offset_to_next_signer_retrieval_epoch();
         let registration_epoch = epoch.offset_to_next_signer_retrieval_epoch().next();
 

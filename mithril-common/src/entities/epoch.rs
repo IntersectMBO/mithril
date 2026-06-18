@@ -62,6 +62,16 @@ impl Epoch {
         self.offset_by(Self::SIGNER_RETRIEVAL_OFFSET)
     }
 
+    /// Apply the [retrieval offset][Self::SIGNER_RETRIEVAL_OFFSET] to this epoch, saturating at
+    /// epoch zero.
+    ///
+    /// Unlike [offset_to_signer_retrieval_epoch][Self::offset_to_signer_retrieval_epoch], this
+    /// returns epoch zero instead of failing when the offset would yield a negative epoch
+    /// (i.e. at epoch zero itself).
+    pub fn offset_to_signer_retrieval_epoch_saturating(&self) -> Self {
+        self.offset_to_signer_retrieval_epoch().unwrap_or(Epoch(0))
+    }
+
     /// Apply the [next signer retrieval offset][Self::NEXT_SIGNER_RETRIEVAL_OFFSET] to this epoch
     pub fn offset_to_next_signer_retrieval_epoch(&self) -> Self {
         *self + Self::NEXT_SIGNER_RETRIEVAL_OFFSET
@@ -306,6 +316,22 @@ mod tests {
     fn test_previous() {
         assert_eq!(Epoch(2), Epoch(3).previous().unwrap());
         assert!(Epoch(0).previous().is_err());
+    }
+
+    #[test]
+    fn offset_to_signer_retrieval_epoch_saturating_clamps_at_epoch_zero() {
+        assert_eq!(
+            Epoch(2),
+            Epoch(3).offset_to_signer_retrieval_epoch_saturating()
+        );
+        assert_eq!(
+            Epoch(0),
+            Epoch(1).offset_to_signer_retrieval_epoch_saturating()
+        );
+        assert_eq!(
+            Epoch(0),
+            Epoch(0).offset_to_signer_retrieval_epoch_saturating()
+        );
     }
 
     #[test]

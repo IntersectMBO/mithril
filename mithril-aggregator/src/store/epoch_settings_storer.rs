@@ -47,7 +47,9 @@ pub trait EpochSettingsStorer:
     ) -> StdResult<()> {
         for (epoch, epoch_configuration) in [
             (
-                network_configuration.epoch.offset_to_signer_retrieval_epoch()?,
+                network_configuration
+                    .epoch
+                    .offset_to_signer_retrieval_epoch_saturating(),
                 &network_configuration.configuration_for_aggregation,
             ),
             (

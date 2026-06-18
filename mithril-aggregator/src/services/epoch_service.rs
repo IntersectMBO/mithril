@@ -296,10 +296,7 @@ impl EpochService for MithrilEpochService {
 
         let mithril_era = self.era_checker.current_era();
 
-        let signer_retrieval_epoch =
-            epoch.offset_to_signer_retrieval_epoch().with_context(|| {
-                format!("EpochService could not compute signer retrieval epoch from epoch: {epoch}")
-            })?;
+        let signer_retrieval_epoch = epoch.offset_to_signer_retrieval_epoch_saturating();
         let next_signer_retrieval_epoch = epoch.offset_to_next_signer_retrieval_epoch();
         let signer_registration_epoch = epoch.offset_to_recording_epoch();
 
