@@ -135,6 +135,12 @@ cat ${ARTIFACTS_DIR_TEMP}/genesis.json | jq --argjson slot_length ${SLOT_LENGTH}
 cat ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp | jq --raw-output '.protocolParams.protocolVersion.major = 10 | .protocolParams.minFeeA = 44 | .protocolParams.minFeeB = 155381 | .protocolParams.minUTxOValue = 1000000 | .protocolParams.decentralisationParam = 0.7 | .protocolParams.rho = 0.1 | .protocolParams.tau = 0.1'  > ${ARTIFACTS_DIR_TEMP}/genesis.json
 rm ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp
 
+# Strip the 'extraConfig' block added by cardano-cli 11.1.0+ to the Shelley genesis, which the node fails to parse (its initial funds remain in the top-level fields)
+if [ "$(version_lt ${CARDANO_NODE_VERSION_RELEASE} 11.1.0)" = "false" ]; then
+  cat ${ARTIFACTS_DIR_TEMP}/genesis.json | jq 'del(.extraConfig)' > ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp
+  mv ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp ${ARTIFACTS_DIR_TEMP}/genesis.json
+fi
+
 # Step 2: Dispatch artifacts in the correct directories
 
 ## Copy the configuration files
