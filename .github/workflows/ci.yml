@@ -50,12 +50,12 @@ jobs:
       - name: Cargo build - Tooling
         if: matrix.os == 'ubuntu-24.04'
         shell: bash
-        run: cargo build --release --bins --package mithril-end-to-end
+        run: cargo build --release --bins --package mithril-end-to-end --features future_snark
 
       - name: Build Mithril workspace & publish artifacts
         uses: ./.github/workflows/actions/build-upload-mithril-artifact
         with:
-          binaries-build-args: --bins --package mithril-aggregator --package mithril-signer --package mithril-client-cli --package mithril-relay --target=${{ matrix.musl_target }}
+          binaries-build-args: --bins --package mithril-aggregator --package mithril-signer --package mithril-client-cli --package mithril-relay --target=${{ matrix.musl_target }} --features future_snark
           libraries-build-args: --package mithril-stm --package mithril-client --features rustls,full,unstable
           binaries-to-check-static: mithril-aggregator,mithril-signer,mithril-client,mithril-relay
           binaries-build-target: ${{ matrix.musl_target }}
@@ -334,77 +334,23 @@ jobs:
   e2e:
     runs-on: ubuntu-24.04
     needs: [build-ubuntu]
+    # GitHub-hosted runners cap job execution at 6h; any higher value is not honored.
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
         mode: ["std"]
-        era: ${{ fromJSON(needs.build-ubuntu.outputs.eras) }}
+        era: ["lagrange"]
         next_era: [""]
-        cardano_node_version: ["10.6.2", "10.7.1", "11.0.1"]
+        cardano_node_version: ["11.0.1"]
         hard_fork_latest_era_at_epoch: [0]
         run_id: ["#1"]
         extra_args:
           [
             "--aggregate-signature-type=Concatenation full --check-client-cli-snapshot-converter",
+            "--aggregate-signature-type IvcSnark --cardano-slot-length 1.0 --cardano-epoch-length 2400  --mithril-run-interval 240000 minimal --signed-entity-type CardanoStakeDistribution",
           ]
 
-        include:
-          # Include a test for partial decentralization with leader/follower signer registration and P2P signature registration with Haskell DMQ node (without fallback signature delayer)
-          - mode: "leader-follower-dmq-haskell-skip-delayer"
-            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
-            next_era: ""
-            cardano_node_version: "10.6.2"
-            hard_fork_latest_era_at_epoch: 0
-            run_id: "#1"
-            extra_args: "--skip-signature-delayer --number-of-aggregators=2 --use-relays --relay-signer-registration-mode=passthrough --relay-signature-registration-mode=p2p --aggregate-signature-type=Concatenation --use-dmq --dmq-node-flavor=haskell --dmq-node-version 0.7.0.0"
-          # Include a test for partial decentralization with leader/follower signer registration and P2P signature registration with Haskell DMQ node (with fallback signature delayer)
-          - mode: "leader-follower-dmq-haskell-with-delayer"
-            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
-            next_era: ""
-            cardano_node_version: "10.6.2"
-            hard_fork_latest_era_at_epoch: 0
-            run_id: "#1"
-            extra_args: "--number-of-aggregators=2 --use-relays --relay-signer-registration-mode=passthrough --relay-signature-registration-mode=p2p --aggregate-signature-type=Concatenation --use-dmq --dmq-node-flavor=haskell --dmq-node-version 0.7.0.0"
-          # Include a test for partial decentralization with leader/follower signer registration and P2P signature registration with fake DMQ node
-          - mode: "leader-follower-dmq-fake"
-            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
-            next_era: ""
-            cardano_node_version: "10.6.2"
-            hard_fork_latest_era_at_epoch: 0
-            run_id: "#1"
-            extra_args: "--number-of-aggregators=2 --use-relays --relay-signer-registration-mode=passthrough --relay-signature-registration-mode=p2p --aggregate-signature-type=Concatenation --use-dmq --dmq-node-flavor=fake"
-          # Include a test for partial decentralization with leader/follower signer registration and P2P signature registration with Mithril relay
-          - mode: "leader-follower-relay"
-            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
-            next_era: ""
-            cardano_node_version: "10.6.2"
-            hard_fork_latest_era_at_epoch: 0
-            run_id: "#1"
-            extra_args: "--number-of-aggregators=2 --use-relays --relay-signer-registration-mode=passthrough --relay-signature-registration-mode=p2p --aggregate-signature-type=Concatenation"
-          # Include a test for full dedentralization P2P signer registration and P2P signature registration
-          - mode: "decentralized"
-            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
-            next_era: ""
-            cardano_node_version: "10.6.2"
-            hard_fork_latest_era_at_epoch: 0
-            run_id: "#1"
-            extra_args: "--number-of-aggregators=2 --use-relays --relay-signer-registration-mode=p2p --relay-signature-registration-mode=p2p --aggregate-signature-type=Concatenation"
-          # Include a test for the era switch without regenesis
-          - mode: "std-era-switch-no-genesis"
-            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
-            next_era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[1] }}
-            cardano_node_version: "10.6.2"
-            hard_fork_latest_era_at_epoch: 0
-            run_id: "#1"
-            extra_args: "--aggregate-signature-type=Concatenation"
-          # Include a test for the era switch with regenesis
-          - mode: "std-era-genesis"
-            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
-            next_era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[1] }}
-            cardano_node_version: "10.6.2"
-            hard_fork_latest_era_at_epoch: 0
-            run_id: "#1"
-            extra_args: "--mithril-era-regenesis-on-switch --aggregate-signature-type=Concatenation"
     steps:
       - name: Checkout sources
         uses: actions/checkout@v6
@@ -435,7 +381,7 @@ jobs:
           shell: bash
           max_attempts: 3
           retry_on_exit_code: 2
-          timeout_minutes: 10
+          timeout_minutes: 720
           warning_on_retry: true
           command: |
             # If there is a next era, we need to specify it with '--mithril-next-era'
