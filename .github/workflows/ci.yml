@@ -50,12 +50,12 @@ jobs:
       - name: Cargo build - Tooling
         if: matrix.os == 'ubuntu-24.04'
         shell: bash
-        run: cargo build --release --bins --package mithril-end-to-end
+        run: cargo build --release --bins --package mithril-end-to-end --features future_snark
 
       - name: Build Mithril workspace & publish artifacts
         uses: ./.github/workflows/actions/build-upload-mithril-artifact
         with:
-          binaries-build-args: --bins --package mithril-aggregator --package mithril-signer --package mithril-client-cli --package mithril-relay --target=${{ matrix.musl_target }}
+          binaries-build-args: --features future_snark --bins --package mithril-aggregator --package mithril-signer --package mithril-client-cli --package mithril-relay --target=${{ matrix.musl_target }}
           libraries-build-args: --package mithril-stm --package mithril-client --features rustls,full,unstable
           binaries-to-check-static: mithril-aggregator,mithril-signer,mithril-client,mithril-relay
           binaries-build-target: ${{ matrix.musl_target }}
