@@ -21,7 +21,7 @@ use crate::utils::{
 };
 use crate::{
     CommandContext,
-    utils::{CARDANO_NODE_V10_6_2, CARDANO_NODE_V10_7_0},
+    utils::{CARDANO_NODE_V10_6_2, CARDANO_NODE_V10_7_0, CARDANO_NODE_V11_1_0},
 };
 
 const GITHUB_ORGANIZATION: &str = "IntersectMBO";
@@ -42,6 +42,7 @@ const SNAPSHOT_CONVERTER_CONFIG_FILE: &str = "config.json";
 
 const LEDGER_DIR: &str = "ledger";
 const LSM_DATABASE_DIR: &str = "lsm";
+const LSM_EXPORT_DIR: &str = "lsm_export";
 const PROTOCOL_MAGIC_ID_FILE: &str = "protocolMagicId";
 
 const CONVERSION_FALLBACK_LIMIT: usize = 2;
@@ -126,46 +127,125 @@ struct SnapshotConverterConfig {
 }
 
 enum SnapshotConverterBin {
+    From11_1(SnapshotConverterConfig),
     From10_7(SnapshotConverterConfig),
     UpTo10_6(SnapshotConverterConfig),
     UpTo10_5(SnapshotConverterConfig),
 }
 
+impl SnapshotConverterBin {
+    fn converter_bin(&self) -> &Path {
+        match self {
+            SnapshotConverterBin::From11_1(cfg)
+            | SnapshotConverterBin::From10_7(cfg)
+            | SnapshotConverterBin::UpTo10_6(cfg)
+            | SnapshotConverterBin::UpTo10_5(cfg) => &cfg.converter_bin,
+        }
+    }
+}
+
 impl SnapshotConverter for SnapshotConverterBin {
     fn convert(&self, input_path: &Path, output_path: &Path) -> MithrilResult<()> {
-        let mut command = match self {
+        let commands = match self {
+            SnapshotConverterBin::From11_1(cfg) => {
+                build_commands_from_11_1(input_path, output_path, cfg.clone())?
+            }
+
             SnapshotConverterBin::From10_7(cfg) => {
-                build_command_from_10_7(input_path, output_path, cfg.clone())?
+                vec![build_command_from_10_7(input_path, output_path, cfg.clone())?]
             }
 
             SnapshotConverterBin::UpTo10_6(cfg) => {
-                build_command_from_10_6(input_path, output_path, cfg.clone())
+                vec![build_command_from_10_6(input_path, output_path, cfg.clone())]
             }
 
             SnapshotConverterBin::UpTo10_5(cfg) => {
-                build_command_up_to_10_5(input_path, output_path, cfg.clone())
+                vec![build_command_up_to_10_5(input_path, output_path, cfg.clone())]
             }
         };
 
-        let status = command.status().with_context(|| {
-            format!(
-                "Failed to execute snapshot-converter binary at {}",
-                match self {
-                    SnapshotConverterBin::From10_7(cfg)
-                    | SnapshotConverterBin::UpTo10_6(cfg)
-                    | SnapshotConverterBin::UpTo10_5(cfg) => cfg.converter_bin.display(),
-                }
-            )
-        })?;
+        for mut command in commands {
+            let status = command.status().with_context(|| {
+                format!(
+                    "Failed to execute snapshot-converter binary at {}",
+                    self.converter_bin().display()
+                )
+            })?;
 
-        if !status.success() {
-            return Err(anyhow!(
-                "Failure while running snapshot-converter binary, exited with status code: {:?}",
-                status.code().map_or(String::from("unknown"), |c| c.to_string())
-            ));
+            if !status.success() {
+                return Err(anyhow!(
+                    "Failure while running snapshot-converter binary, exited with status code: {:?}",
+                    status.code().map_or(String::from("unknown"), |c| c.to_string())
+                ));
+            }
         }
 
         Ok(())
+    }
+}
+
+fn build_commands_from_11_1(
+    input_path: &Path,
+    output_path: &Path,
+    cfg: SnapshotConverterConfig,
+) -> MithrilResult<Vec<Command>> {
+    let snapshots_dir = output_path.parent().unwrap_or(output_path);
+    let is_lsm = cfg.utxo_hd_flavor == UTxOHDFlavor::Lsm;
+
+    let mut convert_command = Command::new(&cfg.converter_bin);
+    convert_command
+        .arg("convert")
+        .arg("--snapshot-in")
+        .arg(input_path)
+        .arg("--snapshot-out")
+        .arg(output_path);
+
+    if is_lsm {
+        convert_command
+            .arg("--lsm-export-to")
+            .arg(snapshots_dir.join(LSM_EXPORT_DIR));
+    }
+
+    convert_command
+        .arg("--config")
+        .arg(&cfg.config_path)
+        .stdout(command_stdout(cfg.hide_output));
+
+    let mut commands = vec![convert_command];
+
+    if is_lsm {
+        let snapshot_name = output_path.file_name().with_context(|| {
+            format!(
+                "Missing filename in converted snapshot output path: {}",
+                output_path.display()
+            )
+        })?;
+
+        let mut import_command = Command::new(&cfg.converter_bin);
+        import_command
+            .arg("lsm")
+            .arg("import")
+            .arg("--lsm-database")
+            .arg(snapshots_dir.join(LSM_DATABASE_DIR))
+            .arg("--lsm-import-from")
+            .arg(snapshots_dir.join(LSM_EXPORT_DIR))
+            .arg("--snapshot")
+            .arg(snapshot_name)
+            .stdout(command_stdout(cfg.hide_output));
+
+        commands.push(import_command);
+    }
+
+    Ok(commands)
+}
+
+fn command_stdout(hide_output: bool) -> Stdio {
+    if hide_output {
+        // Hide output when JSON output is enabled (as they are not JSON formatted)
+        Stdio::null()
+    } else {
+        // redirect to stderr to keep stdout dedicated to the command result.
+        std::io::stderr().into()
     }
 }
 
@@ -896,13 +976,19 @@ fn get_snapshot_converter_bin_by_version(
     cardano_node_version: &str,
     converter_bin_config: SnapshotConverterConfig,
 ) -> SnapshotConverterBin {
-    if is_version_at_least_10_7_0_or_latest(cardano_node_version) {
+    if is_version_at_least_11_1_0_or_latest(cardano_node_version) {
+        SnapshotConverterBin::From11_1(converter_bin_config)
+    } else if is_version_at_least_10_7_0_or_latest(cardano_node_version) {
         SnapshotConverterBin::From10_7(converter_bin_config)
     } else if is_version_at_least_10_6_2_or_latest(cardano_node_version) {
         SnapshotConverterBin::UpTo10_6(converter_bin_config)
     } else {
         SnapshotConverterBin::UpTo10_5(converter_bin_config)
     }
+}
+
+fn is_version_at_least_11_1_0_or_latest(version: &str) -> bool {
+    is_version_equal_or_upper(version, CARDANO_NODE_V11_1_0)
 }
 
 fn is_version_at_least_10_7_0_or_latest(version: &str) -> bool {
@@ -1823,23 +1909,38 @@ mod tests {
         }
 
         #[test]
-        fn should_return_from_10_7_with_cardano_version_10_7_0_or_upper() {
+        fn should_return_from_11_1_with_cardano_version_11_1_0_or_upper() {
+            let converter_bin = get_snapshot_converter_bin_by_version("11.1.0", dummy_config());
+            assert!(
+                matches!(converter_bin, SnapshotConverterBin::From11_1(_)),
+                "returned type is not SnapshotConverterBin::From11_1"
+            );
+
+            let converter_bin = get_snapshot_converter_bin_by_version("11.2.0", dummy_config());
+            assert!(
+                matches!(converter_bin, SnapshotConverterBin::From11_1(_)),
+                "returned type is not SnapshotConverterBin::From11_1"
+            );
+        }
+
+        #[test]
+        fn should_return_from_11_1_with_cardano_version_latest() {
+            let converter_bin = get_snapshot_converter_bin_by_version("latest", dummy_config());
+            assert!(
+                matches!(converter_bin, SnapshotConverterBin::From11_1(_)),
+                "returned type is not SnapshotConverterBin::From11_1"
+            );
+        }
+
+        #[test]
+        fn should_return_from_10_7_with_cardano_version_10_7_0_to_11_0_x() {
             let converter_bin = get_snapshot_converter_bin_by_version("10.7.1", dummy_config());
             assert!(
                 matches!(converter_bin, SnapshotConverterBin::From10_7(_)),
                 "returned type is not SnapshotConverterBin::From10_7"
             );
 
-            let converter_bin = get_snapshot_converter_bin_by_version("10.8.0", dummy_config());
-            assert!(
-                matches!(converter_bin, SnapshotConverterBin::From10_7(_)),
-                "returned type is not SnapshotConverterBin::From10_7"
-            );
-        }
-
-        #[test]
-        fn should_return_from_10_7_with_cardano_version_latest() {
-            let converter_bin = get_snapshot_converter_bin_by_version("latest", dummy_config());
+            let converter_bin = get_snapshot_converter_bin_by_version("11.0.9", dummy_config());
             assert!(
                 matches!(converter_bin, SnapshotConverterBin::From10_7(_)),
                 "returned type is not SnapshotConverterBin::From10_7"
@@ -1874,6 +1975,110 @@ mod tests {
                 matches!(converter_bin, SnapshotConverterBin::UpTo10_5(_)),
                 "returned type is not SnapshotConverterBin::UpTo10_5"
             );
+        }
+    }
+
+    mod build_commands_from_11_1 {
+        use std::path::PathBuf;
+        use std::process::Command;
+
+        use crate::commands::tools::utxo_hd::snapshot_converter::{
+            LSM_DATABASE_DIR, LSM_EXPORT_DIR, SnapshotConverterConfig, UTxOHDFlavor,
+            build_commands_from_11_1,
+        };
+
+        fn dummy_config(utxo_hd_flavor: UTxOHDFlavor) -> SnapshotConverterConfig {
+            SnapshotConverterConfig {
+                converter_bin: PathBuf::from("/bin/snapshot-converter"),
+                config_path: PathBuf::from("/share/config.json"),
+                utxo_hd_flavor,
+                hide_output: true,
+            }
+        }
+
+        fn args_of(command: &Command) -> Vec<String> {
+            command
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect()
+        }
+
+        #[test]
+        fn lmdb_builds_a_single_convert_command_without_lsm_flags() {
+            let input = PathBuf::from("/work/snapshots/123456");
+            let output = PathBuf::from("/work/snapshots/123456_lmdb");
+            let config = dummy_config(UTxOHDFlavor::Lmdb);
+            let config_path = config.config_path.clone();
+
+            let commands = build_commands_from_11_1(&input, &output, config).unwrap();
+
+            assert_eq!(commands.len(), 1);
+            assert_eq!(
+                args_of(&commands[0]),
+                vec![
+                    "convert".to_string(),
+                    "--snapshot-in".to_string(),
+                    input.to_string_lossy().into_owned(),
+                    "--snapshot-out".to_string(),
+                    output.to_string_lossy().into_owned(),
+                    "--config".to_string(),
+                    config_path.to_string_lossy().into_owned(),
+                ]
+            );
+        }
+
+        #[test]
+        fn lsm_builds_a_convert_command_then_an_import_command() {
+            let input = PathBuf::from("/work/snapshots/123456");
+            let output = PathBuf::from("/work/snapshots/123456_lsm");
+            let snapshots_dir = output.parent().unwrap();
+            let config = dummy_config(UTxOHDFlavor::Lsm);
+            let config_path = config.config_path.clone();
+
+            let commands = build_commands_from_11_1(&input, &output, config).unwrap();
+
+            assert_eq!(commands.len(), 2);
+            assert_eq!(
+                args_of(&commands[0]),
+                vec![
+                    "convert".to_string(),
+                    "--snapshot-in".to_string(),
+                    input.to_string_lossy().into_owned(),
+                    "--snapshot-out".to_string(),
+                    output.to_string_lossy().into_owned(),
+                    "--lsm-export-to".to_string(),
+                    snapshots_dir.join(LSM_EXPORT_DIR).to_string_lossy().into_owned(),
+                    "--config".to_string(),
+                    config_path.to_string_lossy().into_owned(),
+                ]
+            );
+            assert_eq!(
+                args_of(&commands[1]),
+                vec![
+                    "lsm".to_string(),
+                    "import".to_string(),
+                    "--lsm-database".to_string(),
+                    snapshots_dir.join(LSM_DATABASE_DIR).to_string_lossy().into_owned(),
+                    "--lsm-import-from".to_string(),
+                    snapshots_dir.join(LSM_EXPORT_DIR).to_string_lossy().into_owned(),
+                    "--snapshot".to_string(),
+                    "123456_lsm".to_string(),
+                ]
+            );
+        }
+
+        #[test]
+        fn every_command_runs_the_converter_binary() {
+            let input = PathBuf::from("/work/snapshots/123456");
+            let output = PathBuf::from("/work/snapshots/123456_lsm");
+            let config = dummy_config(UTxOHDFlavor::Lsm);
+            let converter_bin = config.converter_bin.clone();
+
+            let commands = build_commands_from_11_1(&input, &output, config).unwrap();
+
+            for command in &commands {
+                assert_eq!(command.get_program(), converter_bin.as_os_str());
+            }
         }
     }
 

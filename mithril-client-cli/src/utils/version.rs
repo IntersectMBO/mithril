@@ -6,6 +6,9 @@ pub const CARDANO_NODE_V10_6_2: Version = Version::new(10, 6, 2);
 /// Version in which Cardano introduces a breaking change regarding the snapshot converter command
 pub const CARDANO_NODE_V10_7_0: Version = Version::new(10, 7, 0);
 
+/// Version in which Cardano introduces a breaking change regarding the snapshot converter command
+pub const CARDANO_NODE_V11_1_0: Version = Version::new(11, 1, 0);
+
 pub fn is_version_equal_or_upper(version_to_check: &str, version_reference: Version) -> bool {
     let normalized_version = version_to_check.trim().to_ascii_lowercase();
     if normalized_version == "latest" {
