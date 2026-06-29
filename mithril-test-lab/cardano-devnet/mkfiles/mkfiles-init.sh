@@ -49,7 +49,7 @@ if [ -z "${NETWORK_MAGIC}" ]; then
   NETWORK_MAGIC=42
 fi
 if [ -z "${DMQ_NODE_VERSION}" ]; then 
-  DMQ_NODE_VERSION="0.6.0.0"
+  DMQ_NODE_VERSION="0.7.0.0"
 fi
 if [ -z "${DMQ_NODE_BINARY_URL}" ]; then 
   DMQ_NODE_BINARY_URL="https://github.com/IntersectMBO/dmq-node/releases/download/${DMQ_NODE_VERSION}/dmq-node-linux.tar.gz"
