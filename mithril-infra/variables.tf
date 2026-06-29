@@ -243,7 +243,7 @@ variable "mithril_p2p_dmq_use_ledger_peers" {
 variable "dmq_image_id" {
   type        = string
   description = "The DMQ image tag of service to deploy"
-  default     = "0.6.0.0"
+  default     = "0.7.0.0"
 }
 
 variable "dmq_image_registry" {
