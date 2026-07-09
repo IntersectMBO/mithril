@@ -15,10 +15,24 @@ const config = {
   url: "https://mithril.network",
   baseUrl: "/doc/",
   onBrokenLinks: "throw",
-  onBrokenMarkdownLinks: "warn",
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
   favicon: "img/mithril-logo.svg",
   organizationName: "Input Output Global",
   projectName: "Mithril",
+
+  future: {
+    v4: {
+      removeLegacyPostBuildHeadAttribute: true,
+      useCssCascadeLayers: true,
+      siteStorageNamespacing: true,
+      fasterByDefault: false,
+      mdx1CompatDisabledByDefault: true,
+    },
+  },
 
   scripts: [
     {
