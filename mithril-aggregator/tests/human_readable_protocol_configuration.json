@@ -1,0 +1,43 @@
+[
+  {
+    "epoch": 42,
+    "protocol_parameters": {
+      "k": 9,
+      "m": 77,
+      "phi_f": 0.5
+    },
+    "cardano_transactions_signing_config": {
+      "security_parameter": 100,
+      "step": 10
+    },
+    "enabled_signed_entity_types":
+    [
+      "MithrilStakeDistribution",
+      "CardanoDatabase",
+      "CardanoTransactions"
+    ]
+  },
+  {
+    "epoch": 43,
+    "protocol_parameters": {
+      "k": 10,
+      "m": 88,
+      "phi_f": 0.7
+    },
+    "cardano_transactions_signing_config": {
+      "security_parameter": 100,
+      "step": 10
+    },
+    "cardano_blocks_transactions_signing_config": {
+      "security_parameter": 150,
+      "step": 20
+    },
+    "enabled_signed_entity_types":
+    [
+      "MithrilStakeDistribution",
+      "CardanoDatabase",
+      "CardanoTransactions",
+      "CardanoBlocksTransactions"
+    ]
+  }
+]

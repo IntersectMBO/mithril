@@ -1,7 +1,17 @@
+use std::collections::BTreeSet;
+
 use chrono::Utc;
 use uuid::Uuid;
 
-use mithril_common::test::double::{Dummy, fake_data};
+use mithril_common::{
+    entities::{
+        CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
+        ProtocolParameters, SignedEntityTypeDiscriminants,
+    },
+    test::double::{Dummy, fake_data},
+};
+
+use crate::commands::HumanReadableProtocolConfiguration;
 
 mod record {
     use mithril_common::entities::{ProtocolMessage, SignedEntityType};
@@ -99,5 +109,22 @@ mod entities {
                 expires_at: None,
             }
         }
+    }
+}
+
+impl Dummy for HumanReadableProtocolConfiguration {
+    fn dummy() -> Self {
+        HumanReadableProtocolConfiguration::new(
+            Epoch(42),
+            ProtocolParameters::new(10, 20, 0.123),
+            Some(CardanoTransactionsSigningConfig::dummy()),
+            Some(CardanoBlocksTransactionsSigningConfig::dummy()),
+            BTreeSet::from([
+                SignedEntityTypeDiscriminants::CardanoStakeDistribution,
+                SignedEntityTypeDiscriminants::MithrilStakeDistribution,
+                SignedEntityTypeDiscriminants::CardanoTransactions,
+                SignedEntityTypeDiscriminants::CardanoDatabase,
+            ]),
+        )
     }
 }
