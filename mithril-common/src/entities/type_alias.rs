@@ -63,6 +63,9 @@ pub type HexEncodedDigest = HexEncodedKey;
 /// Hex encoded Era Markers Secret Key
 pub type HexEncodedEraMarkersSecretKey = HexEncodedKey;
 
+/// Hex encoded Protocol Configuration Markers Secret Key
+pub type HexEncodedProtocolConfigurationMarkersSecretKey = HexEncodedKey;
+
 /// Number of SPOs
 pub type TotalSPOs = u32;
 

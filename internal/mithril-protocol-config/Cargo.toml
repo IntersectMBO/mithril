@@ -14,11 +14,13 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 mithril-aggregator-client = { path = "../mithril-aggregator-client" }
 mithril-common = { path = "../../mithril-common" }
+serde = { workspace = true }
+serde_json = { workspace = true }
 slog = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
 httpmock = "0.8.3"
-serde_json = { workspace = true }
 slog-async = { workspace = true }
 slog-term = { workspace = true }

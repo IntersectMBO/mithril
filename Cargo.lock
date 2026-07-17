@@ -4700,10 +4700,12 @@ dependencies = [
  "httpmock",
  "mithril-aggregator-client",
  "mithril-common",
+ "serde",
  "serde_json",
  "slog",
  "slog-async",
  "slog-term",
+ "thiserror 2.0.18",
  "tokio",
 ]
 

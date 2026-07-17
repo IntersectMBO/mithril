@@ -8,8 +8,12 @@ use mithril_common::{
     test::double::{Dummy, fake_data},
 };
 
-use crate::model::{
-    MithrilNetworkConfiguration, MithrilNetworkConfigurationForEpoch, SignedEntityTypeConfiguration,
+use crate::{
+    ProtocolConfigurationForEpoch,
+    model::{
+        MithrilNetworkConfiguration, MithrilNetworkConfigurationForEpoch,
+        SignedEntityTypeConfiguration,
+    },
 };
 
 impl Dummy for MithrilNetworkConfiguration {
@@ -38,6 +42,23 @@ impl Dummy for MithrilNetworkConfigurationForEpoch {
                 cardano_transactions: Some(CardanoTransactionsSigningConfig::dummy()),
                 cardano_blocks_transactions: Some(CardanoBlocksTransactionsSigningConfig::dummy()),
             },
+        }
+    }
+}
+
+impl Dummy for ProtocolConfigurationForEpoch {
+    /// Return a dummy for [ProtocolConfigurationForEpoch] (test-only).
+    fn dummy() -> Self {
+        Self {
+            protocol_parameters: fake_data::protocol_parameters(),
+            enabled_signed_entity_types: BTreeSet::from([
+                SignedEntityTypeDiscriminants::CardanoTransactions,
+                SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
+                SignedEntityTypeDiscriminants::CardanoDatabase,
+                SignedEntityTypeDiscriminants::CardanoStakeDistribution,
+            ]),
+            cardano_transactions: Some(CardanoTransactionsSigningConfig::dummy()),
+            cardano_blocks_transactions: Some(CardanoBlocksTransactionsSigningConfig::dummy()),
         }
     }
 }
