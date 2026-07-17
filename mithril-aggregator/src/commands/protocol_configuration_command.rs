@@ -1,23 +1,30 @@
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use config::{ConfigBuilder, builder::DefaultState};
+use mithril_common::crypto_helper::{
+    ProtocolConfigurationMarkersSigner, ProtocolConfigurationMarkersVerifierSecretKey,
+};
 use serde::{Deserialize, Serialize};
 use slog::Logger;
 use std::collections::{BTreeSet, HashMap};
-use std::fs;
+use std::fs::{self, File};
+use std::io::Write;
 use std::path::PathBuf;
 
 use mithril_common::StdResult;
 use mithril_common::entities::{
     CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
-    ProtocolParameters, SignedEntityTypeDiscriminants,
+    HexEncodedProtocolConfigurationMarkersSecretKey, ProtocolParameters,
+    SignedEntityTypeDiscriminants,
 };
 use mithril_doc::StructDoc;
 
 use crate::extract_all;
+use crate::tools::ProtocolConfigurationTools;
 
 pub struct ProtocolConfigurationParametersConfiguration {}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct HumanReadableProtocolConfiguration {
     pub epoch: Epoch,
     pub protocol_parameters: ProtocolParameters,
@@ -119,9 +126,17 @@ impl ExportProtocolConfigurationSubCommand {
 /// Protocol configuration import command
 #[derive(Parser, Debug, Clone)]
 pub struct ImportProtocolConfigurationSubCommand {
-    /// Import path
+    /// Import path of the human readable configurations
     #[clap(long, value_parser)]
-    pub path: PathBuf,
+    pub import_path: PathBuf,
+
+    /// target path of the tx datum file
+    #[clap(long, value_parser)]
+    pub target_path: PathBuf,
+
+    /// Protocol Configuration Markers Secret Key
+    #[clap(long, env = "PROTOCOL_CONFIGURATION_MARKERS_SECRET_KEY")]
+    protocol_configuration_markers_secret_key: HexEncodedProtocolConfigurationMarkersSecretKey,
 }
 
 impl ImportProtocolConfigurationSubCommand {
@@ -131,26 +146,60 @@ impl ImportProtocolConfigurationSubCommand {
         config_builder: ConfigBuilder<DefaultState>,
     ) -> StdResult<()> {
         //1 - we need to read the protocol configuration from the file
-        let json_protocol_configurations = fs::read_to_string(&self.path);
+        println!(
+            "Reading file content {}",
+            &self.import_path.to_string_lossy()
+        );
+        let json_protocol_configurations = fs::read_to_string(&self.import_path);
 
         //2 - we need to parse the json into a protocol configuration using serde_json
+        println!("Json parsing ...");
         let protocol_configurations: Vec<HumanReadableProtocolConfiguration> =
             serde_json::from_str(&json_protocol_configurations?)?;
 
-        //3 - Verify protocol config consistency
+        //3 - Verify protocol config consistency, TODO could be move in ProtocolConfigurationTools ?
         println!("Verifying protocol configuration consistency...");
-        match Self::verify_protocol_configurations(protocol_configurations) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(anyhow::anyhow!(
-                "Protocol configuration is not consistent: {}",
-                e
-            )),
-        }
+        Self::verify_protocol_configurations(protocol_configurations.clone())?; //return a VerifiedProtocolConfigurations ?
 
-        //4 - Cbor conversion
+        //3.2 Check epoch consistency on chain ?
 
-        //5 - check size < 10kb
-        //6 - Generate Tx datum
+        //4 - Generate Tx datum
+        println!("Generating Tx datum ...");
+        let protocol_configuration_markers_signer =
+            Self::get_markers_signer(self.protocol_configuration_markers_secret_key.clone())?;
+
+        let tools = ProtocolConfigurationTools::new();
+        let tx_datum = tools.generate_tx_datum(
+            protocol_configurations,
+            &protocol_configuration_markers_signer,
+        )?;
+
+        //5 - TODO: check size < 10kb
+
+        //6 - Write datum file
+        println!("Generating Tx datum output file...");
+        let mut target_file = File::create(&self.target_path)?;
+        target_file.write_all(tx_datum.as_bytes())?;
+
+        println!(
+            "Sucessfuly write Tx datum file at {}",
+            &self.target_path.to_string_lossy()
+        );
+
+        Ok(())
+    }
+
+    fn get_markers_signer(
+        secret_key: HexEncodedProtocolConfigurationMarkersSecretKey,
+    ) -> StdResult<ProtocolConfigurationMarkersSigner> {
+        let markers_secret_key =
+            ProtocolConfigurationMarkersVerifierSecretKey::from_json_hex(&secret_key)
+                .with_context(
+                    || "json hex decode of protocol configuration markers secret key failure",
+                )?;
+        Ok(ProtocolConfigurationMarkersSigner::from_secret_key(
+            markers_secret_key,
+        ))
     }
 
     pub fn verify_protocol_configurations(
@@ -213,13 +262,20 @@ mod tests {
 
     #[test]
     fn import_subcommand_parses_flag() {
+        let signer_secret_key = ProtocolConfigurationMarkersSigner::create_deterministic_signer()
+            .secret_key()
+            .to_json_hex()
+            .expect("create_deterministic_signer for secret key should not fail");
+        println!("Signer secret key: {}", signer_secret_key);
         ImportProtocolConfigurationSubCommand::try_parse_from([
             "import-markers",
-            "--path",
+            "--import-path",
             "tests/human_readable_protocol_configuration.json",
+            "--target-path",
+            "/tests/protocol_configuration_tx_datum",
+            "--protocol-configuration-markers-secret-key",
+            &signer_secret_key,
         ])
         .expect("CLI parse should succeed");
-        // assert_eq!(cmd.mithril_era, Some(SupportedEra::Lagrange));
-        //TODO when available check that a tx datum file is written
     }
 }

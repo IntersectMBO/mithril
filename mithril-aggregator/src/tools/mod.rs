@@ -3,6 +3,7 @@ mod era;
 pub mod file_archiver;
 pub mod file_size;
 mod genesis;
+mod protocol_configuration;
 pub mod signer_importer;
 mod single_signature_authenticator;
 pub mod url_sanitizer;
@@ -13,6 +14,7 @@ pub use era::EraTools;
 #[cfg(feature = "future_snark")]
 pub use genesis::GenesisSignedPayload;
 pub use genesis::GenesisTools;
+pub use protocol_configuration::ProtocolConfigurationTools;
 pub use single_signature_authenticator::*;
 pub use vacuum_tracker::VacuumTracker;
 
