@@ -105,7 +105,7 @@ impl ProtocolConfigurationReader {
     }
 
     /// Read protocol configuration markers from the underlying adapter.
-    pub async fn read_mithril_network_configurations(
+    pub async fn read_mithril_protocol_configurations(
         &self,
     ) -> Result<HashMap<Epoch, ProtocolConfigurationForEpoch>, ProtocolConfigurationReaderError>
     {
@@ -116,7 +116,7 @@ impl ProtocolConfigurationReader {
             }
         })?;
 
-        let mut mithril_network_configurations = HashMap::new();
+        let mut protocol_configurations = HashMap::new();
         for marker in markers {
             let configuration = ProtocolConfigurationForEpoch::from_cbor(marker.configuration)
                 .map_err(|e| ProtocolConfigurationReaderError::AdapterFailure {
@@ -126,9 +126,9 @@ impl ProtocolConfigurationReader {
                     ),
                     error: e.into(),
                 })?;
-            mithril_network_configurations.insert(marker.epoch, configuration);
+            protocol_configurations.insert(marker.epoch, configuration);
         }
-        Ok(mithril_network_configurations)
+        Ok(protocol_configurations)
     }
 }
 
@@ -138,6 +138,8 @@ mod tests {
         entities::{BlockNumber, BlockNumberOffset},
         test::double::Dummy,
     };
+
+    use crate::test::double::ProtocolConfigurationReaderDummyAdapter;
 
     use super::*;
 
@@ -179,5 +181,74 @@ mod tests {
         };
         let cbor = mithril_network_configuration_for_epoch.to_cbor().unwrap();
         assert_eq!(&cbor, expected_cbor);
+    }
+
+    fn get_basic_marker_sample() -> Vec<ProtocolConfigurationMarker> {
+        vec![ProtocolConfigurationMarker {
+            epoch: Epoch(42),
+            configuration: ProtocolConfigurationForEpoch {
+                protocol_parameters: ProtocolParameters {
+                    k: 1,
+                    m: 2,
+                    phi_f: 2.3,
+                },
+                enabled_signed_entity_types: BTreeSet::from([
+                    SignedEntityTypeDiscriminants::CardanoTransactions,
+                    SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
+                    SignedEntityTypeDiscriminants::CardanoDatabase,
+                    SignedEntityTypeDiscriminants::CardanoStakeDistribution,
+                ]),
+                cardano_transactions: Some(CardanoTransactionsSigningConfig {
+                    security_parameter: BlockNumberOffset(10),
+                    step: BlockNumber(20),
+                }),
+                cardano_blocks_transactions: Some(CardanoBlocksTransactionsSigningConfig {
+                    security_parameter: BlockNumberOffset(30),
+                    step: BlockNumber(40),
+                }),
+            }
+            .to_cbor()
+            .expect("shoud not fail"),
+        }]
+    }
+
+    #[tokio::test]
+    async fn read_mithril_protocol_configurations() {
+        let markers: Vec<ProtocolConfigurationMarker> = get_basic_marker_sample();
+        let adapter = ProtocolConfigurationReaderDummyAdapter::default();
+        adapter.set_markers(markers);
+
+        let reader = ProtocolConfigurationReader::new(Arc::new(adapter));
+        let token = reader.read_mithril_protocol_configurations().await.unwrap();
+        assert!(!token.contains_key(&Epoch(41)));
+        assert!(token.contains_key(&Epoch(42)));
+        assert!(!token.contains_key(&Epoch(43)));
+
+        let (_, configuration) = token.get_key_value(&Epoch(42)).expect("should exist");
+
+        assert_eq!(
+            configuration,
+            &ProtocolConfigurationForEpoch {
+                protocol_parameters: ProtocolParameters {
+                    k: 1,
+                    m: 2,
+                    phi_f: 2.3,
+                },
+                enabled_signed_entity_types: BTreeSet::from([
+                    SignedEntityTypeDiscriminants::CardanoTransactions,
+                    SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
+                    SignedEntityTypeDiscriminants::CardanoDatabase,
+                    SignedEntityTypeDiscriminants::CardanoStakeDistribution,
+                ]),
+                cardano_transactions: Some(CardanoTransactionsSigningConfig {
+                    security_parameter: BlockNumberOffset(10),
+                    step: BlockNumber(20),
+                }),
+                cardano_blocks_transactions: Some(CardanoBlocksTransactionsSigningConfig {
+                    security_parameter: BlockNumberOffset(30),
+                    step: BlockNumber(40),
+                }),
+            }
+        )
     }
 }
