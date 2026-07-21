@@ -52,7 +52,7 @@ pub struct SignedProtocolConfigurationMarkersPayload {
 }
 
 impl SignedProtocolConfigurationMarkersPayload {
-    /// Instanciate a new ProtocolConfigurationMarkersPayload with markers
+    /// Instanciate a new SignedProtocolConfigurationMarkersPayload with markers and signature
     pub fn new(
         markers: Vec<ProtocolConfigurationMarker>,
         signature: ProtocolConfigurationMarkersVerifierSignature,
