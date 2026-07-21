@@ -13,6 +13,7 @@ include = ["**/*.rs", "Cargo.toml", "README.md", ".gitignore"]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 mithril-aggregator-client = { path = "../mithril-aggregator-client" }
+mithril-cardano-node-chain = { path = "../cardano-node/mithril-cardano-node-chain" }
 mithril-common = { path = "../../mithril-common" }
 serde = { workspace = true }
 serde_json = { workspace = true }
