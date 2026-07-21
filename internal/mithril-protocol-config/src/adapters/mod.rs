@@ -3,3 +3,4 @@
 mod cardano_chain;
 
 pub use cardano_chain::ProtocolConfigurationMarkersPayload as ProtocolConfigurationMarkersPayloadCardanoChain;
+pub use cardano_chain::SignedProtocolConfigurationMarkersPayload as SignedProtocolConfigurationMarkersPayloadCardanoChain;

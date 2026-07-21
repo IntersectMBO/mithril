@@ -31,13 +31,15 @@ impl ProtocolConfigurationTools {
             );
             markers.push(marker);
         }
-        let markers_payload = ProtocolConfigurationMarkersPayloadCardanoChain::new(markers)
+        let signed_markers_payload = ProtocolConfigurationMarkersPayloadCardanoChain::new(markers)
             .sign(protocol_configuration_markers_signer)?;
 
         //TODO add a type signedPayload to ensure both marker and signature is here
 
         let tx_datum = TxDatumBuilder::new()
-            .add_field(TxDatumFieldValue::Bytes(markers_payload.to_json_hex()?))
+            .add_field(TxDatumFieldValue::Bytes(
+                signed_markers_payload.to_json_hex()?,
+            ))
             .build()?;
         Ok(tx_datum.0)
     }
