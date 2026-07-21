@@ -26,12 +26,13 @@ use crate::circuits::halo2_ivc::{
 use crate::signature_scheme::StandardSchnorrSignature;
 
 pub(crate) use crate::circuits::halo2_ivc::embedded_assets::{
-    FirstCertificateInEpochAsset, FollowingCertificateInEpochAsset, GenesisStepOutputAsset,
-    NextEpochStepOutputAsset, RecursiveChainStateAsset, StepOutputAsset, VerificationContextAsset,
-    load_embedded_first_certificate_in_epoch_asset,
-    load_embedded_following_certificate_in_epoch_asset, load_embedded_genesis_step_output_asset,
-    load_embedded_next_epoch_step_output_asset, load_embedded_recursive_chain_state_asset,
-    load_embedded_verification_context_asset, load_recursive_chain_state_asset,
+    FirstCertificateInEpochAsset, FollowingCertificateInEpochAsset, GenesisBenchmarkFixture,
+    GenesisStepOutputAsset, NextEpochStepOutputAsset, RecursiveChainStateAsset, StepOutputAsset,
+    VerificationContextAsset, load_embedded_first_certificate_in_epoch_asset,
+    load_embedded_following_certificate_in_epoch_asset, load_embedded_genesis_benchmark_fixture,
+    load_embedded_genesis_step_output_asset, load_embedded_next_epoch_step_output_asset,
+    load_embedded_recursive_chain_state_asset, load_embedded_verification_context_asset,
+    load_recursive_chain_state_asset,
 };
 
 /// Creates a golden asset file and its parent directory if needed.
@@ -296,6 +297,33 @@ pub(crate) fn store_first_certificate_in_epoch_asset(
     writer.flush().with_context(|| {
         format!(
             "failed to flush first-certificate-in-epoch asset: {}",
+            path.display()
+        )
+    })?;
+    Ok(())
+}
+
+/// Writes the additive genesis benchmark fixture using the committed binary layout.
+///
+/// Fixed-size layout: `[genesis_message(32) | genesis_verification_key(64) |
+/// genesis_signature(64) | genesis_protocol_message_preimage(PREIMAGE_SIZE)]`.
+pub(crate) fn store_genesis_benchmark_fixture(
+    path: &Path,
+    fixture: &GenesisBenchmarkFixture,
+) -> StmResult<()> {
+    let mut writer = create_asset_file(path).with_context(|| {
+        format!(
+            "failed to create genesis benchmark fixture file: {}",
+            path.display()
+        )
+    })?;
+    writer.write_all(&fixture.genesis_message)?;
+    writer.write_all(&fixture.genesis_verification_key.to_bytes())?;
+    writer.write_all(&fixture.genesis_signature.to_bytes())?;
+    writer.write_all(&fixture.genesis_protocol_message_preimage)?;
+    writer.flush().with_context(|| {
+        format!(
+            "failed to flush genesis benchmark fixture: {}",
             path.display()
         )
     })?;

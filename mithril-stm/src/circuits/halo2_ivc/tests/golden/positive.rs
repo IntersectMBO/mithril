@@ -10,12 +10,13 @@ use midnight_circuits::types::Instantiable;
 
 use crate::circuits::halo2_ivc::tests::common::{
     asset_readers::{
-        load_embedded_next_epoch_step_output_asset, load_embedded_recursive_chain_state_asset,
-        load_embedded_verification_context_asset,
+        load_embedded_genesis_benchmark_fixture, load_embedded_next_epoch_step_output_asset,
+        load_embedded_recursive_chain_state_asset, load_embedded_verification_context_asset,
     },
     generators::{
         GENESIS_EPOCH, build_asset_generation_setup, build_genesis_base_case_next_state,
-        build_genesis_base_case_witness, next_message_and_preimage_for_step, next_state_for_step,
+        build_genesis_base_case_witness, build_genesis_protocol_message_preimage,
+        next_message_and_preimage_for_step, next_state_for_step,
     },
     helpers::{
         assert_recursive_mock_prover_accepts_with_label, build_mock_prover_public_inputs,
@@ -93,6 +94,52 @@ fn recursive_step_output_asset_proof_and_accumulator_are_valid() {
         ),
         "stored recursive step output accumulator should verify"
     );
+}
+
+#[test]
+fn genesis_benchmark_fixture_is_deterministic_and_valid() {
+    // Guards the additive genesis benchmark fixture: the committed bytes must match the
+    // deterministic generator output, be internally consistent, and carry a valid genesis
+    // signature. Fails loudly if the committed `.bin` drifts from `build_asset_generation_setup`.
+    use sha2::{Digest, Sha256};
+
+    use crate::signature_scheme::BaseFieldElement;
+
+    let setup = build_asset_generation_setup();
+    let fixture =
+        load_embedded_genesis_benchmark_fixture().expect("genesis benchmark fixture should load");
+
+    let expected_preimage = build_genesis_protocol_message_preimage(&setup);
+    assert_eq!(
+        fixture.genesis_protocol_message_preimage.as_slice(),
+        expected_preimage.as_slice(),
+        "fixture preimage should match the deterministic generator output"
+    );
+
+    let expected_message: [u8; 32] = Sha256::digest(&expected_preimage).into();
+    assert_eq!(
+        fixture.genesis_message, expected_message,
+        "fixture genesis message should be Sha256 of the preimage"
+    );
+    assert_eq!(
+        fixture.genesis_message_hash(),
+        setup.genesis_message,
+        "fixture genesis message hash should match the deterministic setup"
+    );
+    assert_eq!(
+        fixture.genesis_verification_key, setup.genesis_verification_key,
+        "fixture genesis verification key should match the deterministic setup"
+    );
+    assert_eq!(
+        fixture.genesis_signature, setup.genesis_signature,
+        "fixture genesis signature should match the deterministic setup"
+    );
+
+    let message = BaseFieldElement::from(fixture.genesis_message_hash().as_field());
+    fixture
+        .genesis_signature
+        .verify(&[message], &fixture.genesis_verification_key)
+        .expect("fixture genesis signature should verify under the fixture verification key");
 }
 
 mod slow {

@@ -14,14 +14,16 @@ use super::setup::{
 };
 use super::transitions::{
     build_genesis_base_case_next_state, build_genesis_base_case_witness,
-    build_next_certificate_asset_data, build_same_epoch_certificate_asset_data,
+    build_genesis_protocol_message_preimage, build_next_certificate_asset_data,
+    build_same_epoch_certificate_asset_data,
 };
 use crate::circuits::halo2_ivc::IVC_FIXED_BASES_PREFIX;
 use crate::circuits::halo2_ivc::tests::common::asset_readers::{
-    FirstCertificateInEpochAsset, FollowingCertificateInEpochAsset, GenesisStepOutputAsset,
-    NextEpochStepOutputAsset, RecursiveChainStateAsset, VerificationContextAsset,
-    load_recursive_chain_state_asset, store_first_certificate_in_epoch_asset,
-    store_following_certificate_in_epoch_asset, store_genesis_step_output_asset,
+    FirstCertificateInEpochAsset, FollowingCertificateInEpochAsset, GenesisBenchmarkFixture,
+    GenesisStepOutputAsset, NextEpochStepOutputAsset, RecursiveChainStateAsset,
+    VerificationContextAsset, load_recursive_chain_state_asset,
+    store_first_certificate_in_epoch_asset, store_following_certificate_in_epoch_asset,
+    store_genesis_benchmark_fixture, store_genesis_step_output_asset,
     store_next_epoch_step_output_asset, store_recursive_chain_state_asset,
     store_verification_context_asset,
 };
@@ -821,6 +823,37 @@ pub(crate) fn generate_first_step_cert_asset(setup: &AssetGenerationSetup, paths
     );
 }
 
+/// Generates and writes the additive genesis benchmark fixture asset — the genesis proving
+/// inputs (raw message, verification key, signature, protocol-message preimage) the IVC
+/// benchmarks need to build a `Global` and run a genesis proving step. Deterministic and
+/// additive: existing golden assets are unaffected.
+pub(crate) fn generate_genesis_benchmark_fixture_asset(
+    setup: &AssetGenerationSetup,
+    paths: &AssetPaths,
+) {
+    println!(
+        "generate_genesis_benchmark_fixture: start -> {}",
+        paths.genesis_benchmark_fixture.display()
+    );
+    let genesis_protocol_message_preimage: [u8; PREIMAGE_SIZE] =
+        build_genesis_protocol_message_preimage(setup)
+            .try_into()
+            .expect("genesis protocol message preimage should be PREIMAGE_SIZE bytes");
+    let genesis_message: [u8; 32] = Sha256::digest(genesis_protocol_message_preimage).into();
+    let fixture = GenesisBenchmarkFixture {
+        genesis_message,
+        genesis_verification_key: setup.genesis_verification_key,
+        genesis_signature: setup.genesis_signature,
+        genesis_protocol_message_preimage,
+    };
+    store_genesis_benchmark_fixture(&paths.genesis_benchmark_fixture, &fixture)
+        .expect("failed to write genesis benchmark fixture asset");
+    println!(
+        "generate_genesis_benchmark_fixture: done -> {}",
+        paths.genesis_benchmark_fixture.display()
+    );
+}
+
 // These ignored tests are manual asset-generation entrypoints for the committed
 // golden assets. They are intentionally excluded from normal test runs because
 // they rewrite binary files rather than asserting behavior.
@@ -875,6 +908,16 @@ fn generate_same_epoch_step_output_only() {
 fn generate_first_step_cert_only() {
     use super::setup::{AssetPaths, build_asset_generation_setup};
     generate_first_step_cert_asset(&build_asset_generation_setup(), &AssetPaths::default());
+}
+
+#[test]
+#[ignore]
+fn generate_genesis_benchmark_fixture_only() {
+    use super::setup::{AssetPaths, build_asset_generation_setup};
+    generate_genesis_benchmark_fixture_asset(
+        &build_asset_generation_setup(),
+        &AssetPaths::default(),
+    );
 }
 
 #[test]

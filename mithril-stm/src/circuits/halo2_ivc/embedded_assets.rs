@@ -35,7 +35,7 @@ use crate::circuits::halo2_ivc::{
         ProtocolParametersHash, StepCounter,
     },
 };
-use crate::signature_scheme::StandardSchnorrSignature;
+use crate::signature_scheme::{SchnorrVerificationKey, StandardSchnorrSignature};
 
 /// Interprets 32 little-endian bytes as an integer and maps it to a Jubjub
 /// base-field element.
@@ -166,6 +166,36 @@ pub(crate) struct FollowingCertificateInEpochAsset {
     pub(crate) aggregate_verification_key_merkle_root: [u8; 32],
 }
 
+/// Deterministic genesis proving inputs for the IVC benchmarks.
+///
+/// Unlike [`GenesisStepOutputAsset`] (which stores the genesis *output* proof with zero-placeholder
+/// input fields), this additive fixture stores the genesis *inputs* the benchmark façade needs to
+/// build a `Global` and run a genesis proving step: the raw genesis message bytes (the `msg`
+/// argument to `IvcProof::verify`), the genesis Schnorr verification key, the trusted genesis
+/// signature, and the genesis protocol-message preimage. It is produced deterministically from
+/// `build_asset_generation_setup()` and is additive — no existing golden asset is affected.
+#[derive(Debug)]
+pub(crate) struct GenesisBenchmarkFixture {
+    /// Raw 32-byte genesis message, `Sha256(genesis_protocol_message_preimage)`; the `msg`
+    /// argument to `IvcProof::verify`.
+    pub(crate) genesis_message: [u8; 32],
+    /// Genesis Schnorr verification key used to build the `Global`.
+    pub(crate) genesis_verification_key: SchnorrVerificationKey,
+    /// Trusted genesis signature carried through the rolling state for in-circuit verification.
+    pub(crate) genesis_signature: StandardSchnorrSignature,
+    /// Genesis protocol-message preimage consumed by the genesis bootstrap step.
+    pub(crate) genesis_protocol_message_preimage: [u8; PREIMAGE_SIZE],
+}
+
+impl GenesisBenchmarkFixture {
+    /// Derives the typed genesis message hash from the stored raw bytes. Equals
+    /// `AssetGenerationSetup::genesis_message`, since both apply `from_raw` to the same
+    /// `Sha256(preimage)` digest.
+    pub(crate) fn genesis_message_hash(&self) -> MessageHash {
+        MessageHash::from_field(jubjub_base_from_raw_le_bytes(&self.genesis_message))
+    }
+}
+
 const RECURSIVE_CHAIN_STATE_ASSET_BYTES: &[u8] =
     include_bytes!("tests/assets/recursive_chain_state.bin");
 const VERIFICATION_CONTEXT_ASSET_BYTES: &[u8] =
@@ -178,6 +208,8 @@ const FOLLOWING_CERTIFICATE_IN_EPOCH_ASSET_BYTES: &[u8] =
     include_bytes!("tests/assets/same_epoch_step_output.bin");
 const FIRST_CERTIFICATE_IN_EPOCH_ASSET_BYTES: &[u8] =
     include_bytes!("tests/assets/first_step_cert.bin");
+const GENESIS_BENCHMARK_FIXTURE_ASSET_BYTES: &[u8] =
+    include_bytes!("tests/assets/genesis_benchmark_fixture.bin");
 
 /// Opens a committed golden asset for buffered reading.
 fn open_asset_file(path: &Path) -> StmResult<BufReader<File>> {
@@ -534,4 +566,53 @@ pub(crate) fn load_embedded_first_certificate_in_epoch_asset()
     let mut reader = Cursor::new(FIRST_CERTIFICATE_IN_EPOCH_ASSET_BYTES);
     load_first_certificate_in_epoch_asset_from_reader(&mut reader)
         .context("failed to decode embedded first-certificate-in-epoch asset")
+}
+
+/// Decodes the fixed-size genesis benchmark fixture layout:
+/// `[genesis_message(32) | genesis_verification_key(64) | genesis_signature(64) |
+/// genesis_protocol_message_preimage(PREIMAGE_SIZE)]`.
+fn read_genesis_benchmark_fixture_from_reader<R: Read>(
+    reader: &mut R,
+) -> StmResult<GenesisBenchmarkFixture> {
+    let mut genesis_message = [0u8; 32];
+    reader.read_exact(&mut genesis_message)?;
+
+    let mut verification_key_bytes = [0u8; 64];
+    reader.read_exact(&mut verification_key_bytes)?;
+    let genesis_verification_key = SchnorrVerificationKey::from_bytes(&verification_key_bytes)?;
+
+    let mut signature_bytes = [0u8; 64];
+    reader.read_exact(&mut signature_bytes)?;
+    let genesis_signature = StandardSchnorrSignature::from_bytes(&signature_bytes)?;
+
+    let mut genesis_protocol_message_preimage = [0u8; PREIMAGE_SIZE];
+    reader.read_exact(&mut genesis_protocol_message_preimage)?;
+
+    Ok(GenesisBenchmarkFixture {
+        genesis_message,
+        genesis_verification_key,
+        genesis_signature,
+        genesis_protocol_message_preimage,
+    })
+}
+
+/// Exact byte length of the fixed-size genesis benchmark fixture layout
+/// (`genesis_message(32) + genesis_verification_key(64) + genesis_signature(64) +
+/// genesis_protocol_message_preimage(PREIMAGE_SIZE)`).
+const GENESIS_BENCHMARK_FIXTURE_LEN: usize = 32 + 64 + 64 + PREIMAGE_SIZE;
+
+/// Loads the embedded genesis benchmark fixture compiled into the binary.
+///
+/// Rejects any committed `.bin` whose length differs from the fixed layout, so trailing
+/// bytes or truncation fail loudly rather than decoding a partially-correct fixture.
+pub(crate) fn load_embedded_genesis_benchmark_fixture() -> StmResult<GenesisBenchmarkFixture> {
+    if GENESIS_BENCHMARK_FIXTURE_ASSET_BYTES.len() != GENESIS_BENCHMARK_FIXTURE_LEN {
+        return Err(anyhow!(
+            "genesis benchmark fixture: expected {GENESIS_BENCHMARK_FIXTURE_LEN} bytes, got {}",
+            GENESIS_BENCHMARK_FIXTURE_ASSET_BYTES.len()
+        ));
+    }
+    let mut reader = Cursor::new(GENESIS_BENCHMARK_FIXTURE_ASSET_BYTES);
+    read_genesis_benchmark_fixture_from_reader(&mut reader)
+        .context("failed to decode embedded genesis benchmark fixture")
 }
