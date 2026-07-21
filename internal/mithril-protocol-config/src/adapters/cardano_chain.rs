@@ -39,20 +39,39 @@ pub enum ProtocolConfigurationMarkersPayloadError {
 pub struct ProtocolConfigurationMarkersPayload {
     /// List of protocol configuration markers
     pub markers: Vec<ProtocolConfigurationMarker>,
-
-    /// Protocol Configuration markers signature
-    pub signature: Option<ProtocolConfigurationMarkersVerifierSignature>,
 }
 
-//TODO a SignedProtocolConfigurationMarkersPayload with non optional signature
+/// Signed Protocol Configuration markers payload
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SignedProtocolConfigurationMarkersPayload {
+    /// List of protocol configuration markers
+    pub markers: Vec<ProtocolConfigurationMarker>,
+
+    /// Protocol Configuration markers signature
+    pub signature: ProtocolConfigurationMarkersVerifierSignature,
+}
+
+impl SignedProtocolConfigurationMarkersPayload {
+    /// Instanciate a new ProtocolConfigurationMarkersPayload with markers
+    pub fn new(
+        markers: Vec<ProtocolConfigurationMarker>,
+        signature: ProtocolConfigurationMarkersVerifierSignature,
+    ) -> Self {
+        Self { markers, signature }
+    }
+
+    /// Encode this payload to a json hex string
+    pub fn to_json_hex(&self) -> StdResult<String> {
+        key_encode_hex(self).with_context(
+            || "SignedProtocolConfigurationMarkersPayload could not be json hex encoded",
+        )
+    }
+}
 
 impl ProtocolConfigurationMarkersPayload {
     /// Instanciate a new ProtocolConfigurationMarkersPayload with markers
-    pub fn new(protocol_configuration_markers: Vec<ProtocolConfigurationMarker>) -> Self {
-        Self {
-            markers: protocol_configuration_markers,
-            signature: None,
-        }
+    pub fn new(markers: Vec<ProtocolConfigurationMarker>) -> Self {
+        Self { markers }
     }
 
     fn message_to_bytes(&self) -> Result<Vec<u8>, ProtocolConfigurationMarkersPayloadError> {
@@ -60,25 +79,20 @@ impl ProtocolConfigurationMarkersPayload {
             .map_err(|e| ProtocolConfigurationMarkersPayloadError::SerializeMessage(e.into()))
     }
 
-    /// Encode this payload to a json hex string
-    pub fn to_json_hex(&self) -> StdResult<String> {
-        key_encode_hex(self)
-            .with_context(|| "protocol configuration markers payload could not be json hex encoded")
-    }
-
     /// Sign an protocol configuration markers payload
     pub fn sign(
         self,
         signer: &ProtocolConfigurationMarkersSigner,
-    ) -> Result<Self, ProtocolConfigurationMarkersPayloadError> {
+    ) -> Result<SignedProtocolConfigurationMarkersPayload, ProtocolConfigurationMarkersPayloadError>
+    {
         let signature =
             signer.sign(&self.message_to_bytes().map_err(|e| {
                 ProtocolConfigurationMarkersPayloadError::CreateSignature(e.into())
             })?);
 
-        Ok(Self {
+        Ok(SignedProtocolConfigurationMarkersPayload {
             markers: self.markers,
-            signature: Some(signature),
+            signature,
         })
     }
 }
