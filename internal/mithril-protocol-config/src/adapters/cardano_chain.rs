@@ -1,14 +1,18 @@
 use anyhow::Context;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use thiserror::Error;
 
+use mithril_cardano_node_chain::chain_observer::ChainObserver;
+use mithril_cardano_node_chain::entities::ChainAddress;
 use mithril_common::crypto_helper::{
     ProtocolConfigurationMarkersSigner, ProtocolConfigurationMarkersVerifierSignature,
-    key_encode_hex,
+    ProtocolConfigurationMarkersVerifierVerificationKey, key_encode_hex,
 };
 use mithril_common::{StdError, StdResult};
 
-use crate::ProtocolConfigurationMarker;
+use crate::{ProtocolConfigurationMarker, ProtocolConfigurationReaderAdapter};
 
 /// [ProtocolConfigurationMarkersPayload] related errors.
 #[derive(Debug, Error)]
@@ -94,5 +98,35 @@ impl ProtocolConfigurationMarkersPayload {
             markers: self.markers,
             signature,
         })
+    }
+}
+
+/// Cardano Chain adapter retrieves protocol configuration markers on chain
+pub struct CardanoChainAdapter {
+    address: ChainAddress,
+    chain_observer: Arc<dyn ChainObserver>,
+    verification_key: ProtocolConfigurationMarkersVerifierVerificationKey,
+}
+
+impl CardanoChainAdapter {
+    /// CardanoChainAdapter factory
+    pub fn new(
+        address: ChainAddress,
+        chain_observer: Arc<dyn ChainObserver>,
+        verification_key: ProtocolConfigurationMarkersVerifierVerificationKey,
+    ) -> Self {
+        Self {
+            address,
+            chain_observer,
+            verification_key,
+        }
+    }
+}
+
+#[async_trait]
+impl ProtocolConfigurationReaderAdapter for CardanoChainAdapter {
+    async fn read(&self) -> StdResult<Vec<ProtocolConfigurationMarker>> {
+        //TODO to implement
+        Ok(Vec::new())
     }
 }
