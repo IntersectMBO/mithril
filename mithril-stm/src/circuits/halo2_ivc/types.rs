@@ -74,7 +74,7 @@ macro_rules! u64_wrapper {
                 NativeField::from(self.0)
             }
 
-            #[cfg(test)]
+            #[cfg(any(test, feature = "benchmark-internals"))]
             pub(crate) fn from_field(value: NativeField) -> Self {
                 let bytes = value.to_bytes_le();
                 let low_bytes = bytes[0..8]
