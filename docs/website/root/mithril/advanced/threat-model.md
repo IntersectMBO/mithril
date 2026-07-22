@@ -114,6 +114,7 @@ For each asset, we first identify which part of the **CIA triad** (Confidentiali
 - The KES key is present only on the block-producing (BP) node but needs to be shared with both the `cardano-node` process and the `mithril-signer` process.
 - KES keys are needed by `mithril-signer` to sign a verification key along with an operational certificate that authenticates the key for this stake pool ID.
 - This signing happens at every epoch.
+
   - **Confidentiality**: Yes  
     Capturing KES private keys allows an attacker to impersonate a registered SPO on-chain and produce blocks on its behalf until the keys are rotated.
 
@@ -324,6 +325,7 @@ A DoS on the `mithril-aggregator`.
 Data integrity of the Cardano block producer’s on-disk database could be compromised either by the action of the Mithril signer or by an attacker with access to the signer.
 
 - **Assets at risk**:
+
   - [Block production](#block-production)
   - [Cardano chain database](#cardano-chain-database).
 

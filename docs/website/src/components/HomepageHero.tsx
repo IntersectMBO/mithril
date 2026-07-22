@@ -6,7 +6,7 @@ import { hero } from "../../homepage-content/hero";
 
 const HomepageHero: FC = () => {
   return (
-    <div className="relative bg-cover bg-[url(/mobile-mithril-hero-thumbnail.jpg)] tablet:bg-[url(/desktop-mithril-hero-thumbnail.jpg)] bg-secondary z-20 -mt-[var(--ifm-navbar-height)] pt-[var(--ifm-navbar-height)]">
+    <div className="relative bg-cover bg-[url(/mobile-mithril-hero-thumbnail.jpg)] tablet:bg-[url(/desktop-mithril-hero-thumbnail.jpg)] bg-secondary z-20 -mt-(--ifm-navbar-height) pt-(--ifm-navbar-height)">
       <video
         autoPlay
         muted
@@ -35,7 +35,7 @@ const HomepageHero: FC = () => {
         <div className="component-lg">
           <div className="tablet:pb-6 pb-10 tablet:max-w-[544px] text-primary">
             <motion.h1
-              className="tablet:text-[3.5rem] tablet:leading-[73px] text-4xl leading-[48px] tablet:pb-6 pb-10"
+              className="hero-title tablet:pb-6 pb-10"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ ease: "easeInOut", duration: 0.75, delay: 0.4 }}

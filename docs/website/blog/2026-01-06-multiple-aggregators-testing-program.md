@@ -7,7 +7,7 @@ tags: [DMQ, decentralization, testing program, aggregator, follower]
 
 ### Multiple aggregators testing program
 
-:::info Update 2026/04/28
+:::info[Update 2026/04/28]
 
 With the release of the [`2617.0`](https://github.com/input-output-hk/mithril/releases/tag/2617.0) distribution, the testing program for running multiple aggregators is extended on the `pre-release-preview` network to keep gathering feedback before the stable release on `release-preprod` and `release-mainnet` networks.
 

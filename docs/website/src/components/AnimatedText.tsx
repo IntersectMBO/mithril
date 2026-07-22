@@ -43,7 +43,7 @@ const processText = (children: React.ReactNode): React.ReactNode =>
 
 const AnimatedText: FC = () => {
   return (
-    <section className="tablet:component py-24 max-w-[1040px] mx-auto">
+    <section className="tablet:component py-24">
       <motion.div
         variants={{
           hidden: {},
@@ -61,7 +61,7 @@ const AnimatedText: FC = () => {
         }}
       >
         {processText(
-          <h2 className="text-blue tablet:text-[2.5rem] text-[2rem] tablet:tracking-tight -tracking-[0.02rem] tablet:leading-[3rem] leading-10 tablet:text-center desktop:p-0 pageContainer">
+          <h2 className="animated-text-heading text-blue tablet:tracking-tight tracking-[-0.02rem] tablet:text-center desktop:p-0 pageContainer">
             Choosing Mithril means opting for a scalable, secure, and versatile
             enhancement to the Cardano blockchain
           </h2>,

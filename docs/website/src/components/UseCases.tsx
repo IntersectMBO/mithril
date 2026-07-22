@@ -35,7 +35,7 @@ const processItems = (items: string[]): React.ReactNode => {
             duration: 0.1,
           },
         }}
-        className="absolute pageContainer tablet:max-w-96 tablet:p-0 tablet:ml-2.5 tablet:left-auto left-0 tablet:mt-0 mt-[4rem] use-case-text text-[2.5rem]"
+        className="absolute pageContainer tablet:max-w-96 tablet:p-0 tablet:ml-2.5 tablet:left-auto left-0 tablet:mt-0 mt-16 use-case-text text-[2.5rem]"
       >
         {items[index]}
       </motion.span>
@@ -62,7 +62,7 @@ const UseCases: FC = () => {
           once: true,
         }}
       >
-        <h2 className="text-gray-light tablet:ml-6 tablet:text-[2.5rem] text-[2.0625rem] tablet:text-left text-center tablet:tracking-tight tracking-[-0.02063rem] leading-[3rem] relative tablet:p-0 pageContainer">
+        <h2 className="text-gray-light tablet:ml-6 tablet:text-[2.5rem] text-[2.0625rem] tablet:text-left text-center tablet:tracking-tight tracking-[-0.02063rem] leading-12 relative tablet:p-0 pageContainer">
           {useCases.nonScrollingText}
           {processItems(useCases.scrollingText.items)}
         </h2>

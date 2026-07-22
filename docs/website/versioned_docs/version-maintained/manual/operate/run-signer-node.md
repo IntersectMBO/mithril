@@ -99,10 +99,12 @@ Note that this guide works only on a Linux machine.
 :::
 
 - To operate a **Cardano node** as a **stake pool**, you need:
+
   - The pool's `operational certificate`
   - The pool's `KES secret key`
 
 - To access the file system of the **Cardano block-producing** node for **production** deployment (or of the **Cardano relay** node for **naive** deployment), you will need the following permissions:
+
   - Read rights on the `Database` folder (specified by the `--database-path` setting of the **Cardano node**)
   - Read and write rights on the `Inter Process Communication` file (typically defined by the `CARDANO_NODE_SOCKET_PATH` environment variable used to launch the **Cardano node**)
 
@@ -546,6 +548,7 @@ sudo systemctl restart mithril-signer
 :::info
 
 - If you have already installed `Squid` via the `apt` package manager, we recommend that you delete it before manually building it from source by running the following commands:
+
   - `sudo systemctl stop squid`
   - `sudo apt remove squid`
   - `sudo apt autoremove`

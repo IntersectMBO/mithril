@@ -28,9 +28,7 @@ const Feature: FC<Props> = ({ icon, title, description, index }) => {
     >
       <div className="inline-flex gap-2 border-b pb-3 border-gray [&>*:first-child]:mt-0.5">
         {icon}
-        <h4 className="text-2xl leading-[1.875rem] font-medium text-blue">
-          {title}
-        </h4>
+        <h4 className="text-2xl leading-7.5 font-medium text-blue">{title}</h4>
       </div>
       <p className="text-black">{description}</p>
     </motion.div>
@@ -54,7 +52,7 @@ const Features: FC = () => {
         >
           FEATURES
         </motion.h5>
-        <motion.div className="flex flex-col laptop:grid tablet:grid-cols-2 laptop:grid-rows-2 laptop:grid-flow-row  gap-x-[6.625rem] laptop:gap-y-10 tablet:gap-y-14 gap-y-12">
+        <motion.div className="flex flex-col laptop:grid tablet:grid-cols-2 laptop:grid-rows-2 laptop:grid-flow-row  gap-x-26.5 laptop:gap-y-10 tablet:gap-y-14 gap-y-12">
           {FeatureList.map((props, idx) => (
             <Feature key={idx} index={idx} {...props} />
           ))}

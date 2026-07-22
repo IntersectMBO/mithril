@@ -63,7 +63,7 @@ const WhyMithril = () => {
           {WhyMithrilContents.title}
         </h5>
 
-        <div className="flex tablet:flex-row flex-col justify-between gap-[1.625rem] text-primary">
+        <div className="flex tablet:flex-row flex-col justify-between gap-6.5 text-primary">
           <div
             className="text-3xl text-center flex justify-center text-blue items-center basis-1/2 stuck-grid flex-col gap-4"
             ref={containerRef}

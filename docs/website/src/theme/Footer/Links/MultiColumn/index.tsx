@@ -25,7 +25,7 @@ function Column({ column }: { column: ColumnType }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="font-bold min-h-5">{column.title}</div>
-      <ul className="flex flex-col gap-6">
+      <ul className="footer__items clean-list flex flex-col gap-6">
         {column.items.map((item, i) => (
           <ColumnLinkItem key={i} item={item} />
         ))}
@@ -36,7 +36,7 @@ function Column({ column }: { column: ColumnType }) {
 
 export default function FooterLinksMultiColumn({ columns }: Props): ReactNode {
   return (
-    <div className="laptop:flex laptop:flex-row tablet:grid tablet:grid-cols-2 laptop:gap-[6.25rem] gap-y-7 flex flex-col text-sm pb-12 tablet:pb-[3.625rem]">
+    <div className="laptop:flex laptop:flex-row tablet:grid tablet:grid-cols-2 laptop:gap-25 gap-y-7 flex flex-col text-sm pb-12 tablet:pb-14.5">
       {columns.map((column, i) => (
         <Column key={i} column={column} />
       ))}

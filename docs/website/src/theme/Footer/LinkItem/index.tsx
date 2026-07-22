@@ -12,7 +12,7 @@ export default function FooterLinkItem({ item }: Props): ReactNode {
 
   return (
     <Link
-      className={clsx("", className)}
+      className={clsx("footer__link-item", className)}
       {...(href
         ? {
             href: prependBaseUrlToHref ? normalizedHref : href,

@@ -60,6 +60,7 @@ Note that this guide works only on a Linux machine.
 - Operate a **Cardano full node**
 
 - To access the file system of the **Cardano full node**, you will need the following permissions:
+
   - Read rights on the `Database` folder (specified by the `--database-path` setting of the **Cardano node**)
   - Read and write rights on the `Inter Process Communication` file (typically defined by the `CARDANO_NODE_SOCKET_PATH` environment variable used to launch the **Cardano node**)
 
@@ -273,10 +274,12 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
 - `CUSTOM_ORIGIN_TAG_WHITE_LIST`: Comma-separated list of custom origin tags to whitelist for client requests (default: `EXPLORER,BENCHMARK,CI,NA`).
 
 - **Base configuration** **optional** values are:
+
   - `BLOCKFROST_PARAMETERS`: Parameters to connect to the Blockfrost API. Used to fetch the ticker and name of the registered stake pools. Example: `{"project_id":"preprodWuV1ICdtOWfZYfdcxpZ0tsS1N9rVZomQ"}`
   - `SIGNER_IMPORTER_RUN_INTERVAL`: Time interval at which the pools names and ticker in blockfrost will be imported (in minutes, default: `720`).
 
 - The **Cardano database** configuration values are (only needed if supporting Cardano database certification):
+
   - `DB_DIRECTORY`: Directory of the Cardano node database stores (same as the `--database-path` setting of the Cardano node)
   - `DATA_STORES_DIRECTORY`: Directory where the aggregator will store its databases (eg, `/opt/mithril/stores`)
   - `GOOGLE_APPLICATION_CREDENTIALS_JSON`: JSON content of the GCP service account credentials (required if using GCP for snapshot storage)
@@ -300,6 +303,7 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
 Here is an **example** set of values for **release-preprod** that will be used in this guide in the **tip** boxes to illustrate some commands:
 
 - **Base configuration**:
+
   - **SIGNED_ENTITY_TYPES**: `MithrilStakeDistribution,CardanoStakeDistribution,CardanoTransactions` (only supporting stake distributions and transactions, excluding database snapshots)
   - **SERVER_PORT**: `8080`
   - **PUBLIC_SERVER_URL**: `https://aggregator.example.com/aggregator`
@@ -319,10 +323,12 @@ Here is an **example** set of values for **release-preprod** that will be used i
   - **CUSTOM_ORIGIN_TAG_WHITE_LIST**: `EXPLORER,BENCHMARK,CI,NA`
 
 - **Optional configuration**:
+
   - **BLOCKFROST_PARAMETERS**: `{"project_id":"preprodWuV1ICdtOWfZYfdcxpZ0tsS1N9rVZomQ"}`
   - **SIGNER_IMPORTER_RUN_INTERVAL**: 720
 
 - **Cardano database configuration**:
+
   - **DB_DIRECTORY**: `/cardano/db`
   - **DATA_STORES_DIRECTORY**: `/opt/mithril/stores`
   - **GOOGLE_APPLICATION_CREDENTIALS_JSON**: `**YOUR_SECRET**`
@@ -1299,6 +1305,7 @@ If you want to make your follower aggregator publicly discoverable, you should:
 1. **Ensure your aggregator is accessible via HTTPS** by setting up Traefik or another reverse proxy with a valid SSL certificate (as described in the [Set up the SSL certificate](#setup-the-ssl-certificate-traefik) section).
 
 2. **Register your aggregator in the networks configuration**. You can do this by:
+
    - Opening an issue in the [Mithril GitHub repository](https://github.com/IntersectMBO/mithril/issues)
    - Or by creating a pull request that modifies the [`networks.json`](https://github.com/IntersectMBO/mithril/blob/main/networks.json) file and updates the `aggregators` field in the Cardano network you are targeting.
 
