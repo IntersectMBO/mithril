@@ -22,9 +22,11 @@
   --breakpoint-desktop: 1280px;
 
   --font-*: initial;
-  --font-display: Bw Gradual, ui-sans-serif, system-ui, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  --font-body: var(--font-lexend), ui-sans-serif, system-ui, sans-serif,
+  --font-display:
+    Bw Gradual, ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-body:
+    var(--font-lexend), ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 
   --color-*: initial;
