@@ -67,7 +67,7 @@ impl SingleSignatureForConcatenation {
 
             let ev = self.sigma.evaluate_dense_mapping(msg, index);
 
-            if !is_lottery_won(params.phi_f, ev, *stake, *total_stake) {
+            if !is_lottery_won(params.phi_f, ev, *stake, *total_stake)? {
                 return Err(anyhow!(SignatureError::LotteryLost));
             }
         }

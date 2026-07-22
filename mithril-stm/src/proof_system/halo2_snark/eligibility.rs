@@ -36,9 +36,12 @@ cfg_num_integer! {
     /// 1. Rejects `total_stake == 0` with `RegisterError::ZeroTotalStake`.
     /// 2. Short-circuits `phi_f ≈ 1.0` to `p - 1` (all indices win), matching the concatenation
     ///    proof system and avoiding `ln(0)`.
-    /// 3. Approximates `phi_f` as an exact `Ratio<i64>`, promotes to `Ratio<BigInt>`.
-    /// 4. Computes `ln(1 - phi_f)` via Taylor expansion (`ln_1p_taylor_expansion`).
-    /// 5. Delegates to `compute_target_value_for_snark_lottery_given_ln_approximation` for the final field-element computation.
+    /// 3. Rejects `phi_f` outside `(0, 1]`, since `Ratio::approximate_float` only rejects
+    ///    infinite/NaN values and the Taylor expansion below silently diverges (or converges to a
+    ///    value for a semantically invalid negative `phi_f`) otherwise.
+    /// 4. Approximates `phi_f` as an exact `Ratio<i64>`, promotes to `Ratio<BigInt>`.
+    /// 5. Computes `ln(1 - phi_f)` via Taylor expansion (`ln_1p_taylor_expansion`).
+    /// 6. Delegates to `compute_target_value_for_snark_lottery_given_ln_approximation` for the final field-element computation.
     #[cfg(feature = "future_snark")]
     pub fn compute_target_value_for_snark_lottery(phi_f: PhiFValue, stake: Stake, total_stake: Stake) -> StmResult<LotteryTargetValue> {
         if total_stake == 0 {
@@ -49,6 +52,10 @@ cfg_num_integer! {
             // This returns the maximal target possible Jubjub modulus - 1
             // to ensure every participant wins the lottery
             return Ok(&LotteryTargetValue::default() - &LotteryTargetValue::get_one());
+        }
+
+        if !(phi_f > 0.0 && phi_f <= 1.0) {
+            return Err(anyhow!("phi_f must be in the range (0, 1], got {phi_f}"));
         }
 
         let phi_f_ratio_int: Ratio<i64> =
@@ -331,6 +338,19 @@ mod tests {
             target.unwrap(),
             &BaseFieldElement::default() - &BaseFieldElement::get_one()
         );
+    }
+
+    #[test]
+    fn compute_target_value_for_snark_lottery_rejects_out_of_range_phi_f() {
+        let total_stake = 10_000;
+        let stake = 5_000;
+
+        for invalid_phi_f in [-0.5, 0.0, 1.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(
+                compute_target_value_for_snark_lottery(invalid_phi_f, stake, total_stake).is_err(),
+                "phi_f = {invalid_phi_f} should be rejected"
+            );
+        }
     }
 
     mod lottery_computations {

@@ -60,7 +60,7 @@ impl<D: MembershipDigest> ConcatenationProofSigner<D> {
             self.key_registration_commitment.concatenate_with_message(message);
 
         let sigma = self.signing_key.sign(&message_with_commitment);
-        let indices = self.check_lottery(&message_with_commitment, &sigma);
+        let indices = self.check_lottery(&message_with_commitment, &sigma)?;
 
         if indices.is_empty() {
             Err(anyhow!(SignatureError::LotteryLost))
@@ -71,7 +71,11 @@ impl<D: MembershipDigest> ConcatenationProofSigner<D> {
 
     /// Checks the lottery for given `message_with_commitment` and the `sigma`.
     /// Returns a vector of winning indices.
-    pub fn check_lottery(&self, message_with_commitment: &[u8], sigma: &BlsSignature) -> Vec<u64> {
+    pub fn check_lottery(
+        &self,
+        message_with_commitment: &[u8],
+        sigma: &BlsSignature,
+    ) -> StmResult<Vec<u64>> {
         let mut indices = Vec::new();
         for index in 0..self.parameters.m {
             if is_lottery_won(
@@ -79,11 +83,11 @@ impl<D: MembershipDigest> ConcatenationProofSigner<D> {
                 sigma.evaluate_dense_mapping(message_with_commitment, index),
                 self.stake,
                 self.total_stake,
-            ) {
+            )? {
                 indices.push(index);
             }
         }
-        indices
+        Ok(indices)
     }
 
     pub fn get_verification_key(&self) -> VerificationKeyForConcatenation {
