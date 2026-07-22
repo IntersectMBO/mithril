@@ -4699,6 +4699,7 @@ dependencies = [
  "async-trait",
  "httpmock",
  "mithril-aggregator-client",
+ "mithril-cardano-node-chain",
  "mithril-common",
  "serde",
  "serde_json",

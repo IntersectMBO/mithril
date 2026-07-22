@@ -4,6 +4,9 @@ use mithril_common::api_version::APIVersionProvider;
 use mithril_common::entities::{Epoch, SupportedEra};
 use mithril_era::adapters::{EraReaderAdapterBuilder, EraReaderDummyAdapter};
 use mithril_era::{EraChecker, EraMarker, EraReader, EraReaderAdapter};
+use mithril_protocol_config::adapters::ProtocolConfigurationReaderAdapterBuilder;
+use mithril_protocol_config::test::double::ProtocolConfigurationReaderDummyAdapter;
+use mithril_protocol_config::{ProtocolConfigurationReader, ProtocolConfigurationReaderAdapter};
 
 use crate::ExecutionEnvironment;
 use crate::dependency_injection::{DependenciesBuilder, DependenciesBuilderError, Result};
@@ -81,5 +84,37 @@ impl DependenciesBuilder {
     /// [EraReader] service
     pub async fn get_era_checker(&mut self) -> Result<Arc<EraChecker>> {
         get_dependency!(self.era_checker)
+    }
+
+    async fn build_protocol_configuration_reader(
+        &mut self,
+    ) -> Result<Arc<ProtocolConfigurationReader>> {
+        let protocol_configuration_adapter: Arc<dyn ProtocolConfigurationReaderAdapter> =
+            match self.configuration.environment() {
+                ExecutionEnvironment::Production => ProtocolConfigurationReaderAdapterBuilder::new(
+                    &self.configuration.protocol_configuration_reader_adapter_type(),
+                    &self.configuration.protocol_configuration_reader_adapter_params(),
+                )
+                .build(self.get_chain_observer().await?)
+                .map_err(|e| DependenciesBuilderError::Initialization {
+                    message: "Could not build ProtocolConfigurationReader as dependency."
+                        .to_string(),
+                    error: Some(e.into()),
+                })?,
+                _ => Arc::new(ProtocolConfigurationReaderDummyAdapter::from_markers(
+                    vec![], //TODO
+                )),
+            };
+
+        Ok(Arc::new(ProtocolConfigurationReader::new(
+            protocol_configuration_adapter,
+        )))
+    }
+
+    /// [ProtocolConfigurationReader] service
+    pub async fn get_protocol_configuration_reader(
+        &mut self,
+    ) -> Result<Arc<ProtocolConfigurationReader>> {
+        get_dependency!(self.protocol_configuration_reader)
     }
 }

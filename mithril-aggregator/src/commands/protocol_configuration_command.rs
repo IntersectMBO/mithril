@@ -1,30 +1,72 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use config::{ConfigBuilder, builder::DefaultState};
+use config::{ConfigBuilder, Map, Value, builder::DefaultState};
+use serde::{Deserialize, Serialize};
+use slog::{Logger, debug};
+use std::{
+    collections::{BTreeSet, HashMap},
+    fs::{self, File},
+    io::Write,
+    path::PathBuf,
+    sync::Arc,
+};
+
+use mithril_cardano_node_chain::chain_observer::ChainObserverType;
+use mithril_common::StdResult;
 use mithril_common::crypto_helper::{
     ProtocolConfigurationMarkersSigner, ProtocolConfigurationMarkersVerifierSecretKey,
 };
-use serde::{Deserialize, Serialize};
-use slog::Logger;
-use std::collections::{BTreeSet, HashMap};
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::PathBuf;
-
-use mithril_common::StdResult;
 use mithril_common::entities::{
     CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
     HexEncodedProtocolConfigurationMarkersSecretKey, ProtocolParameters,
     SignedEntityTypeDiscriminants,
 };
-use mithril_doc::StructDoc;
+use mithril_doc::{Documenter, StructDoc};
 
-use crate::extract_all;
-use crate::tools::ProtocolConfigurationTools;
+use crate::{ConfigurationSource, ExecutionEnvironment, extract_all};
+use crate::{dependency_injection::DependenciesBuilder, tools::ProtocolConfigurationTools};
 
-pub struct ProtocolConfigurationParametersConfiguration {}
+/// Protocol configuration parameters configuration
+#[derive(Debug, Clone, Deserialize, Documenter)]
+pub struct ProtocolConfigurationParametersConfiguration {
+    /// Cardano Network Magic number
+    ///
+    /// useful for TestNet & DevNet
+    #[example = "`1097911063` or `42`"]
+    pub network_magic: Option<u64>,
 
-#[derive(Serialize, Deserialize, Clone)]
+    /// Cardano network
+    #[example = "`mainnet` or `preprod` or `devnet`"]
+    network: String,
+
+    /// Cardano chain observer type
+    pub chain_observer_type: ChainObserverType,
+}
+
+impl ConfigurationSource for ProtocolConfigurationParametersConfiguration {
+    fn environment(&self) -> ExecutionEnvironment {
+        ExecutionEnvironment::Production
+    }
+
+    fn network_magic(&self) -> Option<u64> {
+        self.network_magic
+    }
+
+    fn network(&self) -> String {
+        self.network.clone()
+    }
+
+    fn chain_observer_type(&self) -> ChainObserverType {
+        self.chain_observer_type.clone()
+    }
+
+    fn store_retention_limit(&self) -> Option<usize> {
+        None
+    }
+}
+
+/// Human readable protocol configuration
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct HumanReadableProtocolConfiguration {
     pub epoch: Epoch,
     pub protocol_parameters: ProtocolParameters,
@@ -51,8 +93,18 @@ impl HumanReadableProtocolConfiguration {
     }
 }
 
+/// Protocol configuration command
 #[derive(Parser, Debug, Clone)]
 pub struct ProtocolConfigurationCommand {
+    /// Protocol configuration reader adapter type
+    #[clap(long, env = "PROTOCOL_CONFIGURATION_READER_ADAPTER_TYPE")]
+    pub protocol_configuration_reader_adapter_type: String,
+
+    /// Protocol configation reader adapter parameters
+    /// example {"address":"your-address","verification_key":"your-verification-key"}
+    #[clap(long, env = "PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS")]
+    pub protocol_configuration_reader_adapter_params: String,
+
     /// commands
     #[clap(subcommand)]
     pub protocol_configuration_sub_command: ProtocolConfigurationSubCommand,
@@ -145,30 +197,52 @@ impl ImportProtocolConfigurationSubCommand {
         root_logger: Logger,
         config_builder: ConfigBuilder<DefaultState>,
     ) -> StdResult<()> {
-        //1 - we need to read the protocol configuration from the file
+        // 0 conf & dependencies
+        let config: ProtocolConfigurationParametersConfiguration = config_builder
+            .build()
+            .with_context(|| "configuration build error")?
+            .try_deserialize()
+            .with_context(|| "configuration deserialize error")?;
+        debug!(root_logger, "EXPORT PROTOCOL CONFIGURATION command"; "config" => format!("{config:?}"));
+
+        let mut dependencies_builder =
+            DependenciesBuilder::new(root_logger.clone(), Arc::new(config.clone()));
+
+        let dependencies = dependencies_builder
+            .create_protocol_configuration_container()
+            .await
+            .with_context(
+                || "Dependencies Builder can not create protocol configuration command dependencies container",
+            )?;
+
+        //1 - Read the protocol configurations from the file
         println!(
             "Reading file content {}",
             &self.import_path.to_string_lossy()
         );
         let json_protocol_configurations = fs::read_to_string(&self.import_path);
 
-        //2 - we need to parse the json into a protocol configuration using serde_json
+        //2 - Parse the json into a protocol configuration list using serde_json
         println!("Json parsing ...");
         let protocol_configurations: Vec<HumanReadableProtocolConfiguration> =
             serde_json::from_str(&json_protocol_configurations?)?;
 
         //3 - Verify protocol config consistency, TODO could be move in ProtocolConfigurationTools ?
         println!("Verifying protocol configuration consistency...");
-        Self::verify_protocol_configurations(protocol_configurations.clone())?; //return a VerifiedProtocolConfigurations ?
+        Self::verify_protocol_configurations(&protocol_configurations)?; //return a VerifiedProtocolConfigurations ?
 
-        //3.2 Check epoch consistency on chain ?
+        //3.2 Check epoch consistency on chain
+
+        let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
+            .await
+            .with_context(|| "protocol-configuration-tools: initialization error")?;
+        // tools.verify_configuration_against_production(&protocol_configurations);
 
         //4 - Generate Tx datum
         println!("Generating Tx datum ...");
         let protocol_configuration_markers_signer =
             Self::get_markers_signer(self.protocol_configuration_markers_secret_key.clone())?;
 
-        let tools = ProtocolConfigurationTools::new();
         let tx_datum = tools.generate_tx_datum(
             protocol_configurations,
             &protocol_configuration_markers_signer,
@@ -203,7 +277,7 @@ impl ImportProtocolConfigurationSubCommand {
     }
 
     pub fn verify_protocol_configurations(
-        configurations: Vec<HumanReadableProtocolConfiguration>,
+        configurations: &Vec<HumanReadableProtocolConfiguration>,
     ) -> StdResult<()> {
         for config in configurations {
             if config.protocol_parameters.k == 0
@@ -224,6 +298,23 @@ impl ImportProtocolConfigurationSubCommand {
     pub fn extract_config(_parent: String) -> HashMap<String, StructDoc> {
         HashMap::new()
     }
+
+    // to delete, moved to dep injection
+    // /// Create era reader adapter from configuration settings.
+    // fn build_protocol_configuration_reader_adapter(
+    //     chain_observer: Arc<dyn ChainObserver>,
+    //     adapter_type: ProtocolConfigurationReaderAdapterType,
+    //     adapter_params: Option<String>,
+    // ) -> StdResult<Arc<dyn ProtocolConfigurationReaderAdapter>> {
+    //     ProtocolConfigurationReaderAdapterBuilder::new(&adapter_type, &adapter_params)
+    //         .build(chain_observer)
+    //         .with_context(|| {
+    //             format!(
+    //                 "Configuration: can not create protocol configuration reader for adapter '{}'.",
+    //                 adapter_type
+    //             )
+    //         })
+    // }
 }
 
 #[cfg(test)]
@@ -247,7 +338,7 @@ mod tests {
             }];
 
             let result = ImportProtocolConfigurationSubCommand::verify_protocol_configurations(
-                configurations,
+                &configurations,
             );
 
             assert_eq!(
@@ -266,7 +357,7 @@ mod tests {
             .secret_key()
             .to_json_hex()
             .expect("create_deterministic_signer for secret key should not fail");
-        println!("Signer secret key: {}", signer_secret_key);
+
         ImportProtocolConfigurationSubCommand::try_parse_from([
             "import-markers",
             "--import-path",

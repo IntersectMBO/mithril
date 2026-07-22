@@ -4,6 +4,7 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use config::{ConfigError, Map, Source, Value, ValueKind};
+use mithril_protocol_config::adapters::ProtocolConfigurationReaderAdapterType;
 use semver::Version;
 use serde::Deserialize;
 
@@ -194,6 +195,16 @@ pub trait ConfigurationSource {
     /// Era reader adapter parameters
     fn era_reader_adapter_params(&self) -> Option<String> {
         panic!("era_reader_adapter_params is not implemented.");
+    }
+
+    /// Protocol configuration reader adapter type
+    fn protocol_configuration_reader_adapter_type(&self) -> ProtocolConfigurationReaderAdapterType {
+        panic!("protocol_configuration_reader_adapter_type is not implemented.");
+    }
+
+    /// Protocol configuration reader adapter parameters
+    fn protocol_configuration_reader_adapter_params(&self) -> Option<String> {
+        panic!("protocol_configuration_reader_adapter_params is not implemented.");
     }
 
     /// Configuration of the ancillary files signer
