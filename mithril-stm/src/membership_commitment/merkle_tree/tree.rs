@@ -167,22 +167,32 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTree<D, L> {
         u64_bytes.copy_from_slice(bytes.get(..8).ok_or(MerkleTreeError::SerializationError)?);
         let n = usize::try_from(u64::from_be_bytes(u64_bytes))
             .map_err(|_| MerkleTreeError::SerializationError)?;
-        let num_nodes = n + n.next_power_of_two() - 1;
-        let mut nodes = Vec::with_capacity(num_nodes);
+        let num_nodes = n
+            .checked_next_power_of_two()
+            .and_then(|num_nodes| num_nodes.checked_add(n))
+            .and_then(|num_nodes| num_nodes.checked_sub(1))
+            .ok_or(MerkleTreeError::SerializationError)?;
+        let mut nodes = Vec::new();
         for i in 0..num_nodes {
+            let range_low = i
+                .checked_mul(<D as Digest>::output_size())
+                .and_then(|rl| rl.checked_add(16))
+                .ok_or(MerkleTreeError::SerializationError)?;
+            let range_high = i
+                .checked_add(1)
+                .and_then(|rh| rh.checked_mul(<D as Digest>::output_size()))
+                .and_then(|rh| rh.checked_add(16))
+                .ok_or(MerkleTreeError::SerializationError)?;
             nodes.push(
                 bytes
-                    .get(
-                        8 + i * <D as Digest>::output_size()
-                            ..8 + (i + 1) * <D as Digest>::output_size(),
-                    )
+                    .get(range_low..range_high)
                     .ok_or(MerkleTreeError::SerializationError)?
                     .to_vec(),
             );
         }
         Ok(Self {
             nodes,
-            leaf_off: num_nodes - n,
+            leaf_off: num_nodes.checked_sub(n).ok_or(MerkleTreeError::SerializationError)?,
             n,
             hasher: PhantomData,
             leaves: PhantomData,

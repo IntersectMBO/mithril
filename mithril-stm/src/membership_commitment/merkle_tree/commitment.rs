@@ -176,12 +176,23 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeBatchCommitment<D, L>
             )));
         }
 
-        let nr_nodes = self.nr_leaves + self.nr_leaves.next_power_of_two() - 1;
+        let nr_nodes = self
+            .nr_leaves
+            .checked_next_power_of_two()
+            .and_then(|nr_nodes| nr_nodes.checked_add(self.nr_leaves))
+            .and_then(|nr_nodes| nr_nodes.checked_sub(1))
+            .ok_or(MerkleTreeError::SerializationError)?;
 
         ordered_indices = ordered_indices
             .into_iter()
-            .map(|i| i + self.nr_leaves.next_power_of_two() - 1)
-            .collect();
+            .map(|i| {
+                self.nr_leaves
+                    .checked_next_power_of_two()
+                    .and_then(|idx| idx.checked_add(i))
+                    .and_then(|idx| idx.checked_sub(1))
+                    .ok_or(MerkleTreeError::SerializationError)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         let mut idx = ordered_indices[0];
         // First we need to hash the leave values
