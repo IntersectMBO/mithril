@@ -150,9 +150,24 @@ cat ${ARTIFACTS_DIR_TEMP}/genesis.json | jq --argjson slot_length ${SLOT_LENGTH}
 cat ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp | jq --raw-output '.protocolParams.protocolVersion.major = 10 | .protocolParams.minFeeA = 44 | .protocolParams.minFeeB = 155381 | .protocolParams.minUTxOValue = 1000000 | .protocolParams.decentralisationParam = 0.7 | .protocolParams.rho = 0.1 | .protocolParams.tau = 0.1'  > ${ARTIFACTS_DIR_TEMP}/genesis.json
 rm ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp
 
-# Strip the 'extraConfig' block added by cardano-cli 11.1.0+ to the Shelley genesis, which the node fails to parse (its initial funds remain in the top-level fields)
+# cardano-cli 11.1.0+ moves the initial funds, stake pools and stake delegations into an 'extraConfig' block the node fails to parse; migrate them back into the top-level fields the node expects, then remove the block
 if [ "$(version_lt ${CARDANO_NODE_VERSION_RELEASE} 11.1.0)" = "false" ]; then
-  cat ${ARTIFACTS_DIR_TEMP}/genesis.json | jq 'del(.extraConfig)' > ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp
+  cat ${ARTIFACTS_DIR_TEMP}/genesis.json | jq '
+    .initialFunds = .extraConfig.initialFunds.data
+    | .staking.stake = .extraConfig.stakeCredentials.data
+    | .staking.pools = (.extraConfig.stakePools.data | with_entries(.value = {
+        publicKey: .value.poolId,
+        vrf: .value.vrf,
+        pledge: .value.pledge,
+        cost: .value.cost,
+        margin: .value.margin,
+        rewardAccount: .value.accountAddress,
+        owners: .value.owners,
+        relays: .value.relays,
+        metadata: .value.metadata
+      }))
+    | del(.extraConfig)
+  ' > ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp
   mv ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp ${ARTIFACTS_DIR_TEMP}/genesis.json
 fi
 
