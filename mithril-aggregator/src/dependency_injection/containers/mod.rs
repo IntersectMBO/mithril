@@ -1,7 +1,9 @@
 mod genesis;
+mod protocol_configuration;
 mod serve;
 
 pub use genesis::GenesisCommandDependenciesContainer;
+pub use protocol_configuration::ProtocolConfigurationCommandDependenciesContainer;
 pub use serve::*;
 
 use std::sync::Arc;

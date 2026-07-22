@@ -1,24 +1,90 @@
+use std::collections::HashMap;
+
+use anyhow::Context;
 use mithril_cardano_node_chain::entities::{TxDatumBuilder, TxDatumFieldValue};
-use mithril_common::{StdResult, crypto_helper::ProtocolConfigurationMarkersSigner};
+use mithril_common::{
+    CardanoNetwork, StdResult, crypto_helper::ProtocolConfigurationMarkersSigner, entities::Epoch,
+};
 use mithril_protocol_config::{
     ProtocolConfigurationForEpoch, ProtocolConfigurationMarker,
     adapters::ProtocolConfigurationMarkersPayloadCardanoChain,
 };
+use slog::Logger;
 
-use crate::commands::HumanReadableProtocolConfiguration;
+use crate::{
+    commands::HumanReadableProtocolConfiguration,
+    dependency_injection::ProtocolConfigurationCommandDependenciesContainer,
+};
 
 type ProtocolConfigurationToolsResult<R> = StdResult<R>;
-pub struct ProtocolConfigurationTools {}
+
+/// Configuration for the protocol configuration tools.
+pub struct ProtocolConfigurationToolsConfiguration {
+    /// Cardano network.
+    pub network: CardanoNetwork,
+
+    /// Current epoch.
+    pub epoch: Epoch,
+
+    //On chain configurations by Epoch.
+    pub on_chain_configurations: HashMap<Epoch, ProtocolConfigurationForEpoch>,
+}
+
+pub struct ProtocolConfigurationTools {
+    configuration: ProtocolConfigurationToolsConfiguration,
+
+    logger: Logger,
+}
 
 impl ProtocolConfigurationTools {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(configuration: ProtocolConfigurationToolsConfiguration, logger: Logger) -> Self {
+        Self {
+            configuration,
+            logger,
+        }
     }
+
+    pub async fn from_dependencies(
+        dependencies: ProtocolConfigurationCommandDependenciesContainer,
+    ) -> StdResult<Self> {
+        let epoch = dependencies
+            .chain_observer
+            .get_current_epoch()
+            .await?
+            .with_context(|| "Chain observer can not retrieve current epoch")?;
+
+        let on_chain_configurations = dependencies
+            .protocol_configuration_reader
+            .read_mithril_protocol_configurations()
+            .await?;
+
+        let configuration = ProtocolConfigurationToolsConfiguration {
+            network: dependencies.network,
+            epoch,
+            on_chain_configurations,
+        };
+
+        Ok(Self::new(configuration, dependencies.logger))
+    }
+
+    // /// Verify if configuration have greater Epoch (with a offset) than configuration on chain
+    // pub async fn verify_configuration_against_production(
+    //     &self,
+    //     configurations: Vec<HumanReadableProtocolConfiguration>,
+    // ) -> StdResult<()> {
+    //     let production_configurations = self.adapter.read_mithril_protocol_configurations().await?;
+    //     production_configurations
+    //         .keys()
+    //         .collect::<Vec<Epoch>>()
+    //         .contains(&Epoch(1));
+
+    //     Ok(())
+    // }
 
     /// Generate TxDatum for Protocol Configuration
     pub fn generate_tx_datum(
         &self,
-        configurations: Vec<HumanReadableProtocolConfiguration>, // TODO Add a type VerifiedProtocolConfiguration ?
+        configurations: Vec<HumanReadableProtocolConfiguration>,
         protocol_configuration_markers_signer: &ProtocolConfigurationMarkersSigner,
     ) -> ProtocolConfigurationToolsResult<String> {
         let mut markers: Vec<ProtocolConfigurationMarker> = Vec::new();
@@ -33,8 +99,6 @@ impl ProtocolConfigurationTools {
         }
         let signed_markers_payload = ProtocolConfigurationMarkersPayloadCardanoChain::new(markers)
             .sign(protocol_configuration_markers_signer)?;
-
-        //TODO add a type signedPayload to ensure both marker and signature is here
 
         let tx_datum = TxDatumBuilder::new()
             .add_field(TxDatumFieldValue::Bytes(
@@ -64,10 +128,17 @@ mod tests {
     };
     use std::collections::BTreeSet;
 
+    use crate::test::TestLogger;
+
     use super::*;
 
     fn build_tools() -> ProtocolConfigurationTools {
-        ProtocolConfigurationTools::new()
+        let configuration = ProtocolConfigurationToolsConfiguration {
+            network: CardanoNetwork::TestNet(42),
+            epoch: Epoch(30),
+            on_chain_configurations: HashMap::new(),
+        };
+        ProtocolConfigurationTools::new(configuration, TestLogger::stdout())
     }
 
     #[test]
