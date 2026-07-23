@@ -481,7 +481,7 @@ impl IvcBenchEnv {
     // --- Setup cold/warm measurements (item 8) ---
 
     /// Cold-start SRS: generates and stores the unsafe SRS at `cache_dir`, reads it back, and downsizes
-    /// it to [`RECURSIVE_CIRCUIT_DEGREE`] — the same downsized end state as production
+    /// it to `RECURSIVE_CIRCUIT_DEGREE` — the same downsized end state as production
     /// `IvcSnarkProverSetup::load`. Paired with [`Self::measure_srs_warm_start`].
     pub fn measure_srs_cold_start(cache_dir: &Path) -> StmResult<ParamsKZG<Bls12>> {
         let mut srs = trusted_setup_provider(cache_dir).get_trusted_setup_parameters()?;
