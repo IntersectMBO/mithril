@@ -32,7 +32,14 @@ where
     let mut key_reg = KeyRegistration::initialize();
     for stake in parties {
         let p = Initializer::new(params, stake, &mut rng);
-        key_reg.register_by_entry(&p.clone().try_into().unwrap()).unwrap();
+        key_reg
+            .register(
+                stake,
+                &p.get_verification_key_proof_of_possession_for_concatenation(),
+                #[cfg(feature = "future_snark")]
+                p.schnorr_verification_key,
+            )
+            .unwrap();
         ps.push(p);
     }
 

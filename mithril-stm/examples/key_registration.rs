@@ -7,7 +7,7 @@ use rand_core::{RngCore, SeedableRng};
 use mithril_stm::{
     AggregateSignature, AggregateSignatureType, AncillaryGenesisData, AncillaryProofInput, Clerk,
     ClosedKeyRegistration, Initializer, KeyRegistration, MithrilMembershipDigest, Parameters,
-    RegistrationEntry, Stake, VerificationKeyProofOfPossessionForConcatenation,
+    Stake, VerificationKeyProofOfPossessionForConcatenation,
 };
 
 type D = MithrilMembershipDigest;
@@ -236,14 +236,14 @@ fn local_reg(
     };
     // data, such as the public key, stake and id.
     for (pk, _) in pks.iter().zip(ids.iter()) {
-        let entry = RegistrationEntry::new(
-            *pk,
-            1,
-            #[cfg(feature = "future_snark")]
-            None,
-        )
-        .unwrap();
-        local_keyreg.register_by_entry(&entry).unwrap();
+        local_keyreg
+            .register(
+                1,
+                pk,
+                #[cfg(feature = "future_snark")]
+                None,
+            )
+            .unwrap();
     }
     local_keyreg.close_registration(&params).unwrap()
 }

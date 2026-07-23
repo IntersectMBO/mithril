@@ -1,8 +1,6 @@
 use std::cmp::Ordering;
 use std::hash::Hash;
 
-use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "future_snark")]
 use crate::VerificationKeyForSnark;
 use crate::{
@@ -13,13 +11,11 @@ use crate::{
 use super::ClosedRegistrationEntry;
 
 /// Represents a signer registration entry
-#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Copy)]
 pub struct RegistrationEntry(
     VerificationKeyForConcatenation,
     Stake,
-    #[cfg(feature = "future_snark")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    Option<VerificationKeyForSnark>,
+    #[cfg(feature = "future_snark")] Option<VerificationKeyForSnark>,
 );
 
 impl RegistrationEntry {

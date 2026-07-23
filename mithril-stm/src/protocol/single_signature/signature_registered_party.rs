@@ -251,7 +251,7 @@ mod tests {
             key_reg.register_by_entry(&entry2).unwrap();
             let closed_key_reg: ClosedKeyRegistration =
                 key_reg.close_registration(&params).unwrap();
-            let total_stake = closed_key_reg.total_stake;
+            let total_stake = closed_key_reg.get_total_stake();
 
             let concatenation_proof_signer: ConcatenationProofSigner<D> =
                 ConcatenationProofSigner::new(
@@ -272,7 +272,7 @@ mod tests {
                 ).to_merkle_tree_commitment();
                 let closed_registration_entry = ClosedRegistrationEntry::try_from((
                     entry1,
-                    closed_key_reg.total_stake,
+                    closed_key_reg.get_total_stake(),
                     params.phi_f,
                 ))
                 .unwrap();

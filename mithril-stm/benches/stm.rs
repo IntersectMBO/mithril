@@ -44,7 +44,14 @@ fn stm_benches<D: MembershipDigest>(
             // We need to initialise the key_reg at each iteration
             key_reg = KeyRegistration::initialize();
             for p in initializers.iter() {
-                key_reg.register_by_entry(&p.clone().try_into().unwrap()).unwrap();
+                key_reg
+                    .register(
+                        p.stake,
+                        &p.get_verification_key_proof_of_possession_for_concatenation(),
+                        #[cfg(feature = "future_snark")]
+                        p.schnorr_verification_key,
+                    )
+                    .unwrap();
             }
         })
     });
@@ -136,7 +143,14 @@ fn batch_benches<D>(
             }
             let mut key_reg = KeyRegistration::initialize();
             for p in initializers.iter() {
-                key_reg.register_by_entry(&p.clone().try_into().unwrap()).unwrap();
+                key_reg
+                    .register(
+                        p.stake,
+                        &p.get_verification_key_proof_of_possession_for_concatenation(),
+                        #[cfg(feature = "future_snark")]
+                        p.schnorr_verification_key,
+                    )
+                    .unwrap();
             }
 
             let closed_reg = key_reg.close_registration(&params).unwrap();

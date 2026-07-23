@@ -95,7 +95,7 @@ impl Initializer {
             .get_signer_index_for_registration(
                 &(
                     registration_entry,
-                    closed_key_registration.total_stake,
+                    closed_key_registration.get_total_stake(),
                     self.parameters.phi_f,
                 )
                     .try_into()?,
@@ -107,7 +107,7 @@ impl Initializer {
             .to_merkle_tree_batch_commitment();
         let concatenation_proof_signer = ConcatenationProofSigner::new(
             registration_entry.get_stake(),
-            closed_key_registration.total_stake,
+            closed_key_registration.get_total_stake(),
             self.parameters,
             self.bls_signing_key,
             self.bls_verification_key_proof_of_possession.vk,
@@ -123,7 +123,7 @@ impl Initializer {
                         .to_merkle_tree_commitment();
                     let lottery_target_value = ClosedRegistrationEntry::try_from((
                         registration_entry,
-                        closed_key_registration.total_stake,
+                        closed_key_registration.get_total_stake(),
                         self.parameters.phi_f,
                     ))?
                     .get_lottery_target_value()

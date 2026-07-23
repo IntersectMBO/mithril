@@ -113,7 +113,7 @@ mod tests {
             )
             .to_merkle_tree_commitment();
         let lottery_target_value =
-            ClosedRegistrationEntry::try_from((entry, closed_reg.total_stake, params.phi_f))
+            ClosedRegistrationEntry::try_from((entry, closed_reg.get_total_stake(), params.phi_f))
                 .unwrap()
                 .get_lottery_target_value()
                 .unwrap();

@@ -337,7 +337,7 @@ mod tests {
                 ).to_merkle_tree_commitment();
                 let closed_registration_entry = ClosedRegistrationEntry::try_from((
                     entry1,
-                    closed_key_registration.total_stake,
+                    closed_key_registration.get_total_stake(),
                     params.phi_f,
                 ))
                 .unwrap();
@@ -550,7 +550,7 @@ mod tests {
                 ).to_merkle_tree_commitment();
                 let closed_registration_entry = ClosedRegistrationEntry::try_from((
                     entry1,
-                    closed_key_registration.total_stake,
+                    closed_key_registration.get_total_stake(),
                     params.phi_f,
                 ))
                 .unwrap();
