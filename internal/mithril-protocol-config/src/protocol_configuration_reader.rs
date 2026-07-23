@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -10,6 +10,8 @@ use mithril_common::entities::{
     ProtocolParameters, SignedEntityTypeDiscriminants,
 };
 use mithril_common::{StdError, StdResult};
+
+use crate::configuration_computer::ConfigurationComputerFromMarkers;
 
 /// The cbor representation of a MithrilNetworkConfigurationForEpoch
 pub type CborProtocolConfigurationForEpoch = String;
@@ -107,8 +109,7 @@ impl ProtocolConfigurationReader {
     /// Read protocol configuration markers from the underlying adapter.
     pub async fn read_mithril_protocol_configurations(
         &self,
-    ) -> Result<HashMap<Epoch, ProtocolConfigurationForEpoch>, ProtocolConfigurationReaderError>
-    {
+    ) -> Result<ConfigurationComputerFromMarkers, ProtocolConfigurationReaderError> {
         let markers = self.adapter.read().await.map_err(|e| {
             ProtocolConfigurationReaderError::AdapterFailure {
                 message: "Failed to read protocol configuration markers from adapter".to_string(),
@@ -116,7 +117,7 @@ impl ProtocolConfigurationReader {
             }
         })?;
 
-        let mut protocol_configurations = HashMap::new();
+        let mut decoded_markers = BTreeMap::new();
         for marker in markers {
             let configuration = ProtocolConfigurationForEpoch::from_cbor(marker.configuration)
                 .map_err(|e| ProtocolConfigurationReaderError::AdapterFailure {
@@ -126,9 +127,9 @@ impl ProtocolConfigurationReader {
                     ),
                     error: e.into(),
                 })?;
-            protocol_configurations.insert(marker.epoch, configuration);
+            decoded_markers.insert(marker.epoch, configuration);
         }
-        Ok(protocol_configurations)
+        Ok(ConfigurationComputerFromMarkers::new(decoded_markers))
     }
 }
 
@@ -214,17 +215,19 @@ mod tests {
 
     #[tokio::test]
     async fn read_mithril_protocol_configurations() {
-        let markers: Vec<ProtocolConfigurationMarker> = get_basic_marker_sample();
+        let cbor_markers: Vec<ProtocolConfigurationMarker> = get_basic_marker_sample();
         let adapter = ProtocolConfigurationReaderDummyAdapter::default();
-        adapter.set_markers(markers);
+        adapter.set_markers(cbor_markers);
 
         let reader = ProtocolConfigurationReader::new(Arc::new(adapter));
-        let token = reader.read_mithril_protocol_configurations().await.unwrap();
-        assert!(!token.contains_key(&Epoch(41)));
-        assert!(token.contains_key(&Epoch(42)));
-        assert!(!token.contains_key(&Epoch(43)));
+        let configurations = reader.read_mithril_protocol_configurations().await.unwrap();
+        let markers = configurations.markers;
 
-        let (_, configuration) = token.get_key_value(&Epoch(42)).expect("should exist");
+        assert!(!markers.contains_key(&Epoch(41)));
+        assert!(markers.contains_key(&Epoch(42)));
+        assert!(!markers.contains_key(&Epoch(43)));
+
+        let (_, configuration) = markers.get_key_value(&Epoch(42)).expect("should exist");
 
         assert_eq!(
             configuration,
