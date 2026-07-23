@@ -502,11 +502,17 @@ impl IvcBenchEnv {
         Ok(srs)
     }
 
-    /// Recursive circuit keys from `cache_dir`: a **cold-start** (derive) when the key cache is empty, or a
-    /// **warm-start** (load) when it is populated. The recursive provider wraps the certificate provider,
-    /// so both key layers are covered. The bench harness times the first call (cold) and second call (warm).
+    /// Certificate **and** recursive circuit keys from `cache_dir`, mirroring `IvcSnarkProverSetup::load`:
+    /// the certificate verifying key is accessed explicitly before the recursive key pair, so a
+    /// **cold-start** (empty cache) derives both layers and a **warm-start** (populated cache) loads both.
+    /// Without the explicit certificate access, only the cold path would touch the certificate cache (the
+    /// recursive keygen derives it via the wrapped provider), while the warm path would load the recursive
+    /// pair directly and skip it — making the two measure different work. The bench harness times the first
+    /// call (cold) and the second (warm), which then differ only in derive-vs-load.
     pub fn measure_keys(cache_dir: &Path, srs: &ParamsKZG<Bls12>) -> StmResult<()> {
-        let _keys = recursive_key_provider(cache_dir)?.key_pair(srs)?;
+        let provider = recursive_key_provider(cache_dir)?;
+        let _certificate_verifying_key = provider.generator().certificate_verifying_key(srs)?;
+        let _recursive_keys = provider.key_pair(srs)?;
         Ok(())
     }
 

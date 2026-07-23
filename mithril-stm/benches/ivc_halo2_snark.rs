@@ -13,10 +13,11 @@
 //!
 //! ## CLI contract (restricted, fail-closed)
 //!
-//! Every benchmark is *manually timed* — a single observation each, gathered into one consolidated
-//! table — because a recursive proof at `RECURSIVE_CIRCUIT_DEGREE` costs tens of seconds and building the
-//! shared environment runs a full recursive keygen (minutes, GB-scale RAM). So the harness validates its
-//! CLI itself, up front, before constructing anything:
+//! Every benchmark is *manually timed* — a single observation each, gathered into consolidated tables (a
+//! per-path prove/verify/fold table and a setup cold-vs-warm table) — because a recursive proof at
+//! `RECURSIVE_CIRCUIT_DEGREE` costs tens of seconds and building an environment runs a full recursive
+//! keygen (minutes, GB-scale RAM). So the harness validates its CLI itself, up front, before constructing
+//! anything:
 //!
 //! - `--list` prints every benchmark id and returns — it never builds the environment (no keygen).
 //! - `--test` and `--profile-time` are rejected: they would force a full recursive keygen for the shared
@@ -61,9 +62,17 @@ fn ids_for(path: TransitionPath, name: &str) -> Vec<String> {
     ids
 }
 
-/// All benchmark ids exposed by this harness.
+/// Setup cold/warm benchmark ids (item 8). Each measures its cache **cold then warm**; they build their
+/// own throwaway caches and do NOT use the shared per-path environment.
+const SETUP_IDS: &[&str] = &["ivc/setup/srs", "ivc/setup/keys"];
+
+/// All benchmark ids exposed by this harness: per-path prove/verify/fold, plus the setup ids.
 fn all_ids() -> Vec<String> {
-    PATHS.iter().flat_map(|(path, name)| ids_for(*path, name)).collect()
+    PATHS
+        .iter()
+        .flat_map(|(path, name)| ids_for(*path, name))
+        .chain(SETUP_IDS.iter().map(|id| id.to_string()))
+        .collect()
 }
 
 /// A benchmark id runs iff no filter was given, or the literal filter is a substring of the full id.
@@ -71,9 +80,14 @@ fn selected(filter: Option<&str>, full_id: &str) -> bool {
     filter.map(|f| full_id.contains(f)).unwrap_or(true)
 }
 
-/// True if any benchmark that needs the shared environment is selected.
-fn any_env_bench_selected(filter: Option<&str>) -> bool {
-    all_ids().iter().any(|id| selected(filter, id))
+/// True if any per-path benchmark (prove/verify/fold) is selected — those share the recursive-keygen env.
+fn any_path_bench_selected(filter: Option<&str>) -> bool {
+    PATHS.iter().any(|(path, name)| path_selected(filter, *path, name))
+}
+
+/// True if any setup (cold/warm) benchmark is selected.
+fn any_setup_bench_selected(filter: Option<&str>) -> bool {
+    SETUP_IDS.iter().any(|id| selected(filter, id))
 }
 
 /// True if any benchmark for this path is selected (so its fixture is worth preparing).
@@ -86,7 +100,9 @@ fn print_usage() {
         "Recursive IVC circuit benchmarks (façade-driven).\n\n\
          Usage: cargo bench ... --bench ivc_halo2_snark -- [<literal-id-or-prefix>]\n\n\
          Pass a single literal id or prefix to select benchmarks; omit it to run all. Use --list to see \
-         the ids. --test and --profile-time are unsupported (they force a recursive keygen)."
+         the ids. --test and --profile-time are unsupported (they force a recursive keygen).\n\n\
+         Cost: a no-filter run does the shared per-path recursive keygen AND the setup keys keygen, then \
+         all proofs (~tens of minutes, GB-scale RAM). Filter to a path or id to scope the work."
     );
     print_all_ids();
 }
@@ -203,10 +219,18 @@ fn print_report(setup: Duration, rows: &[PathTimings]) {
 
 fn run(filter: Option<String>) {
     let filter = filter.as_deref();
-    if !any_env_bench_selected(filter) {
-        return;
+    // Per-path benches share one recursive-keygen environment; the setup benches build their own caches.
+    // A no-filter run therefore does the shared keygen AND the setup benches' own keygen(s).
+    if any_path_bench_selected(filter) {
+        run_path_benches(filter);
     }
+    if any_setup_bench_selected(filter) {
+        run_setup_benches(filter);
+    }
+}
 
+/// Per-path prove/verify/fold, sharing one environment (one recursive keygen), printed as a table.
+fn run_path_benches(filter: Option<&str>) {
     // One shared environment (a full recursive keygen) for the whole run; `cache` stays in scope (and
     // thus on disk) for the entire block. The keygen is timed once as the one-off `setup` cost.
     let cache = TempDir::new().expect("bench cache tempdir");
@@ -230,6 +254,76 @@ fn run(filter: Option<String>) {
         .collect();
 
     print_report(setup, &rows);
+}
+
+/// Times one operation once (a single observation), `black_box`-ing the result.
+fn observe<T>(operation: impl FnOnce() -> T) -> Duration {
+    let start = Instant::now();
+    black_box(operation());
+    start.elapsed()
+}
+
+/// Setup cold/warm measurements (item 8), each on its own throwaway cache: the cold call populates the
+/// cache, the warm call reads it back — both through the production providers. Independent of the shared
+/// per-path environment.
+fn run_setup_benches(filter: Option<&str>) {
+    let srs = selected(filter, "ivc/setup/srs").then(|| {
+        let dir = TempDir::new().expect("bench cache tempdir");
+        let cold = observe(|| {
+            IvcBenchEnv::measure_srs_cold_start(dir.path()).expect("srs cold-start should succeed")
+        });
+        let warm = observe(|| {
+            IvcBenchEnv::measure_srs_warm_start(dir.path()).expect("srs warm-start should succeed")
+        });
+        (cold, warm)
+    });
+    let keys = selected(filter, "ivc/setup/keys").then(|| {
+        eprintln!(
+            "note: 'ivc/setup/keys' runs a full recursive keygen for the cold measurement \
+             (minutes, GB-scale RAM)."
+        );
+        let dir = TempDir::new().expect("bench cache tempdir");
+        let srs = IvcBenchEnv::measure_srs_cold_start(dir.path())
+            .expect("srs seed for the keys measurement should succeed");
+        let cold = observe(|| {
+            IvcBenchEnv::measure_keys(dir.path(), &srs).expect("keys cold derive should succeed")
+        });
+        let warm = observe(|| {
+            IvcBenchEnv::measure_keys(dir.path(), &srs).expect("keys warm load should succeed")
+        });
+        (cold, warm)
+    });
+    print_setup_report(srs, keys);
+}
+
+/// Prints the setup cold-vs-warm table (item 8): cold = generate/derive from scratch, warm = load from the
+/// on-disk cache. Single observation each.
+fn print_setup_report(srs: Option<(Duration, Duration)>, keys: Option<(Duration, Duration)>) {
+    if srs.is_none() && keys.is_none() {
+        return;
+    }
+    println!("\nsetup cache: cold vs warm (single observation each)");
+    println!("{:<18} {:>13} {:>13}", "stage", "cold", "warm");
+    if let Some((cold, warm)) = srs {
+        println!(
+            "{:<18} {:>13} {:>13}",
+            "srs",
+            cell(Some(cold)),
+            cell(Some(warm))
+        );
+    }
+    if let Some((cold, warm)) = keys {
+        println!(
+            "{:<18} {:>13} {:>13}",
+            "keys (cert+ivc)",
+            cell(Some(cold)),
+            cell(Some(warm))
+        );
+    }
+    println!(
+        "cold = generate/derive from scratch; warm = load from the on-disk cache (both via the production \
+         providers)."
+    );
 }
 
 fn main() {
