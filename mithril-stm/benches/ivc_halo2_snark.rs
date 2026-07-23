@@ -29,7 +29,10 @@
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
-use mithril_stm::circuits::halo2_ivc::bench_helpers::{IvcBenchEnv, PreparedStep, TransitionPath};
+use mithril_stm::circuits::halo2_ivc::{
+    bench_cli::{self, BenchCli},
+    bench_helpers::{IvcBenchEnv, PreparedStep, TransitionPath},
+};
 use tempfile::TempDir;
 
 /// The three transition paths and their id segments.
@@ -38,24 +41,6 @@ const PATHS: &[(TransitionPath, &str)] = &[
     (TransitionPath::SameEpoch, "same_epoch"),
     (TransitionPath::NextEpoch, "next_epoch"),
 ];
-
-/// The only valueless flags tolerated (e.g. `cargo bench` passes `--bench`). Every other option —
-/// including any value-taking one — is **rejected**, so no option can consume the following token and
-/// turn a control flag or filter into an accidental full run. `--help`/`--version`/`--list`/`--ignored`/
-/// `--exact`/`--test`/`--profile-time` are handled explicitly in [`parse_cli_or_exit`].
-const FLAG_OPTS: &[&str] = &["--verbose", "--quiet", "--nocapture", "--bench"];
-/// Regex metacharacters rejected in the positional filter (the filter is matched literally).
-const METACHARS: &[char] = &['.', '*', '+', '?', '[', ']', '(', ')', '{', '}', '|', '^', '$', '\\'];
-
-/// Outcome of validating the CLI, before any environment is built.
-enum Cli {
-    /// Run selected benchmarks (optional literal filter).
-    Run(Option<String>),
-    /// `--list`: print ids and return.
-    List,
-    /// `--ignored`: no benches are ignored, so there is nothing to run.
-    NothingToRun,
-}
 
 fn die(message: &str) -> ! {
     eprintln!("ivc_halo2_snark: {message}");
@@ -94,68 +79,6 @@ fn any_env_bench_selected(filter: Option<&str>) -> bool {
 /// True if any benchmark for this path is selected (so its fixture is worth preparing).
 fn path_selected(filter: Option<&str>, path: TransitionPath, name: &str) -> bool {
     ids_for(path, name).iter().any(|id| selected(filter, id))
-}
-
-/// Validate the CLI up front, before building anything. Fail-closed: unsupported tokens are rejected.
-fn parse_cli_or_exit() -> Cli {
-    let args = std::env::args().skip(1);
-    let mut filter: Option<String> = None;
-    let mut list = false;
-    let mut ignored = false;
-    let mut control_modes = 0;
-
-    for token in args {
-        match token.as_str() {
-            "--exact" => die("--exact is not supported; pass a literal id or prefix"),
-            "--test" | "--profile-time" => die(&format!(
-                "{token} is not supported: it would force a full recursive keygen for the shared \
-                 environment. Use the façade #[ignore] smoke test for a once-through run."
-            )),
-            "--list" => {
-                list = true;
-                control_modes += 1;
-            }
-            "--ignored" => {
-                ignored = true;
-                control_modes += 1;
-            }
-            "--help" | "-h" => {
-                print_usage();
-                std::process::exit(0);
-            }
-            "--version" | "-V" => {
-                println!("{}", env!("CARGO_PKG_VERSION"));
-                std::process::exit(0);
-            }
-            flag if FLAG_OPTS.contains(&flag) => {}
-            other if other.starts_with('-') => die(&format!(
-                "unsupported option {other}; run with --list to see the benchmark ids"
-            )),
-            positional => {
-                if filter.is_some() {
-                    die("only one literal filter is supported");
-                }
-                if positional.contains(METACHARS) {
-                    die(
-                        "regex filters are not supported; pass a literal id or prefix, e.g. \
-                         ivc/same_epoch/prove",
-                    );
-                }
-                filter = Some(positional.to_string());
-            }
-        }
-    }
-
-    if control_modes > 1 {
-        die("conflicting control modes (e.g. --list with --ignored)");
-    }
-    if list {
-        return Cli::List;
-    }
-    if ignored {
-        return Cli::NothingToRun;
-    }
-    Cli::Run(filter)
 }
 
 fn print_usage() {
@@ -310,9 +233,12 @@ fn run(filter: Option<String>) {
 }
 
 fn main() {
-    match parse_cli_or_exit() {
-        Cli::List => print_all_ids(),
-        Cli::NothingToRun => {}
-        Cli::Run(filter) => run(filter),
+    match bench_cli::parse(std::env::args().skip(1)) {
+        Err(message) => die(&message),
+        Ok(BenchCli::Help) => print_usage(),
+        Ok(BenchCli::Version) => println!("{}", env!("CARGO_PKG_VERSION")),
+        Ok(BenchCli::List) => print_all_ids(),
+        Ok(BenchCli::Ignored) => {}
+        Ok(BenchCli::Run(filter)) => run(filter),
     }
 }
