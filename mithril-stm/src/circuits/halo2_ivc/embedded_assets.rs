@@ -45,12 +45,13 @@ use crate::signature_scheme::{SchnorrVerificationKey, StandardSchnorrSignature};
 /// converts them into the congruent field element modulo the field order.
 pub(crate) fn jubjub_base_from_raw_le_bytes(bytes: &[u8]) -> NativeField {
     assert_eq!(bytes.len(), 32);
-    NativeField::from_raw([
-        u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
-        u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
-        u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
-        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-    ])
+    let mut limbs = [0u64; 4];
+    for (limb, chunk) in limbs.iter_mut().zip(bytes.chunks_exact(8)) {
+        let mut le_bytes = [0u8; 8];
+        le_bytes.copy_from_slice(chunk);
+        *limb = u64::from_le_bytes(le_bytes);
+    }
+    NativeField::from_raw(limbs)
 }
 
 /// Stored recursive chain checkpoint used by the golden tests.
