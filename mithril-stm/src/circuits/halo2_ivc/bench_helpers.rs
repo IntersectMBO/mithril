@@ -9,11 +9,10 @@
 //! Fixtures are the committed golden assets plus the additive genesis fixture, so no proving
 //! witness is fabricated here. Each prepared fixture is validated once (outside the timed loops).
 //!
-//! Note on the SRS: the benchmarks use a deterministic *unsafe* SRS, which
-//! `TrustedSetupProvider::with_unsafe_srs` generates on construction. Its timing is representative
-//! of one-time SRS generation; production instead loads a downloaded trusted SRS. The cold/warm
-//! distinction is therefore measured on the circuit **keys** (the disk-cached artifact and the
-//! dominant setup cost), with SRS generation reported as a separate one-off.
+//! Note on the SRS: the benchmarks use a deterministic *unsafe* SRS (production instead downloads a
+//! trusted SRS). Both the SRS and the circuit keys are measured as a **cold start** (generate / derive)
+//! and a **warm start** (load from the on-disk cache); the recursive circuit keys are the dominant
+//! setup cost.
 
 use std::path::Path;
 
@@ -481,17 +480,31 @@ impl IvcBenchEnv {
 
     // --- Setup cold/warm measurements (item 8) ---
 
-    /// Generates and stores the unsafe SRS at `cache_dir` (cold, one-off). Reads it back so the
-    /// returned value is the downsized proving SRS used by the keys measurements.
-    pub fn measure_srs_generation(cache_dir: &Path) -> StmResult<ParamsKZG<Bls12>> {
+    /// Cold-start SRS: generates and stores the unsafe SRS at `cache_dir`, reads it back, and downsizes
+    /// it to [`RECURSIVE_CIRCUIT_DEGREE`] — the same downsized end state as production
+    /// `IvcSnarkProverSetup::load`. Paired with [`Self::measure_srs_warm_start`].
+    pub fn measure_srs_cold_start(cache_dir: &Path) -> StmResult<ParamsKZG<Bls12>> {
         let mut srs = trusted_setup_provider(cache_dir).get_trusted_setup_parameters()?;
         srs.downsize(RECURSIVE_CIRCUIT_DEGREE);
         Ok(srs)
     }
 
-    /// Derives (cold) or loads (warm) the recursive circuit keys from `cache_dir`, depending on
-    /// whether the key cache is populated. The recursive provider wraps the certificate provider,
-    /// so both key layers are covered.
+    /// Warm-start SRS: reads an already-generated SRS from `cache_dir` through the production cached read
+    /// path (skips download + hash verification, only deserializes), then downsizes it exactly as
+    /// [`Self::measure_srs_cold_start`] and `IvcSnarkProverSetup::load` do — so cold and warm measure the
+    /// same downsized end state, with no network dependency. Precondition: a prior `measure_srs_cold_start`
+    /// (or any generation) has populated `cache_dir`.
+    pub fn measure_srs_warm_start(cache_dir: &Path) -> StmResult<ParamsKZG<Bls12>> {
+        let mut srs =
+            TrustedSetupProvider::new(cache_dir, "", "", std::time::Duration::from_secs(600))
+                .get_trusted_setup_parameters()?;
+        srs.downsize(RECURSIVE_CIRCUIT_DEGREE);
+        Ok(srs)
+    }
+
+    /// Recursive circuit keys from `cache_dir`: a **cold-start** (derive) when the key cache is empty, or a
+    /// **warm-start** (load) when it is populated. The recursive provider wraps the certificate provider,
+    /// so both key layers are covered. The bench harness times the first call (cold) and second call (warm).
     pub fn measure_keys(cache_dir: &Path, srs: &ParamsKZG<Bls12>) -> StmResult<()> {
         let _keys = recursive_key_provider(cache_dir)?.key_pair(srs)?;
         Ok(())
@@ -503,7 +516,7 @@ impl IvcBenchEnv {
     /// and populated-cache runs include unsafe SRS regeneration + serialization. The only difference
     /// is the circuit keys: derived (empty key cache) vs loaded (populated key cache). This is
     /// therefore `full_setup/cold_keys` vs `full_setup/cached_keys` — not a warm-SRS measurement.
-    /// Slice 5 labels the two bench groups accordingly.
+    /// The bench harness labels the two groups (`cold_keys` vs `cached_keys`) accordingly.
     pub fn measure_full_setup(cache_dir: &Path) -> StmResult<()> {
         let _setup = IvcSnarkProverSetup::load(
             &trusted_setup_provider(cache_dir),
