@@ -22,8 +22,9 @@
 //! - `--test` and `--profile-time` are rejected: they would force a full recursive keygen for the shared
 //!   environment. Use the façade's `#[ignore]` smoke test (`facade_prepares_proves_and_verifies_all_paths`)
 //!   for a once-through sanity run instead.
-//! - Only a small documented subset of options is accepted (for `cargo bench` compatibility); any other
-//!   option is rejected. A single literal positional filter is allowed (no regex, no `--exact`).
+//! - Only a few valueless flags (`--bench`, `--verbose`, `--quiet`, `--nocapture`) plus the control flags
+//!   above are accepted; every other option — including value-taking ones — is rejected, so nothing can
+//!   swallow the next token. A single literal positional filter is allowed (no regex, no `--exact`).
 
 use std::hint::black_box;
 use std::time::{Duration, Instant};
@@ -38,29 +39,11 @@ const PATHS: &[(TransitionPath, &str)] = &[
     (TransitionPath::NextEpoch, "next_epoch"),
 ];
 
-/// Options accepted but ignored (for `cargo bench` / Criterion-CLI compatibility), taking no value.
-/// (`--help`/`--version` are handled explicitly in [`parse_cli_or_exit`].)
+/// The only valueless flags tolerated (e.g. `cargo bench` passes `--bench`). Every other option —
+/// including any value-taking one — is **rejected**, so no option can consume the following token and
+/// turn a control flag or filter into an accidental full run. `--help`/`--version`/`--list`/`--ignored`/
+/// `--exact`/`--test`/`--profile-time` are handled explicitly in [`parse_cli_or_exit`].
 const FLAG_OPTS: &[&str] = &["--verbose", "--quiet", "--nocapture", "--bench"];
-/// Options accepted for compatibility that consume the following argument (so their value is not
-/// mistaken for the filter). A deliberate subset — anything else is rejected (fail-safe).
-const VALUE_OPTS: &[&str] = &[
-    "--sample-size",
-    "--warm-up-time",
-    "--measurement-time",
-    "--nresamples",
-    "--noise-threshold",
-    "--confidence-level",
-    "--significance-level",
-    "--output-format",
-    "--format",
-    "--color",
-    "--colour",
-    "--plotting-backend",
-    "--baseline",
-    "--baseline-lenient",
-    "--save-baseline",
-    "--load-baseline",
-];
 /// Regex metacharacters rejected in the positional filter (the filter is matched literally).
 const METACHARS: &[char] = &['.', '*', '+', '?', '[', ']', '(', ')', '{', '}', '|', '^', '$', '\\'];
 
@@ -115,13 +98,13 @@ fn path_selected(filter: Option<&str>, path: TransitionPath, name: &str) -> bool
 
 /// Validate the CLI up front, before building anything. Fail-closed: unsupported tokens are rejected.
 fn parse_cli_or_exit() -> Cli {
-    let mut args = std::env::args().skip(1);
+    let args = std::env::args().skip(1);
     let mut filter: Option<String> = None;
     let mut list = false;
     let mut ignored = false;
     let mut control_modes = 0;
 
-    while let Some(token) = args.next() {
+    for token in args {
         match token.as_str() {
             "--exact" => die("--exact is not supported; pass a literal id or prefix"),
             "--test" | "--profile-time" => die(&format!(
@@ -143,11 +126,6 @@ fn parse_cli_or_exit() -> Cli {
             "--version" | "-V" => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);
-            }
-            value_opt if VALUE_OPTS.contains(&value_opt) => {
-                if args.next().is_none() {
-                    die(&format!("missing value for {value_opt}"));
-                }
             }
             flag if FLAG_OPTS.contains(&flag) => {}
             other if other.starts_with('-') => die(&format!(
@@ -267,13 +245,17 @@ fn cell(duration: Option<Duration>) -> String {
     }
 }
 
-/// Prints the consolidated report: the one-off setup (cold keygen) then an aligned per-path table.
+/// Prints the consolidated report: the one-off setup (cold environment build) then a per-path table.
 /// Every number is a single observation — a coarse baseline for the SNARK book, not a statistic.
 fn print_report(setup: Duration, rows: &[PathTimings]) {
     println!(
         "\nIVC recursive circuit (degree 19) — single observation per cell; one keygen shared across paths"
     );
-    println!("setup (cold keygen): {:.3} s\n", setup.as_secs_f64());
+    println!(
+        "setup (cold environment: unsafe SRS + certificate/IVC keygen + fixed bases + verifier/global \
+         init): {:.3} s\n",
+        setup.as_secs_f64()
+    );
     println!(
         "{:<12} {:>13} {:>13} {:>12} {:>12} {:>11} {:>9}",
         "path", "prove/pos", "prove/blake", "verify/full", "verify/kzg", "fold", "proof"
@@ -290,6 +272,10 @@ fn print_report(setup: Duration, rows: &[PathTimings]) {
             format!("{} B", row.proof_size),
         );
     }
+    println!(
+        "\nproof = committed verification proof size (the freshly generated Poseidon/Blake2b proofs share \
+         this fixed format/size)."
+    );
 }
 
 fn run(filter: Option<String>) {
