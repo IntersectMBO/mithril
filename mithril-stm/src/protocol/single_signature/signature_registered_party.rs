@@ -22,7 +22,7 @@ pub struct SingleSignatureWithRegisteredParty {
     /// Stm signature
     pub sig: SingleSignature,
     /// Registered party
-    pub reg_party: ClosedRegistrationEntry,
+    pub(crate) reg_party: ClosedRegistrationEntry,
 }
 
 impl SingleSignatureWithRegisteredParty {

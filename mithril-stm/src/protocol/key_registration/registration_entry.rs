@@ -12,7 +12,7 @@ use super::ClosedRegistrationEntry;
 
 /// Represents a signer registration entry
 #[derive(PartialEq, Eq, Clone, Debug, Copy)]
-pub struct RegistrationEntry(
+pub(crate) struct RegistrationEntry(
     VerificationKeyForConcatenation,
     Stake,
     #[cfg(feature = "future_snark")] Option<VerificationKeyForSnark>,
@@ -21,7 +21,7 @@ pub struct RegistrationEntry(
 impl RegistrationEntry {
     /// Creates a new registration entry. Verifies the proof of possession of verification key for
     /// concatenation and validates the schnorr verification key before creating the entry.
-    pub fn new(
+    pub(crate) fn new(
         bls_verification_key_proof_of_possession: VerificationKeyProofOfPossessionForConcatenation,
         stake: Stake,
         #[cfg(feature = "future_snark")] schnorr_verification_key: Option<VerificationKeyForSnark>,
@@ -52,18 +52,18 @@ impl RegistrationEntry {
     }
 
     /// Gets the verification key for concatenation.
-    pub fn get_verification_key_for_concatenation(&self) -> VerificationKeyForConcatenation {
+    pub(crate) fn get_verification_key_for_concatenation(&self) -> VerificationKeyForConcatenation {
         self.0
     }
 
     #[cfg(feature = "future_snark")]
     /// Gets the verification key for snark.
-    pub fn get_verification_key_for_snark(&self) -> Option<VerificationKeyForSnark> {
+    pub(crate) fn get_verification_key_for_snark(&self) -> Option<VerificationKeyForSnark> {
         self.2
     }
 
     /// Gets the stake associated with the registration entry.
-    pub fn get_stake(&self) -> Stake {
+    pub(crate) fn get_stake(&self) -> Stake {
         self.1
     }
 }

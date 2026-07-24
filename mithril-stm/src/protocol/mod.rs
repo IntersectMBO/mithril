@@ -11,10 +11,11 @@ pub use aggregate_signature::{
     AncillaryProverData, AncillaryVerifierData, Clerk, GenesisVerificationKeyBundle,
 };
 pub use error::RegisterError;
+pub(crate) use key_registration::RegistrationEntry;
 #[cfg(feature = "future_snark")]
 pub use key_registration::RegistrationEntryForSnark;
 pub use key_registration::{
-    ClosedKeyRegistration, ClosedRegistrationEntry, KeyRegistration, RegistrationEntry,
+    ClosedKeyRegistration, ClosedRegistrationEntry, KeyRegistration,
     RegistrationEntryForConcatenation,
 };
 pub use parameters::Parameters;

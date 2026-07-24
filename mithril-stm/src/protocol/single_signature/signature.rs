@@ -98,8 +98,7 @@ impl SingleSignature {
         let mut indexes = Vec::new();
         let mut offset = 8usize;
         for _ in 0..nr_indexes {
-            let index_end =
-                offset.checked_add(8).ok_or(SignatureError::SerializationError)?;
+            let index_end = offset.checked_add(8).ok_or(SignatureError::SerializationError)?;
             u64_bytes.copy_from_slice(
                 bytes
                     .get(offset..index_end)

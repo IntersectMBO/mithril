@@ -45,7 +45,13 @@ pub struct ClosedRegistrationEntry {
 
 impl ClosedRegistrationEntry {
     /// Creates a new closed registration entry.
-    pub fn new(
+    ///
+    /// This is private rather than `pub`: it performs no verification of any kind (unlike
+    /// `RegistrationEntry::new`, which verifies proof of possession), so it must only be used
+    /// where the caller has already established the verification key is trustworthy — currently
+    /// only via `TryFrom<(RegistrationEntry, Stake, PhiFValue)>`, which derives from an
+    /// already-verified `RegistrationEntry`.
+    fn new(
         verification_key_for_concatenation: VerificationKeyForConcatenation,
         stake: Stake,
         #[cfg(feature = "future_snark")] verification_key_for_snark: Option<

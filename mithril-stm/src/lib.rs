@@ -147,14 +147,15 @@ mod protocol;
 mod signature_scheme;
 
 pub use proof_system::AggregateVerificationKeyForConcatenation;
+pub(crate) use protocol::RegistrationEntry;
 pub use protocol::{
     AggregateSignature, AggregateSignatureError, AggregateSignatureType, AggregateVerificationKey,
     AggregationError, AncillaryGenesisData, AncillaryProofInput, AncillaryProofOutput,
     AncillaryProverData, AncillaryVerifierData, Clerk, ClosedKeyRegistration,
     ClosedRegistrationEntry, GenesisVerificationKeyBundle, Initializer, KeyRegistration,
-    Parameters, RegisterError, RegistrationEntry, RegistrationEntryForConcatenation,
-    SignatureError, Signer, SingleSignature, SingleSignatureWithRegisteredParty,
-    VerificationKeyForConcatenation, VerificationKeyProofOfPossessionForConcatenation,
+    Parameters, RegisterError, RegistrationEntryForConcatenation, SignatureError, Signer,
+    SingleSignature, SingleSignatureWithRegisteredParty, VerificationKeyForConcatenation,
+    VerificationKeyProofOfPossessionForConcatenation,
 };
 pub use signature_scheme::BlsSignatureError;
 

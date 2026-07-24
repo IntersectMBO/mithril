@@ -111,7 +111,10 @@ impl KeyRegistration {
             .map(|entry| ClosedRegistrationEntry::try_from((*entry, total_stake, params.phi_f)))
             .collect();
 
-        Ok(ClosedKeyRegistration::new(closed_registration_entries?, total_stake))
+        Ok(ClosedKeyRegistration::new(
+            closed_registration_entries?,
+            total_stake,
+        ))
     }
 }
 
@@ -123,14 +126,6 @@ pub struct ClosedKeyRegistration {
 }
 
 impl ClosedKeyRegistration {
-    /// Creates a new `ClosedKeyRegistration`.
-    ///
-    /// This is `pub(crate)` rather than `pub`: `closed_registration_entries` carries
-    /// verification keys with no guarantee of proof of possession unless it was built from a
-    /// [`KeyRegistration`], which only ever admits verified entries. Exposing this publicly
-    /// would let external callers assemble a forged registration (e.g. with a rogue key) and
-    /// feed it directly into the aggregation/verification pipeline, bypassing `KeyRegistration`
-    /// entirely.
     pub(crate) fn new(
         closed_registration_entries: BTreeSet<ClosedRegistrationEntry>,
         total_stake: Stake,
@@ -141,18 +136,15 @@ impl ClosedKeyRegistration {
         }
     }
 
-    /// Gets the closed registration entries.
-    pub fn get_closed_registration_entries(&self) -> &BTreeSet<ClosedRegistrationEntry> {
-        &self.closed_registration_entries
-    }
-
     /// Gets the total stake registered.
-    pub fn get_total_stake(&self) -> Stake {
+    pub(crate) fn get_total_stake(&self) -> Stake {
         self.total_stake
     }
 
     /// Creates a Merkle tree from the closed registration entries
-    pub fn to_merkle_tree<D: Digest + FixedOutput, L: MerkleTreeLeaf>(&self) -> MerkleTree<D, L>
+    pub(crate) fn to_merkle_tree<D: Digest + FixedOutput, L: MerkleTreeLeaf>(
+        &self,
+    ) -> MerkleTree<D, L>
     where
         Option<L>: From<ClosedRegistrationEntry>,
     {
@@ -166,7 +158,7 @@ impl ClosedKeyRegistration {
     }
 
     /// Gets the index of given closed registration entry.
-    pub fn get_signer_index_for_registration(
+    pub(crate) fn get_signer_index_for_registration(
         &self,
         entry: &ClosedRegistrationEntry,
     ) -> Option<SignerIndex> {
@@ -178,14 +170,15 @@ impl ClosedKeyRegistration {
 
     /// Check if any registration entry has a SNARK verification key.
     #[cfg(feature = "future_snark")]
-    pub fn has_snark_verification_keys(&self) -> bool {
+    pub(crate) fn has_snark_verification_keys(&self) -> bool {
         self.closed_registration_entries
             .iter()
             .any(|entry| entry.get_verification_key_for_snark().is_some())
     }
 
     /// Return the number of registered parties.
-    pub fn number_of_registered_parties(&self) -> usize {
+    #[cfg(feature = "future_snark")]
+    pub(crate) fn number_of_registered_parties(&self) -> usize {
         self.closed_registration_entries.len()
     }
 

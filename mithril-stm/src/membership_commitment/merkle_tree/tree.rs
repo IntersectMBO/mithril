@@ -3,16 +3,14 @@ use std::marker::PhantomData;
 use digest::{Digest, FixedOutput};
 use serde::{Deserialize, Serialize};
 
-use crate::StmResult;
-use crate::codec;
+use crate::{StmResult, codec};
 
+use super::MerkleTreeError;
 use super::{
-    MerkleBatchPath, MerkleTreeBatchCommitment, MerkleTreeError, MerkleTreeLeaf, left_child,
-    parent, right_child, sibling,
+    MerkleBatchPath, MerkleTreeBatchCommitment, MerkleTreeLeaf, left_child, parent, right_child,
+    sibling,
 };
 #[cfg(feature = "future_snark")]
-// TODO: remove this allow dead_code directive when function is called or future_snark is activated
-#[allow(dead_code)]
 use super::{MerklePath, MerkleTreeCommitment};
 
 /// Tree of hashes, providing a commitment of data and its ordering.
@@ -147,6 +145,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTree<D, L> {
     }
 
     /// Convert a `MerkleTree` into a byte string.
+    #[allow(dead_code)]
     pub fn to_bytes(&self) -> StmResult<Vec<u8>> {
         codec::to_cbor_bytes(self)
     }
@@ -154,6 +153,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTree<D, L> {
     /// Try to convert a byte string into a `MerkleTree`.
     /// # Error
     /// It returns error if conversion fails.
+    #[allow(dead_code)]
     pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
         codec::from_versioned_bytes(bytes, Self::from_bytes_legacy)
     }
@@ -162,6 +162,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTree<D, L> {
     /// # Layout
     /// * Number of leaves committed in the Merkle Tree (as u64)
     /// * All nodes of the merkle tree (starting with the root)
+    #[allow(dead_code)]
     fn from_bytes_legacy(bytes: &[u8]) -> StmResult<Self> {
         let mut u64_bytes = [0u8; 8];
         u64_bytes.copy_from_slice(bytes.get(..8).ok_or(MerkleTreeError::SerializationError)?);
@@ -176,12 +177,12 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTree<D, L> {
         for i in 0..num_nodes {
             let range_low = i
                 .checked_mul(<D as Digest>::output_size())
-                .and_then(|rl| rl.checked_add(16))
+                .and_then(|rl| rl.checked_add(8))
                 .ok_or(MerkleTreeError::SerializationError)?;
             let range_high = i
                 .checked_add(1)
                 .and_then(|rh| rh.checked_mul(<D as Digest>::output_size()))
-                .and_then(|rh| rh.checked_add(16))
+                .and_then(|rh| rh.checked_add(8))
                 .ok_or(MerkleTreeError::SerializationError)?;
             nodes.push(
                 bytes
@@ -200,16 +201,12 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTree<D, L> {
     }
 
     #[cfg(feature = "future_snark")]
-    // TODO: remove this allow dead_code directive when function is called or future_snark is activated
-    #[allow(dead_code)]
     /// Convert merkle tree to a commitment. This function simply returns the root.
     pub(crate) fn to_merkle_tree_commitment(&self) -> MerkleTreeCommitment<D, L> {
         MerkleTreeCommitment::new(self.nodes[0].clone()) // Use private constructor
     }
 
     #[cfg(feature = "future_snark")]
-    // TODO: remove this allow dead_code directive when function is called or future_snark is activated
-    #[allow(dead_code)]
     /// Get a path (hashes of siblings of the path to the root node)
     /// for the `i`th value stored in the tree.
     /// Requires `i < self.n`

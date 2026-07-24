@@ -7,6 +7,7 @@ use crate::VerificationKeyForSnark;
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum RegisterError {
     /// This key has already been registered by a participant
+    #[allow(private_interfaces)]
     #[error("This key has already been registered.")]
     EntryAlreadyRegistered(Box<RegistrationEntry>),
 
