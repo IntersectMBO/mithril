@@ -115,6 +115,11 @@ impl Epoch {
     pub fn has_gap_with(&self, other: &Epoch) -> bool {
         self.0.abs_diff(other.0) > 1
     }
+
+    /// Returns an iterator over the inclusive range of epochs from this epoch up to the specified epoch.
+    pub fn iter_inclusive_up_to_epoch(&self, up_to: Epoch) -> impl Iterator<Item = Epoch> {
+        (self.0..=up_to.0).map(Epoch)
+    }
 }
 
 impl Deref for Epoch {
@@ -380,6 +385,17 @@ mod tests {
         assert!(!Epoch(3).has_gap_with(&Epoch(3)));
         assert!(!Epoch(3).has_gap_with(&Epoch(2)));
         assert!(Epoch(3).has_gap_with(&Epoch(0)));
+    }
+
+    #[test]
+    fn test_iter_inclusive_up_to_epoch() {
+        let start_epoch = Epoch(3);
+        let end_epoch = Epoch(6);
+        let expected_epochs: Vec<Epoch> = vec![Epoch(3), Epoch(4), Epoch(5), Epoch(6)];
+
+        let result_epochs: Vec<Epoch> = start_epoch.iter_inclusive_up_to_epoch(end_epoch).collect();
+
+        assert_eq!(result_epochs, expected_epochs);
     }
 
     #[test]

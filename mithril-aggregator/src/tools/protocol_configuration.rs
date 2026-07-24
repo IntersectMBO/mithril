@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use anyhow::Context;
 use mithril_cardano_node_chain::entities::{TxDatumBuilder, TxDatumFieldValue};
@@ -8,13 +8,23 @@ use mithril_common::{
 use mithril_protocol_config::{
     ProtocolConfigurationForEpoch, ProtocolConfigurationMarker,
     adapters::ProtocolConfigurationMarkersPayloadCardanoChain,
+    configuration_computer::ConfigurationComputerFromMarkers,
 };
-use slog::Logger;
+use slog::{Logger, info, warn};
+use thiserror::Error;
 
 use crate::{
     commands::HumanReadableProtocolConfiguration,
     dependency_injection::ProtocolConfigurationCommandDependenciesContainer,
 };
+
+#[derive(Debug, Error)]
+pub enum ProtocolConfigurationVerifierError {
+    #[error("Configuration to import for {0:?}, is not the same has configuration on chain")]
+    NotSameConfigurationForEpoch(Epoch),
+}
+
+const EPOCH_OFFSET: u64 = 3;
 
 type ProtocolConfigurationToolsResult<R> = StdResult<R>;
 
@@ -27,7 +37,7 @@ pub struct ProtocolConfigurationToolsConfiguration {
     pub epoch: Epoch,
 
     /// On chain configurations by Epoch.
-    pub on_chain_configurations: HashMap<Epoch, ProtocolConfigurationForEpoch>,
+    pub on_chain_configurations: ConfigurationComputerFromMarkers,
 }
 
 pub struct ProtocolConfigurationTools {
@@ -66,19 +76,43 @@ impl ProtocolConfigurationTools {
         Ok(Self::new(configuration, dependencies.logger))
     }
 
-    // /// Verify if configuration have greater Epoch (with a offset) than configuration on chain
-    // pub async fn verify_configuration_against_production(
-    //     &self,
-    //     configurations: Vec<HumanReadableProtocolConfiguration>,
-    // ) -> StdResult<()> {
-    //     let production_configurations = self.adapter.read_mithril_protocol_configurations().await?;
-    //     production_configurations
-    //         .keys()
-    //         .collect::<Vec<Epoch>>()
-    //         .contains(&Epoch(1));
+    /// Verify if configuration to import share same windows as on chain configuration for current epoch
+    pub fn verify_configurations_against_chain(
+        &self,
+        configurations_to_import: Vec<HumanReadableProtocolConfiguration>,
+    ) -> Result<(), ProtocolConfigurationVerifierError> {
+        let current_epoch = self.configuration.epoch;
+        info!(&self.logger, "Current epoch is {}", current_epoch);
 
-    //     Ok(())
-    // }
+        let markers_from_chain = self.configuration.on_chain_configurations.clone();
+        let markers_to_import = to_configuration_computer_from_markers(configurations_to_import);
+
+        let epoch_start = Epoch(current_epoch.0.saturating_sub(EPOCH_OFFSET));
+
+        info!(
+            &self.logger,
+            "Verifying configurations for epoch range [{}..={}]", epoch_start, current_epoch
+        );
+
+        for epoch in epoch_start.iter_inclusive_up_to_epoch(current_epoch) {
+            let marker_to_import = markers_to_import.get_network_configuration(epoch);
+            let marker_on_chain = markers_from_chain.get_network_configuration(epoch);
+            if marker_on_chain.is_some() {
+                if marker_to_import != marker_on_chain {
+                    return Err(
+                        ProtocolConfigurationVerifierError::NotSameConfigurationForEpoch(epoch),
+                    );
+                }
+            } else {
+                warn!(
+                    &self.logger,
+                    "No previous configuration was found on chain for epoch {}. This is expected when this is the first time that a configuration is published on-chain.",
+                    epoch
+                );
+            }
+        }
+        Ok(())
+    }
 
     /// Generate TxDatum for Protocol Configuration
     pub fn generate_tx_datum(
@@ -119,25 +153,53 @@ impl From<HumanReadableProtocolConfiguration> for ProtocolConfigurationForEpoch 
     }
 }
 
+fn to_configuration_computer_from_markers(
+    configs: Vec<HumanReadableProtocolConfiguration>,
+) -> ConfigurationComputerFromMarkers {
+    let mut markers = BTreeMap::new();
+
+    for config in configs {
+        markers.insert(config.epoch, ProtocolConfigurationForEpoch::from(config));
+    }
+    ConfigurationComputerFromMarkers::new(markers)
+}
+
 #[cfg(test)]
 mod tests {
-    use mithril_common::entities::{
-        BlockNumber, BlockNumberOffset, CardanoBlocksTransactionsSigningConfig,
-        CardanoTransactionsSigningConfig, Epoch, ProtocolParameters, SignedEntityTypeDiscriminants,
+    use mithril_common::{
+        entities::{
+            BlockNumber, BlockNumberOffset, CardanoBlocksTransactionsSigningConfig,
+            CardanoTransactionsSigningConfig, Epoch, ProtocolParameters,
+            SignedEntityTypeDiscriminants,
+        },
+        test::double::Dummy,
     };
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use crate::test::TestLogger;
 
     use super::*;
 
-    fn build_tools() -> ProtocolConfigurationTools {
+    fn build_tools_dummy() -> ProtocolConfigurationTools {
         let configuration = ProtocolConfigurationToolsConfiguration {
             network: CardanoNetwork::TestNet(42),
             epoch: Epoch(30),
-            on_chain_configurations: HashMap::new(),
+            on_chain_configurations: ConfigurationComputerFromMarkers::new(BTreeMap::new()),
         };
         ProtocolConfigurationTools::new(configuration, TestLogger::stdout())
+    }
+
+    fn build_tools(
+        current_epoch: Epoch,
+        on_chain_configurations: ConfigurationComputerFromMarkers,
+        logger: Logger,
+    ) -> ProtocolConfigurationTools {
+        let configuration = ProtocolConfigurationToolsConfiguration {
+            network: CardanoNetwork::TestNet(42),
+            epoch: current_epoch,
+            on_chain_configurations,
+        };
+        ProtocolConfigurationTools::new(configuration, logger)
     }
 
     #[test]
@@ -214,9 +276,302 @@ mod tests {
             cardano_blocks_transactions_signing_config: None,
         }];
         let signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
-        let tools = build_tools();
+        let tools = build_tools_dummy();
         tools
             .generate_tx_datum(configurations, &signer)
             .expect("generate_tx_datum should not fail");
+    }
+
+    mod verify_configurations_against_chain {
+        use super::*;
+
+        /// Instantiate a unique ProtocolConfigurationForEpoch based on char
+        fn fake_configuration(conf: char) -> ProtocolConfigurationForEpoch {
+            ProtocolConfigurationForEpoch {
+                protocol_parameters: ProtocolParameters {
+                    k: conf as u64,
+                    m: conf as u64,
+                    phi_f: 1.2,
+                },
+                cardano_transactions: Some(CardanoTransactionsSigningConfig::dummy()),
+                cardano_blocks_transactions: Some(CardanoBlocksTransactionsSigningConfig::dummy()),
+                enabled_signed_entity_types: BTreeSet::from([
+                    SignedEntityTypeDiscriminants::CardanoTransactions,
+                    SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
+                    SignedEntityTypeDiscriminants::CardanoDatabase,
+                    SignedEntityTypeDiscriminants::CardanoStakeDistribution,
+                ]),
+            }
+        }
+
+        /// Instantiate a HumanReadableProtocolConfiguration at epoch with a unique char configuration
+        fn fake_configuration_to_import(
+            epoch: Epoch,
+            conf: char,
+        ) -> HumanReadableProtocolConfiguration {
+            HumanReadableProtocolConfiguration {
+                epoch,
+                protocol_parameters: ProtocolParameters {
+                    k: conf as u64,
+                    m: conf as u64,
+                    phi_f: 1.2,
+                },
+                cardano_transaction_signing_config: Some(CardanoTransactionsSigningConfig::dummy()),
+                cardano_blocks_transactions_signing_config: Some(
+                    CardanoBlocksTransactionsSigningConfig::dummy(),
+                ),
+                enabled_signed_entity_types: BTreeSet::from([
+                    SignedEntityTypeDiscriminants::CardanoTransactions,
+                    SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
+                    SignedEntityTypeDiscriminants::CardanoDatabase,
+                    SignedEntityTypeDiscriminants::CardanoStakeDistribution,
+                ]),
+            }
+        }
+
+        fn build_on_chain_markers(
+            configurations: Vec<(Epoch, char)>,
+        ) -> ConfigurationComputerFromMarkers {
+            let mut on_chain_markers = BTreeMap::new();
+            for conf in configurations {
+                on_chain_markers.insert(conf.0, fake_configuration(conf.1));
+            }
+            ConfigurationComputerFromMarkers::new(on_chain_markers)
+        }
+
+        fn build_configurations_to_import(
+            configurations: Vec<(Epoch, char)>,
+        ) -> Vec<HumanReadableProtocolConfiguration> {
+            configurations
+                .iter()
+                .map(|conf| fake_configuration_to_import(conf.0, conf.1))
+                .collect()
+        }
+
+        #[test]
+        fn ok_with_only_one_same_epoch_conf_in_offset_window() {
+            let (logger, log_inspector) = TestLogger::memory();
+
+            let current_epoch = Epoch(47);
+            let on_chain_markers = BTreeMap::from([
+                (Epoch(38), fake_configuration('A')),
+                (Epoch(44), fake_configuration('B')),
+            ]);
+            let on_chain_configurations = ConfigurationComputerFromMarkers::new(on_chain_markers);
+
+            let configurations_to_import =
+                build_configurations_to_import(vec![(Epoch(44), 'B'), (Epoch(56), 'Z')]);
+
+            let tools = build_tools(current_epoch, on_chain_configurations, logger);
+            assert!(
+                tools
+                    .verify_configurations_against_chain(configurations_to_import)
+                    .is_ok()
+            );
+
+            assert!(
+                log_inspector.contains_log("Verifying configurations for epoch range [44..=47]")
+            )
+        }
+
+        #[test]
+        fn ok_with_only_one_same_epoch_conf_outside_offset_window_with_fallback() {
+            let current_epoch = Epoch(47);
+            let on_chain_markers = BTreeMap::from([
+                (Epoch(31), fake_configuration('A')),
+                (Epoch(38), fake_configuration('B')),
+            ]);
+            let on_chain_configurations = ConfigurationComputerFromMarkers::new(on_chain_markers);
+
+            let configurations_to_import = vec![
+                fake_configuration_to_import(Epoch(38), 'B'),
+                fake_configuration_to_import(Epoch(56), 'Z'),
+            ];
+
+            let tools = build_tools(current_epoch, on_chain_configurations, TestLogger::stdout());
+
+            assert!(
+                tools
+                    .verify_configurations_against_chain(configurations_to_import)
+                    .is_ok()
+            );
+        }
+
+        #[test]
+        fn ok_with_only_one_same_conf_at_different_epoch() {
+            let current_epoch = Epoch(47);
+            let on_chain_markers = BTreeMap::from([
+                (Epoch(31), fake_configuration('A')),
+                (Epoch(38), fake_configuration('B')),
+            ]);
+            let on_chain_configurations = ConfigurationComputerFromMarkers::new(on_chain_markers);
+
+            let configurations_to_import = vec![
+                fake_configuration_to_import(Epoch(40), 'B'),
+                fake_configuration_to_import(Epoch(56), 'Z'),
+            ];
+
+            let tools = build_tools(current_epoch, on_chain_configurations, TestLogger::stdout());
+
+            assert!(
+                tools
+                    .verify_configurations_against_chain(configurations_to_import)
+                    .is_ok()
+            );
+        }
+
+        #[test]
+        fn ko_because_last_known_on_chain_configuration_b_for_offset_window_is_not_repeated() {
+            let current_epoch = Epoch(47);
+            let on_chain_markers = BTreeMap::from([
+                (Epoch(31), fake_configuration('A')),
+                (Epoch(38), fake_configuration('B')),
+            ]);
+            let on_chain_configurations = ConfigurationComputerFromMarkers::new(on_chain_markers);
+
+            let configurations_to_import = vec![
+                fake_configuration_to_import(Epoch(40), 'C'),
+                fake_configuration_to_import(Epoch(56), 'Z'),
+            ];
+
+            let tools = build_tools(current_epoch, on_chain_configurations, TestLogger::stdout());
+            let result = tools.verify_configurations_against_chain(configurations_to_import);
+
+            assert!(matches!(
+                result.unwrap_err(),
+                ProtocolConfigurationVerifierError::NotSameConfigurationForEpoch(Epoch(44))
+            ));
+        }
+
+        #[test]
+        fn full_offset_window_have_to_be_repeated_if_it_have_different_configuration() {
+            let current_epoch = Epoch(47);
+            let on_chain_markers = BTreeMap::from([
+                (Epoch(43), fake_configuration('A')),
+                (Epoch(44), fake_configuration('B')),
+                (Epoch(45), fake_configuration('C')),
+                (Epoch(46), fake_configuration('D')),
+                (Epoch(47), fake_configuration('E')),
+            ]);
+            let on_chain_configurations = ConfigurationComputerFromMarkers::new(on_chain_markers);
+
+            let configurations_to_import = vec![
+                fake_configuration_to_import(Epoch(44), 'B'),
+                fake_configuration_to_import(Epoch(45), 'C'),
+                fake_configuration_to_import(Epoch(46), 'D'),
+                fake_configuration_to_import(Epoch(47), 'E'),
+                fake_configuration_to_import(Epoch(53), 'Z'),
+            ];
+
+            let tools = build_tools(
+                current_epoch,
+                on_chain_configurations.clone(),
+                TestLogger::stdout(),
+            );
+            assert!(
+                tools
+                    .verify_configurations_against_chain(configurations_to_import)
+                    .is_ok()
+            );
+
+            //It fail if one of epoch/conf from offset window is not repeated
+            let bad_configurations_to_import = vec![
+                fake_configuration_to_import(Epoch(44), 'B'),
+                fake_configuration_to_import(Epoch(45), 'X'),
+                fake_configuration_to_import(Epoch(46), 'D'),
+                fake_configuration_to_import(Epoch(47), 'E'),
+                fake_configuration_to_import(Epoch(53), 'Z'),
+            ];
+
+            let tools = build_tools(current_epoch, on_chain_configurations, TestLogger::stdout());
+            let result = tools.verify_configurations_against_chain(bad_configurations_to_import);
+
+            assert!(matches!(
+                result.unwrap_err(),
+                ProtocolConfigurationVerifierError::NotSameConfigurationForEpoch(Epoch(45))
+            ));
+        }
+
+        #[test]
+        fn window_to_repeat_dont_have_to_be_exactly_at_same_epoch_as_long_as_it_can_fallback_to_same_configuration()
+         {
+            let current_epoch = Epoch(47);
+            let on_chain_configurations =
+                build_on_chain_markers(vec![(Epoch(30), 'A'), (Epoch(44), 'B'), (Epoch(47), 'B')]);
+
+            let configurations_to_import = vec![
+                fake_configuration_to_import(Epoch(32), 'A'),
+                fake_configuration_to_import(Epoch(40), 'B'),
+                fake_configuration_to_import(Epoch(53), 'Z'),
+            ];
+
+            let tools = build_tools(
+                current_epoch,
+                on_chain_configurations.clone(),
+                TestLogger::stdout(),
+            );
+            assert!(
+                tools
+                    .verify_configurations_against_chain(configurations_to_import)
+                    .is_ok()
+            );
+        }
+
+        #[test]
+        fn verification_with_no_markers_on_chain_should_be_ok() {
+            let current_epoch = Epoch(47);
+            let on_chain_configurations = ConfigurationComputerFromMarkers::new(BTreeMap::new());
+
+            let configurations_to_import = vec![fake_configuration_to_import(Epoch(53), 'Z')];
+
+            let tools = build_tools(
+                current_epoch,
+                on_chain_configurations.clone(),
+                TestLogger::stdout(),
+            );
+            assert!(
+                tools
+                    .verify_configurations_against_chain(configurations_to_import)
+                    .is_ok()
+            );
+        }
+
+        #[test]
+        fn verification_with_no_markers_to_import_should_be_ko() {
+            let current_epoch = Epoch(47);
+            let on_chain_configurations =
+                build_on_chain_markers(vec![(Epoch(30), 'A'), (Epoch(44), 'B')]);
+
+            let tools = build_tools(
+                current_epoch,
+                on_chain_configurations.clone(),
+                TestLogger::stdout(),
+            );
+            let result = tools.verify_configurations_against_chain(vec![]);
+
+            assert!(matches!(
+                result.unwrap_err(),
+                ProtocolConfigurationVerifierError::NotSameConfigurationForEpoch(Epoch(44))
+            ));
+        }
+
+        #[test]
+        fn verification_should_handle_offset_with_current_epoch_1() {
+            let current_epoch = Epoch(1);
+            let on_chain_configurations = build_on_chain_markers(vec![(Epoch(1), 'A')]);
+            let configurations_to_import = vec![fake_configuration_to_import(Epoch(1), 'A')];
+
+            let tools = build_tools(
+                current_epoch,
+                on_chain_configurations.clone(),
+                TestLogger::stdout(),
+            );
+
+            assert!(
+                tools
+                    .verify_configurations_against_chain(configurations_to_import)
+                    .is_ok()
+            );
+        }
     }
 }
