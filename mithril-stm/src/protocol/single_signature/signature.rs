@@ -96,55 +96,70 @@ impl SingleSignature {
         let nr_indexes = u64::from_be_bytes(u64_bytes) as usize;
 
         let mut indexes = Vec::new();
-        for i in 0..nr_indexes {
+        let mut offset = 8usize;
+        for _ in 0..nr_indexes {
+            let index_end =
+                offset.checked_add(8).ok_or(SignatureError::SerializationError)?;
             u64_bytes.copy_from_slice(
                 bytes
-                    .get(8 + i * 8..16 + i * 8)
+                    .get(offset..index_end)
                     .ok_or(SignatureError::SerializationError)?,
             );
             indexes.push(u64::from_be_bytes(u64_bytes));
+            offset = index_end;
         }
 
-        let offset = 8 + nr_indexes * 8;
+        let sigma_end = offset.checked_add(48).ok_or(SignatureError::SerializationError)?;
         let sigma = BlsSignature::from_bytes(
             bytes
-                .get(offset..offset + 48)
+                .get(offset..sigma_end)
                 .ok_or(SignatureError::SerializationError)?,
         )?;
 
+        let signer_index_end =
+            sigma_end.checked_add(8).ok_or(SignatureError::SerializationError)?;
         u64_bytes.copy_from_slice(
             bytes
-                .get(offset + 48..offset + 56)
+                .get(sigma_end..signer_index_end)
                 .ok_or(SignatureError::SerializationError)?,
         );
         let signer_index = u64::from_be_bytes(u64_bytes);
 
         #[cfg(feature = "future_snark")]
         let snark_signature = {
-            let snark_offset = offset + 56;
+            let snark_offset = signer_index_end;
             if snark_offset < bytes.len() {
+                let schnorr_signature_end = snark_offset
+                    .checked_add(96)
+                    .ok_or(SignatureError::SerializationError)?;
                 let schnorr_signature = crate::UniqueSchnorrSignature::from_bytes(
                     bytes
-                        .get(snark_offset..snark_offset + 96)
+                        .get(snark_offset..schnorr_signature_end)
                         .ok_or(SignatureError::SerializationError)?,
                 )?;
-                let mut snark_idx_offset = snark_offset + 96;
+                let nr_snark_indices_end = schnorr_signature_end
+                    .checked_add(8)
+                    .ok_or(SignatureError::SerializationError)?;
                 u64_bytes.copy_from_slice(
                     bytes
-                        .get(snark_idx_offset..snark_idx_offset + 8)
+                        .get(schnorr_signature_end..nr_snark_indices_end)
                         .ok_or(SignatureError::SerializationError)?,
                 );
                 let nr_snark_indices = u64::from_be_bytes(u64_bytes) as usize;
-                snark_idx_offset += 8;
 
-                let mut snark_indices = Vec::with_capacity(nr_snark_indices);
-                for i in 0..nr_snark_indices {
+                let mut snark_indices = Vec::new();
+                let mut snark_idx_offset = nr_snark_indices_end;
+                for _ in 0..nr_snark_indices {
+                    let snark_index_end = snark_idx_offset
+                        .checked_add(8)
+                        .ok_or(SignatureError::SerializationError)?;
                     u64_bytes.copy_from_slice(
                         bytes
-                            .get(snark_idx_offset + i * 8..snark_idx_offset + (i + 1) * 8)
+                            .get(snark_idx_offset..snark_index_end)
                             .ok_or(SignatureError::SerializationError)?,
                     );
                     snark_indices.push(u64::from_be_bytes(u64_bytes));
+                    snark_idx_offset = snark_index_end;
                 }
 
                 Some(SingleSignatureForSnark::new(
