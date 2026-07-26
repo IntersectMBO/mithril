@@ -52,9 +52,7 @@ pub(crate) use midnight_proofs::{
 
 pub(crate) mod accumulator;
 #[cfg(any(test, feature = "benchmark-internals"))]
-pub mod bench_cli;
-#[cfg(any(test, feature = "benchmark-internals"))]
-pub mod bench_helpers;
+pub mod bench;
 pub(crate) mod certificate_proof;
 pub(crate) mod circuit;
 pub(crate) mod config;

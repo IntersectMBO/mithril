@@ -1,5 +1,5 @@
 //! Benchmarks for the recursive IVC circuit, driven end-to-end by the production-backed
-//! [`IvcBenchEnv`] façade (`mithril-stm/src/circuits/halo2_ivc/bench_helpers.rs`). Every timed operation
+//! [`IvcBenchEnv`] façade (`mithril-stm/src/circuits/halo2_ivc/bench/helpers.rs`). Every timed operation
 //! delegates to the façade, so the measurements exercise the same code paths run in production.
 //!
 //! ## Running
@@ -31,8 +31,8 @@ use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 use mithril_stm::circuits::halo2_ivc::{
-    bench_cli::{self, BenchCli},
-    bench_helpers::{IvcBenchEnv, PreparedStep, TransitionPath},
+    bench::cli::{self, BenchCli},
+    bench::helpers::{IvcBenchEnv, PreparedStep, TransitionPath},
 };
 use tempfile::TempDir;
 
@@ -62,7 +62,7 @@ fn ids_for(path: TransitionPath, name: &str) -> Vec<String> {
     ids
 }
 
-/// Setup cold/warm benchmark ids (item 8). Each measures its cache **cold then warm**; they build their
+/// Setup cold/warm benchmark ids. Each measures its cache **cold then warm**; they build their
 /// own throwaway caches and do NOT use the shared per-path environment.
 const SETUP_IDS: &[&str] = &["ivc/setup/srs", "ivc/setup/keys"];
 
@@ -263,7 +263,7 @@ fn observe<T>(operation: impl FnOnce() -> T) -> Duration {
     start.elapsed()
 }
 
-/// Setup cold/warm measurements (item 8), each on its own throwaway cache: the cold call populates the
+/// Setup cold/warm measurements, each on its own throwaway cache: the cold call populates the
 /// cache, the warm call reads it back — both through the production providers. Independent of the shared
 /// per-path environment.
 fn run_setup_benches(filter: Option<&str>) {
@@ -296,7 +296,7 @@ fn run_setup_benches(filter: Option<&str>) {
     print_setup_report(srs, keys);
 }
 
-/// Prints the setup cold-vs-warm table (item 8): cold = generate/derive from scratch, warm = load from the
+/// Prints the setup cold-vs-warm table: cold = generate/derive from scratch, warm = load from the
 /// on-disk cache. Single observation each.
 fn print_setup_report(srs: Option<(Duration, Duration)>, keys: Option<(Duration, Duration)>) {
     if srs.is_none() && keys.is_none() {
@@ -327,7 +327,7 @@ fn print_setup_report(srs: Option<(Duration, Duration)>, keys: Option<(Duration,
 }
 
 fn main() {
-    match bench_cli::parse(std::env::args().skip(1)) {
+    match cli::parse(std::env::args().skip(1)) {
         Err(message) => die(&message),
         Ok(BenchCli::Help) => print_usage(),
         Ok(BenchCli::Version) => println!("{}", env!("CARGO_PKG_VERSION")),

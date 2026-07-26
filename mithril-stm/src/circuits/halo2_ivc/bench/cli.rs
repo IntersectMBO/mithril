@@ -3,7 +3,7 @@
 //! Split out (behind `benchmark-internals`) and kept **pure** — no printing, no `process::exit` — so the
 //! fail-closed contract can be unit-tested: no option may consume a following token and turn a control
 //! flag or filter into an accidental `Run(None)`, which would trigger a multi-minute keygen + prove run.
-//! The bench binary turns the returned [`BenchCli`] into printing / exit.
+//! The bench binary turns the returned `BenchCli` into printing / exit.
 
 /// Valueless flags tolerated (e.g. `cargo bench` passes `--bench`). Every other `-`/`--` token is
 /// rejected — nothing consumes a following value, so no token can be swallowed.
