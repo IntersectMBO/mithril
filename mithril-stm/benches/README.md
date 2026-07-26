@@ -34,12 +34,12 @@ Everything after `--` is passed to the benchmark binary.
 
 ## Benchmark index
 
-| Bench | Circuit / area | What it measures | Selection |
-|-------|----------------|------------------|-----------|
-| `ivc_halo2_snark` | recursive IVC circuit | prove / verify / fold per transition path + setup (cold/warm), single observation | **custom CLI** (`--list`, literal id/prefix filter) |
-| `halo2_snark` | non-recursive certificate circuit | constraints, VK size, proof size, prove & verify time across parameter tiers | Criterion (filter `certificate/<tier>`) |
-| `halo2_prover_modes` | non-recursive certificate circuit | mock-prover vs real-prover cost projected to an e2e run, across `k` tiers | no arguments |
-| `multi_sig`, `schnorr_sig`, `stm`, `size_benches` | other crate areas (not Halo2 circuits) | see each file | — |
+| Bench                                             | Circuit / area                         | What it measures                                                                  | Selection                                           |
+| ------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `ivc_halo2_snark`                                 | recursive IVC circuit                  | prove / verify / fold per transition path + setup (cold/warm), single observation | **custom CLI** (`--list`, literal id/prefix filter) |
+| `halo2_snark`                                     | non-recursive certificate circuit      | constraints, VK size, proof size, prove & verify time across parameter tiers      | Criterion (filter `certificate/<tier>`)             |
+| `halo2_prover_modes`                              | non-recursive certificate circuit      | mock-prover vs real-prover cost projected to an e2e run, across `k` tiers         | no arguments                                        |
+| `multi_sig`, `schnorr_sig`, `stm`, `size_benches` | other crate areas (not Halo2 circuits) | see each file                                                                     | —                                                   |
 
 ---
 
@@ -125,12 +125,12 @@ cargo +1.88.0 bench -p mithril-stm --features future_snark,benchmark-internals -
 cargo +1.88.0 bench -p mithril-stm --features future_snark,benchmark-internals --bench halo2_snark -- certificate/production
 ```
 
-| Tier | Quorum | `k` | Measurement |
-|------|--------|-----|-------------|
-| `small` | 3 | 13 | Criterion, 10 samples |
-| `medium` | 32 | 16 | Criterion, 10 samples |
-| `large` | 1024 | 21 | single observation |
-| `production` | 1944 | 22 | single observation |
+| Tier         | Quorum | `k` | Measurement           |
+| ------------ | ------ | --- | --------------------- |
+| `small`      | 3      | 13  | Criterion, 10 samples |
+| `medium`     | 32     | 16  | Criterion, 10 samples |
+| `large`      | 1024   | 21  | single observation    |
+| `production` | 1944   | 22  | single observation    |
 
 `small` is the lightest and a good smoke test after touching the circuit or the façade. `production` requires
 ≥ 70 GB RAM (server only).
