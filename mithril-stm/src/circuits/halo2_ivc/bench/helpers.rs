@@ -569,21 +569,6 @@ impl IvcBenchEnv {
         let _recursive_keys = provider.key_pair(srs)?;
         Ok(())
     }
-
-    /// Full setup load: SRS + certificate/IVC keys + fixed bases.
-    ///
-    /// `with_unsafe_srs` regenerates and rewrites the SRS on every call, so **both** the empty-cache
-    /// and populated-cache runs include unsafe SRS regeneration + serialization. The only difference
-    /// is the circuit keys: derived (empty key cache) vs loaded (populated key cache). This is
-    /// therefore `full_setup/cold_keys` vs `full_setup/cached_keys` — not a warm-SRS measurement.
-    /// The bench harness labels the two groups (`cold_keys` vs `cached_keys`) accordingly.
-    pub fn measure_full_setup(cache_dir: &Path) -> StmResult<()> {
-        let _setup = IvcSnarkProverSetup::load(
-            &trusted_setup_provider(cache_dir),
-            &recursive_key_provider(cache_dir)?,
-        )?;
-        Ok(())
-    }
 }
 
 /// Rebuilds the deterministic aggregate verification key from a committed 32-byte Merkle root and
