@@ -7,6 +7,7 @@
 //! which use the full prover output: a valid proof implies all constraints hold.
 
 use midnight_circuits::types::Instantiable;
+use sha2::{Digest, Sha256};
 
 use crate::circuits::halo2_ivc::tests::common::{
     asset_readers::{
@@ -26,6 +27,7 @@ use crate::circuits::halo2_ivc::tests::common::{
     },
 };
 use crate::circuits::halo2_ivc::{AssignedAccumulator, state::State};
+use crate::signature_scheme::BaseFieldElement;
 
 #[test]
 fn recursive_chain_state_asset_proof_and_accumulator_are_valid() {
@@ -101,10 +103,6 @@ fn genesis_benchmark_fixture_is_deterministic_and_valid() {
     // Guards the additive genesis benchmark fixture: the committed bytes must match the
     // deterministic generator output, be internally consistent, and carry a valid genesis
     // signature. Fails loudly if the committed `.bin` drifts from `build_asset_generation_setup`.
-    use sha2::{Digest, Sha256};
-
-    use crate::signature_scheme::BaseFieldElement;
-
     let setup = build_asset_generation_setup();
     let fixture =
         load_embedded_genesis_benchmark_fixture().expect("genesis benchmark fixture should load");
