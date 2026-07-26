@@ -18,8 +18,6 @@ pub enum BenchCli {
     Run(Option<String>),
     /// `--list`: print ids and return (no environment build).
     List,
-    /// `--ignored`: nothing to run (no benches are ignored).
-    Ignored,
     /// `--help` / `-h`: print usage and return.
     Help,
     /// `--version` / `-V`: print the crate version and return.
@@ -27,15 +25,13 @@ pub enum BenchCli {
 }
 
 /// Parse benchmark CLI arguments (already skipping `argv[0]`). Fail-closed: any unsupported option, a regex
-/// metacharacter in the filter, more than one positional, or conflicting control flags returns `Err`. No
-/// option consumes a following token, so a control flag or filter can never be swallowed into `Run(None)`.
+/// metacharacter in the filter, or more than one positional returns `Err`. No option consumes a following
+/// token, so a control flag or filter can never be swallowed into `Run(None)`.
 pub fn parse(args: impl Iterator<Item = String>) -> Result<BenchCli, String> {
     let mut filter: Option<String> = None;
     let mut list = false;
-    let mut ignored = false;
     let mut help = false;
     let mut version = false;
-    let mut control_modes = 0;
 
     for token in args {
         match token.as_str() {
@@ -48,14 +44,7 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<BenchCli, String> {
                      environment. Use the façade #[ignore] smoke test for a once-through run."
                 ));
             }
-            "--list" => {
-                list = true;
-                control_modes += 1;
-            }
-            "--ignored" => {
-                ignored = true;
-                control_modes += 1;
-            }
+            "--list" => list = true,
             "--help" | "-h" => help = true,
             "--version" | "-V" => version = true,
             flag if FLAG_OPTS.contains(&flag) => {}
@@ -87,14 +76,8 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<BenchCli, String> {
     if version {
         return Ok(BenchCli::Version);
     }
-    if control_modes > 1 {
-        return Err("conflicting control modes (e.g. --list with --ignored)".to_string());
-    }
     if list {
         return Ok(BenchCli::List);
-    }
-    if ignored {
-        return Ok(BenchCli::Ignored);
     }
     Ok(BenchCli::Run(filter))
 }
@@ -123,7 +106,6 @@ mod tests {
     #[test]
     fn control_flags_map_to_their_variants() {
         assert_eq!(parse_args(&["--list"]), Ok(BenchCli::List));
-        assert_eq!(parse_args(&["--ignored"]), Ok(BenchCli::Ignored));
         assert_eq!(parse_args(&["--help"]), Ok(BenchCli::Help));
         assert_eq!(parse_args(&["-h"]), Ok(BenchCli::Help));
         assert_eq!(parse_args(&["--version"]), Ok(BenchCli::Version));
@@ -157,15 +139,15 @@ mod tests {
         assert!(parse_args(&["--profile-time", "30"]).is_err());
         assert!(parse_args(&["ivc/.*verify"]).is_err());
         assert!(parse_args(&["ivc/genesis", "ivc/same_epoch"]).is_err());
+        // `--ignored` is not a supported option (no benches are ignored); it must be rejected, both on
+        // its own and alongside a valid control flag — never fall through to a run.
+        assert!(parse_args(&["--ignored"]).is_err());
         assert!(parse_args(&["--list", "--ignored"]).is_err());
     }
 
     #[test]
     fn help_and_version_take_precedence_over_control_flags() {
         assert_eq!(parse_args(&["--list", "--help"]), Ok(BenchCli::Help));
-        assert_eq!(
-            parse_args(&["--ignored", "--version"]),
-            Ok(BenchCli::Version)
-        );
+        assert_eq!(parse_args(&["--list", "--version"]), Ok(BenchCli::Version));
     }
 }

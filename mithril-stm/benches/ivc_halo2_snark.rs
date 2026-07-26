@@ -332,7 +332,6 @@ fn main() {
         Ok(BenchCli::Help) => print_usage(),
         Ok(BenchCli::Version) => println!("{}", env!("CARGO_PKG_VERSION")),
         Ok(BenchCli::List) => print_all_ids(),
-        Ok(BenchCli::Ignored) => {}
         Ok(BenchCli::Run(filter)) => run(filter),
     }
 }
