@@ -48,13 +48,12 @@ impl Epoch {
 
     /// Computes a new Epoch by applying an epoch offset.
     ///
-    /// Will fail if the computed epoch is negative.
+    /// Will fail if the computed epoch is out of the [Epoch] range.
     pub fn offset_by(&self, epoch_offset: i64) -> Result<Self, EpochError> {
-        let epoch_new = self.0 as i64 + epoch_offset;
-        if epoch_new < 0 {
-            return Err(EpochError::EpochOffset(self.0, epoch_offset));
-        }
-        Ok(Epoch(epoch_new as u64))
+        self.0
+            .checked_add_signed(epoch_offset)
+            .map(Epoch)
+            .ok_or(EpochError::EpochOffset(self.0, epoch_offset))
     }
 
     /// Apply the [retrieval offset][Self::SIGNER_RETRIEVAL_OFFSET] to this epoch
@@ -69,7 +68,7 @@ impl Epoch {
     /// returns epoch zero instead of failing when the offset would yield a negative epoch
     /// (i.e. at epoch zero itself).
     pub fn offset_to_signer_retrieval_epoch_saturating(&self) -> Self {
-        Epoch(self.0.saturating_sub(Self::SIGNER_RETRIEVAL_OFFSET.unsigned_abs()))
+        Epoch(self.0.saturating_add_signed(Self::SIGNER_RETRIEVAL_OFFSET))
     }
 
     /// Apply the [next signer retrieval offset][Self::NEXT_SIGNER_RETRIEVAL_OFFSET] to this epoch
@@ -310,6 +309,19 @@ mod tests {
     fn saturating_sub() {
         assert_eq!(Epoch(0), Epoch(1) - Epoch(5));
         assert_eq!(Epoch(0), Epoch(1) - 5_u64);
+    }
+
+    #[test]
+    fn offset_by_covers_the_whole_epoch_range() {
+        assert_eq!(Epoch(2), Epoch(3).offset_by(-1).unwrap());
+        assert_eq!(Epoch(4), Epoch(3).offset_by(1).unwrap());
+        assert_eq!(Epoch(u64::MAX - 1), Epoch(u64::MAX).offset_by(-1).unwrap());
+    }
+
+    #[test]
+    fn offset_by_fails_when_the_computed_epoch_is_out_of_range() {
+        assert!(Epoch(0).offset_by(-1).is_err());
+        assert!(Epoch(u64::MAX).offset_by(1).is_err());
     }
 
     #[test]
