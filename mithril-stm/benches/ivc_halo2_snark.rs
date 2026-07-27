@@ -126,12 +126,14 @@ struct PathTimings {
     fold: Option<Duration>,
 }
 
-/// Times one operation once (a single observation) when `run` is true, else returns `None`. The result
-/// is `black_box`-ed so the work is not optimised away.
-fn timed<T>(run: bool, operation: impl FnOnce() -> T) -> Option<Duration> {
+/// Times one operation once (a single observation) when `run` is true, else returns `None`. Prints a
+/// progress line to stderr **before** starting the clock (so logging is never counted in the timing) and
+/// `black_box`-es the result so the work is not optimised away.
+fn timed<T>(label: &str, run: bool, operation: impl FnOnce() -> T) -> Option<Duration> {
     if !run {
         return None;
     }
+    eprintln!("  {label} …");
     let start = Instant::now();
     black_box(operation());
     Some(start.elapsed())
@@ -147,31 +149,48 @@ fn measure_path(
     env: &IvcBenchEnv,
     step: &PreparedStep,
 ) -> PathTimings {
+    // Each id doubles as the stderr progress label, so the log line matches the `--list` ids exactly.
+    let prove_poseidon = {
+        let id = format!("ivc/{name}/prove/poseidon");
+        timed(&id, selected(filter, &id), || {
+            env.prove_poseidon(step).expect("poseidon prove should succeed")
+        })
+    };
+    let prove_blake2b = {
+        let id = format!("ivc/{name}/prove/blake2b");
+        timed(&id, selected(filter, &id), || {
+            env.prove_blake2b(step).expect("blake2b prove should succeed")
+        })
+    };
+    let verify_full = {
+        let id = format!("ivc/{name}/verify/full");
+        timed(&id, selected(filter, &id), || {
+            env.verify_full(step).expect("full verification should succeed")
+        })
+    };
+    let verify_kzg_opening = {
+        let id = format!("ivc/{name}/verify/kzg_opening");
+        timed(&id, selected(filter, &id), || {
+            env.verify_kzg_opening(step).expect("kzg opening should succeed")
+        })
+    };
+    let fold = if is_genesis {
+        None
+    } else {
+        let id = format!("ivc/{name}/fold");
+        timed(&id, selected(filter, &id), || {
+            env.fold_accumulators(step).expect("non-genesis fold present")
+        })
+    };
+
     PathTimings {
         name,
         proof_size: step.proof_size(),
-        prove_poseidon: timed(
-            selected(filter, &format!("ivc/{name}/prove/poseidon")),
-            || env.prove_poseidon(step).expect("poseidon prove should succeed"),
-        ),
-        prove_blake2b: timed(
-            selected(filter, &format!("ivc/{name}/prove/blake2b")),
-            || env.prove_blake2b(step).expect("blake2b prove should succeed"),
-        ),
-        verify_full: timed(selected(filter, &format!("ivc/{name}/verify/full")), || {
-            env.verify_full(step).expect("full verification should succeed")
-        }),
-        verify_kzg_opening: timed(
-            selected(filter, &format!("ivc/{name}/verify/kzg_opening")),
-            || env.verify_kzg_opening(step).expect("kzg opening should succeed"),
-        ),
-        fold: if is_genesis {
-            None
-        } else {
-            timed(selected(filter, &format!("ivc/{name}/fold")), || {
-                env.fold_accumulators(step).expect("non-genesis fold present")
-            })
-        },
+        prove_poseidon,
+        prove_blake2b,
+        verify_full,
+        verify_kzg_opening,
+        fold,
     }
 }
 
@@ -234,14 +253,20 @@ fn run_path_benches(filter: Option<&str>) {
     // One shared environment (a full recursive keygen) for the whole run; `cache` stays in scope (and
     // thus on disk) for the entire block. The keygen is timed once as the one-off `setup` cost.
     let cache = TempDir::new().expect("bench cache tempdir");
+    eprintln!("building shared environment (recursive keygen); this dominates the runtime …");
     let setup_start = Instant::now();
     let env = IvcBenchEnv::new(cache.path()).expect("IVC bench environment should build");
     let setup = setup_start.elapsed();
+    eprintln!(
+        "environment ready in {:.1}s; measuring paths …",
+        setup.as_secs_f64()
+    );
 
     let rows: Vec<PathTimings> = PATHS
         .iter()
         .filter(|(path, name)| path_selected(filter, *path, name))
         .map(|(path, name)| {
+            eprintln!("[{name}] preparing fixture (untimed) …");
             let step = env.prepare_step(*path).expect("fixture preparation should succeed");
             measure_path(
                 filter,
@@ -268,6 +293,7 @@ fn observe<T>(operation: impl FnOnce() -> T) -> Duration {
 /// per-path environment.
 fn run_setup_benches(filter: Option<&str>) {
     let srs = selected(filter, "ivc/setup/srs").then(|| {
+        eprintln!("measuring setup: ivc/setup/srs (cold then warm) …");
         let dir = TempDir::new().expect("bench cache tempdir");
         let cold = observe(|| {
             IvcBenchEnv::measure_srs_cold_start(dir.path()).expect("srs cold-start should succeed")
@@ -279,8 +305,8 @@ fn run_setup_benches(filter: Option<&str>) {
     });
     let keys = selected(filter, "ivc/setup/keys").then(|| {
         eprintln!(
-            "note: 'ivc/setup/keys' runs a full recursive keygen for the cold measurement \
-             (minutes, GB-scale RAM)."
+            "measuring setup: ivc/setup/keys (cold then warm) — the cold run does a full recursive \
+             keygen (minutes, GB-scale RAM) …"
         );
         let dir = TempDir::new().expect("bench cache tempdir");
         let srs = IvcBenchEnv::measure_srs_cold_start(dir.path())
