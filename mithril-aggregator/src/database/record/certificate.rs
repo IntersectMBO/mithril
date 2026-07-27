@@ -215,17 +215,19 @@ impl TryFrom<Certificate> for CertificateRecord {
     fn try_from(other: Certificate) -> Result<Self, Self::Error> {
         let signed_entity_type = other.signed_entity_type();
         let (signature, parent_certificate_id) = match other.signature {
-            CertificateSignature::GenesisSignature(signature) => (signature.to_bytes_hex()?, None),
+            CertificateSignature::GenesisSignature(signature) => {
+                (String::try_from(&signature)?, None)
+            }
             #[cfg(feature = "future_snark")]
             CertificateSignature::GenesisDualSignature(ed_signature, schnorr_signature) => {
                 let payload = PersistedDualGenesisSignature {
-                    ed25519: ed_signature.to_bytes_hex()?,
+                    ed25519: String::try_from(&ed_signature)?,
                     schnorr: schnorr_signature_to_hex(&schnorr_signature),
                 };
                 (serde_json::to_string(&payload)?, None)
             }
             CertificateSignature::MultiSignature(_, signature) => {
-                (signature.to_json_hex()?, Some(other.previous_hash))
+                (String::try_from(&signature)?, Some(other.previous_hash))
             }
         };
 
@@ -233,18 +235,20 @@ impl TryFrom<Certificate> for CertificateRecord {
         let aggregate_verification_key_snark = other
             .aggregate_verification_key_snark
             .as_ref()
-            .map(|avk| avk.to_bytes_hex())
+            .map(String::try_from)
             .transpose()?;
         #[cfg(not(feature = "future_snark"))]
         let aggregate_verification_key_snark: Option<HexEncodedKey> = None;
 
         let ancillary_prover_data = other
             .ancillary_prover_data
-            .map(|data| data.to_bytes_hex())
+            .as_ref()
+            .map(String::try_from)
             .transpose()?;
         let ancillary_verifier_data = other
             .ancillary_verifier_data
-            .map(|data| data.to_bytes_hex())
+            .as_ref()
+            .map(String::try_from)
             .transpose()?;
 
         let certificate_record = CertificateRecord {
@@ -252,7 +256,7 @@ impl TryFrom<Certificate> for CertificateRecord {
             parent_certificate_id,
             message: other.signed_message,
             signature,
-            aggregate_verification_key: other.aggregate_verification_key.to_json_hex()?,
+            aggregate_verification_key: String::try_from(&other.aggregate_verification_key)?,
             aggregate_verification_key_snark,
             ancillary_prover_data,
             ancillary_verifier_data,
@@ -595,6 +599,37 @@ mod tests {
         let certificate: Certificate = record.try_into().unwrap();
 
         assert_eq!(expected_hash, &certificate.hash);
+    }
+
+    #[cfg(feature = "future_snark")]
+    mod snark_multi_signature {
+        use super::*;
+
+        #[test]
+        fn snark_multi_signature_is_stored_as_bytes_hex() {
+            let chain = setup_certificate_chain(5, 2);
+            let mut certificate = chain
+                .certificates_chained
+                .iter()
+                .find(|c| matches!(c.signature, CertificateSignature::MultiSignature(..)))
+                .expect("chain should contain a multi-signature certificate")
+                .clone();
+            let signed_entity_type = match &certificate.signature {
+                CertificateSignature::MultiSignature(signed_entity_type, _) => {
+                    signed_entity_type.clone()
+                }
+                _ => unreachable!(),
+            };
+            certificate.signature = CertificateSignature::MultiSignature(
+                signed_entity_type,
+                fake_data::snark_aggregate_signature(),
+            );
+            let expected_bytes_hex = fake_data::snark_aggregate_signature().to_bytes_hex().unwrap();
+
+            let record: CertificateRecord = certificate.try_into().unwrap();
+
+            assert_eq!(expected_bytes_hex, record.signature);
+        }
     }
 
     #[cfg(feature = "future_snark")]
