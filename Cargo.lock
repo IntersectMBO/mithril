@@ -4697,6 +4697,8 @@ version = "0.1.12"
 dependencies = [
  "anyhow",
  "async-trait",
+ "ciborium",
+ "hex",
  "httpmock",
  "mithril-aggregator-client",
  "mithril-cardano-node-chain",
