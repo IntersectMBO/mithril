@@ -71,6 +71,8 @@ impl<D: MembershipDigest> ConcatenationProofSigner<D> {
 
     /// Checks the lottery for given `message_with_commitment` and the `sigma`.
     /// Returns a vector of winning indices.
+    /// # Error
+    /// Returns an error if protocol parameters are invalid (e.g. `phi_f` outside `(0, 1]`).
     pub fn check_lottery(
         &self,
         message_with_commitment: &[u8],

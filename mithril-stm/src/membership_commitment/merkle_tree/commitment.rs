@@ -183,12 +183,15 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeBatchCommitment<D, L>
             .and_then(|nr_nodes| nr_nodes.checked_sub(1))
             .ok_or(MerkleTreeError::SerializationError)?;
 
+        let nr_leaves_next_pow_2 = self
+            .nr_leaves
+            .checked_next_power_of_two()
+            .ok_or(MerkleTreeError::SerializationError)?;
         ordered_indices = ordered_indices
             .into_iter()
             .map(|i| {
-                self.nr_leaves
-                    .checked_next_power_of_two()
-                    .and_then(|idx| idx.checked_add(i))
+                nr_leaves_next_pow_2
+                    .checked_add(i)
                     .and_then(|idx| idx.checked_sub(1))
                     .ok_or(MerkleTreeError::SerializationError)
             })

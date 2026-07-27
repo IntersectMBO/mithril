@@ -59,7 +59,7 @@ cfg_num_integer! {
         }
 
         let phi_f_ratio_int: Ratio<i64> =
-            Ratio::approximate_float(phi_f).ok_or(anyhow!("Approximation of float as a Ratio failed because it is infinite or NaN."))?;
+            Ratio::approximate_float(phi_f).ok_or_else(|| anyhow!("Approximation of float as a Ratio failed because it is infinite or NaN."))?;
         let phi_f_ratio = Ratio::new_raw(
             BigInt::from(*phi_f_ratio_int.numer()),
             BigInt::from(*phi_f_ratio_int.denom()),
