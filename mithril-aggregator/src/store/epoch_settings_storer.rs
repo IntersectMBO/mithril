@@ -244,4 +244,43 @@ mod tests {
         let epoch_settings_stored = store.get_epoch_settings(epoch + 2).await.unwrap();
         assert!(epoch_settings_stored.is_none());
     }
+
+    #[tokio::test]
+    async fn test_handle_discrepancies_at_startup_at_epoch_zero_clamps_the_aggregation_epoch() {
+        let epoch_settings = AggregatorEpochSettings::dummy();
+        let mut aggregation_epoch_settings = epoch_settings.clone();
+        aggregation_epoch_settings.protocol_parameters.k += 15;
+
+        let mut next_aggregation_epoch_settings = epoch_settings.clone();
+        next_aggregation_epoch_settings.protocol_parameters.k += 26;
+
+        let mut registration_epoch_settings = epoch_settings.clone();
+        registration_epoch_settings.protocol_parameters.k += 37;
+
+        let epoch = Epoch(0);
+        let store = FakeEpochSettingsStorer::new(vec![]);
+        store
+            .handle_discrepancies_at_startup(&MithrilNetworkConfiguration {
+                epoch,
+                configuration_for_aggregation: aggregation_epoch_settings
+                    .clone()
+                    .into_network_configuration_for_epoch(BTreeSet::new()),
+                configuration_for_next_aggregation: next_aggregation_epoch_settings
+                    .into_network_configuration_for_epoch(BTreeSet::new()),
+                configuration_for_registration: registration_epoch_settings
+                    .clone()
+                    .into_network_configuration_for_epoch(BTreeSet::new()),
+            })
+            .await
+            .unwrap();
+
+        let epoch_settings_stored = store.get_epoch_settings(Epoch(0)).await.unwrap();
+        assert_eq!(Some(aggregation_epoch_settings), epoch_settings_stored);
+
+        let epoch_settings_stored = store.get_epoch_settings(Epoch(1)).await.unwrap();
+        assert_eq!(Some(registration_epoch_settings), epoch_settings_stored);
+
+        let epoch_settings_stored = store.get_epoch_settings(Epoch(2)).await.unwrap();
+        assert!(epoch_settings_stored.is_none());
+    }
 }
