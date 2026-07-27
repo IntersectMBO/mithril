@@ -123,6 +123,14 @@ impl MithrilInfrastructure {
                 .await?;
 
         Self::register_startup_era(&toolkit, &leader_aggregator, config).await?;
+        toolkit
+            .wait
+            .for_aggregator_at_target_epoch(
+                &leader_aggregator,
+                Epoch(1),
+                "minimal epoch for the aggregator to handle startup discrepancies".to_string(),
+            )
+            .await?;
         leader_aggregator.serve().await?;
 
         let follower_aggregator_endpoints = follower_aggregators

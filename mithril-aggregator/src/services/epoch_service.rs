@@ -296,10 +296,7 @@ impl EpochService for MithrilEpochService {
 
         let mithril_era = self.era_checker.current_era();
 
-        let signer_retrieval_epoch =
-            epoch.offset_to_signer_retrieval_epoch().with_context(|| {
-                format!("EpochService could not compute signer retrieval epoch from epoch: {epoch}")
-            })?;
+        let signer_retrieval_epoch = epoch.offset_to_signer_retrieval_epoch_saturating();
         let next_signer_retrieval_epoch = epoch.offset_to_next_signer_retrieval_epoch();
         let signer_registration_epoch = epoch.offset_to_recording_epoch();
 
@@ -957,7 +954,7 @@ mod tests {
 
         async fn build(self) -> MithrilEpochService {
             let signer_retrieval_epoch =
-                self.current_epoch.offset_to_signer_retrieval_epoch().unwrap();
+                self.current_epoch.offset_to_signer_retrieval_epoch_saturating();
             let next_signer_retrieval_epoch =
                 self.current_epoch.offset_to_next_signer_retrieval_epoch();
 
@@ -1095,6 +1092,29 @@ mod tests {
                 total_spo: Some(10),
                 total_stake: Some(20_000_000),
             }
+        );
+    }
+
+    #[tokio::test]
+    async fn inform_epoch_at_epoch_zero_retrieves_signers_at_epoch_zero() {
+        let epoch = Epoch(0);
+        let epoch_fixture = MithrilFixtureBuilder::default().with_signers(3).build();
+
+        let mut service = EpochServiceBuilder::new(epoch, epoch_fixture.clone()).build().await;
+
+        service
+            .inform_epoch(epoch)
+            .await
+            .expect("inform_epoch should not fail at epoch zero");
+
+        assert_eq!(epoch, service.epoch_of_current_data().unwrap());
+        assert_eq!(
+            epoch_fixture.signers(),
+            service.current_signers().unwrap().clone()
+        );
+        assert_eq!(
+            epoch_fixture.signers(),
+            service.next_signers().unwrap().clone()
         );
     }
 

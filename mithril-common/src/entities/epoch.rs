@@ -48,18 +48,27 @@ impl Epoch {
 
     /// Computes a new Epoch by applying an epoch offset.
     ///
-    /// Will fail if the computed epoch is negative.
+    /// Will fail if overflow occurred (see [u64] for bounds).
     pub fn offset_by(&self, epoch_offset: i64) -> Result<Self, EpochError> {
-        let epoch_new = self.0 as i64 + epoch_offset;
-        if epoch_new < 0 {
-            return Err(EpochError::EpochOffset(self.0, epoch_offset));
-        }
-        Ok(Epoch(epoch_new as u64))
+        self.0
+            .checked_add_signed(epoch_offset)
+            .map(Epoch)
+            .ok_or(EpochError::EpochOffset(self.0, epoch_offset))
     }
 
     /// Apply the [retrieval offset][Self::SIGNER_RETRIEVAL_OFFSET] to this epoch
     pub fn offset_to_signer_retrieval_epoch(&self) -> Result<Self, EpochError> {
         self.offset_by(Self::SIGNER_RETRIEVAL_OFFSET)
+    }
+
+    /// Apply the [retrieval offset][Self::SIGNER_RETRIEVAL_OFFSET] to this epoch, saturating at
+    /// epoch zero.
+    ///
+    /// Unlike [offset_to_signer_retrieval_epoch][Self::offset_to_signer_retrieval_epoch], this
+    /// returns epoch zero instead of failing when the offset would yield a negative epoch
+    /// (i.e. at epoch zero itself).
+    pub fn offset_to_signer_retrieval_epoch_saturating(&self) -> Self {
+        Epoch(self.0.saturating_add_signed(Self::SIGNER_RETRIEVAL_OFFSET))
     }
 
     /// Apply the [next signer retrieval offset][Self::NEXT_SIGNER_RETRIEVAL_OFFSET] to this epoch
@@ -303,9 +312,42 @@ mod tests {
     }
 
     #[test]
+    fn offset_by_covers_the_whole_epoch_range() {
+        assert_eq!(Epoch(2), Epoch(3).offset_by(-1).unwrap());
+        assert_eq!(Epoch(4), Epoch(3).offset_by(1).unwrap());
+        assert_eq!(Epoch(u64::MAX - 1), Epoch(u64::MAX).offset_by(-1).unwrap());
+    }
+
+    #[test]
+    fn offset_by_fails_when_overflow_occurred() {
+        assert!(Epoch(0).offset_by(-1).is_err());
+        assert!(Epoch(u64::MAX).offset_by(1).is_err());
+    }
+
+    #[test]
     fn test_previous() {
         assert_eq!(Epoch(2), Epoch(3).previous().unwrap());
         assert!(Epoch(0).previous().is_err());
+    }
+
+    #[test]
+    fn offset_to_signer_retrieval_epoch_saturating_clamps_at_epoch_zero() {
+        assert_eq!(
+            Epoch(2),
+            Epoch(3).offset_to_signer_retrieval_epoch_saturating()
+        );
+        assert_eq!(
+            Epoch(0),
+            Epoch(1).offset_to_signer_retrieval_epoch_saturating()
+        );
+        assert_eq!(
+            Epoch(0),
+            Epoch(0).offset_to_signer_retrieval_epoch_saturating()
+        );
+        assert_eq!(
+            Epoch(u64::MAX - 1),
+            Epoch(u64::MAX).offset_to_signer_retrieval_epoch_saturating()
+        );
     }
 
     #[test]
