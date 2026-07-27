@@ -47,6 +47,43 @@ find_last_released_version() {
   echo "$latest_version"
 }
 
+find_target_os() {
+  # supported os are: linux and darwin
+  local -r OS="$(uname -s)"
+  local OS_CODE
+  OS_CODE="$(echo "$OS" | awk '{print tolower($0)}')"
+
+  case "$OS" in
+    Linux) : ;;
+    Darwin) : ;;
+    *) error_exit "Unsupported ipfs-devnet operating system $OS" ;;
+  esac
+
+  echo "$OS_CODE"
+}
+
+find_target_arch() {
+  # supported archs are: amd64 and arm64
+  local -r ARCH="$(uname -m)"
+
+  local ARCH_NAME
+  case "$ARCH" in
+    x86_64) ARCH_NAME="amd64" ;;
+    arm64|aarch64) ARCH_NAME="arm64" ;;
+    *) error_exit "Unsupported ipfs-devnet architecture: $ARCH" ;;
+  esac
+
+  echo "$ARCH_NAME"
+}
+
+format_archive_name() {
+  local -r version="$1"
+  local -r os="$2"
+  local -r arch="$3"
+
+  echo "${BIN_NAME}_${version}_${os}-${arch}.tar.gz"
+}
+
 download_bin_archive() {
   local -r version="$1"
   local -r os="$2"
@@ -82,6 +119,11 @@ readonly KUBO_VERSION=${KUBO_VERSION:-$(find_last_released_version)}
 # Main
 # ---------------------------------------------------------------------------
 
+readonly OS="$(find_target_os)"
+readonly ARCH="$(find_target_arch)"
+
 echo ">> KUBO_VERSION: ${KUBO_VERSION}"
 echo ">> DOWNLOAD_DIR: ${DOWNLOAD_DIR}"
 echo ">> OUTPUT_DIR: ${OUTPUT_DIR}"
+echo ">> OS: ${OS}"
+echo ">> ARCH: ${ARCH}"
