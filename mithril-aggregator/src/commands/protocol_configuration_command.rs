@@ -10,9 +10,9 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
+use thiserror::Error;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserverType;
-use mithril_common::StdResult;
 use mithril_common::crypto_helper::{
     ProtocolConfigurationMarkersSigner, ProtocolConfigurationMarkersVerifierSecretKey,
 };
@@ -21,10 +21,20 @@ use mithril_common::entities::{
     HexEncodedProtocolConfigurationMarkersSecretKey, ProtocolParameters,
     SignedEntityTypeDiscriminants,
 };
+use mithril_common::{StdResult, entities::ProtocolParametersError};
 use mithril_doc::{Documenter, StructDoc};
 
 use crate::{ConfigurationSource, ExecutionEnvironment, extract_all};
 use crate::{dependency_injection::DependenciesBuilder, tools::ProtocolConfigurationTools};
+
+#[derive(Debug, Error)]
+pub enum InputConfigurationImportVerificationError {
+    #[error("Protocol parameters are invalid: {0:?} {1:?}")]
+    InvalidProtocolParameters(ProtocolParameters, ProtocolParametersError),
+
+    #[error("enabled_signed_entity_types contains '{0:?}' without any associated configuration")]
+    EnabledSignedEntityTypeWithoutConfiguration(SignedEntityTypeDiscriminants),
+}
 
 /// Protocol configuration parameters configuration
 #[derive(Debug, Clone, Deserialize, Documenter)]
@@ -197,7 +207,6 @@ impl ImportProtocolConfigurationSubCommand {
         root_logger: Logger,
         config_builder: ConfigBuilder<DefaultState>,
     ) -> StdResult<()> {
-        // 0 conf & dependencies
         let config: ProtocolConfigurationParametersConfiguration = config_builder
             .build()
             .with_context(|| "configuration build error")?
@@ -215,30 +224,30 @@ impl ImportProtocolConfigurationSubCommand {
                 || "Dependencies Builder can not create protocol configuration command dependencies container",
             )?;
 
-        //1 - Read the protocol configurations from the file
+        // 1: Read the protocol configurations from the file
         println!(
             "Reading file content {}",
             &self.import_path.to_string_lossy()
         );
         let json_protocol_configurations = fs::read_to_string(&self.import_path);
 
-        //2 - Parse the json into a protocol configuration list using serde_json
+        // 2: Parse the json into a protocol configuration list using serde_json
         println!("Json parsing ...");
         let protocol_configurations: Vec<HumanReadableProtocolConfiguration> =
             serde_json::from_str(&json_protocol_configurations?)?;
 
-        //3 - Verify protocol config consistency, TODO could be move in ProtocolConfigurationTools ?
+        // 3: Verify protocol configuration consistency
         println!("Verifying protocol configuration consistency...");
-        Self::verify_protocol_configurations(&protocol_configurations)?; //return a VerifiedProtocolConfigurations ?
+        Self::verify_protocol_configurations(&protocol_configurations)?;
 
-        //3.2 Check epoch consistency on chain
-
+        // 4: Verify protocol configuration against on chain configuration
+        println!("Verifying protocol configuration against on chain configuration...");
         let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
             .await
             .with_context(|| "protocol-configuration-tools: initialization error")?;
         // tools.verify_configuration_against_production(&protocol_configurations);
 
-        //4 - Generate Tx datum
+        // 5: Generate Tx datum
         println!("Generating Tx datum ...");
         let protocol_configuration_markers_signer =
             Self::get_markers_signer(self.protocol_configuration_markers_secret_key.clone())?;
@@ -248,9 +257,11 @@ impl ImportProtocolConfigurationSubCommand {
             &protocol_configuration_markers_signer,
         )?;
 
-        //5 - TODO: check size < 10kb
+        // 6: Verifying datum size
+        println!("Verifying datum content do not exceed maximum size...");
+        tools.verify_tx_datum_size(tx_datum.clone())?;
 
-        //6 - Write datum file
+        // 7: Write datum file
         println!("Generating Tx datum output file...");
         let mut target_file = File::create(&self.target_path)?;
         target_file.write_all(tx_datum.as_bytes())?;
@@ -278,43 +289,49 @@ impl ImportProtocolConfigurationSubCommand {
 
     pub fn verify_protocol_configurations(
         configurations: &Vec<HumanReadableProtocolConfiguration>,
-    ) -> StdResult<()> {
+    ) -> Result<(), InputConfigurationImportVerificationError> {
         for config in configurations {
-            if config.protocol_parameters.k == 0
-                || config.protocol_parameters.m == 0
-                || config.protocol_parameters.phi_f == 0.0
+            match config.protocol_parameters.check_parameters() {
+                Ok(()) => (),
+                Err(e) => {
+                    return Err(
+                        InputConfigurationImportVerificationError::InvalidProtocolParameters(
+                            config.protocol_parameters.clone(),
+                            e,
+                        ),
+                    );
+                }
+            }
+            if config
+                .enabled_signed_entity_types
+                .contains(&SignedEntityTypeDiscriminants::CardanoTransactions)
+                && config.cardano_transaction_signing_config.is_none()
             {
-                return Err(anyhow::anyhow!(
-                    "Protocol parameters must be non-zero: {:?}",
-                    config.protocol_parameters
-                ));
+                return Err(
+                    InputConfigurationImportVerificationError::EnabledSignedEntityTypeWithoutConfiguration(
+                        SignedEntityTypeDiscriminants::CardanoTransactions,
+                    ),
+                );
+            }
+            if config
+                .enabled_signed_entity_types
+                .contains(&SignedEntityTypeDiscriminants::CardanoBlocksTransactions)
+                && config.cardano_blocks_transactions_signing_config.is_none()
+            {
+                return Err(
+                    InputConfigurationImportVerificationError::EnabledSignedEntityTypeWithoutConfiguration(
+                        SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
+                    ),
+                );
             }
         }
-        //TODO verify epoch consistency (no epoch smaller than latest export ?)
-        //TODO verify that if CardanoBlocksSigningConfig is filled that CardanoBlocksTransactions is in available signed entity types
+
         Ok(())
     }
 
     pub fn extract_config(_parent: String) -> HashMap<String, StructDoc> {
         HashMap::new()
     }
-
-    // to delete, moved to dep injection
-    // /// Create era reader adapter from configuration settings.
-    // fn build_protocol_configuration_reader_adapter(
-    //     chain_observer: Arc<dyn ChainObserver>,
-    //     adapter_type: ProtocolConfigurationReaderAdapterType,
-    //     adapter_params: Option<String>,
-    // ) -> StdResult<Arc<dyn ProtocolConfigurationReaderAdapter>> {
-    //     ProtocolConfigurationReaderAdapterBuilder::new(&adapter_type, &adapter_params)
-    //         .build(chain_observer)
-    //         .with_context(|| {
-    //             format!(
-    //                 "Configuration: can not create protocol configuration reader for adapter '{}'.",
-    //                 adapter_type
-    //             )
-    //         })
-    // }
 }
 
 #[cfg(test)]
@@ -323,31 +340,63 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_verify_protocol_configurations_should_throw_error_with_protocol_parameter_at_zero() {
-        let protocol_parameters_list_to_test = [
-            ProtocolParameters::new(0, 1, 0.123),
-            ProtocolParameters::new(1, 0, 0.123),
-            ProtocolParameters::new(1, 1, 0.0),
-        ];
+    mod verify_protocol_configurations {
 
-        for protocol_parameters in protocol_parameters_list_to_test {
+        use mithril_common::messages::SignedEntityTypeDiscriminantsMessage;
+
+        use super::*;
+
+        #[test]
+        fn should_throw_error_with_invalid_protocol_parameters() {
+            let protocol_parameters = ProtocolParameters::new(0, 1, 0.123);
+
             let configurations = vec![HumanReadableProtocolConfiguration {
                 protocol_parameters: protocol_parameters.clone(),
                 ..Dummy::dummy()
             }];
 
-            let result = ImportProtocolConfigurationSubCommand::verify_protocol_configurations(
+            let error = ImportProtocolConfigurationSubCommand::verify_protocol_configurations(
                 &configurations,
-            );
+            )
+            .unwrap_err();
 
-            assert_eq!(
-                result.unwrap_err().to_string(),
-                format!(
-                    "Protocol parameters must be non-zero: {:?}",
+            assert!(
+                error.to_string().contains(&format!(
+                    "Protocol parameters are invalid: {:?}",
                     protocol_parameters
-                )
+                )),
+                "unexpected error: {error}"
             );
+        }
+
+        #[test]
+        fn shoud_throw_error_if_enabled_entity_types_contains_cardano_transactions_without_configuration()
+         {
+            let configurations = vec![HumanReadableProtocolConfiguration {
+                enabled_signed_entity_types: BTreeSet::from([
+                    SignedEntityTypeDiscriminants::CardanoTransactions,
+                ]),
+                cardano_transaction_signing_config: None,
+                ..Dummy::dummy()
+            }];
+
+            ImportProtocolConfigurationSubCommand::verify_protocol_configurations(&configurations)
+                .expect_err("enabled_signed_entity_types contains 'CardanoTransactions' without any associated configuration");
+        }
+
+        #[test]
+        fn shoud_throw_error_if_enabled_entity_types_contains_cardano_blocks_transactions_without_configuration()
+         {
+            let configurations = vec![HumanReadableProtocolConfiguration {
+                enabled_signed_entity_types: BTreeSet::from([
+                    SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
+                ]),
+                cardano_blocks_transactions_signing_config: None,
+                ..Dummy::dummy()
+            }];
+
+            ImportProtocolConfigurationSubCommand::verify_protocol_configurations(&configurations)
+                .expect_err("enabled_signed_entity_types contains 'CardanoBlocksTransactions' without any associated configuration");
         }
     }
 
