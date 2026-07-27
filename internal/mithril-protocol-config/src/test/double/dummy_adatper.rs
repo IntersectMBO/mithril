@@ -65,19 +65,19 @@ mod tests {
             ProtocolConfigurationMarker::new(
                 Epoch(1),
                 ProtocolConfigurationForEpoch::dummy()
-                    .to_cbor()
+                    .to_cbor_hex()
                     .expect("should not fail"),
             ),
             ProtocolConfigurationMarker::new(
                 Epoch(2),
                 ProtocolConfigurationForEpoch::dummy()
-                    .to_cbor()
+                    .to_cbor_hex()
                     .expect("should not fail"),
             ),
             ProtocolConfigurationMarker::new(
                 Epoch(3),
                 ProtocolConfigurationForEpoch::dummy()
-                    .to_cbor()
+                    .to_cbor_hex()
                     .expect("should not fail"),
             ),
         ];

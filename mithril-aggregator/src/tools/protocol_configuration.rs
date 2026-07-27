@@ -122,11 +122,12 @@ impl ProtocolConfigurationTools {
     ) -> ProtocolConfigurationToolsResult<String> {
         let mut markers: Vec<ProtocolConfigurationMarker> = Vec::new();
         for configuration in configurations {
+            let epoch = configuration.epoch;
             let protocol_configuration_for_epoch: ProtocolConfigurationForEpoch =
-                configuration.clone().into();
+                configuration.into();
             let marker: ProtocolConfigurationMarker = ProtocolConfigurationMarker::new(
-                configuration.epoch,
-                protocol_configuration_for_epoch.to_cbor()?,
+                epoch,
+                protocol_configuration_for_epoch.to_cbor_hex()?,
             );
             markers.push(marker);
         }

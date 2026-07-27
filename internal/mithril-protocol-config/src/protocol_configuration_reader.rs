@@ -1,10 +1,11 @@
+use anyhow::Context;
 use async_trait::async_trait;
+use hex::FromHex;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use thiserror::Error;
 
-use mithril_common::crypto_helper::{CodecParseError, SerDeShelleyFileFormat};
 use mithril_common::entities::{
     CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
     ProtocolParameters, SignedEntityTypeDiscriminants,
@@ -12,6 +13,11 @@ use mithril_common::entities::{
 use mithril_common::{StdError, StdResult};
 
 use crate::configuration_computer::ConfigurationComputerFromMarkers;
+
+/// Parse error
+#[derive(Error, Debug)]
+#[error("Codec parse error")]
+pub struct ProtocolConfigurationParseError(#[source] StdError);
 
 /// The cbor representation of a MithrilNetworkConfigurationForEpoch
 pub type CborProtocolConfigurationForEpoch = String;
@@ -55,20 +61,41 @@ pub struct ProtocolConfigurationForEpoch {
 }
 
 impl ProtocolConfigurationForEpoch {
-    /// Serialize the ProtocolConfigurationForEpoch to a CBOR hex representation
-    pub fn to_cbor(&self) -> Result<CborProtocolConfigurationForEpoch, CodecParseError> {
-        self.to_cbor_hex()
+    /// Serialize the structure to a CBOR bytes representation.
+    fn to_cbor_bytes(&self) -> Result<Vec<u8>, ProtocolConfigurationParseError> {
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        ciborium::ser::into_writer(&self, &mut cursor)
+            .with_context(|| "ProtocolConfigurationForEpoch can not serialize data to cbor")
+            .map_err(ProtocolConfigurationParseError)?;
+
+        Ok(cursor.into_inner())
     }
 
-    /// Deserialize the ProtocolConfigurationForEpoch from a CBOR hex representation
-    pub fn from_cbor(cbor: CborProtocolConfigurationForEpoch) -> Result<Self, CodecParseError> {
-        Self::from_cbor_hex(&cbor)
+    /// Serialize the structure to a CBOR hex representation.
+    pub fn to_cbor_hex(&self) -> Result<String, ProtocolConfigurationParseError> {
+        Ok(hex::encode(self.to_cbor_bytes()?))
     }
-}
 
-impl SerDeShelleyFileFormat for ProtocolConfigurationForEpoch {
-    const TYPE: &'static str = "ProtocolConfigurationForEpoch";
-    const DESCRIPTION: &'static str = "";
+    /// Deserialize a type `T: Serialize + DeserializeOwned` from CBOR bytes representation.
+    fn from_cbor_bytes(bytes: &[u8]) -> Result<Self, ProtocolConfigurationParseError> {
+        let mut cursor = std::io::Cursor::new(&bytes);
+        let a: Self = ciborium::de::from_reader(&mut cursor)
+            .with_context(|| "ProtocolConfigurationForEpoch can not unserialize cbor data")
+            .map_err(ProtocolConfigurationParseError)?;
+
+        Ok(a)
+    }
+
+    /// Deserialize a type `T: Serialize + DeserializeOwned` from CBOR hex representation.
+    pub fn from_cbor_hex(hex: &str) -> Result<Self, ProtocolConfigurationParseError> {
+        let hex_vector = Vec::from_hex(hex)
+            .with_context(|| "ProtocolConfigurationForEpoch can not unserialize hex data")
+            .map_err(ProtocolConfigurationParseError)?;
+
+        Self::from_cbor_bytes(&hex_vector)
+            .with_context(|| "ProtocolConfigurationForEpoch can not unserialize cbor data")
+            .map_err(ProtocolConfigurationParseError)
+    }
 }
 
 /// Adapters are responsible of technically reading the information of
@@ -119,7 +146,7 @@ impl ProtocolConfigurationReader {
 
         let mut decoded_markers = BTreeMap::new();
         for marker in markers {
-            let configuration = ProtocolConfigurationForEpoch::from_cbor(marker.configuration)
+            let configuration = ProtocolConfigurationForEpoch::from_cbor_hex(&marker.configuration)
                 .map_err(|e| ProtocolConfigurationReaderError::AdapterFailure {
                     message: format!(
                         "Failed to parse protocol configuration for epoch {}",
@@ -147,9 +174,9 @@ mod tests {
     #[test]
     fn to_cbor_from_cbor_conversion() {
         let mithril_network_configuration_for_epoch = ProtocolConfigurationForEpoch::dummy();
-        let cbor = mithril_network_configuration_for_epoch.to_cbor().unwrap();
+        let cbor = mithril_network_configuration_for_epoch.to_cbor_hex().unwrap();
         let mithril_network_configuration_for_epoch_from_cbor =
-            ProtocolConfigurationForEpoch::from_cbor(cbor.clone()).unwrap();
+            ProtocolConfigurationForEpoch::from_cbor_hex(&cbor).unwrap();
         assert_eq!(
             mithril_network_configuration_for_epoch,
             mithril_network_configuration_for_epoch_from_cbor
@@ -180,7 +207,7 @@ mod tests {
                 step: BlockNumber(40),
             }),
         };
-        let cbor = mithril_network_configuration_for_epoch.to_cbor().unwrap();
+        let cbor = mithril_network_configuration_for_epoch.to_cbor_hex().unwrap();
         assert_eq!(&cbor, expected_cbor);
     }
 
@@ -208,7 +235,7 @@ mod tests {
                     step: BlockNumber(40),
                 }),
             }
-            .to_cbor()
+            .to_cbor_hex()
             .expect("shoud not fail"),
         }]
     }
