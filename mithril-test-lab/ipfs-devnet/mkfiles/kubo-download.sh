@@ -94,6 +94,12 @@ download_bin_archive() {
   local -r target_url="${IPFS_DISTRIBUTIONS_CDN}/${BIN_NAME}/${version}/$(format_archive_name "$version" "$os" "$arch")"
   local -r archive_path="${download_dir}/$(format_archive_name "$version" "$os" "$arch")"
 
+  if [ -f "$archive_path" ]; then
+    echo ">> Archive already exists, skipping download: ${archive_path}" >&2
+    echo "$archive_path"
+    return 0
+  fi
+
   echo ">> Downloading ${BIN_NAME} ${version} from ${target_url}..." >&2
   curl --fail --silent --show-error --location \
     --output "$archive_path" "$target_url" ||
@@ -101,7 +107,6 @@ download_bin_archive() {
 
   echo "$archive_path"
 }
-
 
 # ---------------------------------------------------------------------------
 # Argument parsing
