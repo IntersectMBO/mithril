@@ -3,7 +3,7 @@ use std::time::Instant;
 use criterion::{Criterion, SamplingMode, criterion_group, criterion_main};
 use std::time::Duration;
 
-use mithril_stm::circuits::halo2::bench_helpers::BenchEnv;
+use mithril_stm::circuits::halo2::bench::helpers::BenchEnv;
 
 struct Tier {
     name: &'static str,

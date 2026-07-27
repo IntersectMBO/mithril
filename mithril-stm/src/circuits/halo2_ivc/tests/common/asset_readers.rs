@@ -1,164 +1,39 @@
+//! Filesystem asset writers for the recursive Halo2 IVC golden generators.
+//!
+//! The read-only, embedded asset layer (typed representations, `include_bytes!` constants, and
+//! byte decoders) lives in [`crate::circuits::halo2_ivc::embedded_assets`] so the IVC benchmarks
+//! can share it. This module keeps the test-only asset-writing infrastructure (the `store_*`
+//! functions used by the golden generators) and re-exports the embedded types and loaders so the
+//! `tests::common::asset_readers::{...}` import paths continue to resolve unchanged.
+
 use std::{
     collections::BTreeMap,
     fs::{self, File},
-    io::{BufReader, BufWriter, Cursor, Read, Write},
+    io::{BufWriter, Write},
     path::Path,
 };
 
-use anyhow::{Context, anyhow};
-use midnight_proofs::{
-    poly::kzg::params::ParamsVerifierKZG,
-    utils::{SerdeFormat, helpers::ProcessedSerdeObject},
-};
-use midnight_zk_stdlib::MidnightVK;
+use anyhow::Context;
+use midnight_proofs::utils::{SerdeFormat, helpers::ProcessedSerdeObject};
 
 use crate::StmResult;
-use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
-use crate::circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey;
 use crate::circuits::halo2_ivc::{
-    Accumulator, EmulatedCurve, KZGCommitmentScheme, NativeField, PREIMAGE_SIZE, PairingEngine,
-    RecursiveEmulation, VerifyingKey,
-    circuit::IvcCircuitData,
-    io::{Read as IvcRead, Write as IvcWrite},
+    Accumulator, EmulatedCurve, NativeField, PREIMAGE_SIZE, RecursiveEmulation,
+    io::Write as IvcWrite,
     state::State,
-    types::{
-        CertificateProofBytes, EpochNumber, IvcProofBytes, MerkleTreeCommitment, MessageHash,
-        ProtocolParametersHash, StepCounter,
-    },
+    types::{CertificateProofBytes, IvcProofBytes},
 };
 use crate::signature_scheme::StandardSchnorrSignature;
 
-use super::field_encoding::jubjub_base_from_raw_le_bytes;
-
-/// Stored recursive chain checkpoint used by the golden tests.
-#[derive(Debug)]
-pub(crate) struct RecursiveChainStateAsset {
-    /// Stored global public inputs for the recursive flow.
-    pub(crate) global_field_elements: Vec<NativeField>,
-    /// Stored recursive state checkpoint.
-    pub(crate) state: State,
-    /// Stored previous recursive proof bytes.
-    pub(crate) ivc_proof: IvcProofBytes,
-    /// Stored folded accumulator for the checkpoint.
-    pub(crate) accumulator: Accumulator<RecursiveEmulation>,
-    /// Stored chain-specific Schnorr signature over the genesis state.
-    pub(crate) genesis_signature: StandardSchnorrSignature,
-}
-
-/// Stored verifier-side context shared by the golden assets.
-#[derive(Debug)]
-pub(crate) struct VerificationContextAsset {
-    /// Shared global public inputs used by the committed assets.
-    pub(crate) global_field_elements: Vec<NativeField>,
-    /// Stored recursive verifying key.
-    pub(crate) recursive_verifying_key: RecursiveCircuitVerifyingKey,
-    /// Combined fixed bases needed to check recursive accumulators.
-    pub(crate) combined_fixed_bases: BTreeMap<String, EmulatedCurve>,
-    /// Shared verifier-side KZG parameters.
-    pub(crate) verifier_params: ParamsVerifierKZG<PairingEngine>,
-    /// Stored certificate verifying key, enabling MockProver tests to skip SRS generation.
-    pub(crate) certificate_verifying_key: NonRecursiveCircuitVerifyingKey,
-}
-
-/// Stored data of the first certificate produced from `build_genesis_base_case_next_state()`.
-/// Used to test `IvcProverInput::prepare` at the first real certificate step (where the rolling
-/// state's `step_counter` is one, after the internal genesis IVC step has run).
-#[derive(Debug)]
-pub(crate) struct FirstCertificateInEpochAsset {
-    /// Certificate proof bytes (consumed by `prepare` via `SnarkProof`).
-    pub(crate) certificate_proof: CertificateProofBytes,
-    /// Expected next state after `prepare` advances by one step.
-    pub(crate) next_state: State,
-    /// SHA-256 hash that the certificate proof committed to.
-    pub(crate) message: [u8; 32],
-    /// Protocol-message preimage; `ProtocolMessagePreimage::current_epoch()` / `next_merkle_tree_commitment()` / `next_protocol_parameters()` decode the four
-    /// epoch fields.
-    pub(crate) message_preimage: [u8; PREIMAGE_SIZE],
-    /// Canonical encoding of the aggregate verification key merkle root the certificate
-    /// proof committed to.
-    pub(crate) aggregate_verification_key_merkle_root: [u8; 32],
-}
-
-/// Stored output of the genesis base-case step. Carries no certificate; the message,
-/// preimage, and aggregate-verification-key fields are zero-byte placeholders.
-#[derive(Debug)]
-pub(crate) struct GenesisStepOutputAsset {
-    /// Stored final recursive proof bytes for the genesis step.
-    pub(crate) ivc_proof: IvcProofBytes,
-    /// Stored folded accumulator after the genesis step.
-    pub(crate) next_accumulator: Accumulator<RecursiveEmulation>,
-    /// Stored next recursive state.
-    pub(crate) next_state: State,
-    /// Empty: genesis carries no certificate proof.
-    pub(crate) certificate_proof: CertificateProofBytes,
-    /// Zero placeholder; no certificate exists at genesis.
-    pub(crate) message: [u8; 32],
-    /// Zero placeholder; no protocol-message preimage exists at genesis.
-    pub(crate) message_preimage: [u8; PREIMAGE_SIZE],
-    /// Zero placeholder; no aggregate verification key merkle root exists at genesis.
-    pub(crate) aggregate_verification_key_merkle_root: [u8; 32],
-}
-
-/// Stored output of extending the recursive chain by one next-epoch step (the cert
-/// is the first cert of a new epoch, transitioning the chain from epoch N to N+1).
-#[derive(Debug)]
-pub(crate) struct NextEpochStepOutputAsset {
-    /// Stored final recursive proof bytes for the next-epoch step.
-    pub(crate) ivc_proof: IvcProofBytes,
-    /// Stored folded accumulator after the next-epoch step.
-    pub(crate) next_accumulator: Accumulator<RecursiveEmulation>,
-    /// Stored next recursive state.
-    pub(crate) next_state: State,
-    /// Stored certificate proof consumed by the next-epoch step.
-    pub(crate) certificate_proof: CertificateProofBytes,
-    /// SHA-256 hash that the certificate proof committed to.
-    pub(crate) message: [u8; 32],
-    /// Protocol-message preimage; `ProtocolMessagePreimage::current_epoch()` / `next_merkle_tree_commitment()` / `next_protocol_parameters()` decode the four
-    /// epoch fields.
-    pub(crate) message_preimage: [u8; PREIMAGE_SIZE],
-    /// Canonical encoding of the aggregate verification key merkle root the certificate
-    /// proof committed to.
-    pub(crate) aggregate_verification_key_merkle_root: [u8; 32],
-}
-
-/// Stored output of extending the recursive chain by one same-epoch step (the cert
-/// follows in the current epoch and does not change the epoch boundary).
-#[derive(Debug)]
-pub(crate) struct FollowingCertificateInEpochAsset {
-    /// Stored final recursive proof bytes for the same-epoch step.
-    pub(crate) ivc_proof: IvcProofBytes,
-    /// Stored folded accumulator after the same-epoch step.
-    pub(crate) next_accumulator: Accumulator<RecursiveEmulation>,
-    /// Stored next recursive state.
-    pub(crate) next_state: State,
-    /// Stored certificate proof consumed by the same-epoch step.
-    pub(crate) certificate_proof: CertificateProofBytes,
-    /// SHA-256 hash that the certificate proof committed to.
-    pub(crate) message: [u8; 32],
-    /// Protocol-message preimage; `ProtocolMessagePreimage::current_epoch()` / `next_merkle_tree_commitment()` / `next_protocol_parameters()` decode the four
-    /// epoch fields.
-    pub(crate) message_preimage: [u8; PREIMAGE_SIZE],
-    /// Canonical encoding of the aggregate verification key merkle root the certificate
-    /// proof committed to.
-    pub(crate) aggregate_verification_key_merkle_root: [u8; 32],
-}
-
-const RECURSIVE_CHAIN_STATE_ASSET_BYTES: &[u8] =
-    include_bytes!("../assets/recursive_chain_state.bin");
-const VERIFICATION_CONTEXT_ASSET_BYTES: &[u8] =
-    include_bytes!("../assets/verification_context.bin");
-const NEXT_EPOCH_STEP_OUTPUT_ASSET_BYTES: &[u8] =
-    include_bytes!("../assets/recursive_step_output.bin");
-const GENESIS_STEP_OUTPUT_ASSET_BYTES: &[u8] = include_bytes!("../assets/genesis_step_output.bin");
-const FOLLOWING_CERTIFICATE_IN_EPOCH_ASSET_BYTES: &[u8] =
-    include_bytes!("../assets/same_epoch_step_output.bin");
-const FIRST_CERTIFICATE_IN_EPOCH_ASSET_BYTES: &[u8] =
-    include_bytes!("../assets/first_step_cert.bin");
-
-/// Opens a committed golden asset for buffered reading.
-fn open_asset_file(path: &Path) -> StmResult<BufReader<File>> {
-    Ok(BufReader::new(File::open(path)?))
-}
+pub(crate) use crate::circuits::halo2_ivc::embedded_assets::{
+    FirstCertificateInEpochAsset, FollowingCertificateInEpochAsset, GenesisBenchmarkFixture,
+    GenesisStepOutputAsset, NextEpochStepOutputAsset, RecursiveChainStateAsset, StepOutputAsset,
+    VerificationContextAsset, load_embedded_first_certificate_in_epoch_asset,
+    load_embedded_following_certificate_in_epoch_asset, load_embedded_genesis_benchmark_fixture,
+    load_embedded_genesis_step_output_asset, load_embedded_next_epoch_step_output_asset,
+    load_embedded_recursive_chain_state_asset, load_embedded_verification_context_asset,
+    load_recursive_chain_state_asset,
+};
 
 /// Creates a golden asset file and its parent directory if needed.
 fn create_asset_file(path: &Path) -> StmResult<BufWriter<File>> {
@@ -168,30 +43,10 @@ fn create_asset_file(path: &Path) -> StmResult<BufWriter<File>> {
     Ok(BufWriter::new(File::create(path)?))
 }
 
-/// Reads one field element encoded as 32 little-endian bytes.
-fn read_field_element<R: Read>(reader: &mut R) -> StmResult<NativeField> {
-    let mut bytes = [0u8; 32];
-    reader.read_exact(&mut bytes)?;
-    Ok(jubjub_base_from_raw_le_bytes(&bytes))
-}
-
 /// Writes one field element as 32 little-endian bytes.
 fn write_field_element<W: Write>(writer: &mut W, value: &NativeField) -> StmResult<()> {
     writer.write_all(&value.to_bytes_le())?;
     Ok(())
-}
-
-/// Reads the seven public-input field elements that define a recursive state.
-fn read_state_public_input<R: Read>(reader: &mut R) -> StmResult<State> {
-    Ok(State::new(
-        StepCounter::from_field(read_field_element(reader)?),
-        MessageHash::from_field(read_field_element(reader)?),
-        MerkleTreeCommitment::from_field(read_field_element(reader)?),
-        MerkleTreeCommitment::from_field(read_field_element(reader)?),
-        ProtocolParametersHash::from_field(read_field_element(reader)?),
-        ProtocolParametersHash::from_field(read_field_element(reader)?),
-        EpochNumber::from_field(read_field_element(reader)?),
-    ))
 }
 
 /// Writes the seven public-input field elements of a recursive state.
@@ -200,13 +55,6 @@ fn write_state_public_input<W: Write>(writer: &mut W, state: &State) -> StmResul
         write_field_element(writer, &value)?;
     }
     Ok(())
-}
-
-/// Reads a 64-byte `StandardSchnorrSignature` (response | challenge).
-fn read_schnorr_signature<R: Read>(reader: &mut R) -> StmResult<StandardSchnorrSignature> {
-    let mut bytes = [0u8; 64];
-    reader.read_exact(&mut bytes)?;
-    StandardSchnorrSignature::from_bytes(&bytes)
 }
 
 /// Writes a 64-byte `StandardSchnorrSignature` (response | challenge).
@@ -218,59 +66,11 @@ fn write_schnorr_signature<W: Write>(
     Ok(())
 }
 
-/// Reads exactly `N` bytes stored behind a 32-bit little-endian length prefix. Returns
-/// an error if the prefix does not equal `N`.
-fn read_fixed_length_prefixed<const N: usize, R: Read>(
-    reader: &mut R,
-    field_name: &str,
-) -> StmResult<[u8; N]> {
-    let bytes = read_length_prefixed_proof(reader)?;
-    bytes
-        .try_into()
-        .map_err(|v: Vec<u8>| anyhow!("{field_name}: expected {N} bytes, got {} bytes", v.len()))
-}
-
-/// Reads proof bytes stored behind a 32-bit little-endian length prefix.
-fn read_length_prefixed_proof<R: Read>(reader: &mut R) -> StmResult<Vec<u8>> {
-    let mut len = [0u8; 4];
-    reader.read_exact(&mut len)?;
-    let proof_len = u32::from_le_bytes(len) as usize;
-
-    let mut proof = vec![0u8; proof_len];
-    reader.read_exact(&mut proof)?;
-
-    Ok(proof)
-}
-
 /// Writes proof bytes with a 32-bit little-endian length prefix.
 fn write_length_prefixed_proof<W: Write>(writer: &mut W, proof: &[u8]) -> StmResult<()> {
     writer.write_all(&(proof.len() as u32).to_le_bytes())?;
     writer.write_all(proof)?;
     Ok(())
-}
-
-/// Reads the named fixed-base map stored in the verification-context asset.
-fn read_named_fixed_bases<R: Read>(reader: &mut R) -> StmResult<BTreeMap<String, EmulatedCurve>> {
-    let mut count = [0u8; 4];
-    reader.read_exact(&mut count)?;
-    let count = u32::from_le_bytes(count) as usize;
-
-    let mut map = BTreeMap::new();
-    for _ in 0..count {
-        let mut name_len = [0u8; 4];
-        reader.read_exact(&mut name_len)?;
-        let name_len = u32::from_le_bytes(name_len) as usize;
-
-        let mut name_bytes = vec![0u8; name_len];
-        reader.read_exact(&mut name_bytes)?;
-        let name = String::from_utf8(name_bytes)
-            .map_err(|_| anyhow!("invalid UTF-8 key in verification-context fixed-base map"))?;
-
-        let point = EmulatedCurve::read(reader, SerdeFormat::RawBytesUnchecked)?;
-        map.insert(name, point);
-    }
-
-    Ok(map)
 }
 
 /// Writes the named fixed-base map stored in the verification-context asset.
@@ -286,51 +86,6 @@ fn write_named_fixed_bases<W: Write>(
         point.write(writer, SerdeFormat::RawBytesUnchecked)?;
     }
     Ok(())
-}
-
-/// Loads a recursive chain snapshot from the committed binary asset layout.
-fn load_recursive_chain_state_asset_from_reader<R: Read>(
-    reader: &mut R,
-) -> StmResult<RecursiveChainStateAsset> {
-    let global_field_elements = (0..5)
-        .map(|_| read_field_element(reader))
-        .collect::<Result<Vec<_>, _>>()?;
-    let state = read_state_public_input(reader)?;
-    let ivc_proof = IvcProofBytes::new(read_length_prefixed_proof(reader)?);
-    let accumulator =
-        Accumulator::<RecursiveEmulation>::read(reader, SerdeFormat::RawBytesUnchecked)?;
-    let genesis_signature = read_schnorr_signature(reader)?;
-
-    Ok(RecursiveChainStateAsset {
-        global_field_elements,
-        state,
-        ivc_proof,
-        accumulator,
-        genesis_signature,
-    })
-}
-
-/// Loads the stored recursive chain snapshot from a committed asset file.
-pub(crate) fn load_recursive_chain_state_asset(path: &Path) -> StmResult<RecursiveChainStateAsset> {
-    let mut reader = open_asset_file(path).with_context(|| {
-        format!(
-            "failed to open recursive chain state asset: {}",
-            path.display()
-        )
-    })?;
-    load_recursive_chain_state_asset_from_reader(&mut reader).with_context(|| {
-        format!(
-            "failed to decode recursive chain state asset: {}",
-            path.display()
-        )
-    })
-}
-
-/// Loads the embedded recursive chain snapshot compiled into the test binary.
-pub(crate) fn load_embedded_recursive_chain_state_asset() -> StmResult<RecursiveChainStateAsset> {
-    let mut reader = Cursor::new(RECURSIVE_CHAIN_STATE_ASSET_BYTES);
-    load_recursive_chain_state_asset_from_reader(&mut reader)
-        .context("failed to decode embedded recursive chain state asset")
 }
 
 /// Writes the recursive chain state asset using the committed binary layout.
@@ -361,60 +116,10 @@ pub(crate) fn store_recursive_chain_state_asset(
     Ok(())
 }
 
-/// Loads a verifier-side context from the committed binary asset layout.
-///
-/// Binary layout (v2):
-/// `[global(5×32b) | recursive_vk(var) | combined_fixed_bases(var) |
-///   verifier_params_len(4b LE) | verifier_params(var) |
-///   certificate_vk_len(4b LE) | certificate_vk(var)]`
-fn load_verification_context_asset_from_reader<R: Read>(
-    reader: &mut R,
-) -> StmResult<VerificationContextAsset> {
-    let global_field_elements = (0..5)
-        .map(|_| read_field_element(reader))
-        .collect::<Result<Vec<_>, _>>()?;
-    let recursive_verifying_key =
-        VerifyingKey::<NativeField, KZGCommitmentScheme<PairingEngine>>::read::<_, IvcCircuitData>(
-            reader,
-            SerdeFormat::RawBytesUnchecked,
-            (),
-        )?;
-    let combined_fixed_bases = read_named_fixed_bases(reader)?;
-
-    // verifier_params is length-prefixed so the certificate verification key can follow it.
-    let verifier_param_bytes = read_length_prefixed_proof(reader)?;
-
-    let mut verifier_params_reader = Cursor::new(&verifier_param_bytes);
-    let verifier_params = ParamsVerifierKZG::<PairingEngine>::read(
-        &mut verifier_params_reader,
-        SerdeFormat::RawBytesUnchecked,
-    )?;
-
-    let certificate_verification_key_bytes = read_length_prefixed_proof(reader)?;
-    let certificate_verifying_key = MidnightVK::read(
-        &mut certificate_verification_key_bytes.as_slice(),
-        SerdeFormat::RawBytes,
-    )?;
-
-    Ok(VerificationContextAsset {
-        global_field_elements,
-        recursive_verifying_key: RecursiveCircuitVerifyingKey::new(recursive_verifying_key),
-        combined_fixed_bases,
-        verifier_params,
-        certificate_verifying_key: NonRecursiveCircuitVerifyingKey::new(certificate_verifying_key),
-    })
-}
-
-/// Loads the embedded verifier-side context compiled into the test binary.
-pub(crate) fn load_embedded_verification_context_asset() -> StmResult<VerificationContextAsset> {
-    let mut reader = Cursor::new(VERIFICATION_CONTEXT_ASSET_BYTES);
-    load_verification_context_asset_from_reader(&mut reader)
-        .context("failed to decode embedded verification context asset")
-}
-
 /// Writes the verification-context asset using the committed binary layout.
 ///
-/// Binary layout (v2): see `load_verification_context_asset_from_reader`.
+/// Binary layout (v2): see
+/// [`crate::circuits::halo2_ivc::embedded_assets::load_embedded_verification_context_asset`].
 pub(crate) fn store_verification_context_asset(
     path: &Path,
     asset: &VerificationContextAsset,
@@ -458,130 +163,6 @@ pub(crate) fn store_verification_context_asset(
     Ok(())
 }
 
-/// Read-only view of the fields that generic test helpers need across the three
-/// step output asset variants. Implemented by `GenesisStepOutputAsset`,
-/// `NextEpochStepOutputAsset`, and `FollowingCertificateInEpochAsset`.
-pub(crate) trait StepOutputAsset {
-    fn next_state(&self) -> &State;
-    fn next_accumulator(&self) -> &Accumulator<RecursiveEmulation>;
-    fn ivc_proof(&self) -> &IvcProofBytes;
-}
-
-impl StepOutputAsset for GenesisStepOutputAsset {
-    fn next_state(&self) -> &State {
-        &self.next_state
-    }
-    fn next_accumulator(&self) -> &Accumulator<RecursiveEmulation> {
-        &self.next_accumulator
-    }
-    fn ivc_proof(&self) -> &IvcProofBytes {
-        &self.ivc_proof
-    }
-}
-
-impl StepOutputAsset for NextEpochStepOutputAsset {
-    fn next_state(&self) -> &State {
-        &self.next_state
-    }
-    fn next_accumulator(&self) -> &Accumulator<RecursiveEmulation> {
-        &self.next_accumulator
-    }
-    fn ivc_proof(&self) -> &IvcProofBytes {
-        &self.ivc_proof
-    }
-}
-
-impl StepOutputAsset for FollowingCertificateInEpochAsset {
-    fn next_state(&self) -> &State {
-        &self.next_state
-    }
-    fn next_accumulator(&self) -> &Accumulator<RecursiveEmulation> {
-        &self.next_accumulator
-    }
-    fn ivc_proof(&self) -> &IvcProofBytes {
-        &self.ivc_proof
-    }
-}
-
-/// Shared on-the-wire shape for the three step output asset variants. Used as a
-/// transport struct between the byte-level codec and the typed public assets.
-struct StepOutputFields {
-    ivc_proof: IvcProofBytes,
-    next_accumulator: Accumulator<RecursiveEmulation>,
-    next_state: State,
-    certificate_proof: CertificateProofBytes,
-    message: [u8; 32],
-    message_preimage: [u8; PREIMAGE_SIZE],
-    aggregate_verification_key_merkle_root: [u8; 32],
-}
-
-impl From<StepOutputFields> for GenesisStepOutputAsset {
-    fn from(f: StepOutputFields) -> Self {
-        Self {
-            ivc_proof: f.ivc_proof,
-            next_accumulator: f.next_accumulator,
-            next_state: f.next_state,
-            certificate_proof: f.certificate_proof,
-            message: f.message,
-            message_preimage: f.message_preimage,
-            aggregate_verification_key_merkle_root: f.aggregate_verification_key_merkle_root,
-        }
-    }
-}
-
-impl From<StepOutputFields> for NextEpochStepOutputAsset {
-    fn from(f: StepOutputFields) -> Self {
-        Self {
-            ivc_proof: f.ivc_proof,
-            next_accumulator: f.next_accumulator,
-            next_state: f.next_state,
-            certificate_proof: f.certificate_proof,
-            message: f.message,
-            message_preimage: f.message_preimage,
-            aggregate_verification_key_merkle_root: f.aggregate_verification_key_merkle_root,
-        }
-    }
-}
-
-impl From<StepOutputFields> for FollowingCertificateInEpochAsset {
-    fn from(f: StepOutputFields) -> Self {
-        Self {
-            ivc_proof: f.ivc_proof,
-            next_accumulator: f.next_accumulator,
-            next_state: f.next_state,
-            certificate_proof: f.certificate_proof,
-            message: f.message,
-            message_preimage: f.message_preimage,
-            aggregate_verification_key_merkle_root: f.aggregate_verification_key_merkle_root,
-        }
-    }
-}
-
-/// Reads the step-output common shape from the committed binary asset layout.
-fn read_step_output_fields_from_reader<R: Read>(reader: &mut R) -> StmResult<StepOutputFields> {
-    let ivc_proof = IvcProofBytes::new(read_length_prefixed_proof(reader)?);
-    let next_accumulator =
-        Accumulator::<RecursiveEmulation>::read(reader, SerdeFormat::RawBytesUnchecked)?;
-    let next_state = read_state_public_input(reader)?;
-    let certificate_proof = CertificateProofBytes::from_certificate_circuit_proof_bytes(
-        read_length_prefixed_proof(reader)?,
-    );
-    let message = read_fixed_length_prefixed::<32, _>(reader, "message")?;
-    let message_preimage =
-        read_fixed_length_prefixed::<PREIMAGE_SIZE, _>(reader, "message_preimage")?;
-    let mut aggregate_verification_key_merkle_root = [0u8; 32];
-    reader.read_exact(&mut aggregate_verification_key_merkle_root)?;
-    Ok(StepOutputFields {
-        ivc_proof,
-        next_accumulator,
-        next_state,
-        certificate_proof,
-        message,
-        message_preimage,
-        aggregate_verification_key_merkle_root,
-    })
-}
-
 /// Writes the step-output common shape using the committed binary layout. Shared
 /// across the three step output asset writers.
 #[allow(clippy::too_many_arguments)]
@@ -603,32 +184,6 @@ fn write_step_output_fields<W: Write>(
     write_length_prefixed_proof(writer, message_preimage)?;
     writer.write_all(aggregate_verification_key_merkle_root)?;
     Ok(())
-}
-
-/// Loads the embedded next-epoch step output compiled into the test binary.
-pub(crate) fn load_embedded_next_epoch_step_output_asset() -> StmResult<NextEpochStepOutputAsset> {
-    let mut reader = Cursor::new(NEXT_EPOCH_STEP_OUTPUT_ASSET_BYTES);
-    Ok(read_step_output_fields_from_reader(&mut reader)
-        .context("failed to decode embedded next-epoch step output asset")?
-        .into())
-}
-
-/// Loads the embedded genesis step output compiled into the test binary.
-pub(crate) fn load_embedded_genesis_step_output_asset() -> StmResult<GenesisStepOutputAsset> {
-    let mut reader = Cursor::new(GENESIS_STEP_OUTPUT_ASSET_BYTES);
-    Ok(read_step_output_fields_from_reader(&mut reader)
-        .context("failed to decode embedded genesis step output asset")?
-        .into())
-}
-
-/// Loads the embedded following-certificate-in-epoch (same-epoch) step output compiled
-/// into the test binary.
-pub(crate) fn load_embedded_following_certificate_in_epoch_asset()
--> StmResult<FollowingCertificateInEpochAsset> {
-    let mut reader = Cursor::new(FOLLOWING_CERTIFICATE_IN_EPOCH_ASSET_BYTES);
-    Ok(read_step_output_fields_from_reader(&mut reader)
-        .context("failed to decode embedded following-certificate-in-epoch asset")?
-        .into())
 }
 
 /// Writes the next-epoch step output asset using the committed binary layout.
@@ -722,37 +277,6 @@ pub(crate) fn store_following_certificate_in_epoch_asset(
     Ok(())
 }
 
-/// Loads the first-certificate-in-epoch asset from the committed binary asset layout.
-fn load_first_certificate_in_epoch_asset_from_reader<R: Read>(
-    reader: &mut R,
-) -> StmResult<FirstCertificateInEpochAsset> {
-    let certificate_proof = CertificateProofBytes::from_certificate_circuit_proof_bytes(
-        read_length_prefixed_proof(reader)?,
-    );
-    let next_state = read_state_public_input(reader)?;
-    let message = read_fixed_length_prefixed::<32, _>(reader, "message")?;
-    let message_preimage =
-        read_fixed_length_prefixed::<PREIMAGE_SIZE, _>(reader, "message_preimage")?;
-    let mut aggregate_verification_key_merkle_root = [0u8; 32];
-    reader.read_exact(&mut aggregate_verification_key_merkle_root)?;
-
-    Ok(FirstCertificateInEpochAsset {
-        certificate_proof,
-        next_state,
-        message,
-        message_preimage,
-        aggregate_verification_key_merkle_root,
-    })
-}
-
-/// Loads the embedded first-certificate-in-epoch asset compiled into the test binary.
-pub(crate) fn load_embedded_first_certificate_in_epoch_asset()
--> StmResult<FirstCertificateInEpochAsset> {
-    let mut reader = Cursor::new(FIRST_CERTIFICATE_IN_EPOCH_ASSET_BYTES);
-    load_first_certificate_in_epoch_asset_from_reader(&mut reader)
-        .context("failed to decode embedded first-certificate-in-epoch asset")
-}
-
 /// Writes the first-certificate-in-epoch asset using the committed binary layout.
 pub(crate) fn store_first_certificate_in_epoch_asset(
     path: &Path,
@@ -773,6 +297,33 @@ pub(crate) fn store_first_certificate_in_epoch_asset(
     writer.flush().with_context(|| {
         format!(
             "failed to flush first-certificate-in-epoch asset: {}",
+            path.display()
+        )
+    })?;
+    Ok(())
+}
+
+/// Writes the additive genesis benchmark fixture using the committed binary layout.
+///
+/// Fixed-size layout: `[genesis_message(32) | genesis_verification_key(64) |
+/// genesis_signature(64) | genesis_protocol_message_preimage(PREIMAGE_SIZE)]`.
+pub(crate) fn store_genesis_benchmark_fixture(
+    path: &Path,
+    fixture: &GenesisBenchmarkFixture,
+) -> StmResult<()> {
+    let mut writer = create_asset_file(path).with_context(|| {
+        format!(
+            "failed to create genesis benchmark fixture file: {}",
+            path.display()
+        )
+    })?;
+    writer.write_all(&fixture.genesis_message)?;
+    writer.write_all(&fixture.genesis_verification_key.to_bytes())?;
+    writer.write_all(&fixture.genesis_signature.to_bytes())?;
+    writer.write_all(&fixture.genesis_protocol_message_preimage)?;
+    writer.flush().with_context(|| {
+        format!(
+            "failed to flush genesis benchmark fixture: {}",
             path.display()
         )
     })?;

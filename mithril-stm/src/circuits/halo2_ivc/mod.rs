@@ -51,10 +51,15 @@ pub(crate) use midnight_proofs::{
 };
 
 pub(crate) mod accumulator;
+#[cfg(any(test, feature = "benchmark-internals"))]
+pub mod bench;
 pub(crate) mod certificate_proof;
 pub(crate) mod circuit;
 pub(crate) mod config;
 pub(crate) mod constraint_builder;
+#[cfg(any(test, feature = "benchmark-internals"))]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod embedded_assets;
 pub(crate) mod errors;
 pub(crate) mod gadgets;
 pub(crate) mod io;

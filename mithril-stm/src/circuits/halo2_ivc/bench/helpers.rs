@@ -1,0 +1,656 @@
+//! Benchmark façade for the recursive IVC circuit.
+//!
+//! Exposes `IvcBenchEnv`, a thin `benchmark-internals`-gated wrapper that delegates to the
+//! production IVC proof-system code so the benchmarks measure the same code paths run in
+//! production: setup (`IvcSnarkProverSetup::load`), preparation (`IvcProverInput`), recursive
+//! proving (`IvcProof::prove_with_transcript`), verification (`IvcProof::verify` and the KZG
+//! opening), and off-circuit accumulator folding.
+//!
+//! Fixtures are the committed golden assets plus the additive genesis fixture, so no proving
+//! witness is fabricated here. Each prepared fixture is validated once (outside the timed loops).
+//!
+//! Note on the SRS: the benchmarks use a deterministic *unsafe* SRS (production instead downloads a
+//! trusted SRS). Both the SRS and the circuit keys are measured as a **cold start** (generate / derive)
+//! and a **warm start** (load from the on-disk cache); the recursive circuit keys are the dominant
+//! setup cost.
+
+use std::path::Path;
+
+use anyhow::{anyhow, ensure};
+use group::Group;
+use midnight_circuits::{
+    hash::poseidon::PoseidonState,
+    types::Instantiable,
+    verifier::{Accumulator, AssignedAccumulator, BlstrsEmulation},
+};
+use midnight_curves::{Bls12, G1Projective};
+use midnight_proofs::{
+    plonk::prepare,
+    poly::kzg::{KZGCommitmentScheme, params::ParamsKZG},
+    transcript::{Blake2b256, CircuitTranscript, Transcript},
+};
+use rand_core::OsRng;
+
+use crate::{
+    AggregateVerificationKeyForSnark, MithrilMembershipDigest, Parameters, SnarkProof, StmResult,
+    circuits::{
+        halo2::{circuit::StmCertificateCircuit, types::CircuitBase},
+        halo2_ivc::{
+            PREIMAGE_SIZE, RECURSIVE_CIRCUIT_DEGREE,
+            circuit::IvcCircuitData,
+            embedded_assets::{
+                FollowingCertificateInEpochAsset, NextEpochStepOutputAsset,
+                load_embedded_following_certificate_in_epoch_asset,
+                load_embedded_genesis_benchmark_fixture, load_embedded_genesis_step_output_asset,
+                load_embedded_next_epoch_step_output_asset,
+                load_embedded_recursive_chain_state_asset,
+            },
+            keys::RecursiveCircuitKeyGenerator,
+            state::{Global, State},
+            types::{CertificateProofBytes, IvcProofBytes, ProtocolMessagePreimage},
+        },
+        key_provider::KeyProvider,
+        trusted_setup::TrustedSetupProvider,
+    },
+    proof_system::ivc_halo2_snark::{
+        IvcProverInput, IvcSnarkProverSetup, proof::IvcProof, rolling_state::IvcRollingState,
+        verifier_setup::IvcVerifierSetup,
+    },
+};
+
+/// Deterministic certificate parameters matching the committed golden assets
+/// (`tests::common::generators::setup` + `tests::common::CERTIFICATE_CIRCUIT_DEGREE`). If these
+/// drift from the asset generators, `IvcSnarkProverSetup::load` derives a certificate verifying
+/// key that does not match the committed certificate proofs, and fixture preparation fails its
+/// validity assert — so a mismatch surfaces loudly rather than producing bogus numbers.
+const QUORUM_SIZE: u64 = 2;
+const NUMBER_OF_LOTTERIES: u64 = QUORUM_SIZE * 10;
+const SIGNER_COUNT: usize = 3000;
+const TOTAL_STAKE: u64 = 1_000_000;
+const PHI_F: f64 = 0.2;
+
+/// A transition path benchmarked across prove / verify / accumulator-fold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransitionPath {
+    /// Genesis base case: no certificate, trivial accumulator passthrough.
+    Genesis,
+    /// Same-epoch step: certificate extends the current epoch.
+    SameEpoch,
+    /// Next-epoch step: certificate starts a new epoch.
+    NextEpoch,
+}
+
+/// Everything one path needs across the measured operations, built untimed and validated once.
+pub struct PreparedStep {
+    path: TransitionPath,
+    // Prover inputs: `create_proof` runs over this prebuilt circuit data and public inputs.
+    circuit_data: IvcCircuitData,
+    public_inputs: Vec<CircuitBase>,
+    // Verifier inputs: the committed step proof and the state/accumulator/message it is checked against.
+    proof_bytes: IvcProofBytes,
+    proof_state: State,
+    proof_accumulator: Accumulator<BlstrsEmulation>,
+    message: Vec<u8>,
+    // Accumulator-fold inputs: the two already-collapsed accumulators plus the rolling one.
+    // `None` for genesis (passthrough — no certificate or previous-IVC accumulator to fold).
+    fold: Option<FoldInputs>,
+}
+
+/// Pre-collapsed accumulators for the fold measurement (folding only, no proof verification).
+struct FoldInputs {
+    rolling_accumulator: Accumulator<BlstrsEmulation>,
+    certificate_collapsed_accumulator: Accumulator<BlstrsEmulation>,
+    previous_ivc_proof_collapsed_accumulator: Accumulator<BlstrsEmulation>,
+}
+
+/// A committed same-/next-epoch step output in the common shape a certificate fixture needs.
+///
+/// The same-epoch and next-epoch assets are distinct types with identical fields; the `From` impls
+/// below normalise both into this shape so `prepare_certificate_step` can treat them uniformly.
+struct CertificateStepAsset {
+    certificate_proof: CertificateProofBytes,
+    next_state: State,
+    next_accumulator: Accumulator<BlstrsEmulation>,
+    ivc_proof: IvcProofBytes,
+    message: [u8; 32],
+    message_preimage: [u8; PREIMAGE_SIZE],
+    aggregate_verification_key_merkle_root: [u8; 32],
+}
+
+impl From<FollowingCertificateInEpochAsset> for CertificateStepAsset {
+    fn from(step: FollowingCertificateInEpochAsset) -> Self {
+        Self {
+            certificate_proof: step.certificate_proof,
+            next_state: step.next_state,
+            next_accumulator: step.next_accumulator,
+            ivc_proof: step.ivc_proof,
+            message: step.message,
+            message_preimage: step.message_preimage,
+            aggregate_verification_key_merkle_root: step.aggregate_verification_key_merkle_root,
+        }
+    }
+}
+
+impl From<NextEpochStepOutputAsset> for CertificateStepAsset {
+    fn from(step: NextEpochStepOutputAsset) -> Self {
+        Self {
+            certificate_proof: step.certificate_proof,
+            next_state: step.next_state,
+            next_accumulator: step.next_accumulator,
+            ivc_proof: step.ivc_proof,
+            message: step.message,
+            message_preimage: step.message_preimage,
+            aggregate_verification_key_merkle_root: step.aggregate_verification_key_merkle_root,
+        }
+    }
+}
+
+impl PreparedStep {
+    /// Returns the transition path this fixture represents.
+    pub fn path(&self) -> TransitionPath {
+        self.path
+    }
+
+    /// Byte length of the committed step proof used for verification.
+    pub fn proof_size(&self) -> usize {
+        self.proof_bytes.as_bytes().len()
+    }
+}
+
+/// Deterministic certificate parameters used to derive the recursive setup.
+fn benchmark_parameters() -> Parameters {
+    Parameters {
+        k: QUORUM_SIZE,
+        m: NUMBER_OF_LOTTERIES,
+        phi_f: PHI_F,
+    }
+}
+
+/// Merkle-tree depth for the committed signer set.
+fn merkle_tree_depth() -> u32 {
+    SIGNER_COUNT.next_power_of_two().trailing_zeros()
+}
+
+/// Builds the unsafe-SRS trusted-setup provider rooted at `cache_dir`.
+///
+/// `with_unsafe_srs` generates and stores the SRS on construction (there is no generate-on-miss
+/// path), so constructing this provider is the SRS-generation cost.
+fn trusted_setup_provider(cache_dir: &Path) -> TrustedSetupProvider {
+    TrustedSetupProvider::with_unsafe_srs(cache_dir, RECURSIVE_CIRCUIT_DEGREE + 1)
+}
+
+/// Builds the recursive key provider (wrapping the certificate key provider) rooted at `cache_dir`.
+fn recursive_key_provider(
+    cache_dir: &Path,
+) -> StmResult<KeyProvider<RecursiveCircuitKeyGenerator>> {
+    let certificate_provider = KeyProvider::new(
+        cache_dir.join("certificate"),
+        "non-recursive",
+        &[],
+        StmCertificateCircuit::try_new(&benchmark_parameters(), merkle_tree_depth())?,
+    );
+    Ok(KeyProvider::new(
+        cache_dir.join("recursive"),
+        "recursive",
+        &[],
+        RecursiveCircuitKeyGenerator::new(certificate_provider),
+    ))
+}
+
+/// Shared benchmark environment delegating to the production IVC proof-system code.
+pub struct IvcBenchEnv {
+    setup: IvcSnarkProverSetup,
+    verifier_setup: IvcVerifierSetup,
+    global: Global,
+}
+
+impl IvcBenchEnv {
+    /// Builds the shared benchmark environment: the full IVC setup (SRS + verifying/proving keys +
+    /// fixed bases), the verifier setup derived from the same unsafe SRS, and the `Global` built
+    /// from the committed genesis fixture. Rooted at `cache_dir` (a caller-managed directory).
+    pub fn new(cache_dir: &Path) -> StmResult<Self> {
+        let setup = IvcSnarkProverSetup::load(
+            &trusted_setup_provider(cache_dir),
+            &recursive_key_provider(cache_dir)?,
+        )?;
+        let verifier_setup = IvcVerifierSetup::from_ivc_setup_with_srs(&setup);
+
+        let genesis_fixture = load_embedded_genesis_benchmark_fixture()?;
+        let global = Global::new(
+            genesis_fixture.genesis_message_hash(),
+            genesis_fixture.genesis_verification_key,
+            &setup.certificate_verifying_key,
+            &setup.ivc_verifying_key,
+        );
+
+        Ok(Self {
+            setup,
+            verifier_setup,
+            global,
+        })
+    }
+
+    /// Prepares the fixture for `path`. Untimed; the resulting proof is validated once.
+    pub fn prepare_step(&self, path: TransitionPath) -> StmResult<PreparedStep> {
+        let prepared = match path {
+            TransitionPath::Genesis => self.prepare_genesis_step()?,
+            TransitionPath::SameEpoch => self.prepare_certificate_step(path)?,
+            TransitionPath::NextEpoch => self.prepare_certificate_step(path)?,
+        };
+        // Validate once, outside any timed loop: the committed step proof must verify.
+        IvcProof::<Blake2b256>::new(
+            prepared.proof_bytes.clone(),
+            prepared.proof_state.clone(),
+            prepared.proof_accumulator.clone(),
+        )
+        .verify(&prepared.message, &self.global, &self.verifier_setup)?;
+        Ok(prepared)
+    }
+
+    /// Builds the genesis base-case fixture from the additive genesis fixture and the committed
+    /// genesis step output (used for verification).
+    fn prepare_genesis_step(&self) -> StmResult<PreparedStep> {
+        let genesis_fixture = load_embedded_genesis_benchmark_fixture()?;
+        let genesis_output = load_embedded_genesis_step_output_asset()?;
+        let preimage = ProtocolMessagePreimage(genesis_fixture.genesis_protocol_message_preimage);
+
+        let combined_fixed_base_names: Vec<String> =
+            self.setup.combined_fixed_bases.keys().cloned().collect();
+        let rolling_state = IvcRollingState::genesis(
+            genesis_fixture.genesis_signature,
+            &combined_fixed_base_names,
+        );
+        let prover_input =
+            IvcProverInput::prepare_genesis(&rolling_state, &preimage, &self.global)?;
+
+        let circuit_data = IvcCircuitData::try_new(
+            self.global.clone(),
+            rolling_state.state().clone(),
+            prover_input.witness,
+            CertificateProofBytes::empty(),
+            rolling_state.ivc_proof().clone(),
+            rolling_state.accumulator().clone(),
+            &self.setup.certificate_verifying_key,
+            &self.setup.ivc_verifying_key,
+        )?;
+        let public_inputs =
+            self.public_inputs_for(&prover_input.next_state, &prover_input.next_accumulator);
+
+        // Untimed equivalence: the freshly prepared proving relation must be the same transition
+        // as the committed genesis step output that verification measures.
+        ensure!(
+            prover_input.next_state == genesis_output.next_state,
+            "prepared genesis next_state does not match the committed genesis step output"
+        );
+        ensure!(
+            AssignedAccumulator::as_public_input(&prover_input.next_accumulator)
+                == AssignedAccumulator::as_public_input(&genesis_output.next_accumulator),
+            "prepared genesis next_accumulator does not match the committed genesis step output"
+        );
+
+        Ok(PreparedStep {
+            path: TransitionPath::Genesis,
+            circuit_data,
+            public_inputs,
+            proof_bytes: genesis_output.ivc_proof,
+            proof_state: genesis_output.next_state,
+            proof_accumulator: genesis_output.next_accumulator,
+            message: genesis_fixture.genesis_message.to_vec(),
+            fold: None,
+        })
+    }
+
+    /// Builds a same-epoch or next-epoch fixture from the committed recursive chain state and the
+    /// matching step output asset, mirroring the production `IvcProverInput::prepare` flow.
+    fn prepare_certificate_step(&self, path: TransitionPath) -> StmResult<PreparedStep> {
+        let chain_state = load_embedded_recursive_chain_state_asset()?;
+        let asset: CertificateStepAsset = match path {
+            TransitionPath::SameEpoch => {
+                load_embedded_following_certificate_in_epoch_asset()?.into()
+            }
+            TransitionPath::NextEpoch => load_embedded_next_epoch_step_output_asset()?.into(),
+            TransitionPath::Genesis => unreachable!("genesis handled by prepare_genesis_step"),
+        };
+
+        let snark_proof: SnarkProof<MithrilMembershipDigest> = SnarkProof::new(
+            asset.certificate_proof.clone().into_vec(),
+            benchmark_parameters(),
+            merkle_tree_depth(),
+        );
+        let aggregate_verification_key =
+            aggregate_verification_key_for_root(&asset.aggregate_verification_key_merkle_root)?;
+        let preimage = ProtocolMessagePreimage(asset.message_preimage);
+        let rolling_state = IvcRollingState::new(
+            chain_state.state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+
+        let prover_input = IvcProverInput::prepare(
+            &snark_proof,
+            &asset.message,
+            &aggregate_verification_key,
+            &self.global,
+            &preimage,
+            &rolling_state,
+            &self.setup,
+        )?;
+
+        let circuit_data = IvcCircuitData::try_new(
+            self.global.clone(),
+            rolling_state.state().clone(),
+            prover_input.witness,
+            asset.certificate_proof,
+            rolling_state.ivc_proof().clone(),
+            rolling_state.accumulator().clone(),
+            &self.setup.certificate_verifying_key,
+            &self.setup.ivc_verifying_key,
+        )?;
+        let public_inputs =
+            self.public_inputs_for(&prover_input.next_state, &prover_input.next_accumulator);
+
+        let fold_inputs = self.build_certificate_fold_inputs(
+            &snark_proof,
+            &asset.message,
+            &aggregate_verification_key,
+            &rolling_state,
+        )?;
+
+        Self::ensure_certificate_prepared_matches_committed(
+            &prover_input.next_state,
+            &prover_input.next_accumulator,
+            &asset.next_state,
+            &asset.next_accumulator,
+            &fold_inputs,
+        )?;
+
+        Ok(PreparedStep {
+            path,
+            circuit_data,
+            public_inputs,
+            proof_bytes: asset.ivc_proof,
+            proof_state: asset.next_state,
+            proof_accumulator: asset.next_accumulator,
+            message: asset.message.to_vec(),
+            fold: Some(fold_inputs),
+        })
+    }
+
+    /// Reconstructs the accumulator-fold inputs: the certificate and previous-IVC-proof KZG
+    /// openings collapsed into accumulators, plus the rolling accumulator carried in the state.
+    fn build_certificate_fold_inputs(
+        &self,
+        snark_proof: &SnarkProof<MithrilMembershipDigest>,
+        message: &[u8],
+        aggregate_verification_key: &AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
+        rolling_state: &IvcRollingState,
+    ) -> StmResult<FoldInputs> {
+        let certificate_dual_msm = snark_proof.prepare_and_check(
+            message,
+            aggregate_verification_key,
+            &self.setup.certificate_verifying_key,
+            &self.setup.srs.verifier_params(),
+        )?;
+        let certificate_collapsed_accumulator =
+            self.setup.certificate_collapsed_accumulator(certificate_dual_msm)?;
+        let previous_ivc_proof_collapsed_accumulator =
+            self.setup.previous_ivc_proof_collapsed_accumulator(
+                rolling_state.ivc_proof().as_bytes(),
+                &rolling_state.previous_ivc_proof_public_inputs(&self.global),
+            )?;
+        Ok(FoldInputs {
+            rolling_accumulator: rolling_state.accumulator().clone(),
+            certificate_collapsed_accumulator,
+            previous_ivc_proof_collapsed_accumulator,
+        })
+    }
+
+    /// Untimed equivalence checks guarding fixture assembly: the freshly prepared transition must
+    /// match the committed step output that verification measures, and folding the reconstructed
+    /// accumulator inputs must reproduce the production-prepared accumulator — otherwise the façade
+    /// would benchmark one transition while verifying/folding another.
+    fn ensure_certificate_prepared_matches_committed(
+        prepared_next_state: &State,
+        prepared_next_accumulator: &Accumulator<BlstrsEmulation>,
+        committed_next_state: &State,
+        committed_next_accumulator: &Accumulator<BlstrsEmulation>,
+        fold_inputs: &FoldInputs,
+    ) -> StmResult<()> {
+        ensure!(
+            prepared_next_state == committed_next_state,
+            "prepared next_state does not match the committed step asset"
+        );
+        ensure!(
+            AssignedAccumulator::as_public_input(prepared_next_accumulator)
+                == AssignedAccumulator::as_public_input(committed_next_accumulator),
+            "prepared next_accumulator does not match the committed step asset"
+        );
+        let mut reproduced_fold = Accumulator::accumulate(&[
+            fold_inputs.rolling_accumulator.clone(),
+            fold_inputs.certificate_collapsed_accumulator.clone(),
+            fold_inputs.previous_ivc_proof_collapsed_accumulator.clone(),
+        ]);
+        reproduced_fold.collapse();
+        ensure!(
+            AssignedAccumulator::as_public_input(&reproduced_fold)
+                == AssignedAccumulator::as_public_input(prepared_next_accumulator),
+            "reconstructed accumulator fold does not match the production-prepared accumulator"
+        );
+        Ok(())
+    }
+
+    /// Concatenates the public inputs `[global | next_state | next_accumulator]`.
+    fn public_inputs_for(
+        &self,
+        next_state: &State,
+        next_accumulator: &Accumulator<BlstrsEmulation>,
+    ) -> Vec<CircuitBase> {
+        [
+            self.global.as_public_input(),
+            next_state.as_public_input(),
+            AssignedAccumulator::as_public_input(next_accumulator),
+        ]
+        .concat()
+    }
+
+    /// Recursive prover with the Poseidon transcript: `create_proof` over prebuilt
+    /// circuit data. Excludes the inner certificate prover and the preparation step.
+    pub fn prove_poseidon(&self, prepared: &PreparedStep) -> StmResult<Vec<u8>> {
+        IvcProof::<PoseidonState<CircuitBase>>::prove_with_transcript(
+            &self.setup.srs,
+            &self.setup.ivc_proving_key,
+            &prepared.circuit_data,
+            &prepared.public_inputs,
+            &mut OsRng,
+        )
+    }
+
+    /// Recursive prover with the Blake2b transcript (on-chain / RISC0 verification path).
+    pub fn prove_blake2b(&self, prepared: &PreparedStep) -> StmResult<Vec<u8>> {
+        IvcProof::<Blake2b256>::prove_with_transcript(
+            &self.setup.srs,
+            &self.setup.ivc_proving_key,
+            &prepared.circuit_data,
+            &prepared.public_inputs,
+            &mut OsRng,
+        )
+    }
+
+    /// Full recursive verification: KZG opening plus the folded-accumulator pairing check.
+    pub fn verify_full(&self, prepared: &PreparedStep) -> StmResult<()> {
+        IvcProof::<Blake2b256>::new(
+            prepared.proof_bytes.clone(),
+            prepared.proof_state.clone(),
+            prepared.proof_accumulator.clone(),
+        )
+        .verify(&prepared.message, &self.global, &self.verifier_setup)
+    }
+
+    /// Recursive KZG-opening verification only. Bench-local replication of the opening
+    /// half of `IvcProof::verify` (prepare + `dual_msm.check`), kept here to avoid a production
+    /// refactor; the full-verification path above exercises the production code.
+    pub fn verify_kzg_opening(&self, prepared: &PreparedStep) -> StmResult<()> {
+        let public_inputs: Vec<CircuitBase> = [
+            self.global.as_public_input(),
+            prepared.proof_state.as_public_input(),
+            AssignedAccumulator::as_public_input(&prepared.proof_accumulator),
+        ]
+        .concat();
+
+        let mut transcript =
+            CircuitTranscript::<Blake2b256>::init_from_bytes(prepared.proof_bytes.as_bytes());
+        let dual_msm =
+            prepare::<CircuitBase, KZGCommitmentScheme<Bls12>, CircuitTranscript<Blake2b256>>(
+                self.verifier_setup.ivc_verifying_key().verifying_key(),
+                &[&[G1Projective::identity()]],
+                &[&[&public_inputs]],
+                &mut transcript,
+            )
+            .map_err(|_| anyhow!("bench: recursive KZG opening transcript preparation failed"))?;
+        transcript
+            .assert_empty()
+            .map_err(|_| anyhow!("bench: recursive KZG opening transcript not fully consumed"))?;
+        if !dual_msm.check(self.verifier_setup.verifier_params()) {
+            return Err(anyhow!("bench: recursive KZG opening check failed"));
+        }
+        Ok(())
+    }
+
+    /// Off-circuit accumulator fold: `accumulate` + `collapse` from the two already-
+    /// collapsed source accumulators and the rolling accumulator. Returns `None` for genesis
+    /// (passthrough — nothing to fold).
+    pub fn fold_accumulators(
+        &self,
+        prepared: &PreparedStep,
+    ) -> Option<Accumulator<BlstrsEmulation>> {
+        let fold = prepared.fold.as_ref()?;
+        let mut accumulator = Accumulator::accumulate(&[
+            fold.rolling_accumulator.clone(),
+            fold.certificate_collapsed_accumulator.clone(),
+            fold.previous_ivc_proof_collapsed_accumulator.clone(),
+        ]);
+        accumulator.collapse();
+        Some(accumulator)
+    }
+
+    /// Cold-start SRS: generates and stores the unsafe SRS at `cache_dir`, reads it back, and downsizes
+    /// it to `RECURSIVE_CIRCUIT_DEGREE` — the same downsized end state as production
+    /// `IvcSnarkProverSetup::load`. Paired with [`Self::measure_srs_warm_start`].
+    pub fn measure_srs_cold_start(cache_dir: &Path) -> StmResult<ParamsKZG<Bls12>> {
+        let mut srs = trusted_setup_provider(cache_dir).get_trusted_setup_parameters()?;
+        srs.downsize(RECURSIVE_CIRCUIT_DEGREE);
+        Ok(srs)
+    }
+
+    /// Warm-start SRS: reads an already-generated SRS from `cache_dir` through the production cached read
+    /// path (skips download + hash verification, only deserializes), then downsizes it exactly as
+    /// [`Self::measure_srs_cold_start`] and `IvcSnarkProverSetup::load` do — so cold and warm measure the
+    /// same downsized end state, with no network dependency. Precondition: a prior `measure_srs_cold_start`
+    /// (or any generation) has populated `cache_dir`.
+    pub fn measure_srs_warm_start(cache_dir: &Path) -> StmResult<ParamsKZG<Bls12>> {
+        let mut srs =
+            TrustedSetupProvider::new(cache_dir, "", "", std::time::Duration::from_secs(600))
+                .get_trusted_setup_parameters()?;
+        srs.downsize(RECURSIVE_CIRCUIT_DEGREE);
+        Ok(srs)
+    }
+
+    /// Certificate **and** recursive circuit keys from `cache_dir`, mirroring `IvcSnarkProverSetup::load`:
+    /// the certificate verifying key is accessed explicitly before the recursive key pair, so a
+    /// **cold-start** (empty cache) derives both layers and a **warm-start** (populated cache) loads both.
+    /// Without the explicit certificate access, only the cold path would touch the certificate cache (the
+    /// recursive keygen derives it via the wrapped provider), while the warm path would load the recursive
+    /// pair directly and skip it — making the two measure different work. The bench harness times the first
+    /// call (cold) and the second (warm), which then differ only in derive-vs-load.
+    pub fn measure_keys(cache_dir: &Path, srs: &ParamsKZG<Bls12>) -> StmResult<()> {
+        let provider = recursive_key_provider(cache_dir)?;
+        let _certificate_verifying_key = provider.generator().certificate_verifying_key(srs)?;
+        let _recursive_keys = provider.key_pair(srs)?;
+        Ok(())
+    }
+}
+
+/// Rebuilds the deterministic aggregate verification key from a committed 32-byte Merkle root and
+/// the fixed total stake, matching the format the committed certificate proofs commit to.
+fn aggregate_verification_key_for_root(
+    aggregate_verification_key_merkle_root: &[u8; 32],
+) -> StmResult<AggregateVerificationKeyForSnark<MithrilMembershipDigest>> {
+    let mut avk_bytes = [0u8; 40];
+    avk_bytes[0..32].copy_from_slice(aggregate_verification_key_merkle_root);
+    avk_bytes[32..40].copy_from_slice(&TOTAL_STAKE.to_be_bytes());
+    AggregateVerificationKeyForSnark::<MithrilMembershipDigest>::from_bytes(&avk_bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Slow runtime smoke: builds the full IVC setup (recursive keygen) once and exercises every
+    // façade operation on all three transition paths, confirming fixture assembly, proving,
+    // verification, and folding all succeed. Opt-in — run with
+    // `cargo test -p mithril-stm --features future_snark,benchmark-internals -- --ignored`
+    // (the façade, and hence this test, is gated behind `benchmark-internals`).
+    #[test]
+    #[ignore = "slow: builds the full IVC setup via recursive keygen"]
+    fn facade_prepares_proves_and_verifies_all_paths() {
+        let cache_dir = std::env::temp_dir().join("mithril_ivc_bench_facade_smoke");
+        println!("[smoke] building IVC setup (recursive keygen); this dominates the runtime...");
+        let env = IvcBenchEnv::new(&cache_dir).expect("bench env should build");
+        println!("[smoke] setup ready");
+
+        for path in [
+            TransitionPath::Genesis,
+            TransitionPath::SameEpoch,
+            TransitionPath::NextEpoch,
+        ] {
+            println!("[smoke] {path:?}: preparing fixture (untimed equivalence checks)...");
+            let prepared = env.prepare_step(path).expect("prepare should succeed");
+
+            println!("[smoke] {path:?}: proving (Poseidon)...");
+            let poseidon_bytes =
+                env.prove_poseidon(&prepared).expect("poseidon prove should succeed");
+            println!("[smoke] {path:?}: proving (Blake2b)...");
+            let blake2b_bytes = env.prove_blake2b(&prepared).expect("blake2b prove should succeed");
+
+            // Verify the freshly generated proofs against the prepared public inputs, each with its
+            // matching transcript — not just the committed proof.
+            println!("[smoke] {path:?}: verifying generated Poseidon proof...");
+            IvcProof::<PoseidonState<CircuitBase>>::new(
+                IvcProofBytes::new(poseidon_bytes),
+                prepared.proof_state.clone(),
+                prepared.proof_accumulator.clone(),
+            )
+            .verify(&prepared.message, &env.global, &env.verifier_setup)
+            .expect("generated Poseidon proof should verify");
+            println!("[smoke] {path:?}: verifying generated Blake2b proof...");
+            IvcProof::<Blake2b256>::new(
+                IvcProofBytes::new(blake2b_bytes),
+                prepared.proof_state.clone(),
+                prepared.proof_accumulator.clone(),
+            )
+            .verify(&prepared.message, &env.global, &env.verifier_setup)
+            .expect("generated Blake2b proof should verify");
+
+            println!("[smoke] {path:?}: verifying committed proof (full + KZG opening)...");
+            env.verify_full(&prepared).expect("full verification should succeed");
+            env.verify_kzg_opening(&prepared).expect("kzg opening should succeed");
+
+            println!("[smoke] {path:?}: folding accumulators...");
+            let folded = env.fold_accumulators(&prepared);
+            match path {
+                TransitionPath::Genesis => {
+                    assert!(folded.is_none(), "genesis fold is a passthrough");
+                }
+                TransitionPath::SameEpoch | TransitionPath::NextEpoch => {
+                    assert!(
+                        folded.is_some(),
+                        "non-genesis fold should produce an accumulator"
+                    );
+                }
+            }
+            println!("[smoke] {path:?}: done");
+        }
+        println!("[smoke] all paths passed");
+    }
+}

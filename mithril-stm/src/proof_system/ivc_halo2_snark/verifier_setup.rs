@@ -95,10 +95,9 @@ impl IvcVerifierSetup {
     }
 
     /// Derive from an already-built [`IvcSnarkProverSetup`], extracting verifier params directly
-    /// from its SRS rather than the embedded constant. Only for tests — production code must
-    /// not load the full SRS just to verify a proof.
-    #[cfg(test)]
-    #[allow(dead_code)]
+    /// from its SRS rather than the embedded constant. For tests and benchmarks only
+    /// (`benchmark-internals`) — production code must not load the full SRS just to verify a proof.
+    #[cfg(any(test, feature = "benchmark-internals"))]
     pub(crate) fn from_ivc_setup_with_srs(ivc_setup: &IvcSnarkProverSetup) -> Self {
         let verifier_params = ivc_setup.srs.verifier_params();
         Self {

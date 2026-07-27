@@ -242,7 +242,7 @@ where
     /// `&[&[&[], public_inputs]]` (one circuit, one instance group, empty committed
     /// instance, then the field-element public inputs). Returns the finalised transcript
     /// bytes on success.
-    fn prove_with_transcript(
+    pub(crate) fn prove_with_transcript(
         srs: &ParamsKZG<Bls12>,
         proving_key: &RecursiveCircuitProvingKey,
         circuit_data: &IvcCircuitData,

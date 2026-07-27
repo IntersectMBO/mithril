@@ -57,6 +57,8 @@ pub(super) struct AssetPaths {
     pub(super) same_epoch_step_output: PathBuf,
     /// Path to the stored first-step certificate asset.
     pub(super) first_step_cert: PathBuf,
+    /// Path to the additive genesis benchmark fixture asset.
+    pub(super) genesis_benchmark_fixture: PathBuf,
 }
 
 impl AssetPaths {
@@ -69,6 +71,7 @@ impl AssetPaths {
             genesis_step_output: base_dir.join("genesis_step_output.bin"),
             same_epoch_step_output: base_dir.join("same_epoch_step_output.bin"),
             first_step_cert: base_dir.join("first_step_cert.bin"),
+            genesis_benchmark_fixture: base_dir.join("genesis_benchmark_fixture.bin"),
         }
     }
 }

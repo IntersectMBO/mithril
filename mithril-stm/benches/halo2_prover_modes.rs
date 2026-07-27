@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use mithril_stm::circuits::halo2::bench_helpers::{BenchEnv, compute_circuit_degree};
+use mithril_stm::circuits::halo2::bench::helpers::{BenchEnv, compute_circuit_degree};
 
 fn fmt_ms(ms: u128) -> String {
     if ms >= 1000 {

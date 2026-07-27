@@ -30,7 +30,7 @@ pub(crate) mod types;
 pub(crate) mod witness;
 
 #[cfg(any(test, feature = "benchmark-internals"))]
-pub mod bench_helpers;
+pub mod bench;
 
 #[cfg(test)]
 pub(crate) mod tests;

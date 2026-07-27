@@ -1,6 +1,6 @@
 [package]
 name = "mithril-stm"
-version = "0.11.3"
+version = "0.11.4"
 edition = { workspace = true }
 authors = { workspace = true }
 homepage = { workspace = true }
@@ -111,6 +111,11 @@ required-features = ["future_snark", "benchmark-internals"]
 
 [[bench]]
 name = "halo2_prover_modes"
+harness = false
+required-features = ["future_snark", "benchmark-internals"]
+
+[[bench]]
+name = "ivc_halo2_snark"
 harness = false
 required-features = ["future_snark", "benchmark-internals"]
 
