@@ -234,16 +234,17 @@ impl ImportProtocolConfigurationSubCommand {
         let protocol_configurations: Vec<HumanReadableProtocolConfiguration> =
             serde_json::from_str(&json_protocol_configurations?)?;
 
-        //3 - Verify protocol config consistency, TODO could be move in ProtocolConfigurationTools ?
+        //3 - Verify protocol configuration consistency
         println!("Verifying protocol configuration consistency...");
         Self::verify_protocol_configurations(&protocol_configurations)?; //return a VerifiedProtocolConfigurations ?
 
-        //3.2 Check epoch consistency on chain
-
+        //3.1 - Verify protocol configuration against on chain configuration
+        println!("Verifying protocol configuration against on chain configuration...");
         let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
             .await
             .with_context(|| "protocol-configuration-tools: initialization error")?;
-        // tools.verify_configuration_against_production(&protocol_configurations);
+
+        tools.verify_configurations_against_chain(protocol_configurations.clone())?;
 
         //4 - Generate Tx datum
         println!("Generating Tx datum ...");
@@ -255,7 +256,9 @@ impl ImportProtocolConfigurationSubCommand {
             &protocol_configuration_markers_signer,
         )?;
 
-        //5 - TODO: check size < 10kb
+        //5 - Verifying datum size
+        println!("Verifying datum content do not exceed maximum size...");
+        tools.verify_tx_datum_size(tx_datum.clone())?;
 
         //6 - Write datum file
         println!("Generating Tx datum output file...");

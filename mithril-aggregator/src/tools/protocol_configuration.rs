@@ -18,13 +18,17 @@ use crate::{
     dependency_injection::ProtocolConfigurationCommandDependenciesContainer,
 };
 
+const EPOCH_OFFSET: u64 = 3;
+const DATUM_MAX_SIZE_KB: usize = 10;
+
 #[derive(Debug, Error)]
 pub enum ProtocolConfigurationVerifierError {
-    #[error("Configuration to import for {0:?}, is not the same has configuration on chain")]
+    #[error("Configuration to import for {0:?} is not the same has configuration on chain")]
     NotSameConfigurationForEpoch(Epoch),
-}
 
-const EPOCH_OFFSET: u64 = 3;
+    #[error("Size of datum is {0:?} KB (Maximum authorized size is {DATUM_MAX_SIZE_KB} KB)")]
+    DatumMaxSizeExceeded(f64),
+}
 
 type ProtocolConfigurationToolsResult<R> = StdResult<R>;
 
@@ -140,6 +144,24 @@ impl ProtocolConfigurationTools {
             ))
             .build()?;
         Ok(tx_datum.0)
+    }
+
+    pub fn verify_tx_datum_size(
+        &self,
+        datum: String,
+    ) -> Result<(), ProtocolConfigurationVerifierError> {
+        let size_bytes = datum.len();
+        let size_kb = size_bytes as f64 / 1024.0;
+
+        println!("Datum size: {:.2} KB", size_kb);
+
+        if size_bytes > DATUM_MAX_SIZE_KB * 1024 {
+            return Err(ProtocolConfigurationVerifierError::DatumMaxSizeExceeded(
+                size_kb,
+            ));
+        }
+
+        Ok(())
     }
 }
 
@@ -278,9 +300,34 @@ mod tests {
         }];
         let signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
         let tools = build_tools_dummy();
-        tools
+        assert!(tools.generate_tx_datum(configurations, &signer).is_ok());
+    }
+
+    #[test]
+    fn verify_tx_datum_size_is_ok_with_datum_under_10_kb() {
+        let tools = build_tools_dummy();
+        assert!(tools.verify_tx_datum_size("tx datum under 10 kb".to_string()).is_ok());
+    }
+
+    #[test]
+    fn verify_tx_datum_size_is_ok_with_datum_from_dummy_configuration() {
+        let configurations = vec![
+            HumanReadableProtocolConfiguration {
+                epoch: Epoch(42),
+                ..Dummy::dummy()
+            },
+            HumanReadableProtocolConfiguration {
+                epoch: Epoch(53),
+                ..Dummy::dummy()
+            },
+        ];
+        let signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
+        let tools = build_tools_dummy();
+        let datum = tools
             .generate_tx_datum(configurations, &signer)
             .expect("generate_tx_datum should not fail");
+
+        assert!(tools.verify_tx_datum_size(datum).is_ok());
     }
 
     mod verify_configurations_against_chain {
