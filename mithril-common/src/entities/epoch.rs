@@ -69,7 +69,7 @@ impl Epoch {
     /// returns epoch zero instead of failing when the offset would yield a negative epoch
     /// (i.e. at epoch zero itself).
     pub fn offset_to_signer_retrieval_epoch_saturating(&self) -> Self {
-        self.offset_to_signer_retrieval_epoch().unwrap_or(Epoch(0))
+        Epoch(self.0.saturating_sub(Self::SIGNER_RETRIEVAL_OFFSET.unsigned_abs()))
     }
 
     /// Apply the [next signer retrieval offset][Self::NEXT_SIGNER_RETRIEVAL_OFFSET] to this epoch
@@ -331,6 +331,10 @@ mod tests {
         assert_eq!(
             Epoch(0),
             Epoch(0).offset_to_signer_retrieval_epoch_saturating()
+        );
+        assert_eq!(
+            Epoch(u64::MAX - 1),
+            Epoch(u64::MAX).offset_to_signer_retrieval_epoch_saturating()
         );
     }
 
