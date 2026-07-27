@@ -88,11 +88,18 @@ download_bin_archive() {
   local -r version="$1"
   local -r os="$2"
   local -r arch="$3"
+  local -r download_dir="${4%/}"
 
   # example url: https://dist.ipfs.tech/kubo/v0.42.0/kubo_v0.42.0_linux-arm64.tar.gz
-  local -r target_url="${IPFS_DISTRIBUTIONS_CDN}/${BIN_NAME}/${version}/${BIN_NAME}_${version}_${os}-${arch}.tar.gz"
+  local -r target_url="${IPFS_DISTRIBUTIONS_CDN}/${BIN_NAME}/${version}/$(format_archive_name "$version" "$os" "$arch")"
+  local -r archive_path="${download_dir}/$(format_archive_name "$version" "$os" "$arch")"
 
-  # Todo
+  echo ">> Downloading ${BIN_NAME} ${version} from ${target_url}..." >&2
+  curl --fail --silent --show-error --location \
+    --output "$archive_path" "$target_url" ||
+      error_exit "Failed to download '${BIN_NAME}' archive from '${target_url}'."
+
+  echo "$archive_path"
 }
 
 
@@ -127,3 +134,8 @@ echo ">> DOWNLOAD_DIR: ${DOWNLOAD_DIR}"
 echo ">> OUTPUT_DIR: ${OUTPUT_DIR}"
 echo ">> OS: ${OS}"
 echo ">> ARCH: ${ARCH}"
+
+readonly DOWNLOADED_ARCHIVE=$(download_bin_archive $KUBO_VERSION $OS $ARCH $DOWNLOAD_DIR)
+echo ">> Downloaded archive to: $DOWNLOADED_ARCHIVE"
+tar xzf "$DOWNLOADED_ARCHIVE" -C "${OUTPUT_DIR%/}/"
+echo ">> Extracted archive to ${OUTPUT_DIR}"
