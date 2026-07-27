@@ -245,7 +245,8 @@ impl ImportProtocolConfigurationSubCommand {
         let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
             .await
             .with_context(|| "protocol-configuration-tools: initialization error")?;
-        // tools.verify_configuration_against_production(&protocol_configurations);
+
+        tools.verify_configurations_against_chain(protocol_configurations.clone())?;
 
         // 5: Generate Tx datum
         println!("Generating Tx datum ...");
