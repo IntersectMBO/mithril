@@ -62,7 +62,7 @@ const UseCases: FC = () => {
           once: true,
         }}
       >
-        <h2 className="text-gray-light tablet:ml-6 tablet:text-[2.5rem] text-[2.0625rem] tablet:text-left text-center tablet:tracking-tight tracking-[-0.02063rem] leading-12 relative tablet:p-0 pageContainer">
+        <h2 className="text-gray-light tablet:ml-6 tablet:!text-[2.5rem] !text-[2.0625rem] tablet:text-left text-center tablet:tracking-tight tracking-[-0.02063rem] leading-12 relative tablet:p-0 pageContainer font-thin m-0">
           {useCases.nonScrollingText}
           {processItems(useCases.scrollingText.items)}
         </h2>

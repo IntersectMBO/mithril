@@ -46,7 +46,7 @@ const HomepageHero: FC = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ ease: "easeInOut", duration: 0.75, delay: 1 }}
-              className="text-xl leading-8"
+              className="text-xl leading-8 mb-0"
             >
               {hero.standfirst}
             </motion.p>

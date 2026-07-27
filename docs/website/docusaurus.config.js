@@ -16,6 +16,7 @@ const config = {
   baseUrl: "/doc/",
   onBrokenLinks: "throw",
   markdown: {
+    mermaid: true,
     hooks: {
       onBrokenMarkdownLinks: "warn",
     },
@@ -374,9 +375,6 @@ const config = {
         theme: { light: "base", dark: "base" },
       },
     }),
-  markdown: {
-    mermaid: true,
-  },
   themes: ["@docusaurus/theme-mermaid"],
   stylesheets: [
     {

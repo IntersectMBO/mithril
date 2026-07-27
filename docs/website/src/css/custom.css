@@ -14,6 +14,21 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 
+/* Without an explicit content config (removed in the Tailwind v4 migration),
+ * Tailwind auto-scans the whole project for class-like tokens, including plain
+ * prose in .md docs (e.g. mentions of Docker "containers"). A stray word match
+ * like that generates a REAL utility class (e.g. `.container`) that can collide
+ * with an unrelated Infima class of the same name and silently override it via
+ * the cascade layer it lives in. .md files are pure markdown and can never
+ * contain a `className`, so excluding them removes this whole class of false
+ * positives; .mdx files are kept, since some do embed real JSX classNames
+ * (e.g. root/use-cases/wallets/index.mdx). */
+@source not "../../root/**/*.md";
+@source not "../../blog/**/*.md";
+@source not "../../versioned_docs/**/*.md";
+@source not "../../upgrade/**/*";
+@source not "../../**/*.svg";
+
 @theme {
   --breakpoint-*: initial;
   --breakpoint-phablet: 640px;
@@ -174,6 +189,17 @@ Styling overrides to Infima after upgrading to Tailwind V4
   }
 }
 
+.title_f1Hy {
+  font-size: 3rem;
+  font-weight: 700;
+}
+
+@media (max-width: 576px) {
+  .title_f1Hy {
+    font-size: 2rem;
+  }
+}
+
 .blog-list-page h2 a {
   color: var(--ifm-font-color-base);
   font-size: 3rem;
@@ -193,6 +219,11 @@ Styling overrides to Infima after upgrading to Tailwind V4
 .theme-edit-this-page:hover,
 .pagination-nav__link:hover {
   color: var(--ifm-link-color);
+}
+
+[role="group"] > h3 {
+  font-size: var(--ifm-h4-font-size);
+  font-weight: normal;
 }
 /*-----------------------------------------------------------*/
 
@@ -324,10 +355,6 @@ a.menu__link {
 
 .markdown li {
   margin: 0.25rem 0;
-}
-
-.markdown p {
-  margin-bottom: 1.5rem;
 }
 
 .markdown .daedalus-wordmark p {
