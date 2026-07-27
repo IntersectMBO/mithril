@@ -48,7 +48,7 @@ impl Epoch {
 
     /// Computes a new Epoch by applying an epoch offset.
     ///
-    /// Will fail if the computed epoch is out of the [Epoch] range.
+    /// Will fail if overflow occurred (see [u64] for bounds).
     pub fn offset_by(&self, epoch_offset: i64) -> Result<Self, EpochError> {
         self.0
             .checked_add_signed(epoch_offset)
@@ -319,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn offset_by_fails_when_the_computed_epoch_is_out_of_range() {
+    fn offset_by_fails_when_overflow_occurred() {
         assert!(Epoch(0).offset_by(-1).is_err());
         assert!(Epoch(u64::MAX).offset_by(1).is_err());
     }
