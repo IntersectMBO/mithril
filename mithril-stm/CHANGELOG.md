@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.0 (07-29-2026)
+
+### Added
+
+- Added a `ProtocolError` enum with a `PhiFValueOutOfRange` variant for invalid `phi_f` values
+
+### Changed
+
+- Updated the `from_bytes_legacy` functions for `MerkleTreeBatchCommitment`, `MerkleTree`, `ConcatenationProof` and `SingleSignature`
+- Updated the validation of the `phi_f` value in the lottery/eligibility computations
+- Updated the visibility of `ClosedKeyRegistration`, `RegistrationEntry` and `ClosedRegistrationEntry` to ensure proper verification of the proof of possession
+- Updated `RegisterError::EntryAlreadyRegistered` to no longer carry the conflicting `RegistrationEntry`, since the type is now crate-private
+- Updated `ClosedKeyRegistration::number_of_registered_parties` to be available only when the `future_snark` feature is enabled
+- Updated `ConcatenationProofSigner::check_lottery` to return `StmResult<Vec<u64>>` instead of `Vec<u64>`
+
+### Removed
+
+- Removed the unused `to_bytes` and `from_bytes` methods from `MerkleTree`
+
 ## 0.11.4 (07-27-2026)
 
 ### Added
