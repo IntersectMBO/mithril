@@ -4,7 +4,7 @@ use mithril_common::api_version::APIVersionProvider;
 use mithril_common::entities::{Epoch, SupportedEra};
 use mithril_era::adapters::{EraReaderAdapterBuilder, EraReaderDummyAdapter};
 use mithril_era::{EraChecker, EraMarker, EraReader, EraReaderAdapter};
-use mithril_protocol_config::adapters::ProtocolConfigurationReaderAdapterBuilder;
+use mithril_protocol_config::adapters::ProtocolConfigurationReaderCardanoChainAdapter;
 use mithril_protocol_config::test::double::ProtocolConfigurationReaderDummyAdapter;
 use mithril_protocol_config::{ProtocolConfigurationReader, ProtocolConfigurationReaderAdapter};
 
@@ -91,16 +91,14 @@ impl DependenciesBuilder {
     ) -> Result<Arc<ProtocolConfigurationReader>> {
         let protocol_configuration_adapter: Arc<dyn ProtocolConfigurationReaderAdapter> =
             match self.configuration.environment() {
-                ExecutionEnvironment::Production => ProtocolConfigurationReaderAdapterBuilder::new(
-                    &self.configuration.protocol_configuration_reader_adapter_type(),
-                    &self.configuration.protocol_configuration_reader_adapter_params(),
-                )
-                .build(self.get_chain_observer().await?)
-                .map_err(|e| DependenciesBuilderError::Initialization {
-                    message: "Could not build ProtocolConfigurationReader as dependency."
-                        .to_string(),
-                    error: Some(e.into()),
-                })?,
+                ExecutionEnvironment::Production => {
+                    let parameters = self.configuration.protocol_configuration_reader_parameters();
+                    Arc::new(ProtocolConfigurationReaderCardanoChainAdapter::new(
+                        parameters.address,
+                        self.get_chain_observer().await?,
+                        parameters.verification_key,
+                    ))
+                }
                 _ => Arc::new(ProtocolConfigurationReaderDummyAdapter::from_markers(
                     vec![], //TODO
                 )),

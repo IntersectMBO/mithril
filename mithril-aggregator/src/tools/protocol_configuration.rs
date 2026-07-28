@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use mithril_cardano_node_chain::entities::{TxDatumBuilder, TxDatumFieldValue};
 use mithril_common::{
-    CardanoNetwork, StdResult, crypto_helper::ProtocolConfigurationMarkersSigner, entities::Epoch,
+    StdResult, crypto_helper::ProtocolConfigurationMarkersSigner, entities::Epoch,
 };
 use mithril_protocol_config::{
     ProtocolConfigurationForEpoch, ProtocolConfigurationMarker,
@@ -34,9 +34,6 @@ type ProtocolConfigurationToolsResult<R> = StdResult<R>;
 
 /// Configuration for the protocol configuration tools.
 pub struct ProtocolConfigurationToolsConfiguration {
-    /// Cardano network.
-    pub network: CardanoNetwork,
-
     /// Current epoch.
     pub epoch: Epoch,
 
@@ -72,7 +69,6 @@ impl ProtocolConfigurationTools {
             .await?;
 
         let configuration = ProtocolConfigurationToolsConfiguration {
-            network: dependencies.network,
             epoch,
             on_chain_configurations,
         };
@@ -205,7 +201,6 @@ mod tests {
 
     fn build_tools_dummy() -> ProtocolConfigurationTools {
         let configuration = ProtocolConfigurationToolsConfiguration {
-            network: CardanoNetwork::TestNet(42),
             epoch: Epoch(30),
             on_chain_configurations: ConfigurationComputerFromMarkers::new(BTreeMap::new()),
         };
@@ -218,7 +213,6 @@ mod tests {
         logger: Logger,
     ) -> ProtocolConfigurationTools {
         let configuration = ProtocolConfigurationToolsConfiguration {
-            network: CardanoNetwork::TestNet(42),
             epoch: current_epoch,
             on_chain_configurations,
         };

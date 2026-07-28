@@ -13,18 +13,23 @@ use std::{
 use thiserror::Error;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserverType;
+use mithril_cli_helper::serde_deserialization;
+use mithril_common::StdResult;
 use mithril_common::crypto_helper::{
     ProtocolConfigurationMarkersSigner, ProtocolConfigurationMarkersVerifierSecretKey,
 };
+use mithril_common::entities::ProtocolParametersError;
 use mithril_common::entities::{
     CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
     HexEncodedProtocolConfigurationMarkersSecretKey, ProtocolParameters,
     SignedEntityTypeDiscriminants,
 };
-use mithril_common::{StdResult, entities::ProtocolParametersError};
 use mithril_doc::{Documenter, StructDoc};
 
-use crate::{ConfigurationSource, ExecutionEnvironment, extract_all};
+use crate::{
+    ConfigurationSource, ExecutionEnvironment,
+    configuration::ProtocolConfigurationReaderParameters, extract_all,
+};
 use crate::{dependency_injection::DependenciesBuilder, tools::ProtocolConfigurationTools};
 
 #[derive(Debug, Error)]
@@ -39,11 +44,9 @@ pub enum InputConfigurationImportVerificationError {
 /// Protocol configuration parameters configuration
 #[derive(Debug, Clone, Deserialize, Documenter)]
 pub struct ProtocolConfigurationParametersConfiguration {
-    /// Cardano Network Magic number
-    ///
-    /// useful for TestNet & DevNet
-    #[example = "`1097911063` or `42`"]
-    pub network_magic: Option<u64>,
+    /// Path of the socket opened by the Cardano node
+    #[example = "`/ipc/node.socket`"]
+    pub cardano_node_socket_path: PathBuf,
 
     /// Cardano network
     #[example = "`mainnet` or `preprod` or `devnet`"]
@@ -51,6 +54,13 @@ pub struct ProtocolConfigurationParametersConfiguration {
 
     /// Cardano chain observer type
     pub chain_observer_type: ChainObserverType,
+
+    /// Protocol configuration Reader Adapter Parameters
+    #[example = "\
+    `{ \"address\": \"address\", \"verification_key\": \"key\" }`\
+    "]
+    #[serde(deserialize_with = "serde_deserialization::string_or_struct")]
+    pub protocol_configuration_reader_adapter_params: ProtocolConfigurationReaderParameters,
 }
 
 impl ConfigurationSource for ProtocolConfigurationParametersConfiguration {
@@ -58,8 +68,8 @@ impl ConfigurationSource for ProtocolConfigurationParametersConfiguration {
         ExecutionEnvironment::Production
     }
 
-    fn network_magic(&self) -> Option<u64> {
-        self.network_magic
+    fn cardano_node_socket_path(&self) -> PathBuf {
+        self.cardano_node_socket_path.clone()
     }
 
     fn network(&self) -> String {
@@ -70,8 +80,8 @@ impl ConfigurationSource for ProtocolConfigurationParametersConfiguration {
         self.chain_observer_type.clone()
     }
 
-    fn store_retention_limit(&self) -> Option<usize> {
-        None
+    fn protocol_configuration_reader_parameters(&self) -> ProtocolConfigurationReaderParameters {
+        self.protocol_configuration_reader_adapter_params.clone()
     }
 }
 
@@ -106,15 +116,6 @@ impl HumanReadableProtocolConfiguration {
 /// Protocol configuration command
 #[derive(Parser, Debug, Clone)]
 pub struct ProtocolConfigurationCommand {
-    /// Protocol configuration reader adapter type
-    #[clap(long, env = "PROTOCOL_CONFIGURATION_READER_ADAPTER_TYPE")]
-    pub protocol_configuration_reader_adapter_type: String,
-
-    /// Protocol configation reader adapter parameters
-    /// example {"address":"your-address","verification_key":"your-verification-key"}
-    #[clap(long, env = "PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS")]
-    pub protocol_configuration_reader_adapter_params: String,
-
     /// commands
     #[clap(subcommand)]
     pub protocol_configuration_sub_command: ProtocolConfigurationSubCommand,
@@ -245,7 +246,6 @@ impl ImportProtocolConfigurationSubCommand {
         let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
             .await
             .with_context(|| "protocol-configuration-tools: initialization error")?;
-
         tools.verify_configurations_against_chain(protocol_configurations.clone())?;
 
         // 5: Generate Tx datum
@@ -411,7 +411,7 @@ mod tests {
         ImportProtocolConfigurationSubCommand::try_parse_from([
             "import-markers",
             "--import-path",
-            "tests/human_readable_protocol_configuration.json",
+            "tests/human_readable_protocol_configuration_toto.json",
             "--target-path",
             "/tests/protocol_configuration_tx_datum",
             "--protocol-configuration-markers-secret-key",

@@ -1,4 +1,3 @@
-use mithril_protocol_config::ProtocolConfigurationReader;
 use slog::Logger;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -68,9 +67,6 @@ pub struct ServeCommandDependenciesContainer {
 
     /// Era reader service
     pub(crate) era_reader: Arc<EraReader>,
-
-    /// Protocol configuration service
-    pub(crate) protocol_configuration_reader: Arc<ProtocolConfigurationReader>,
 
     /// Event Transmitter Service
     pub(crate) event_transmitter: Arc<TransmitterService<EventMessage>>,

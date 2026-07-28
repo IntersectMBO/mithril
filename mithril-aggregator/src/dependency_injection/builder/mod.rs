@@ -410,7 +410,6 @@ impl DependenciesBuilder {
             signer_registration_round_opener: self.get_signer_registration_round_opener().await?,
             era_checker: self.get_era_checker().await?,
             era_reader: self.get_era_reader().await?,
-            protocol_configuration_reader: self.get_protocol_configuration_reader().await?,
             event_transmitter: self.get_event_transmitter().await?,
             api_version_provider: self.get_api_version_provider().await?,
             stake_distribution_service: self.get_stake_distribution_service().await?,
