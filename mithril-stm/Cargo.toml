@@ -31,8 +31,6 @@ future_snark = [
     "dep:sha2",
     "dep:rand_chacha",
     "dep:reqwest",
-    # Temporarily activate rustls before it is activated in the caller
-    "rustls",
 ]
 # TLS backend for the SRS download client (used by `future_snark`).
 # Exactly one of these must be enabled together with `future_snark`.

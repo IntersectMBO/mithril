@@ -18,7 +18,7 @@ bench = false
 default = ["rustls"]
 allow_skip_signer_certification = []
 future_snark = ["mithril-common/future_snark"]
-rustls = ["reqwest/rustls"]
+rustls = ["mithril-common/rustls", "reqwest/rustls"]
 
 [dependencies]
 anyhow = { workspace = true }

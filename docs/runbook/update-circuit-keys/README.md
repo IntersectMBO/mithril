@@ -29,13 +29,13 @@ Reviewers:
 Commands to run the integrity tests:
 
 ```bash
-cargo test -p mithril-stm --features future_snark --release integrity_test_for_non_recursive_production_key -- --ignored
+cargo test -p mithril-stm --features future_snark,rustls --release integrity_test_for_non_recursive_production_key -- --ignored
 ```
 
 and
 
 ```bash
-cargo test -p mithril-stm --features future_snark --release integrity_test_for_recursive_production_key -- --ignored
+cargo test -p mithril-stm --features future_snark,rustls --release integrity_test_for_recursive_production_key -- --ignored
 ```
 
 Release manager:
@@ -52,13 +52,13 @@ The author needs to update the golden value of the verification keys in the gold
 To update the production circuit verification keys, one needs to run the following commands:
 
 ```bash
-cargo test -p mithril-stm --features future_snark --release write_non_recursive_circuit_verification_key_for_production_to_file -- --ignored
+cargo test -p mithril-stm --features future_snark,rustls --release write_non_recursive_circuit_verification_key_for_production_to_file -- --ignored
 ```
 
 and
 
 ```bash
-cargo test -p mithril-stm --features future_snark --release write_recursive_circuit_verification_key_for_production_to_file -- --ignored
+cargo test -p mithril-stm --features future_snark,rustls --release write_recursive_circuit_verification_key_for_production_to_file -- --ignored
 ```
 
 that will update the files holding the values of the production keys, `mithril-stm/src/circuits/halo2/non_recursive_circuit_verification_key_for_production.bin` and `mithril-stm/src/circuits/halo2_ivc/recursive_circuit_verification_key_for_production.bin`.

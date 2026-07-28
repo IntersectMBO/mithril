@@ -30,13 +30,13 @@ unstable = []
 
 # These features are for support of dependent crates only.
 # They do not change the operation of the main crate.
-native-tls = ["reqwest/native-tls"]
-native-tls-no-alpn = ["reqwest/native-tls-no-alpn"]
-native-tls-vendored = ["reqwest/native-tls-vendored"]
-native-tls-vendored-no-alpn = ["reqwest/native-tls-vendored-no-alpn"]
+native-tls = ["mithril-common/native-tls", "reqwest/native-tls"]
+native-tls-no-alpn = ["mithril-common/native-tls", "reqwest/native-tls-no-alpn"]
+native-tls-vendored = ["mithril-common/native-tls", "reqwest/native-tls-vendored"]
+native-tls-vendored-no-alpn = ["mithril-common/native-tls", "reqwest/native-tls-vendored-no-alpn"]
 
-rustls = ["reqwest/rustls"]
-rustls-no-provider = ["reqwest/rustls-no-provider"]
+rustls = ["mithril-common/rustls", "reqwest/rustls"]
+rustls-no-provider = ["mithril-common/rustls", "reqwest/rustls-no-provider"]
 
 # Support compressed traffic with `reqwest`
 enable-http-compression = ["reqwest/gzip", "reqwest/zstd", "reqwest/deflate", "reqwest/brotli"]

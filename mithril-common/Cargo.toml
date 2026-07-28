@@ -32,6 +32,11 @@ allow_skip_signer_certification = []
 # Enables the future SNARK implementation for the `mithril-stm` dependency
 future_snark = ["mithril-stm/future_snark"]
 
+# Enables the TLS features for the `mithril-stm` dependency
+# Exactly one of these must be enabled together with `future_snark`
+native-tls = ["mithril-stm/native-tls"]
+rustls = ["mithril-stm/rustls"]
+
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }

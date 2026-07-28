@@ -43,6 +43,14 @@ cd mithril-stm
 cargo build --release
 ```
 
+## TLS backend
+
+The `future_snark` feature downloads the SRS of the trusted setup over HTTPS and lets the caller pick the TLS backend. Enable exactly one of the `rustls` or `native-tls` features along with it:
+
+```shell
+cargo build --release --features future_snark,rustls
+```
+
 ## Running the tests
 
 For running rust tests, simply run (to run the tests faster, the use of `--release` flag is recommended):
@@ -246,15 +254,15 @@ Three metrics are measured per tier: VK/PK setup time, proof generation time, an
 Small and medium tiers use Criterion (10 samples, flat sampling — one iteration per sample):
 
 ```bash
-cargo bench -p mithril-stm --features future_snark,benchmark-internals --bench halo2_snark -- certificate/small
-cargo bench -p mithril-stm --features future_snark,benchmark-internals --bench halo2_snark -- certificate/medium
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/small
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/medium
 ```
 
 Large and production tiers run a single timed measurement (Criterion's 10-sample minimum is impractical at this scale):
 
 ```bash
-cargo bench -p mithril-stm --features future_snark,benchmark-internals --bench halo2_snark -- certificate/large
-cargo bench -p mithril-stm --features future_snark,benchmark-internals --bench halo2_snark -- certificate/production
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/large
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/production
 ```
 
 ## CI Parameter Benchmarks
@@ -293,5 +301,5 @@ All tiers complete in under 15 minutes on any developer machine with at least 4 
 ### Running the benchmarks
 
 ```bash
-cargo bench -p mithril-stm --features future_snark,benchmark-internals --bench halo2_prover_modes
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_prover_modes
 ```

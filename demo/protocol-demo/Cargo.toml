@@ -9,8 +9,11 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [features]
+default = ["rustls"]
 # Enable experimental SNARK support in mithril-stm and mithril-common.
 future_snark = ["mithril-stm/future_snark", "mithril-common/future_snark"]
+# Enable the TLS features of mithril-stm.
+rustls = ["mithril-stm/rustls"]
 
 [dependencies]
 clap = { workspace = true }
