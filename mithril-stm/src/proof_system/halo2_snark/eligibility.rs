@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 
-use crate::{PhiFValue, RegisterError};
+use crate::{PhiFValue, RegisterError, protocol::ProtocolError};
 
 #[cfg(feature = "future_snark")]
 use crate::{
@@ -55,7 +55,7 @@ cfg_num_integer! {
         }
 
         if !(phi_f > 0.0 && phi_f <= 1.0) {
-            return Err(anyhow!("phi_f must be in the range (0, 1], got {phi_f}"));
+            return Err(ProtocolError::PhiFValueOutOfRange(phi_f).into());
         }
 
         let phi_f_ratio_int: Ratio<i64> =
@@ -281,7 +281,10 @@ mod tests {
     use proptest::prelude::*;
     use rand_core::OsRng;
 
-    use crate::{LotteryTargetValue, SchnorrSigningKey, signature_scheme::BaseFieldElement};
+    use crate::{
+        LotteryTargetValue, SchnorrSigningKey, protocol::ProtocolError,
+        signature_scheme::BaseFieldElement,
+    };
 
     use super::{
         TAYLOR_EXPANSION_ITERATIONS, check_lottery_for_index, compute_exponential_taylor_expansion,
@@ -346,9 +349,14 @@ mod tests {
         let stake = 5_000;
 
         for invalid_phi_f in [-0.5, 0.0, 1.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let result = compute_target_value_for_snark_lottery(invalid_phi_f, stake, total_stake)
+                .expect_err("The lottery check should fail.");
             assert!(
-                compute_target_value_for_snark_lottery(invalid_phi_f, stake, total_stake).is_err(),
-                "phi_f = {invalid_phi_f} should be rejected"
+                matches!(
+                    result.downcast_ref::<ProtocolError>(),
+                    Some(ProtocolError::PhiFValueOutOfRange(..))
+                ),
+                "Unexpected error: {result:?}"
             );
         }
     }

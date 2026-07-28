@@ -53,3 +53,11 @@ pub enum RegisterError {
     #[error("Cannot run the protocol if total stake is zero.")]
     ZeroTotalStake,
 }
+
+/// Errors which are due to an error in the protocol.
+#[derive(Debug, Clone, thiserror::Error, PartialEq)]
+pub enum ProtocolError {
+    /// Value of phi_f is out of the (0,1] range
+    #[error("phi_f must be in the range (0, 1], got {0}")]
+    PhiFValueOutOfRange(f64),
+}

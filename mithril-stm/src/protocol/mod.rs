@@ -10,7 +10,7 @@ pub use aggregate_signature::{
     AggregationError, AncillaryGenesisData, AncillaryProofInput, AncillaryProofOutput,
     AncillaryProverData, AncillaryVerifierData, Clerk, GenesisVerificationKeyBundle,
 };
-pub use error::RegisterError;
+pub use error::{ProtocolError, RegisterError};
 pub(crate) use key_registration::RegistrationEntry;
 #[cfg(feature = "future_snark")]
 pub use key_registration::RegistrationEntryForSnark;

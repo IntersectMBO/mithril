@@ -1,6 +1,4 @@
-use anyhow::anyhow;
-
-use crate::{PhiFValue, Stake, StmResult};
+use crate::{PhiFValue, Stake, StmResult, protocol::ProtocolError};
 
 cfg_num_integer! {
     use num_bigint::{BigInt, Sign};
@@ -36,7 +34,7 @@ cfg_num_integer! {
         if (phi_f - 1.0).abs() < PhiFValue::EPSILON {
             return Ok(true);
         } else if !(phi_f > 0.0 && phi_f <= 1.0) {
-            return Err(anyhow!("phi_f must be in the range (0, 1], got {phi_f}"));
+            return Err(ProtocolError::PhiFValueOutOfRange(phi_f).into());
         }
 
         let ev_max = BigInt::from(2u8).pow(512);
@@ -44,7 +42,7 @@ cfg_num_integer! {
         let q = Ratio::new_raw(ev_max.clone(), ev_max - ev);
 
         let c =
-            Ratio::from_float((1.0 - phi_f).ln()).ok_or_else(|| anyhow!("phi_f must not be infinite or NaN, got {phi_f}"))?;
+            Ratio::from_float((1.0 - phi_f).ln()).ok_or_else(|| ProtocolError::PhiFValueOutOfRange(phi_f))?;
         let w = Ratio::new_raw(BigInt::from(stake), BigInt::from(total_stake));
         let x = (w * c).neg();
 
@@ -101,7 +99,7 @@ cfg_rug! {
         if (phi_f - 1.0).abs() < PhiFValue::EPSILON {
             return Ok(true);
         } else if !(phi_f > 0.0 && phi_f <= 1.0) {
-            return Err(anyhow!("phi_f must be in the range (0, 1], got {phi_f}"));
+            return Err(ProtocolError::PhiFValueOutOfRange(phi_f).into());
         }
         let ev = rug::Integer::from_digits(&ev, Order::LsfLe);
         let ev_max: Float = Float::with_val(117, 2).pow(512);
@@ -173,9 +171,14 @@ mod tests {
         let total_stake = 1000;
 
         for invalid_phi_f in [-0.5, 0.0, 1.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let result = is_lottery_won(invalid_phi_f, ev, stake, total_stake)
+                .expect_err("The lottery check should fail.");
             assert!(
-                is_lottery_won(invalid_phi_f, ev, stake, total_stake).is_err(),
-                "phi_f = {invalid_phi_f} should be rejected"
+                matches!(
+                    result.downcast_ref::<ProtocolError>(),
+                    Some(ProtocolError::PhiFValueOutOfRange(..))
+                ),
+                "Unexpected error: {result:?}"
             );
         }
     }
