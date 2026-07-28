@@ -33,6 +33,7 @@ use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SnarkProof<D: MembershipDigest> {
     /// Raw proof bytes produced by the SNARK prover.
+    #[serde(with = "serde_bytes")]
     circuit_proof: Vec<u8>,
     // The protocol parameters
     // Note: this field is temporary and will be removed once the circuit setup is stable
