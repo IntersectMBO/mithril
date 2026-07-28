@@ -21,6 +21,7 @@
     "@docusaurus/plugin-sitemap": "^3.10.2",
     "@docusaurus/preset-classic": "^3.10.2",
     "@docusaurus/theme-mermaid": "^3.10.2",
+    "brace-expansion": "^5.0.8",
     "clsx": "^2.1.1",
     "cva": "^1.0.0-beta.4",
     "framer-motion": "^11.3.19",
@@ -50,6 +51,7 @@
     "tailwindcss": "^4.3.3"
   },
   "overrides": {
-    "webpackbar": "^7.0.0"
+    "webpackbar": "^7.0.0",
+    "brace-expansion": "^5.0.8"
   }
 }
