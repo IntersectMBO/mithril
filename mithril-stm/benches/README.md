@@ -18,8 +18,7 @@ front-ends.
 
 ## Prerequisites
 
-- **Toolchain:** the crate's dev-dependencies require `rustc ≥ 1.88`. The commands below pin `+1.88.0`; use
-  any installed toolchain `≥ 1.88`, or set it as the default and drop the `+1.88.0`.
+- **Toolchain:** the crate's dev-dependencies require the latest stable Rust toolchain.
 - **Features:** all circuit benches require `--features future_snark,rustls,benchmark-internals`. `future_snark`
   downloads the SRS over HTTPS and needs a TLS backend: pick either `rustls` or `native-tls`.
 - **Resources:** the recursive circuit runs at degree 19 (GB-scale RAM, minutes per proof); the non-recursive
@@ -28,7 +27,7 @@ front-ends.
 General invocation:
 
 ```bash
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench <name> -- <args>
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench <name> -- <args>
 ```
 
 Everything after `--` is passed to the benchmark binary.
@@ -65,24 +64,24 @@ never silently trigger a multi-minute key generation). Arguments go after `--`:
 
 ```bash
 # List every benchmark id — no benchmark setup or key generation (Cargo may still compile the target):
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- --list
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- --list
 
 # Show usage:
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- --help
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- --help
 
 # Run everything (tens of minutes; performs TWO recursive key generations — the shared per-path
 # environment and the cold setup/keys measurement — then all proofs):
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark
 
 # Run a subset: pass ONE literal id or prefix (substring match against the ids from --list).
 # One transition path (prove + verify + fold):
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- ivc/same_epoch
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- ivc/same_epoch
 # One path's verification only:
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- ivc/genesis/verify
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- ivc/genesis/verify
 # SRS cold vs warm (no key generation):
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- ivc/setup/srs
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- ivc/setup/srs
 # Keys cold vs warm (cold performs a full recursive key generation):
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- ivc/setup/keys
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- ivc/setup/keys
 ```
 
 The filter is a **literal** substring, not a regex. The parser rejects (rather than silently ignores):
@@ -120,10 +119,10 @@ Criterion's list/filter modes do **not** gate the manually-timed `large`/`produc
 positional `certificate/<tier>` filter does.
 
 ```bash
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/small
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/medium
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/large
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/production
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/small
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/medium
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/large
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/production
 ```
 
 | Tier         | Quorum | `k` | Measurement           |
@@ -142,5 +141,5 @@ Takes no arguments — it sweeps a range of `k` tiers and prints, for each, the 
 timings projected onto a standard e2e run (~80 certificates):
 
 ```bash
-cargo +1.88.0 bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_prover_modes
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_prover_modes
 ```
