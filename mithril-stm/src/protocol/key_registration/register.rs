@@ -121,7 +121,9 @@ impl KeyRegistration {
 /// Closed Key Registration
 #[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct ClosedKeyRegistration {
+    /// The closed key registration entries
     closed_registration_entries: BTreeSet<ClosedRegistrationEntry>,
+    /// The total stake registered
     total_stake: Stake,
 }
 
