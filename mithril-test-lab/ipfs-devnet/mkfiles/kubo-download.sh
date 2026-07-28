@@ -32,6 +32,8 @@ check_requirements() {
         error_exit "It seems 'curl' is not installed or not in the path.";
     command -v awk >/dev/null ||
         error_exit "It seems 'awk' is not installed or not in the path.";
+    command -v shasum >/dev/null ||
+        error_exit "It seems 'shasum' is not installed or not in the path.";
 }
 
 find_last_released_version() {
@@ -92,20 +94,42 @@ download_bin_archive() {
 
   # example url: https://dist.ipfs.tech/kubo/v0.42.0/kubo_v0.42.0_linux-arm64.tar.gz
   local -r target_url="${IPFS_DISTRIBUTIONS_CDN}/${BIN_NAME}/${version}/$(format_archive_name "$version" "$os" "$arch")"
+  local -r checksum_target_url="${target_url}.sha512"
   local -r archive_path="${download_dir}/$(format_archive_name "$version" "$os" "$arch")"
 
-  if [ -f "$archive_path" ]; then
-    echo ">> Archive already exists, skipping download: ${archive_path}" >&2
-    echo "$archive_path"
-    return 0
+  local expected_checksum
+  expected_checksum=$(
+    curl --fail --silent --show-error --location "$checksum_target_url" |
+      awk '{ print $1; exit }'
+  ) || error_exit "Failed to download '${BIN_NAME}' checksum from '${checksum_target_url}'."
+
+  if [[ -f "$archive_path" ]]; then
+    echo ">> Archive already exists, verifying checksum: ${archive_path}" >&2
+  else
+    echo ">> Downloading ${BIN_NAME} ${version} from ${target_url}..." >&2
+    curl --fail --silent --show-error --location \
+      --output "$archive_path" "$target_url" ||
+        error_exit "Failed to download '${BIN_NAME}' archive from '${target_url}'."
   fi
 
-  echo ">> Downloading ${BIN_NAME} ${version} from ${target_url}..." >&2
-  curl --fail --silent --show-error --location \
-    --output "$archive_path" "$target_url" ||
-      error_exit "Failed to download '${BIN_NAME}' archive from '${target_url}'."
+  verify_checksum "$expected_checksum" "$archive_path"
 
   echo "$archive_path"
+}
+
+verify_checksum() {
+  local -r expected_checksum="$1"
+  local -r file_to_check="$2"
+
+  local actual_checksum
+  actual_checksum=$(shasum -a 512 "$file_to_check" | awk '{ print $1 }')
+
+  if [[ "$actual_checksum" != "$expected_checksum" ]]; then
+    rm -f "$file_to_check"
+    error_exit "Checksum verification failed for '${file_to_check}'."
+  fi
+
+  echo "Checksum verified for: ${file_to_check}" >&2
 }
 
 # ---------------------------------------------------------------------------
@@ -131,8 +155,9 @@ readonly KUBO_VERSION=${KUBO_VERSION:-$(find_last_released_version)}
 # Main
 # ---------------------------------------------------------------------------
 
-readonly OS="$(find_target_os)"
-readonly ARCH="$(find_target_arch)"
+OS="$(find_target_os)"
+ARCH="$(find_target_arch)"
+readonly OS ARCH
 
 echo ">> KUBO_VERSION: ${KUBO_VERSION}"
 echo ">> DOWNLOAD_DIR: ${DOWNLOAD_DIR}"
@@ -140,7 +165,9 @@ echo ">> OUTPUT_DIR: ${OUTPUT_DIR}"
 echo ">> OS: ${OS}"
 echo ">> ARCH: ${ARCH}"
 
-readonly DOWNLOADED_ARCHIVE=$(download_bin_archive $KUBO_VERSION $OS $ARCH $DOWNLOAD_DIR)
+DOWNLOADED_ARCHIVE=$(download_bin_archive "$KUBO_VERSION" "$OS" "$ARCH" "$DOWNLOAD_DIR")
+readonly DOWNLOADED_ARCHIVE
+
 echo ">> Downloaded archive to: $DOWNLOADED_ARCHIVE"
 tar xzf "$DOWNLOADED_ARCHIVE" -C "${OUTPUT_DIR%/}/"
 echo ">> Extracted archive to ${OUTPUT_DIR}"
