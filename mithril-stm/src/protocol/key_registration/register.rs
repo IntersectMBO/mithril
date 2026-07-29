@@ -57,7 +57,7 @@ impl KeyRegistration {
                 .is_some_and(|vk_snark| self.registered_keys_for_snark.contains(&vk_snark));
 
         if is_already_registered {
-            return Err(RegisterError::EntryAlreadyRegistered(Box::new(*entry)).into());
+            return Err(RegisterError::EntryAlreadyRegistered.into());
         }
 
         self.registered_keys_for_concatenation.insert(vk_concatenation);
@@ -385,7 +385,7 @@ mod tests {
 
         assert!(matches!(
             result.unwrap_err().downcast_ref::<RegisterError>(),
-            Some(RegisterError::EntryAlreadyRegistered(_))
+            Some(RegisterError::EntryAlreadyRegistered)
         ));
     }
 
@@ -412,7 +412,7 @@ mod tests {
 
         assert!(matches!(
             result.unwrap_err().downcast_ref::<RegisterError>(),
-            Some(RegisterError::EntryAlreadyRegistered(_))
+            Some(RegisterError::EntryAlreadyRegistered)
         ));
     }
 
@@ -468,8 +468,7 @@ mod tests {
                                 assert!(registered_entries.insert(entry));
                             },
                             Err(error) => match error.downcast_ref::<RegisterError>(){
-                                Some(RegisterError::EntryAlreadyRegistered(e1)) => {
-                                    assert!(e1.as_ref() == &entry);
+                                Some(RegisterError::EntryAlreadyRegistered) => {
                                     assert!(keys.contains(&vk));
                                 },
                                 _ => {panic!("Unexpected error: {error}")}

@@ -1,4 +1,4 @@
-use crate::{RegistrationEntry, VerificationKeyForConcatenation};
+use crate::VerificationKeyForConcatenation;
 
 #[cfg(feature = "future_snark")]
 use crate::VerificationKeyForSnark;
@@ -7,9 +7,8 @@ use crate::VerificationKeyForSnark;
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum RegisterError {
     /// This key has already been registered by a participant
-    #[allow(private_interfaces)]
     #[error("This key has already been registered.")]
-    EntryAlreadyRegistered(Box<RegistrationEntry>),
+    EntryAlreadyRegistered,
 
     /// Cannot register if the registration is closed.
     #[error("Cannot register if the registration is closed.")]
