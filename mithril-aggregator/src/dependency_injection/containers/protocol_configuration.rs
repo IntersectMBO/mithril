@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mithril_protocol_config::ProtocolConfigurationReader;
+use mithril_protocol_config::interface::ProtocolConfigurationMarkersReader;
 use slog::Logger;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserver;
@@ -15,7 +15,7 @@ pub struct ProtocolConfigurationCommandDependenciesContainer {
     pub chain_observer: Arc<dyn ChainObserver>,
 
     /// Protocol configuration reader
-    pub protocol_configuration_reader: Arc<ProtocolConfigurationReader>,
+    pub protocol_configuration_reader: Arc<dyn ProtocolConfigurationMarkersReader>,
 
     /// Logger.
     pub logger: Logger,

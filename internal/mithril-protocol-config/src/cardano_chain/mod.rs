@@ -1,9 +1,10 @@
-//! Module dedicated to ProtocolConfigurationReaderAdapter implementations.
+//! Cardano Chain module to read protocol configuration markers
 
-mod cardano_chain;
+pub mod message;
+pub mod payload;
+pub mod protocol_configuration_reader;
 
-pub use cardano_chain::{
-    CardanoChainAdapter as ProtocolConfigurationReaderCardanoChainAdapter,
+pub use payload::{
     ProtocolConfigurationMarkersPayload as ProtocolConfigurationMarkersPayloadCardanoChain,
     SignedProtocolConfigurationMarkersPayload as SignedProtocolConfigurationMarkersPayloadCardanoChain,
 };

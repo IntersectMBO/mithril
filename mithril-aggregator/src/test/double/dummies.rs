@@ -1,13 +1,12 @@
-use std::collections::BTreeSet;
-
 use chrono::Utc;
 use uuid::Uuid;
 
 use mithril_common::{
     entities::{
         CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
-        ProtocolParameters, SignedEntityTypeDiscriminants,
+        ProtocolParameters,
     },
+    messages::SignedEntityTypeDiscriminantsMessage,
     test::double::{Dummy, fake_data},
 };
 
@@ -119,12 +118,7 @@ impl Dummy for HumanReadableProtocolConfiguration {
             ProtocolParameters::new(10, 20, 0.123),
             Some(CardanoTransactionsSigningConfig::dummy()),
             Some(CardanoBlocksTransactionsSigningConfig::dummy()),
-            BTreeSet::from([
-                SignedEntityTypeDiscriminants::CardanoStakeDistribution,
-                SignedEntityTypeDiscriminants::MithrilStakeDistribution,
-                SignedEntityTypeDiscriminants::CardanoTransactions,
-                SignedEntityTypeDiscriminants::CardanoDatabase,
-            ]),
+            SignedEntityTypeDiscriminantsMessage::all_known(),
         )
     }
 }

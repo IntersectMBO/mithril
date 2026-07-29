@@ -14,14 +14,17 @@ use thiserror::Error;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserverType;
 use mithril_cli_helper::serde_deserialization;
-use mithril_common::StdResult;
-use mithril_common::crypto_helper::{
-    ProtocolConfigurationMarkersSigner, ProtocolConfigurationMarkersVerifierSecretKey,
-};
 use mithril_common::entities::{
     CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
     HexEncodedProtocolConfigurationMarkersSecretKey, ProtocolParameters,
-    SignedEntityTypeDiscriminants,
+    SignedEntityTypeDiscriminants::{self, CardanoBlocksTransactions},
+};
+use mithril_common::{StdResult, messages::SignedEntityTypeDiscriminantsMessage};
+use mithril_common::{
+    crypto_helper::{
+        ProtocolConfigurationMarkersSigner, ProtocolConfigurationMarkersVerifierSecretKey,
+    },
+    entities::SignedEntityTypeDiscriminants::CardanoTransactions,
 };
 use mithril_doc::{Documenter, StructDoc};
 
@@ -89,7 +92,7 @@ pub struct HumanReadableProtocolConfiguration {
     pub protocol_parameters: ProtocolParameters,
     pub cardano_transaction_signing_config: Option<CardanoTransactionsSigningConfig>,
     pub cardano_blocks_transactions_signing_config: Option<CardanoBlocksTransactionsSigningConfig>,
-    pub enabled_signed_entity_types: BTreeSet<SignedEntityTypeDiscriminants>,
+    pub enabled_signed_entity_types: BTreeSet<SignedEntityTypeDiscriminantsMessage>,
 }
 
 impl HumanReadableProtocolConfiguration {
@@ -98,7 +101,7 @@ impl HumanReadableProtocolConfiguration {
         protocol_parameters: ProtocolParameters,
         cardano_transaction_signing_config: Option<CardanoTransactionsSigningConfig>,
         cardano_blocks_transactions_signing_config: Option<CardanoBlocksTransactionsSigningConfig>,
-        enabled_signed_entity_types: BTreeSet<SignedEntityTypeDiscriminants>,
+        enabled_signed_entity_types: BTreeSet<SignedEntityTypeDiscriminantsMessage>,
     ) -> Self {
         HumanReadableProtocolConfiguration {
             epoch,
@@ -299,10 +302,9 @@ impl ImportProtocolConfigurationSubCommand {
                     ),
                 );
             }
-            if config
-                .enabled_signed_entity_types
-                .contains(&SignedEntityTypeDiscriminants::CardanoTransactions)
-                && config.cardano_transaction_signing_config.is_none()
+            if config.enabled_signed_entity_types.contains(
+                &SignedEntityTypeDiscriminantsMessage::Known(CardanoTransactions),
+            ) && config.cardano_transaction_signing_config.is_none()
             {
                 return Err(
                     UserConfImportVerificationError::EnabledSignedEntityTypeWithoutConfiguration(
@@ -310,10 +312,9 @@ impl ImportProtocolConfigurationSubCommand {
                     ),
                 );
             }
-            if config
-                .enabled_signed_entity_types
-                .contains(&SignedEntityTypeDiscriminants::CardanoBlocksTransactions)
-                && config.cardano_blocks_transactions_signing_config.is_none()
+            if config.enabled_signed_entity_types.contains(
+                &SignedEntityTypeDiscriminantsMessage::Known(CardanoBlocksTransactions),
+            ) && config.cardano_blocks_transactions_signing_config.is_none()
             {
                 return Err(
                     UserConfImportVerificationError::EnabledSignedEntityTypeWithoutConfiguration(
@@ -338,6 +339,10 @@ mod tests {
     use super::*;
 
     mod verify_protocol_configurations {
+
+        use mithril_common::entities::SignedEntityTypeDiscriminants::{
+            CardanoBlocksTransactions, CardanoTransactions,
+        };
 
         use super::*;
 
@@ -373,7 +378,7 @@ mod tests {
          {
             let configurations = vec![HumanReadableProtocolConfiguration {
                 enabled_signed_entity_types: BTreeSet::from([
-                    SignedEntityTypeDiscriminants::CardanoTransactions,
+                    SignedEntityTypeDiscriminantsMessage::Known(CardanoTransactions),
                 ]),
                 cardano_transaction_signing_config: None,
                 ..Dummy::dummy()
@@ -388,7 +393,7 @@ mod tests {
          {
             let configurations = vec![HumanReadableProtocolConfiguration {
                 enabled_signed_entity_types: BTreeSet::from([
-                    SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
+                    SignedEntityTypeDiscriminantsMessage::Known(CardanoBlocksTransactions),
                 ]),
                 cardano_blocks_transactions_signing_config: None,
                 ..Dummy::dummy()
