@@ -9,6 +9,6 @@ mod snark_registration_entry;
 pub use closed_registration_entry::ClosedRegistrationEntry;
 pub use concatenation_registration_entry::RegistrationEntryForConcatenation;
 pub use register::{ClosedKeyRegistration, KeyRegistration};
-pub use registration_entry::RegistrationEntry;
+pub(crate) use registration_entry::RegistrationEntry;
 #[cfg(feature = "future_snark")]
 pub use snark_registration_entry::RegistrationEntryForSnark;

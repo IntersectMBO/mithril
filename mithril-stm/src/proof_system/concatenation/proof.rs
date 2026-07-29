@@ -282,21 +282,27 @@ impl<D: MembershipDigest> ConcatenationProof<D> {
             .map_err(|_| AggregateSignatureError::SerializationError)?;
         bytes_index += 8;
 
-        let mut sig_reg_list = Vec::with_capacity(total_sigs);
+        let mut sig_reg_list = Vec::new();
         for _ in 0..total_sigs {
+            let size_field_end = bytes_index
+                .checked_add(8)
+                .ok_or(AggregateSignatureError::SerializationError)?;
             u64_bytes.copy_from_slice(
                 bytes
-                    .get(bytes_index..bytes_index + 8)
+                    .get(bytes_index..size_field_end)
                     .ok_or(AggregateSignatureError::SerializationError)?,
             );
             let sig_reg_size = usize::try_from(u64::from_be_bytes(u64_bytes))
                 .map_err(|_| AggregateSignatureError::SerializationError)?;
+            let sig_reg_end = size_field_end
+                .checked_add(sig_reg_size)
+                .ok_or(AggregateSignatureError::SerializationError)?;
             let sig_reg = SingleSignatureWithRegisteredParty::from_bytes::<D>(
                 bytes
-                    .get(bytes_index + 8..bytes_index + 8 + sig_reg_size)
+                    .get(size_field_end..sig_reg_end)
                     .ok_or(AggregateSignatureError::SerializationError)?,
             )?;
-            bytes_index += 8 + sig_reg_size;
+            bytes_index = sig_reg_end;
             sig_reg_list.push(sig_reg);
         }
 

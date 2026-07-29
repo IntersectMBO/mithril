@@ -1,4 +1,4 @@
-use crate::{PhiFValue, Stake};
+use crate::{PhiFValue, RegisterError, Stake, StmResult, protocol::ProtocolError};
 
 cfg_num_integer! {
     use num_bigint::{BigInt, Sign};
@@ -29,23 +29,33 @@ cfg_num_integer! {
     ///                 1 - p    1 - (ev / evMax)    (evMax - ev)
     ///
     /// Used to determine winning lottery tickets.
-    pub(crate) fn is_lottery_won(phi_f: PhiFValue, ev: [u8; 64], stake: Stake, total_stake: Stake) -> bool {
+    #[allow(clippy::unnecessary_lazy_evaluations)]
+    pub(crate) fn is_lottery_won(phi_f: PhiFValue, ev: [u8; 64], stake: Stake, total_stake: Stake) -> StmResult<bool> {
+        if total_stake == 0 {
+            return Err(RegisterError::ZeroTotalStake.into());
+        }
+
         // If phi_f = 1, then we automatically break with true
         if (phi_f - 1.0).abs() < PhiFValue::EPSILON {
-            return true;
+            return Ok(true);
+        } else if !(phi_f > 0.0 && phi_f <= 1.0) {
+            return Err(ProtocolError::PhiFValueOutOfRange(phi_f).into());
         }
 
         let ev_max = BigInt::from(2u8).pow(512);
         let ev = BigInt::from_bytes_le(Sign::Plus, &ev);
+        if ev == ev_max {
+            return Ok(false);
+        }
         let q = Ratio::new_raw(ev_max.clone(), ev_max - ev);
 
         let c =
-            Ratio::from_float((1.0 - phi_f).ln()).expect("Only fails if the float is infinite or NaN.");
+            Ratio::from_float((1.0 - phi_f).ln()).ok_or_else(|| ProtocolError::PhiFValueOutOfRange(phi_f))?;
         let w = Ratio::new_raw(BigInt::from(stake), BigInt::from(total_stake));
         let x = (w * c).neg();
 
         // Now we compute a taylor function that breaks when the result is known.
-        taylor_comparison(1000, q, x)
+        Ok(taylor_comparison(1000, q, x))
     }
 
     /// Checks if cmp < exp(x). Uses error approximation for an early stop. Whenever the value being
@@ -92,10 +102,16 @@ cfg_rug! {
     /// order to keep the error in the 1e-17 range, we need to carry out the computations with 34
     /// decimal digits (in order to represent the 4.5e16 ada without any rounding errors, we need
     /// double that precision).
-    pub(crate) fn is_lottery_won(phi_f: PhiFValue, ev: [u8; 64], stake: Stake, total_stake: Stake) -> bool {
+    pub(crate) fn is_lottery_won(phi_f: PhiFValue, ev: [u8; 64], stake: Stake, total_stake: Stake) -> StmResult<bool> {
+        if total_stake == 0 {
+            return Err(RegisterError::ZeroTotalStake.into());
+        }
+
         // If phi_f = 1, then we automatically break with true
         if (phi_f - 1.0).abs() < PhiFValue::EPSILON {
-            return true;
+            return Ok(true);
+        } else if !(phi_f > 0.0 && phi_f <= 1.0) {
+            return Err(ProtocolError::PhiFValueOutOfRange(phi_f).into());
         }
         let ev = rug::Integer::from_digits(&ev, Order::LsfLe);
         let ev_max: Float = Float::with_val(117, 2).pow(512);
@@ -104,7 +120,7 @@ cfg_rug! {
         let w = Float::with_val(117, stake) / Float::with_val(117, total_stake);
         let phi = Float::with_val(117, 1.0) - Float::with_val(117, 1.0 - phi_f).pow(w);
 
-        q < phi
+        Ok(q < phi)
     }
 }
 
@@ -142,7 +158,7 @@ mod tests {
             ev.copy_from_slice(&[&ev_1[..], &ev_2[..]].concat());
 
             let quick_result = trivial_is_lottery_won(phi_f, ev, stake, total_stake);
-            let result = is_lottery_won(phi_f, ev, stake, total_stake);
+            let result = is_lottery_won(phi_f, ev, stake, total_stake).unwrap();
             assert_eq!(quick_result, result);
         }
 
@@ -158,5 +174,54 @@ mod tests {
             assert!(taylor_comparison(1000, cmp_n, Ratio::from_float(x).unwrap()));
             assert!(!taylor_comparison(1000, cmp_p, Ratio::from_float(x).unwrap()));
         }
+    }
+
+    #[test]
+    fn is_lottery_won_rejects_out_of_range_phi_f() {
+        let ev = [0u8; 64];
+        let stake = 100;
+        let total_stake = 1000;
+
+        for invalid_phi_f in [-0.5, 0.0, 1.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let result = is_lottery_won(invalid_phi_f, ev, stake, total_stake)
+                .expect_err("The lottery check should fail.");
+            assert!(
+                matches!(
+                    result.downcast_ref::<ProtocolError>(),
+                    Some(ProtocolError::PhiFValueOutOfRange(..))
+                ),
+                "Unexpected error: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_lottery_won_rejects_zero_total_stake() {
+        let ev = [0u8; 64];
+        let stake = 100;
+        let total_stake = 0;
+        let phi_f = 0.8f64;
+
+        let result = is_lottery_won(phi_f, ev, stake, total_stake)
+            .expect_err("The lottery check should fail.");
+        assert!(
+            matches!(
+                result.downcast_ref::<RegisterError>(),
+                Some(RegisterError::ZeroTotalStake)
+            ),
+            "Unexpected error: {result:?}"
+        );
+    }
+
+    #[test]
+    fn is_lottery_won_rejects_max_ev_value() {
+        let ev = [255u8; 64];
+        let stake = 100;
+        let total_stake = 1000;
+        let phi_f = 0.8f64;
+
+        let result = is_lottery_won(phi_f, ev, stake, total_stake).unwrap();
+
+        assert!(!result);
     }
 }

@@ -1,4 +1,4 @@
-use crate::{RegistrationEntry, VerificationKeyForConcatenation};
+use crate::VerificationKeyForConcatenation;
 
 #[cfg(feature = "future_snark")]
 use crate::VerificationKeyForSnark;
@@ -8,7 +8,7 @@ use crate::VerificationKeyForSnark;
 pub enum RegisterError {
     /// This key has already been registered by a participant
     #[error("This key has already been registered.")]
-    EntryAlreadyRegistered(Box<RegistrationEntry>),
+    EntryAlreadyRegistered,
 
     /// Cannot register if the registration is closed.
     #[error("Cannot register if the registration is closed.")]
@@ -51,4 +51,12 @@ pub enum RegisterError {
     /// Total stake of the key registration is zero.
     #[error("Cannot run the protocol if total stake is zero.")]
     ZeroTotalStake,
+}
+
+/// Errors which are due to an error in the protocol.
+#[derive(Debug, Clone, thiserror::Error, PartialEq)]
+pub enum ProtocolError {
+    /// Value of phi_f is out of the (0,1] range
+    #[error("phi_f must be in the range (0, 1], got {0}")]
+    PhiFValueOutOfRange(f64),
 }

@@ -69,7 +69,7 @@ use rayon::prelude::*;
 
 use mithril_stm::{
     AggregateSignatureType, AggregationError, AncillaryGenesisData, AncillaryProofInput, Clerk,
-    Initializer, KeyRegistration, Parameters, RegistrationEntry, Signer, SingleSignature,
+    Initializer, KeyRegistration, Parameters, Signer, SingleSignature,
     MithrilMembershipDigest, AggregateVerificationKey,
 };
 
@@ -100,13 +100,12 @@ let mut key_reg = KeyRegistration::initialize();
 let mut ps: Vec<Initializer> = Vec::with_capacity(nparties as usize);
 for stake in parties {
     let p = Initializer::new(params, stake, &mut rng);
-    let entry = RegistrationEntry::new(
-        p.get_verification_key_proof_of_possession_for_concatenation(),
+    key_reg.register(
         p.stake,
+        &p.get_verification_key_proof_of_possession_for_concatenation(),
         #[cfg(feature = "future_snark")] p.schnorr_verification_key,
     )
     .unwrap();
-    key_reg.register_by_entry(&entry).unwrap();
     ps.push(p);
 }
 

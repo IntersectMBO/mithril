@@ -230,7 +230,7 @@ mod test {
         );
 
         match error.downcast_ref::<RegisterError>() {
-            Some(RegisterError::EntryAlreadyRegistered { .. }) => (),
+            Some(RegisterError::EntryAlreadyRegistered) => (),
             _ => panic!("Expected an CoreRegister error, got: {error:?}"),
         }
     }

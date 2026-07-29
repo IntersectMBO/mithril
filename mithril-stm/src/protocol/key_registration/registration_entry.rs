@@ -1,8 +1,6 @@
 use std::cmp::Ordering;
 use std::hash::Hash;
 
-use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "future_snark")]
 use crate::VerificationKeyForSnark;
 use crate::{
@@ -13,19 +11,17 @@ use crate::{
 use super::ClosedRegistrationEntry;
 
 /// Represents a signer registration entry
-#[derive(PartialEq, Eq, Clone, Debug, Copy, Serialize, Deserialize)]
-pub struct RegistrationEntry(
+#[derive(PartialEq, Eq, Clone, Debug, Copy)]
+pub(crate) struct RegistrationEntry(
     VerificationKeyForConcatenation,
     Stake,
-    #[cfg(feature = "future_snark")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    Option<VerificationKeyForSnark>,
+    #[cfg(feature = "future_snark")] Option<VerificationKeyForSnark>,
 );
 
 impl RegistrationEntry {
     /// Creates a new registration entry. Verifies the proof of possession of verification key for
     /// concatenation and validates the schnorr verification key before creating the entry.
-    pub fn new(
+    pub(crate) fn new(
         bls_verification_key_proof_of_possession: VerificationKeyProofOfPossessionForConcatenation,
         stake: Stake,
         #[cfg(feature = "future_snark")] schnorr_verification_key: Option<VerificationKeyForSnark>,
@@ -56,18 +52,18 @@ impl RegistrationEntry {
     }
 
     /// Gets the verification key for concatenation.
-    pub fn get_verification_key_for_concatenation(&self) -> VerificationKeyForConcatenation {
+    pub(crate) fn get_verification_key_for_concatenation(&self) -> VerificationKeyForConcatenation {
         self.0
     }
 
     #[cfg(feature = "future_snark")]
     /// Gets the verification key for snark.
-    pub fn get_verification_key_for_snark(&self) -> Option<VerificationKeyForSnark> {
+    pub(crate) fn get_verification_key_for_snark(&self) -> Option<VerificationKeyForSnark> {
         self.2
     }
 
     /// Gets the stake associated with the registration entry.
-    pub fn get_stake(&self) -> Stake {
+    pub(crate) fn get_stake(&self) -> Stake {
         self.1
     }
 }

@@ -176,14 +176,31 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeBatchCommitment<D, L>
             )));
         }
 
-        let nr_nodes = self.nr_leaves + self.nr_leaves.next_power_of_two() - 1;
+        let nr_leaves_next_pow_2 = self
+            .nr_leaves
+            .checked_next_power_of_two()
+            .ok_or(MerkleTreeError::SerializationError)?;
+
+        let nr_nodes = nr_leaves_next_pow_2
+            .checked_add(self.nr_leaves)
+            .and_then(|nr_nodes| nr_nodes.checked_sub(1))
+            .ok_or(MerkleTreeError::SerializationError)?;
 
         ordered_indices = ordered_indices
             .into_iter()
-            .map(|i| i + self.nr_leaves.next_power_of_two() - 1)
-            .collect();
+            .map(|i| {
+                nr_leaves_next_pow_2
+                    .checked_add(i)
+                    .and_then(|idx| idx.checked_sub(1))
+                    .ok_or(MerkleTreeError::SerializationError)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
-        let mut idx = ordered_indices[0];
+        let mut idx = ordered_indices
+            .first()
+            .copied()
+            .ok_or(MerkleTreeError::SerializationError)
+            .with_context(|| "The ordered indices list is empty.")?;
         // First we need to hash the leave values
         let mut leaves: Vec<Vec<u8>> = batch_val
             .iter()
