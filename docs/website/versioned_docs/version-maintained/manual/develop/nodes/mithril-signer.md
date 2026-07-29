@@ -208,20 +208,6 @@ If you wish to delve deeper and access several levels of logs from the Mithril s
 
 <CompiledBinaries  node="mithril-signer"/>
 
-## Build and run a Docker container
-
-Build a local Docker image:
-
-```bash
-make docker-build
-```
-
-Run a local Docker container:
-
-```bash
-make docker-run
-```
-
 ## Configuration parameters
 
 The configuration parameters can be set in either of the following ways:

@@ -98,7 +98,7 @@ The Mithril aggregator's **REST API** documentation can be found here :
 
 - A runtime powered by a state machine:
   - The runtime operates synchronously and is scheduled to execute at regular intervals
-  - It encompasses three potential states: **IDLE**, **READY**, and **SIGNING**
+  - It encompasses four potential states: **IDLE**, **BLOCKED**, **READY**, and **SIGNING**
   - The runtime effectively manages state transitions
   - The runtime structure is illustrated in the diagram below:
 
