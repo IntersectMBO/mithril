@@ -29,6 +29,7 @@ cfg_num_integer! {
     ///                 1 - p    1 - (ev / evMax)    (evMax - ev)
     ///
     /// Used to determine winning lottery tickets.
+    #[allow(clippy::unnecessary_lazy_evaluations)]
     pub(crate) fn is_lottery_won(phi_f: PhiFValue, ev: [u8; 64], stake: Stake, total_stake: Stake) -> StmResult<bool> {
         // If phi_f = 1, then we automatically break with true
         if (phi_f - 1.0).abs() < PhiFValue::EPSILON {
