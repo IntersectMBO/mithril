@@ -14,16 +14,16 @@ use thiserror::Error;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserverType;
 use mithril_cli_helper::serde_deserialization;
-use mithril_common::StdResult;
 use mithril_common::crypto_helper::{
     ProtocolConfigurationMarkersSigner, ProtocolConfigurationMarkersVerifierSecretKey,
 };
-use mithril_common::entities::ProtocolParametersError;
 use mithril_common::entities::{
     CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
-    HexEncodedProtocolConfigurationMarkersSecretKey, ProtocolParameters,
-    SignedEntityTypeDiscriminants,
+    HexEncodedProtocolConfigurationMarkersSecretKey, InconsistentSignedEntityConfigError,
+    ProtocolParameters, ProtocolParametersError,
 };
+use mithril_common::messages::SignedEntityTypeDiscriminantsMessage::{self, Known};
+use mithril_common::{StdResult, entities::SignedEntityConfigValidator};
 use mithril_doc::{Documenter, StructDoc};
 
 use crate::{
@@ -37,8 +37,8 @@ pub enum InputConfigurationImportVerificationError {
     #[error("Protocol parameters are invalid: {0:?} {1:?}")]
     InvalidProtocolParameters(ProtocolParameters, ProtocolParametersError),
 
-    #[error("enabled_signed_entity_types contains '{0:?}' without any associated configuration")]
-    EnabledSignedEntityTypeWithoutConfiguration(SignedEntityTypeDiscriminants),
+    #[error("Signed entity configuration is invalid: {0:?}")]
+    InvalidSignedEntityConfiguration(InconsistentSignedEntityConfigError),
 }
 
 /// Protocol configuration parameters configuration
@@ -92,7 +92,7 @@ pub struct HumanReadableProtocolConfiguration {
     pub protocol_parameters: ProtocolParameters,
     pub cardano_transaction_signing_config: Option<CardanoTransactionsSigningConfig>,
     pub cardano_blocks_transactions_signing_config: Option<CardanoBlocksTransactionsSigningConfig>,
-    pub enabled_signed_entity_types: BTreeSet<SignedEntityTypeDiscriminants>,
+    pub enabled_signed_entity_types: BTreeSet<SignedEntityTypeDiscriminantsMessage>,
 }
 
 impl HumanReadableProtocolConfiguration {
@@ -101,7 +101,7 @@ impl HumanReadableProtocolConfiguration {
         protocol_parameters: ProtocolParameters,
         cardano_transaction_signing_config: Option<CardanoTransactionsSigningConfig>,
         cardano_blocks_transactions_signing_config: Option<CardanoBlocksTransactionsSigningConfig>,
-        enabled_signed_entity_types: BTreeSet<SignedEntityTypeDiscriminants>,
+        enabled_signed_entity_types: BTreeSet<SignedEntityTypeDiscriminantsMessage>,
     ) -> Self {
         HumanReadableProtocolConfiguration {
             epoch,
@@ -303,27 +303,29 @@ impl ImportProtocolConfigurationSubCommand {
                     );
                 }
             }
-            if config
+
+            let known_enabled_discriminants = config
                 .enabled_signed_entity_types
-                .contains(&SignedEntityTypeDiscriminants::CardanoTransactions)
-                && config.cardano_transaction_signing_config.is_none()
-            {
-                return Err(
-                    InputConfigurationImportVerificationError::EnabledSignedEntityTypeWithoutConfiguration(
-                        SignedEntityTypeDiscriminants::CardanoTransactions,
-                    ),
-                );
-            }
-            if config
-                .enabled_signed_entity_types
-                .contains(&SignedEntityTypeDiscriminants::CardanoBlocksTransactions)
-                && config.cardano_blocks_transactions_signing_config.is_none()
-            {
-                return Err(
-                    InputConfigurationImportVerificationError::EnabledSignedEntityTypeWithoutConfiguration(
-                        SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
-                    ),
-                );
+                .iter()
+                .filter_map(|d| match d {
+                    Known(discriminant) => Some(*discriminant),
+                    _ => None,
+                })
+                .collect::<BTreeSet<_>>();
+
+            match SignedEntityConfigValidator::check_consistency(
+                &known_enabled_discriminants,
+                &config.cardano_transaction_signing_config,
+                &config.cardano_blocks_transactions_signing_config,
+            ) {
+                Ok(()) => (),
+                Err(e) => {
+                    return Err(
+                        InputConfigurationImportVerificationError::InvalidSignedEntityConfiguration(
+                            e,
+                        ),
+                    );
+                }
             }
         }
 
@@ -343,6 +345,7 @@ mod tests {
 
     mod verify_protocol_configurations {
 
+        use mithril_common::entities::SignedEntityTypeDiscriminants::CardanoTransactions;
         use mithril_common::messages::SignedEntityTypeDiscriminantsMessage;
 
         use super::*;
@@ -361,43 +364,31 @@ mod tests {
             )
             .unwrap_err();
 
-            assert!(
-                error.to_string().contains(&format!(
-                    "Protocol parameters are invalid: {:?}",
-                    protocol_parameters
-                )),
-                "unexpected error: {error}"
-            );
+            assert!(matches!(
+                error,
+                InputConfigurationImportVerificationError::InvalidProtocolParameters(_, _)
+            ));
         }
 
         #[test]
-        fn shoud_throw_error_if_enabled_entity_types_contains_cardano_transactions_without_configuration()
-         {
+        fn shoud_throw_error_if_a_enabled_entity_type_have_no_configuration() {
             let configurations = vec![HumanReadableProtocolConfiguration {
                 enabled_signed_entity_types: BTreeSet::from([
-                    SignedEntityTypeDiscriminants::CardanoTransactions,
+                    SignedEntityTypeDiscriminantsMessage::Known(CardanoTransactions),
                 ]),
                 cardano_transaction_signing_config: None,
                 ..Dummy::dummy()
             }];
 
-            ImportProtocolConfigurationSubCommand::verify_protocol_configurations(&configurations)
-                .expect_err("enabled_signed_entity_types contains 'CardanoTransactions' without any associated configuration");
-        }
+            let error = ImportProtocolConfigurationSubCommand::verify_protocol_configurations(
+                &configurations,
+            )
+            .unwrap_err();
 
-        #[test]
-        fn shoud_throw_error_if_enabled_entity_types_contains_cardano_blocks_transactions_without_configuration()
-         {
-            let configurations = vec![HumanReadableProtocolConfiguration {
-                enabled_signed_entity_types: BTreeSet::from([
-                    SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
-                ]),
-                cardano_blocks_transactions_signing_config: None,
-                ..Dummy::dummy()
-            }];
-
-            ImportProtocolConfigurationSubCommand::verify_protocol_configurations(&configurations)
-                .expect_err("enabled_signed_entity_types contains 'CardanoBlocksTransactions' without any associated configuration");
+            assert!(matches!(
+                error,
+                InputConfigurationImportVerificationError::InvalidSignedEntityConfiguration(_)
+            ));
         }
     }
 

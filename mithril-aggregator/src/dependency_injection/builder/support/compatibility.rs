@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use mithril_common::api_version::APIVersionProvider;
 use mithril_common::entities::{Epoch, SupportedEra};
+use mithril_common::test::double::Dummy;
 use mithril_era::adapters::{EraReaderAdapterBuilder, EraReaderDummyAdapter};
 use mithril_era::{EraChecker, EraMarker, EraReader, EraReaderAdapter};
-use mithril_protocol_config::adapters::ProtocolConfigurationReaderCardanoChainAdapter;
-use mithril_protocol_config::test::double::ProtocolConfigurationReaderDummyAdapter;
-use mithril_protocol_config::{ProtocolConfigurationReader, ProtocolConfigurationReaderAdapter};
+use mithril_protocol_config::cardano_chain::protocol_configuration_reader::CardanoChainProtocolConfigurationMarkersReader;
+use mithril_protocol_config::interface::ProtocolConfigurationMarkersReader;
+use mithril_protocol_config::model::ConfigurationComputerFromMarkers;
+use mithril_protocol_config::test::double::FakeProtocolConfigurationMarkersReader;
 
 use crate::ExecutionEnvironment;
 use crate::dependency_injection::{DependenciesBuilder, DependenciesBuilderError, Result};
@@ -88,31 +90,29 @@ impl DependenciesBuilder {
 
     async fn build_protocol_configuration_reader(
         &mut self,
-    ) -> Result<Arc<ProtocolConfigurationReader>> {
-        let protocol_configuration_adapter: Arc<dyn ProtocolConfigurationReaderAdapter> =
+    ) -> Result<Arc<dyn ProtocolConfigurationMarkersReader>> {
+        let protocol_configuration_markers_reader: Arc<dyn ProtocolConfigurationMarkersReader> =
             match self.configuration.environment() {
                 ExecutionEnvironment::Production => {
                     let parameters = self.configuration.protocol_configuration_reader_parameters();
-                    Arc::new(ProtocolConfigurationReaderCardanoChainAdapter::new(
+                    Arc::new(CardanoChainProtocolConfigurationMarkersReader::new(
                         parameters.address,
                         self.get_chain_observer().await?,
                         parameters.verification_key,
                     ))
                 }
-                _ => Arc::new(ProtocolConfigurationReaderDummyAdapter::from_markers(
-                    vec![], //TODO
+                _ => Arc::new(FakeProtocolConfigurationMarkersReader::from_markers(
+                    ConfigurationComputerFromMarkers::dummy(),
                 )),
             };
 
-        Ok(Arc::new(ProtocolConfigurationReader::new(
-            protocol_configuration_adapter,
-        )))
+        Ok(protocol_configuration_markers_reader)
     }
 
-    /// [ProtocolConfigurationReader] service
+    /// [ProtocolConfigurationMarkersReader] service
     pub async fn get_protocol_configuration_reader(
         &mut self,
-    ) -> Result<Arc<ProtocolConfigurationReader>> {
+    ) -> Result<Arc<dyn ProtocolConfigurationMarkersReader>> {
         get_dependency!(self.protocol_configuration_reader)
     }
 }

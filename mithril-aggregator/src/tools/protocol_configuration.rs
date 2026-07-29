@@ -4,11 +4,15 @@ use anyhow::Context;
 use mithril_cardano_node_chain::entities::{TxDatumBuilder, TxDatumFieldValue};
 use mithril_common::{
     StdResult, crypto_helper::ProtocolConfigurationMarkersSigner, entities::Epoch,
+    messages::SignedEntityTypeDiscriminantsMessage,
 };
+
 use mithril_protocol_config::{
-    ProtocolConfigurationForEpoch, ProtocolConfigurationMarker,
-    adapters::ProtocolConfigurationMarkersPayloadCardanoChain,
-    configuration_computer::ConfigurationComputerFromMarkers,
+    cardano_chain::{
+        ProtocolConfigurationMarkersPayloadCardanoChain,
+        message::{ProtocolConfigurationForEpochMessage, ProtocolConfigurationMarker},
+    },
+    model::{ConfigurationComputerFromMarkers, ProtocolConfigurationForEpoch},
 };
 use slog::{Logger, info, warn};
 use thiserror::Error;
@@ -63,10 +67,7 @@ impl ProtocolConfigurationTools {
             .await?
             .with_context(|| "Chain observer can not retrieve current epoch")?;
 
-        let on_chain_configurations = dependencies
-            .protocol_configuration_reader
-            .read_mithril_protocol_configurations()
-            .await?;
+        let on_chain_configurations = dependencies.protocol_configuration_reader.read_configuration_markers().await?;
 
         let configuration = ProtocolConfigurationToolsConfiguration {
             epoch,
@@ -114,7 +115,7 @@ impl ProtocolConfigurationTools {
         Ok(())
     }
 
-    /// Generate TxDatum for Protocol Configuration
+    /// Generate TxDatum from HumanReadableProtocolConfiguration Vec
     pub fn generate_tx_datum(
         &self,
         configurations: Vec<HumanReadableProtocolConfiguration>,
@@ -123,7 +124,7 @@ impl ProtocolConfigurationTools {
         let mut markers: Vec<ProtocolConfigurationMarker> = Vec::new();
         for configuration in configurations {
             let epoch = configuration.epoch;
-            let protocol_configuration_for_epoch: ProtocolConfigurationForEpoch =
+            let protocol_configuration_for_epoch: ProtocolConfigurationForEpochMessage =
                 configuration.into();
             let marker: ProtocolConfigurationMarker = ProtocolConfigurationMarker::new(
                 epoch,
@@ -161,11 +162,34 @@ impl ProtocolConfigurationTools {
     }
 }
 
+impl From<HumanReadableProtocolConfiguration> for ProtocolConfigurationForEpochMessage {
+    fn from(config: HumanReadableProtocolConfiguration) -> Self {
+        ProtocolConfigurationForEpochMessage {
+            protocol_parameters: config.protocol_parameters.into(),
+            enabled_signed_entity_types: config
+                .enabled_signed_entity_types
+                .iter()
+                .filter(|discriminant| {
+                    matches!(discriminant, SignedEntityTypeDiscriminantsMessage::Known(_))
+                })
+                .cloned()
+                .collect(),
+            cardano_transactions: config.cardano_transaction_signing_config.map(Into::into),
+            cardano_blocks_transactions: config
+                .cardano_blocks_transactions_signing_config
+                .map(Into::into),
+        }
+    }
+}
+
 impl From<HumanReadableProtocolConfiguration> for ProtocolConfigurationForEpoch {
     fn from(config: HumanReadableProtocolConfiguration) -> Self {
         ProtocolConfigurationForEpoch {
             protocol_parameters: config.protocol_parameters,
-            enabled_signed_entity_types: config.enabled_signed_entity_types,
+            enabled_signed_entity_types:
+                SignedEntityTypeDiscriminantsMessage::into_known_discriminants(
+                    config.enabled_signed_entity_types,
+                ),
             cardano_transactions: config.cardano_transaction_signing_config,
             cardano_blocks_transactions: config.cardano_blocks_transactions_signing_config,
         }
@@ -189,8 +213,11 @@ mod tests {
         entities::{
             BlockNumber, BlockNumberOffset, CardanoBlocksTransactionsSigningConfig,
             CardanoTransactionsSigningConfig, Epoch, ProtocolParameters,
-            SignedEntityTypeDiscriminants,
+            SignedEntityTypeDiscriminants::{
+                self, CardanoDatabase, CardanoTransactions, MithrilStakeDistribution,
+            },
         },
+        messages::SignedEntityTypeDiscriminantsMessage,
         test::double::Dummy,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -229,9 +256,9 @@ mod tests {
                 phi_f: 0.5,
             },
             enabled_signed_entity_types: BTreeSet::from_iter(vec![
-                SignedEntityTypeDiscriminants::MithrilStakeDistribution,
-                SignedEntityTypeDiscriminants::CardanoDatabase,
-                SignedEntityTypeDiscriminants::CardanoTransactions,
+                SignedEntityTypeDiscriminantsMessage::Known(MithrilStakeDistribution),
+                SignedEntityTypeDiscriminantsMessage::Known(CardanoDatabase),
+                SignedEntityTypeDiscriminantsMessage::Known(CardanoTransactions),
             ]),
             cardano_transaction_signing_config: Some(CardanoTransactionsSigningConfig {
                 security_parameter: BlockNumberOffset(100),
@@ -273,6 +300,32 @@ mod tests {
     }
 
     #[test]
+    fn from_human_readable_protocol_configuration_to_protocol_configuration_for_epoch_message_keep_only_known_discriminants()
+     {
+        let human_readable_conf = HumanReadableProtocolConfiguration {
+            enabled_signed_entity_types: BTreeSet::from_iter(vec![
+                SignedEntityTypeDiscriminantsMessage::Known(MithrilStakeDistribution),
+                SignedEntityTypeDiscriminantsMessage::Known(CardanoDatabase),
+                SignedEntityTypeDiscriminantsMessage::Known(CardanoTransactions),
+                SignedEntityTypeDiscriminantsMessage::Unknown,
+            ]),
+            ..Dummy::dummy()
+        };
+
+        let expected_enabled_signed_entity_types = BTreeSet::from_iter(vec![
+            SignedEntityTypeDiscriminantsMessage::Known(MithrilStakeDistribution),
+            SignedEntityTypeDiscriminantsMessage::Known(CardanoDatabase),
+            SignedEntityTypeDiscriminantsMessage::Known(CardanoTransactions),
+        ]);
+
+        assert_eq!(
+            ProtocolConfigurationForEpochMessage::from(human_readable_conf)
+                .enabled_signed_entity_types,
+            expected_enabled_signed_entity_types
+        );
+    }
+
+    #[test]
     fn generate_tx_datum_ok() {
         let configurations = vec![HumanReadableProtocolConfiguration {
             epoch: Epoch(42),
@@ -282,9 +335,9 @@ mod tests {
                 phi_f: 0.5,
             },
             enabled_signed_entity_types: BTreeSet::from_iter(vec![
-                SignedEntityTypeDiscriminants::MithrilStakeDistribution,
-                SignedEntityTypeDiscriminants::CardanoDatabase,
-                SignedEntityTypeDiscriminants::CardanoTransactions,
+                SignedEntityTypeDiscriminantsMessage::Known(MithrilStakeDistribution),
+                SignedEntityTypeDiscriminantsMessage::Known(CardanoDatabase),
+                SignedEntityTypeDiscriminantsMessage::Known(CardanoTransactions),
             ]),
             cardano_transaction_signing_config: Some(CardanoTransactionsSigningConfig {
                 security_parameter: BlockNumberOffset(100),
@@ -325,6 +378,10 @@ mod tests {
     }
 
     mod verify_configurations_against_chain {
+        use mithril_common::entities::SignedEntityTypeDiscriminants::{
+            CardanoBlocksTransactions, CardanoStakeDistribution,
+        };
+
         use super::*;
 
         /// Instantiate a unique ProtocolConfigurationForEpoch based on char
@@ -363,10 +420,10 @@ mod tests {
                     CardanoBlocksTransactionsSigningConfig::dummy(),
                 ),
                 enabled_signed_entity_types: BTreeSet::from([
-                    SignedEntityTypeDiscriminants::CardanoTransactions,
-                    SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
-                    SignedEntityTypeDiscriminants::CardanoDatabase,
-                    SignedEntityTypeDiscriminants::CardanoStakeDistribution,
+                    SignedEntityTypeDiscriminantsMessage::Known(CardanoTransactions),
+                    SignedEntityTypeDiscriminantsMessage::Known(CardanoBlocksTransactions),
+                    SignedEntityTypeDiscriminantsMessage::Known(CardanoDatabase),
+                    SignedEntityTypeDiscriminantsMessage::Known(CardanoStakeDistribution),
                 ]),
             }
         }

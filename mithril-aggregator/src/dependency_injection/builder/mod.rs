@@ -34,9 +34,8 @@ use mithril_common::{
 };
 use mithril_era::{EraChecker, EraReader, EraReaderAdapter};
 use mithril_persistence::sqlite::{SqliteConnection, SqliteConnectionPool};
-use mithril_protocol_config::{
-    ProtocolConfigurationReader, ProtocolConfigurationReaderAdapter,
-    interface::MithrilNetworkConfigurationProvider,
+use mithril_protocol_config::interface::{
+    MithrilNetworkConfigurationProvider, ProtocolConfigurationMarkersReader,
 };
 use mithril_signed_entity_lock::SignedEntityTypeLock;
 use mithril_ticker::TickerService;
@@ -225,11 +224,8 @@ pub struct DependenciesBuilder {
     /// Era reader service
     pub era_reader: Option<Arc<EraReader>>,
 
-    /// Adapter for [ProtocolConfigurationReader]
-    pub protocol_configuration_reader_adapter: Option<Arc<dyn ProtocolConfigurationReaderAdapter>>,
-
     /// Protocol configuration reader service
-    pub protocol_configuration_reader: Option<Arc<ProtocolConfigurationReader>>,
+    pub protocol_configuration_reader: Option<Arc<dyn ProtocolConfigurationMarkersReader>>,
 
     /// Event Transmitter Service
     pub event_transmitter: Option<Arc<TransmitterService<EventMessage>>>,
@@ -347,7 +343,6 @@ impl DependenciesBuilder {
             era_reader_adapter: None,
             era_checker: None,
             era_reader: None,
-            protocol_configuration_reader_adapter: None,
             protocol_configuration_reader: None,
             event_transmitter: None,
             event_transmitter_channel: (None, None),

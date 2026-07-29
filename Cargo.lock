@@ -4698,6 +4698,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "ciborium",
+ "fixed",
  "hex",
  "httpmock",
  "mithril-aggregator-client",

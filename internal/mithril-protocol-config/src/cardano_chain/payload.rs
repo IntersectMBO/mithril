@@ -1,18 +1,16 @@
+//! Payload structures and signing utilitaries for Protocol Configuration Datum
+
 use anyhow::Context;
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use thiserror::Error;
 
-use mithril_cardano_node_chain::chain_observer::ChainObserver;
-use mithril_cardano_node_chain::entities::ChainAddress;
 use mithril_common::crypto_helper::{
     ProtocolConfigurationMarkersSigner, ProtocolConfigurationMarkersVerifierSignature,
-    ProtocolConfigurationMarkersVerifierVerificationKey, key_encode_hex,
+    key_decode_hex, key_encode_hex,
 };
 use mithril_common::{StdError, StdResult};
 
-use crate::{ProtocolConfigurationMarker, ProtocolConfigurationReaderAdapter};
+use crate::cardano_chain::message::ProtocolConfigurationMarker;
 
 /// [ProtocolConfigurationMarkersPayload] related errors.
 #[derive(Debug, Error)]
@@ -70,6 +68,13 @@ impl SignedProtocolConfigurationMarkersPayload {
             || "SignedProtocolConfigurationMarkersPayload could not be json hex encoded",
         )
     }
+
+    /// Decode a SignedProtocolConfigurationMarkersPayload from a json hex string
+    pub fn from_json_hex(payload: &str) -> StdResult<Self> {
+        key_decode_hex(payload).with_context(
+            || "SignedProtocolConfigurationMarkersPayload could not be decoded from json hex",
+        )
+    }
 }
 
 impl ProtocolConfigurationMarkersPayload {
@@ -101,32 +106,46 @@ impl ProtocolConfigurationMarkersPayload {
     }
 }
 
-/// Cardano Chain adapter retrieves protocol configuration markers on chain
-pub struct CardanoChainAdapter {
-    address: ChainAddress,
-    chain_observer: Arc<dyn ChainObserver>,
-    verification_key: ProtocolConfigurationMarkersVerifierVerificationKey,
-}
+#[cfg(test)]
+mod tests {
+    use mithril_common::entities::Epoch;
 
-impl CardanoChainAdapter {
-    /// CardanoChainAdapter factory
-    pub fn new(
-        address: ChainAddress,
-        chain_observer: Arc<dyn ChainObserver>,
-        verification_key: ProtocolConfigurationMarkersVerifierVerificationKey,
-    ) -> Self {
-        Self {
-            address,
-            chain_observer,
-            verification_key,
-        }
+    use super::*;
+
+    #[test]
+    fn golden_master_json_hex_payload() {
+        const EXPECTED_JSON_HEX: &str = "7b226d61726b657273223a5b7b2265706f6368223a34322c22636f6e66696775726174696f6e223a2263626f725f70726f746f636f6c5f636f6e66696775726174696f6e227d5d2c227369676e6174757265223a223130646265373563306232333534363136613538313535663632343638663666303736383935303635646362306237356636383735333735653163313164376166656533383962393662663466623466366234636433623130613731346162306133316566636234383562303066343038643161613064393066623366393038227d";
+
+        let markers = vec![ProtocolConfigurationMarker::new(
+            Epoch(42),
+            "cbor_protocol_configuration".to_string(),
+        )];
+        let signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
+        let payload = ProtocolConfigurationMarkersPayload::new(markers)
+            .sign(&signer)
+            .unwrap();
+
+        let payload_from_json_hex =
+            SignedProtocolConfigurationMarkersPayload::from_json_hex(EXPECTED_JSON_HEX).unwrap();
+
+        assert_eq!(payload, payload_from_json_hex);
     }
-}
 
-#[async_trait]
-impl ProtocolConfigurationReaderAdapter for CardanoChainAdapter {
-    async fn read(&self) -> StdResult<Vec<ProtocolConfigurationMarker>> {
-        //TODO to implement
-        Ok(Vec::new())
+    #[test]
+    fn to_json_hex_from_json_hex_conversion() {
+        let markers = vec![ProtocolConfigurationMarker::new(
+            Epoch(42),
+            "cbor_protocol_configuration".to_string(),
+        )];
+        let signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
+        let payload = ProtocolConfigurationMarkersPayload::new(markers)
+            .sign(&signer)
+            .unwrap();
+
+        let json_hex = payload.to_json_hex().unwrap();
+        let payload_from_json_hex =
+            SignedProtocolConfigurationMarkersPayload::from_json_hex(&json_hex).unwrap();
+
+        assert_eq!(payload, payload_from_json_hex);
     }
 }
