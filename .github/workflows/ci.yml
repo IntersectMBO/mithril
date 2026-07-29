@@ -352,7 +352,7 @@ jobs:
           # Include a test for partial decentralization with leader/follower signer registration and P2P signature registration with Haskell DMQ node (without fallback signature delayer)
           - mode: "leader-follower-dmq-haskell-skip-delayer"
             era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
-            next_era: [""]
+            next_era: ""
             cardano_node_version: "10.6.2"
             hard_fork_latest_era_at_epoch: 0
             run_id: "#1"
@@ -360,7 +360,7 @@ jobs:
           # Include a test for partial decentralization with leader/follower signer registration and P2P signature registration with Haskell DMQ node (with fallback signature delayer)
           - mode: "leader-follower-dmq-haskell-with-delayer"
             era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
-            next_era: [""]
+            next_era: ""
             cardano_node_version: "10.6.2"
             hard_fork_latest_era_at_epoch: 0
             run_id: "#1"
@@ -368,7 +368,7 @@ jobs:
           # Include a test for partial decentralization with leader/follower signer registration and P2P signature registration with fake DMQ node
           - mode: "leader-follower-dmq-fake"
             era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
-            next_era: [""]
+            next_era: ""
             cardano_node_version: "10.6.2"
             hard_fork_latest_era_at_epoch: 0
             run_id: "#1"
@@ -376,7 +376,7 @@ jobs:
           # Include a test for partial decentralization with leader/follower signer registration and P2P signature registration with Mithril relay
           - mode: "leader-follower-relay"
             era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
-            next_era: [""]
+            next_era: ""
             cardano_node_version: "10.6.2"
             hard_fork_latest_era_at_epoch: 0
             run_id: "#1"
@@ -438,6 +438,11 @@ jobs:
           timeout_minutes: 10
           warning_on_retry: true
           command: |
+            # If there is a next era, we need to specify it with '--mithril-next-era'
+            NEXT_ERA_ARG=""
+            if [[ "${{ matrix.next_era }}" != "" ]]; then
+              NEXT_ERA_ARG="--mithril-next-era=${{ matrix.next_era }}"
+            fi
             cat > ./mithril-end-to-end.sh << EOF
             #!/bin/bash
             set -x
@@ -447,12 +452,9 @@ jobs:
                     --devnet-scripts-directory=./mithril-test-lab/cardano-devnet \\
                     --mithril-era=${{ matrix.era }} \\
                     --cardano-node-version ${{ matrix.cardano_node_version }} \\
-                    --cardano-hard-fork-latest-era-at-epoch ${{ matrix.hard_fork_latest_era_at_epoch }} ${{ matrix.extra_args }} \\
+                    --cardano-hard-fork-latest-era-at-epoch ${{ matrix.hard_fork_latest_era_at_epoch }} \\
+                    $NEXT_ERA_ARG ${{ matrix.extra_args }}
             EOF
-            # If there is a next era, we need to specify it with '--mithril-next-era'
-            if [[ "${{ matrix.next_era }}" != "" ]]; then
-              echo "  --mithril-next-era=${{ matrix.next_era }}" >> ./mithril-end-to-end.sh
-            fi
             chmod u+x ./mithril-end-to-end.sh
             ./mithril-end-to-end.sh
             EXIT_CODE=$?
