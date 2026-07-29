@@ -81,7 +81,7 @@ fi
 if [ -z "${LISTENING_ADDR}" ]; then
   LISTENING_ADDR="127.0.0.1"
 fi
-DEVNET_VERSION=$(cat VERSION)
+DEVNET_VERSION=$(cat "${SCRIPT_DIRECTORY}/VERSION")
 
 # Display configuration summary
 echo ">> Devnet Version: ${DEVNET_VERSION}"
