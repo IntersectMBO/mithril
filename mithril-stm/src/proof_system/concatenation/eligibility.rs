@@ -1,4 +1,4 @@
-use crate::{PhiFValue, Stake, StmResult, protocol::ProtocolError};
+use crate::{PhiFValue, RegisterError, Stake, StmResult, protocol::ProtocolError};
 
 cfg_num_integer! {
     use num_bigint::{BigInt, Sign};
@@ -31,6 +31,10 @@ cfg_num_integer! {
     /// Used to determine winning lottery tickets.
     #[allow(clippy::unnecessary_lazy_evaluations)]
     pub(crate) fn is_lottery_won(phi_f: PhiFValue, ev: [u8; 64], stake: Stake, total_stake: Stake) -> StmResult<bool> {
+        if total_stake == 0 {
+            return Err(RegisterError::ZeroTotalStake.into());
+        }
+
         // If phi_f = 1, then we automatically break with true
         if (phi_f - 1.0).abs() < PhiFValue::EPSILON {
             return Ok(true);
@@ -40,6 +44,9 @@ cfg_num_integer! {
 
         let ev_max = BigInt::from(2u8).pow(512);
         let ev = BigInt::from_bytes_le(Sign::Plus, &ev);
+        if ev == ev_max {
+            return Ok(false);
+        }
         let q = Ratio::new_raw(ev_max.clone(), ev_max - ev);
 
         let c =
@@ -96,6 +103,10 @@ cfg_rug! {
     /// decimal digits (in order to represent the 4.5e16 ada without any rounding errors, we need
     /// double that precision).
     pub(crate) fn is_lottery_won(phi_f: PhiFValue, ev: [u8; 64], stake: Stake, total_stake: Stake) -> StmResult<bool> {
+        if total_stake == 0 {
+            return Err(RegisterError::ZeroTotalStake.into());
+        }
+
         // If phi_f = 1, then we automatically break with true
         if (phi_f - 1.0).abs() < PhiFValue::EPSILON {
             return Ok(true);
@@ -182,5 +193,35 @@ mod tests {
                 "Unexpected error: {result:?}"
             );
         }
+    }
+
+    #[test]
+    fn is_lottery_won_rejects_zero_total_stake() {
+        let ev = [0u8; 64];
+        let stake = 100;
+        let total_stake = 0;
+        let phi_f = 0.8f64;
+
+        let result = is_lottery_won(phi_f, ev, stake, total_stake)
+            .expect_err("The lottery check should fail.");
+        assert!(
+            matches!(
+                result.downcast_ref::<RegisterError>(),
+                Some(RegisterError::ZeroTotalStake)
+            ),
+            "Unexpected error: {result:?}"
+        );
+    }
+
+    #[test]
+    fn is_lottery_won_rejects_max_ev_value() {
+        let ev = [255u8; 64];
+        let stake = 100;
+        let total_stake = 1000;
+        let phi_f = 0.8f64;
+
+        let result = is_lottery_won(phi_f, ev, stake, total_stake).unwrap();
+
+        assert!(!result);
     }
 }
