@@ -107,10 +107,10 @@ jobs:
           - environment: release-preprod
             environment_prefix: release
             cardano_network: preprod
-            mithril_use_p2p_network: false
-            mithril_p2p_use_dmq_protocol: false
-            mithril_p2p_use_real_dmq_node: false
-            mithril_p2p_dmq_use_ledger_peers: false
+            mithril_use_p2p_network: true
+            mithril_p2p_use_dmq_protocol: true
+            mithril_p2p_use_real_dmq_node: true
+            mithril_p2p_dmq_use_ledger_peers: true
             mithril_api_domain: api.mithril.network
             mithril_protocol_parameters: |
               {
@@ -136,10 +136,10 @@ jobs:
           - environment: release-mainnet
             environment_prefix: release
             cardano_network: mainnet
-            mithril_use_p2p_network: false
-            mithril_p2p_use_dmq_protocol: false
-            mithril_p2p_use_real_dmq_node: false
-            mithril_p2p_dmq_use_ledger_peers: false
+            mithril_use_p2p_network: true
+            mithril_p2p_use_dmq_protocol: true
+            mithril_p2p_use_real_dmq_node: true
+            mithril_p2p_dmq_use_ledger_peers: true
             mithril_api_domain: api.mithril.network
             mithril_protocol_parameters: |
               {
