@@ -55,6 +55,7 @@ anyhow = "1.0.103"
 async-recursion = "1.1.1"
 async-trait = "0.1.89"
 chrono = { version = "0.4.45", features = ["serde"] }
+ciborium = "0.2.2"
 clap = { version = "4.6.1", features = ["derive", "env"] }
 config = "0.15.25"
 digest = { version = "0.10.7", features = ["alloc"] }
