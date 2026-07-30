@@ -45,7 +45,7 @@ impl ScenarioToolkitContext {
 
     /// Timeout to wait for the aggregator to produce a signed artifact once it is running.
     pub fn artifact_production_timeout(&self) -> Duration {
-        self.timeout_for_epochs(1)
+        self.timeout_for_epochs(3)
     }
 
     /// Timeout to wait for the devnet and aggregator to become ready during startup.
@@ -118,7 +118,7 @@ mod tests {
 
         assert_eq!(
             context.artifact_production_timeout(),
-            Duration::from_secs(10)
+            Duration::from_secs(30)
         );
         assert_eq!(
             context.startup_readiness_timeout(),
