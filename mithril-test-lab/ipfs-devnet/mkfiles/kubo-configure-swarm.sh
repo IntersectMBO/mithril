@@ -65,6 +65,11 @@ configure_node() {
   local node_dir
   node_dir="$nodes_dir/kubo-node-$node_id"
 
+  local api_port gateway_port swarm_port
+  api_port=$((5000 + node_id))
+  gateway_port=$((8080 + node_id))
+  swarm_port=$((4000 + node_id))
+
   #---------- Write swarm key
   {
     printf '%s\n' "/key/swarm/psk/1.0.0/"
@@ -73,10 +78,11 @@ configure_node() {
   } > "$node_dir/swarm.key"
 
   #---------- Additional config
-  IPFS_PATH="$node_dir" "$ipfs_bin_path" config Addresses.API "/ip4/127.0.0.1/tcp/500${node_id}"
-  IPFS_PATH="$node_dir" "$ipfs_bin_path" config Addresses.Gateway "/ip4/127.0.0.1/tcp/808${node_id}"
-  IPFS_PATH="$node_dir" "$ipfs_bin_path" config --json Addresses.Swarm "[\"/ip4/127.0.0.1/tcp/400${node_id}\"]"
+  IPFS_PATH="$node_dir" "$ipfs_bin_path" config Addresses.API "/ip4/127.0.0.1/tcp/${api_port}"
+  IPFS_PATH="$node_dir" "$ipfs_bin_path" config Addresses.Gateway "/ip4/127.0.0.1/tcp/${gateway_port}"
+  IPFS_PATH="$node_dir" "$ipfs_bin_path" config --json Addresses.Swarm "[\"/ip4/127.0.0.1/tcp/${swarm_port}\"]"
   # Disable automatic discovery when starting up
+
   IPFS_PATH="$node_dir" "$ipfs_bin_path" config --json Bootstrap '[]'
   # Disable unsupported private network features
   IPFS_PATH="$node_dir" "$ipfs_bin_path" config --json Swarm.Transports.Network.Websocket false
