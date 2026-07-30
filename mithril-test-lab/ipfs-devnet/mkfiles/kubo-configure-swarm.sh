@@ -29,12 +29,12 @@ generate_swarm_key() {
   od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
 }
 
-configure_node() {
+# Init a node, removing existing content if overwrite is set, returning the node Peer Id
+init_node() {
   local -r node_id="$1"
-  local -r swarm_key="$2"
-  local -r ipfs_bin_path="$3"
-  local -r nodes_dir="${4%/}"
-  local -r overwrite="$5"
+  local -r ipfs_bin_path="$2"
+  local -r nodes_dir="${3%/}"
+  local -r overwrite="$4"
 
   local node_dir
   node_dir="$nodes_dir/kubo-node-$node_id"
@@ -44,12 +44,26 @@ configure_node() {
       error_exit "Node configuration already exists: '$node_dir'. Use -o, --overwrite to replace it."
     fi
 
-    echo "Removing existing configuration: '$node_dir'"
+    echo ">> Removing existing configuration: '$node_dir'" >&2
     rm -rf -- "$node_dir"
   fi
 
-  #---------- Node init
-  IPFS_PATH=$node_dir "$ipfs_bin_path" init --profile test
+  mkdir -p -- "$nodes_dir"
+  IPFS_PATH="$node_dir" "$ipfs_bin_path" init --profile test >&2
+
+  # Important: only line that print to stdout so function output can be correctly retrieved
+  IPFS_PATH="$node_dir" "$ipfs_bin_path" id -f "<id>"
+}
+
+configure_node() {
+  local -r node_id="$1"
+  local -r number_of_nodes="$2"
+  local -r swarm_key="$3"
+  local -r ipfs_bin_path="$4"
+  local -r nodes_dir="${5%/}"
+
+  local node_dir
+  node_dir="$nodes_dir/kubo-node-$node_id"
 
   #---------- Write swarm key
   {
@@ -126,6 +140,14 @@ SWARM_KEY="$(generate_swarm_key)"
 readonly SWARM_KEY
 echo ">> Swarm key generated (not displayed)."
 
+declare -a PEER_IDS
+# Init node first - generating their peer Id which will be needed afterward
 for ((node_id = 1; node_id <= NUMBER_OF_NODES; node_id++)); do
-  configure_node "$node_id" "$SWARM_KEY" "$IPFS_BIN" "$NODES_DIR" "$OVERWRITE"
+  PEER_IDS[node_id - 1]=$(init_node "$node_id" "$IPFS_BIN" "$NODES_DIR" "$OVERWRITE")
+done
+echo ">> nodes ids:"
+printf '%s\n' "${PEER_IDS[@]}"
+
+for ((node_id = 1; node_id <= NUMBER_OF_NODES; node_id++)); do
+  configure_node "$node_id" "$NUMBER_OF_NODES" "$SWARM_KEY" "$IPFS_BIN" "$NODES_DIR"
 done
