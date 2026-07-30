@@ -122,6 +122,21 @@ echo "TestBabbageHardForkAtEpoch: ${HARD_FORK_BABBAGE_AT_EPOCH}" >> "${ARTIFACTS
 echo "TestConwayHardForkAtEpoch: ${HARD_FORK_CONWAY_AT_EPOCH}" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
 echo "ExperimentalProtocolsEnabled: True" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
 
+# Tune the UTxO-HD ledger state snapshot policy for cardano-node 11.1.0+ so the aggregator can build the Cardano database artifact
+if [ "$(version_lt ${CARDANO_NODE_VERSION_RELEASE} 11.1.0)" = "false" ]; then
+  # Take a snapshot once every epoch (epoch length * slot length), but never faster than once per second
+  SNAPSHOT_INTERVAL=$(awk "BEGIN { interval = ${EPOCH_LENGTH} * ${SLOT_LENGTH}; if (interval < 1) interval = 1; printf \"%d\", interval }")
+  cat >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml" <<EOF
+LedgerDB:
+  Backend: V2InMemory
+  SnapshotInterval: ${SNAPSHOT_INTERVAL}
+  SlotOffset: 0
+  RateLimit: 0
+  MinDelay: 0
+  MaxDelay: 0
+EOF
+fi
+
 $CARDANO_CLI $CARDANO_CLI_ERA genesis create-staked --genesis-dir "${ARTIFACTS_DIR_TEMP}" \
   --testnet-magic "${NETWORK_MAGIC}" \
   --gen-pools ${NUM_SPO_NODES} \
@@ -134,6 +149,27 @@ $CARDANO_CLI $CARDANO_CLI_ERA genesis create-staked --genesis-dir "${ARTIFACTS_D
 cat ${ARTIFACTS_DIR_TEMP}/genesis.json | jq --argjson slot_length ${SLOT_LENGTH} --argjson epoch_length ${EPOCH_LENGTH} --argjson active_slots_coeff ${ACTIVE_SLOTS_COEFF} --argjson security_param ${SECURITY_PARAM} '. + {slotLength: $slot_length, activeSlotsCoeff: $active_slots_coeff, securityParam: $security_param, epochLength: $epoch_length, maxLovelaceSupply: 10000000000000, updateQuorum: 2}' > ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp
 cat ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp | jq --raw-output '.protocolParams.protocolVersion.major = 10 | .protocolParams.minFeeA = 44 | .protocolParams.minFeeB = 155381 | .protocolParams.minUTxOValue = 1000000 | .protocolParams.decentralisationParam = 0.7 | .protocolParams.rho = 0.1 | .protocolParams.tau = 0.1'  > ${ARTIFACTS_DIR_TEMP}/genesis.json
 rm ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp
+
+# cardano-cli 11.1.0+ moves the initial funds, stake pools and stake delegations into an 'extraConfig' block the node fails to parse; migrate them back into the top-level fields the node expects, then remove the block
+if [ "$(version_lt ${CARDANO_NODE_VERSION_RELEASE} 11.1.0)" = "false" ]; then
+  cat ${ARTIFACTS_DIR_TEMP}/genesis.json | jq '
+    .initialFunds = .extraConfig.initialFunds.data
+    | .staking.stake = .extraConfig.stakeCredentials.data
+    | .staking.pools = (.extraConfig.stakePools.data | with_entries(.value = {
+        publicKey: .value.poolId,
+        vrf: .value.vrf,
+        pledge: .value.pledge,
+        cost: .value.cost,
+        margin: .value.margin,
+        rewardAccount: .value.accountAddress,
+        owners: .value.owners,
+        relays: .value.relays,
+        metadata: .value.metadata
+      }))
+    | del(.extraConfig)
+  ' > ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp
+  mv ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp ${ARTIFACTS_DIR_TEMP}/genesis.json
+fi
 
 # Step 2: Dispatch artifacts in the correct directories
 
