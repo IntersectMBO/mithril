@@ -173,19 +173,6 @@ pub(crate) fn build_deterministic_params(circuit_degree: u32) -> ParamsKZG<Bls12
     ParamsKZG::<Bls12>::unsafe_setup(circuit_degree, ChaCha20Rng::seed_from_u64(ASSET_SEED))
 }
 
-/// Derives circuit-specific commitment parameters from a shared universal SRS.
-pub(super) fn derive_commitment_params(
-    universal_kzg_parameters: &ParamsKZG<Bls12>,
-    shared_srs_degree: u32,
-    circuit_degree: u32,
-) -> ParamsKZG<Bls12> {
-    let mut commitment_parameters = universal_kzg_parameters.clone();
-    if circuit_degree < shared_srs_degree {
-        commitment_parameters.downsize(circuit_degree);
-    }
-    commitment_parameters
-}
-
 /// Builds the shared verifier-side recursive setup from the deterministic SRS.
 pub(crate) fn build_shared_recursive_context(
     setup: &AssetGenerationSetup,
@@ -194,16 +181,18 @@ pub(crate) fn build_shared_recursive_context(
     let universal_kzg_parameters = build_deterministic_params(shared_srs_degree);
     let universal_verifier_params = universal_kzg_parameters.verifier_params();
 
-    let certificate_commitment_parameters = derive_commitment_params(
-        &universal_kzg_parameters,
-        shared_srs_degree,
-        CERTIFICATE_CIRCUIT_DEGREE,
-    );
-    let recursive_commitment_parameters = derive_commitment_params(
-        &universal_kzg_parameters,
-        shared_srs_degree,
-        RECURSIVE_CIRCUIT_DEGREE,
-    );
+    let (certificate_commitment_parameters, recursive_commitment_parameters) =
+        if CERTIFICATE_CIRCUIT_DEGREE == shared_srs_degree {
+            (
+                universal_kzg_parameters.clone(),
+                build_deterministic_params(RECURSIVE_CIRCUIT_DEGREE),
+            )
+        } else {
+            (
+                build_deterministic_params(CERTIFICATE_CIRCUIT_DEGREE),
+                universal_kzg_parameters.clone(),
+            )
+        };
 
     let certificate_verifying_key = NonRecursiveCircuitVerifyingKey::new(zk_lib::setup_vk(
         &certificate_commitment_parameters,
