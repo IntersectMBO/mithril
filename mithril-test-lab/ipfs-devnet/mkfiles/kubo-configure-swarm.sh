@@ -57,10 +57,9 @@ init_node() {
 
 configure_node() {
   local -r node_id="$1"
-  local -r number_of_nodes="$2"
-  local -r swarm_key="$3"
-  local -r ipfs_bin_path="$4"
-  local -r nodes_dir="${5%/}"
+  local -r swarm_key="$2"
+  local -r ipfs_bin_path="$3"
+  local -r nodes_dir="${4%/}"
 
   local node_dir
   node_dir="$nodes_dir/kubo-node-$node_id"
@@ -82,7 +81,6 @@ configure_node() {
   IPFS_PATH="$node_dir" "$ipfs_bin_path" config Addresses.Gateway "/ip4/127.0.0.1/tcp/${gateway_port}"
   IPFS_PATH="$node_dir" "$ipfs_bin_path" config --json Addresses.Swarm "[\"/ip4/127.0.0.1/tcp/${swarm_port}\"]"
   # Disable automatic discovery when starting up
-
   IPFS_PATH="$node_dir" "$ipfs_bin_path" config --json Bootstrap '[]'
   # Disable unsupported private network features
   IPFS_PATH="$node_dir" "$ipfs_bin_path" config --json Swarm.Transports.Network.Websocket false
@@ -95,6 +93,38 @@ configure_node() {
   IPFS_PATH="$node_dir" "$ipfs_bin_path" config --json Swarm.DisableNatPortMap true
   # Disable telemetry
   IPFS_PATH="$node_dir" "$ipfs_bin_path" config Plugins.Plugins.telemetry.Config.Mode off
+}
+
+configure_node_peers() {
+  local -r node_id="$1"
+  local -r number_of_nodes="$2"
+  local -r ipfs_bin_path="$3"
+  local -r nodes_dir="${4%/}"
+  shift 4
+  local -a peer_ids=("$@")
+
+  local node_dir
+  node_dir="$nodes_dir/kubo-node-$node_id"
+
+  local peer_node_id peer_id swarm_port peers_json separator
+  peers_json="["
+  separator=""
+
+  for ((peer_node_id = 1; peer_node_id <= number_of_nodes; peer_node_id++)); do
+    if [[ "$peer_node_id" == "$node_id" ]]; then
+      continue
+    fi
+
+    peer_id="${peer_ids[$((peer_node_id - 1))]}"
+    swarm_port=$((4000 + peer_node_id))
+
+    peers_json="${peers_json}${separator}{\"ID\":\"${peer_id}\",\"Addrs\":[\"/ip4/127.0.0.1/tcp/${swarm_port}\"]}"
+    separator=","
+  done
+
+  peers_json="${peers_json}]"
+
+  IPFS_PATH="$node_dir" "$ipfs_bin_path" config --json Peering.Peers "$peers_json"
 }
 
 # ---------------------------------------------------------------------------
@@ -155,5 +185,7 @@ echo ">> nodes ids:"
 printf '%s\n' "${PEER_IDS[@]}"
 
 for ((node_id = 1; node_id <= NUMBER_OF_NODES; node_id++)); do
-  configure_node "$node_id" "$NUMBER_OF_NODES" "$SWARM_KEY" "$IPFS_BIN" "$NODES_DIR"
+  configure_node "$node_id" "$SWARM_KEY" "$IPFS_BIN" "$NODES_DIR"
+  configure_node_peers "$node_id" "$NUMBER_OF_NODES" "$IPFS_BIN" "$NODES_DIR" "${PEER_IDS[@]}"
 done
+echo ">> Kubo nodes configuration finished"
