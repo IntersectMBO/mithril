@@ -201,21 +201,42 @@ pub(crate) const UNSAFE_SRS_SEED: u64 = 42;
 #[cfg(any(test, feature = "benchmark-internals"))]
 impl TrustedSetupProvider {
     /// Builds a `TrustedSetupProvider` backed by a freshly generated unsafe SRS of degree `k`, written
-    /// to `base_dir/srs/srs-parameters` with a matching SHA256 hash so the provider's hash check passes.
+    /// to `base_dir/{k}/srs/srs-parameters` with a matching SHA256 hash so the provider's hash check passes.
     /// For tests and benchmarks only.
     pub(crate) fn with_unsafe_srs(base_dir: &std::path::Path, k: u32) -> Self {
+        let base_dir = base_dir.join(k.to_string());
+        let srs_file = base_dir
+            .join(MITHRIL_CIRCUIT_SRS_FOLDER)
+            .join(MITHRIL_CIRCUIT_SRS_FILENAME);
+
+        if srs_file.exists() {
+            return Self::new(base_dir, "", "", Duration::from_secs(600));
+        }
+
         let srs = ParamsKZG::<Bls12>::unsafe_setup(k, ChaCha20Rng::seed_from_u64(UNSAFE_SRS_SEED));
         let mut srs_bytes = Vec::new();
-        srs.write_custom(&mut srs_bytes, SerdeFormat::RawBytes).unwrap();
+        srs.write_custom(&mut srs_bytes, SerdeFormat::RawBytesUnchecked)
+            .unwrap();
 
         let srs_dir = base_dir.join(MITHRIL_CIRCUIT_SRS_FOLDER);
         create_dir_all(&srs_dir).unwrap();
-        File::create(srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME))
-            .unwrap()
-            .write_all(&srs_bytes)
+
+        let temp_path = srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME).with_extension("temp");
+        let final_path = srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME);
+        let mut temporary_file = File::create(&temp_path)
+            .with_context(|| format!("Failed to create temporary SRS file at {temp_path:?}."))
             .unwrap();
+        temporary_file.write_all(&srs_bytes).unwrap();
+        temporary_file
+            .sync_all()
+            .with_context(|| "Failed to fsync temporary SRS file before rename.")
+            .unwrap();
+        drop(temporary_file);
+
+        std::fs::rename(temp_path, final_path).unwrap();
 
         let expected_hash = hex::encode(Sha256::digest(&srs_bytes));
+
         Self::new(base_dir, expected_hash, "", Duration::from_secs(600))
     }
 }
@@ -466,6 +487,102 @@ mod tests {
         assert!(result.is_err());
     }
 
+    mod with_unsafe_srs {
+        use super::*;
+
+        #[test]
+        fn creates_srs_file_nested_under_degree_subdirectory_and_loads_successfully() {
+            let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
+            let k = 1;
+
+            let provider = TrustedSetupProvider::with_unsafe_srs(temp_dir.path(), k);
+
+            let expected_srs_path = temp_dir
+                .path()
+                .join(k.to_string())
+                .join(MITHRIL_CIRCUIT_SRS_FOLDER)
+                .join(MITHRIL_CIRCUIT_SRS_FILENAME);
+            assert!(expected_srs_path.exists());
+            assert!(provider.get_trusted_setup_parameters().is_ok());
+        }
+
+        #[test]
+        fn uses_separate_subdirectory_and_produces_distinct_files_per_degree() {
+            let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
+
+            TrustedSetupProvider::with_unsafe_srs(temp_dir.path(), 1);
+            TrustedSetupProvider::with_unsafe_srs(temp_dir.path(), 2);
+
+            let srs_path_k1 = temp_dir
+                .path()
+                .join("1")
+                .join(MITHRIL_CIRCUIT_SRS_FOLDER)
+                .join(MITHRIL_CIRCUIT_SRS_FILENAME);
+            let srs_path_k2 = temp_dir
+                .path()
+                .join("2")
+                .join(MITHRIL_CIRCUIT_SRS_FOLDER)
+                .join(MITHRIL_CIRCUIT_SRS_FILENAME);
+
+            assert!(srs_path_k1.exists());
+            assert!(srs_path_k2.exists());
+            assert_ne!(
+                std::fs::read(srs_path_k1).unwrap(),
+                std::fs::read(srs_path_k2).unwrap()
+            );
+        }
+
+        #[test]
+        fn is_deterministic_for_the_same_degree_across_different_base_dirs() {
+            let temp_dir_a = tempfile::tempdir_in("/tmp").unwrap();
+            let temp_dir_b = tempfile::tempdir_in("/tmp").unwrap();
+            let k = 1;
+
+            let provider_a = TrustedSetupProvider::with_unsafe_srs(temp_dir_a.path(), k);
+            let provider_b = TrustedSetupProvider::with_unsafe_srs(temp_dir_b.path(), k);
+
+            let srs_subpath = std::path::Path::new(&k.to_string())
+                .join(MITHRIL_CIRCUIT_SRS_FOLDER)
+                .join(MITHRIL_CIRCUIT_SRS_FILENAME);
+            let bytes_a = std::fs::read(temp_dir_a.path().join(&srs_subpath)).unwrap();
+            let bytes_b = std::fs::read(temp_dir_b.path().join(&srs_subpath)).unwrap();
+
+            assert_eq!(bytes_a, bytes_b);
+            assert!(provider_a.get_trusted_setup_parameters().is_ok());
+            assert!(provider_b.get_trusted_setup_parameters().is_ok());
+        }
+
+        #[test]
+        fn does_not_regenerate_or_overwrite_an_existing_srs_file() {
+            let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
+            let k = 1;
+            let srs_dir = temp_dir.path().join(k.to_string()).join(MITHRIL_CIRCUIT_SRS_FOLDER);
+            std::fs::create_dir_all(&srs_dir).unwrap();
+            let srs_path = srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME);
+            std::fs::write(&srs_path, b"sentinel-content-not-a-real-srs").unwrap();
+
+            TrustedSetupProvider::with_unsafe_srs(temp_dir.path(), k);
+
+            let bytes_after = std::fs::read(&srs_path).unwrap();
+            assert_eq!(bytes_after, b"sentinel-content-not-a-real-srs");
+        }
+
+        #[test]
+        fn leaves_no_temporary_file_behind_after_generation() {
+            let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
+            let k = 1;
+
+            TrustedSetupProvider::with_unsafe_srs(temp_dir.path(), k);
+
+            let temp_path = temp_dir
+                .path()
+                .join(k.to_string())
+                .join(MITHRIL_CIRCUIT_SRS_FOLDER)
+                .join(MITHRIL_CIRCUIT_SRS_FILENAME)
+                .with_extension("temp");
+            assert!(!temp_path.exists());
+        }
+    }
     mod golden {
         use super::*;
 
