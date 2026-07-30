@@ -175,6 +175,16 @@ impl FullScenario {
             .await?;
 
         if aggregator.is_first() || aggregator.version().is_below("0.7.94") {
+            // A certificate chain lagging one epoch behind the chain tip is normal, but a restart
+            // crossing an epoch boundary before the current epoch is certified would create an
+            // unrecoverable epoch gap and block the aggregator
+            let current_epoch = chain_observer.get_current_epoch().await?.unwrap_or_default();
+            self.toolkit
+                .check
+                .certificate
+                .is_creating_certificate_with_min_epoch(aggregator, current_epoch)
+                .await?;
+
             self.toolkit
                 .exec
                 .update_protocol_parameters(aggregator, infrastructure.aggregate_signature_type())
