@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 As a minor extension, we have adopted a slightly different versioning convention for the Mithril distributions (<https://mithril.network/doc/adr/3#decision>)
 
-## Mithril Distribution [XXXX] - UNRELEASED
+## Mithril Distribution [2630.0] - UNRELEASED
 
 - **REMOVED** support for `CardanoImmutableFilesFull` in Mithril signer and aggregator:
   - Use `CardanoDatabase` (also known as "cardano database v2") instead, which supports partial database restoration and
@@ -16,12 +16,14 @@ As a minor extension, we have adopted a slightly different versioning convention
   - Aggregators no longer aggregate signatures for this certificate type.
   - Aggregators will discard signatures of this type received from older signers.
 
-- Support for `Cardano node` `11.0.1` in the signer and the aggregator.
+- Moved the repository to the `IntersectMBO` GitHub organization:
+  - The genesis, era and ancillary verification key URLs of the `networks.json` file now target `IntersectMBO`.
+  - The Docker images of the nodes are now published to the `ghcr.io/intersectmbo` namespace.
+  - The legacy `input-output-hk` URLs and released images keep working. Refresh any pinned verification key URL or image reference at your next upgrade.
 
 - DMQ node:
   - Implemented new message id format for the DMQ message to follow specification of the [CIP-0137](https://cips.cardano.org/cip/CIP-0137).
   - Added support for the DMQ node `0.6.0.0` stable version.
-  - Promoted the DMQ node as stable (beta) on `release-mainnet` and `release-preprod` networks.
   - Added optional support for ledger peers declared with `SRV` records ([CIP-155](https://cips.cardano.org/cip/CIP-0155)).
 
 - Gracefully handle unknown signed entity types across Mithril nodes for improved forward compatibility.
@@ -30,10 +32,7 @@ As a minor extension, we have adopted a slightly different versioning convention
 
 - Added a new internal crate `mithril-merkle-tree` for the implementation of Merkle tree and merkelized map primitives used by Mithril nodes.
 
-- Moved the repository to the `IntersectMBO` GitHub organization:
-  - The genesis, era and ancillary verification key URLs of the `networks.json` file now target `IntersectMBO`.
-  - The Docker images of the nodes are now published to the `ghcr.io/intersectmbo` namespace.
-  - The legacy `input-output-hk` URLs and released images keep working. Refresh any pinned verification key URL or image reference at your next upgrade.
+- Support for upcoming `Cardano node` `11.1` in the signer, aggregator and client.
 
 - **UNSTABLE**:
   - Support for SNARK-friendly rigid protocol message openable in recursive circuit.
@@ -41,6 +40,7 @@ As a minor extension, we have adopted a slightly different versioning convention
   - Support for dual-signature genesis certificate.
   - Support for ancillary prover and verifier data carried on certificates.
   - Support for stopping certificate chain verification early on full-chain certifying certificates.
+  - Support for recursive (IVC) SNARK proofs for the certificate chain.
 
 | Crate               | Version |
 | ------------------- | ------- |
@@ -59,6 +59,8 @@ As a minor extension, we have adopted a slightly different versioning convention
 - **REMOVED**: in Mithril client CLI and WASM:
   - The `cardano_db` function in the `Client` struct of the library and its WASM counterpart
   - The `--backend v1` flag of the `cardano-db` command in the CLI; use `--backend v2` instead.
+
+- Support for `Cardano node` `11.0.1` in the signer and the aggregator.
 
 - Support for `Cardano node` `10.6.2` in the signer and the aggregator.
 
