@@ -36,6 +36,7 @@ impl MithrilCommand {
         let default_args = default_args.iter().map(|s| s.to_string()).collect();
 
         env_vars.insert("RUST_BACKTRACE".to_string(), "full".to_string());
+        env_vars.insert("RUST_LIB_BACKTRACE".to_string(), "0".to_string());
 
         Ok(MithrilCommand {
             name: name.to_string(),
