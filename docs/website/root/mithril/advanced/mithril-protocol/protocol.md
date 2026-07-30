@@ -103,6 +103,7 @@ a quorum of `k` valid signatures must be submitted.
 - For every valid signature, the party creates a proof (`π`) containing a signature of the message, verification key, stake, and paths of the party in the Merkle tree.
 
 - Then, multiple signatures can be aggregated together to form a certificate (`τ`) by:
+
   - Verifying signatures from each party:
     - Checking the party is authorized to sign for the given index (using the same procedure as signing)
     - Checking the proof is valid which means:

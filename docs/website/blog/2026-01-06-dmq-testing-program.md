@@ -7,7 +7,7 @@ tags: [DMQ, decentralization, testing program]
 
 ### DMQ testing program with SPOs
 
-:::info Update 2026/04/28
+:::info[Update 2026/04/28]
 
 With the release of the [`2617.0`](https://github.com/input-output-hk/mithril/releases/tag/2617.0) distribution, the DMQ node has been upgraded to version `0.4.2.0` on the `pre-release-preview` network. The testing program with SPOs is extended to keep gathering feedback before the stable release on `release-preprod` and `release-mainnet` networks.
 

@@ -44,7 +44,7 @@ The protocol has three phases:
 2. **Initialization phase** during which Mithril nodes generate and exchange keys
 3. **Operations phase** during which nodes sign and aggregate signatures of messages to produce certificates.
 
-:::note Note
+:::note[Note]
 
 Note that all three phases require a set of parties (`P` in the paper) to be fixed. During the protocol establishment phase
 three important parameters are generated:
@@ -103,6 +103,7 @@ a quorum of `k` valid signatures must be submitted.
 - For every valid signature, the party creates a proof (`π`) containing a signature of the message, verification key, stake, and paths of the party in the Merkle tree.
 
 - Then, multiple signatures can be aggregated together to form a certificate (`τ`) by:
+
   - Verifying signatures from each party:
     - Checking the party is authorized to sign for the given index (using the same procedure as signing)
     - Checking the proof is valid which means:
@@ -117,7 +118,7 @@ a quorum of `k` valid signatures must be submitted.
 
 - Each certificate `τ` can be verified as valid for some message, using the known setup parameters to verify the certificate’s proof and then verifying the aggregate signatures and verification keys.
 
-:::note Note
+:::note[Note]
 
 Note that if the individual signatures are broadcast to all parties, then each party can independently produce the certificates. In particular, the party that performs aggregation is not required to have any specific knowledge, nor it is assumed to be honest. This means that _any_ third party that has access to the individual signatures can perform the signature aggregation.
 

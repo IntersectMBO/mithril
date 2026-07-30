@@ -11,9 +11,61 @@
  * https://docusaurus.io/docs/styling-layout#styling-your-site-with-infima
  */
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* Without an explicit content config (removed in the Tailwind v4 migration),
+ * Tailwind auto-scans the whole project for class-like tokens, including plain
+ * prose in .md docs (e.g. mentions of Docker "containers"). A stray word match
+ * like that generates a REAL utility class (e.g. `.container`) that can collide
+ * with an unrelated Infima class of the same name and silently override it via
+ * the cascade layer it lives in. .md files are pure markdown and can never
+ * contain a `className`, so excluding them removes this whole class of false
+ * positives; .mdx files are kept, since some do embed real JSX classNames
+ * (e.g. root/use-cases/wallets/index.mdx). */
+@source not "../../root/**/*.md";
+@source not "../../blog/**/*.md";
+@source not "../../versioned_docs/**/*.md";
+@source not "../../upgrade/**/*";
+@source not "../../**/*.svg";
+
+@theme {
+  --breakpoint-*: initial;
+  --breakpoint-phablet: 640px;
+  --breakpoint-tablet: 768px;
+  --breakpoint-laptop: 996px;
+  --breakpoint-desktop: 1280px;
+
+  --font-*: initial;
+  --font-display:
+    Bw Gradual, ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-body:
+    var(--font-lexend), ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --color-blue: #01193c;
+  --color-blue-light: #ecf9fd;
+  --color-blue-highlight: #2634ad;
+
+  --color-secondary: #3c9ec8;
+  --color-black: #000000;
+
+  --color-gray: #7c8080;
+  --color-gray-dark: #99a3b1;
+  --color-gray-light: #808c9d;
+  --color-gray-extra-light: #f3f4f4;
+  --color-gray-border: #b3bac5;
+
+  --color-white: #ffffff;
+
+  --color-cyan: #65cfe1;
+  --color-cyan-dark: #397589;
+}
 
 @font-face {
   font-family: "Lexend";
@@ -79,16 +131,101 @@
   }
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
-/* [data-theme="dark"] {
-  --ifm-color-primary: #669fe1;
-  --ifm-color-primary-dark: #4b8edc;
-  --ifm-color-primary-darker: #3d85d9;
-  --ifm-color-primary-darkest: #266dbf;
-  --ifm-color-primary-light: #81b0e6;
-  --ifm-color-primary-lighter: #8fb9e9;
-  --ifm-color-primary-lightest: #b8d2f1;
-} */
+/*
+Styling overrides to Infima after upgrading to Tailwind V4 
+*/
+.navbar__item {
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 2rem;
+}
+
+.navbar__items {
+  display: flex !important;
+  font-family: "Lexend";
+}
+
+.footer__link-item {
+  color: var(--color-gray-extra-light);
+  line-height: normal;
+}
+.footer__link-item:hover {
+  color: var(--ifm-color-primary-dark);
+}
+
+.footer-logo-text {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: calc(2 / 1.5);
+  font-weight: normal;
+}
+
+.navbar__social-link {
+  color: var(--ifm-navbar-link-color);
+}
+.navbar__social-link:hover {
+  color: var(--ifm-navbar-link-hover-color);
+}
+
+.hero-title {
+  margin: 0;
+  font-size: 2.25rem;
+  line-height: 48px;
+}
+@media (min-width: 768px) {
+  .hero-title {
+    font-size: 3.5rem;
+    line-height: 73px;
+  }
+}
+
+.animated-text-heading {
+  font-size: 2rem;
+  font-weight: normal;
+}
+@media (min-width: 768px) {
+  .animated-text-heading {
+    font-size: 2.5rem;
+  }
+}
+
+.title_f1Hy {
+  font-size: 3rem;
+  font-weight: 700;
+}
+
+@media (max-width: 576px) {
+  .title_f1Hy {
+    font-size: 2rem;
+  }
+}
+
+.blog-list-page h2 a {
+  color: var(--ifm-font-color-base);
+  font-size: 3rem;
+}
+
+.blog-list-page h2 a:hover {
+  color: var(--ifm-link-color);
+}
+
+.markdown a,
+.theme-edit-this-page,
+.pagination-nav__link {
+  color: var(--ifm-font-color-base);
+}
+
+.markdown a:hover,
+.theme-edit-this-page:hover,
+.pagination-nav__link:hover {
+  color: var(--ifm-link-color);
+}
+
+[role="group"] > h3 {
+  font-size: var(--ifm-h4-font-size);
+  font-weight: normal;
+}
+/*-----------------------------------------------------------*/
 
 h1,
 h2,
@@ -136,42 +273,12 @@ h3 {
   padding-bottom: 72px;
 }
 
-.teal-gradient {
-  background: linear-gradient(to right, #397589, #65cfe1);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  color: transparent;
-}
-
 .use-case-text {
   background: #01193c;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   color: transparent;
-}
-
-.navbar__item {
-  font-weight: 600;
-  font-size: 1rem;
-  line-height: 2rem;
-}
-
-.navbar__items {
-  display: flex !important;
-  font-family: "Lexend";
-}
-
-.docusaurus-highlight-code-line {
-  background-color: rgba(0, 0, 0, 0.1);
-  display: block;
-  margin: 0 calc(-1 * var(--ifm-pre-padding));
-  padding: 0 var(--ifm-pre-padding);
-}
-
-[data-theme="dark"] .docusaurus-highlight-code-line {
-  background-color: rgba(0, 0, 0, 0.3);
 }
 
 @media screen and (max-width: 996px) {
@@ -219,11 +326,6 @@ div[role="banner"] div {
   padding: 0 !important;
 }
 
-.breadcrumbHomeIcon_src-theme-DocBreadcrumbs-Items-Home-styles-module {
-  height: 100% !important;
-  width: 100% !important;
-}
-
 .breadcrumbs__link {
   margin-bottom: -8px !important;
 }
@@ -253,10 +355,6 @@ a.menu__link {
 
 .markdown li {
   margin: 0.25rem 0;
-}
-
-.markdown p {
-  margin-bottom: 1.5rem;
 }
 
 .markdown .daedalus-wordmark p {
@@ -333,10 +431,6 @@ a.menu__link {
 .markdown h3,
 .markdown h4 {
   margin-bottom: 1rem;
-  font-weight: 700;
-}
-
-.title_f1Hy {
   font-weight: 700;
 }
 

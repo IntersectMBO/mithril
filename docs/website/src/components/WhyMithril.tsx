@@ -14,17 +14,17 @@ const WhyMithril = () => {
     let animationFrameId: number;
 
     const animate = () => {
-      const container = containerRef.current;
-      if (!container) return;
+      const sectionEl = containerRef.current;
+      if (!sectionEl) return;
 
       const scrollY = window.scrollY;
       const viewportHeight = window.innerHeight;
 
-      const containerTop = container.offsetTop;
-      const containerHeight = container.offsetHeight;
+      const sectionTop = sectionEl.offsetTop;
+      const sectionHeight = sectionEl.offsetHeight;
       const scrollProgress =
-        (scrollY + viewportHeight - containerTop) /
-        (containerHeight + viewportHeight);
+        (scrollY + viewportHeight - sectionTop) /
+        (sectionHeight + viewportHeight);
 
       itemRefs.current.forEach((el, index) => {
         if (!el) return;
@@ -59,11 +59,11 @@ const WhyMithril = () => {
   return (
     <section className="component bg-blue-light">
       <div className="pageContainer">
-        <h5 className="text-base text-black pb-12">
+        <h5 className="text-base text-black pb-12 font-thin m-0">
           {WhyMithrilContents.title}
         </h5>
 
-        <div className="flex tablet:flex-row flex-col justify-between gap-[1.625rem] text-primary">
+        <div className="flex tablet:flex-row flex-col justify-between gap-6.5 text-primary">
           <div
             className="text-3xl text-center flex justify-center text-blue items-center basis-1/2 stuck-grid flex-col gap-4"
             ref={containerRef}

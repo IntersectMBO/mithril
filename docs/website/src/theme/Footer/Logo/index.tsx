@@ -35,9 +35,9 @@ export default function FooterLogo({ logo }: Props): ReactNode {
       <LogoImage logo={logo} />
     </Link>
   ) : (
-    <div className="flex items-center text-2xl tracking-[-0.01125rem] gap-1">
+    <div className="flex gap-1">
       <LogoImage logo={logo} />
-      <h4>Mithril</h4>
+      <h4 className="footer-logo-text">Mithril</h4>
     </div>
   );
 }

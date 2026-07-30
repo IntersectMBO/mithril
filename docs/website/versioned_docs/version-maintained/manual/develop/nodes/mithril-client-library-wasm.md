@@ -144,7 +144,7 @@ console.log(
 );
 ```
 
-:::tip Adding Custom HTTP Headers
+:::tip[Adding Custom HTTP Headers]
 
 You can customize the HTTP headers sent by the Mithril client. This is particularly useful in scenarios where the Mithril client is used with a proxy, as it allows you to include headers like **Authorization** or custom headers for specific use cases. Below is an example of how to set custom headers:
 

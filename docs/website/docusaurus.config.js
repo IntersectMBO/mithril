@@ -15,10 +15,25 @@ const config = {
   url: "https://mithril.network",
   baseUrl: "/doc/",
   onBrokenLinks: "throw",
-  onBrokenMarkdownLinks: "warn",
+  markdown: {
+    mermaid: true,
+    hooks: {
+      onBrokenMarkdownLinks: "warn",
+    },
+  },
   favicon: "img/mithril-logo.svg",
   organizationName: "Input Output Global",
   projectName: "Mithril",
+
+  future: {
+    v4: {
+      removeLegacyPostBuildHeadAttribute: true,
+      useCssCascadeLayers: true,
+      siteStorageNamespacing: true,
+      fasterByDefault: false,
+      mdx1CompatDisabledByDefault: true,
+    },
+  },
 
   scripts: [
     {
@@ -93,17 +108,7 @@ const config = {
   ],
 
   plugins: [
-    async function myPlugin(context, options) {
-      return {
-        name: "docusaurus-tailwindcss",
-        configurePostCss(postcssOptions) {
-          // Appends TailwindCSS and AutoPrefixer.
-          postcssOptions.plugins.push(require("tailwindcss"));
-          postcssOptions.plugins.push(require("autoprefixer"));
-          return postcssOptions;
-        },
-      };
-    },
+    "./src/plugins/plugin-tailwind.ts",
     [
       "@docusaurus/plugin-content-blog",
       {
@@ -370,9 +375,6 @@ const config = {
         theme: { light: "base", dark: "base" },
       },
     }),
-  markdown: {
-    mermaid: true,
-  },
   themes: ["@docusaurus/theme-mermaid"],
   stylesheets: [
     {

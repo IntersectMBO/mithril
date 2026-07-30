@@ -73,7 +73,7 @@ export default function NavbarContent() {
             href="https://github.com/IntersectMBO/mithril/"
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-[var(--ifm-navbar-link-hover-color)] mx-3 py-1 laptop:flex hidden"
+            className="navbar__social-link mx-3 py-1 laptop:flex hidden"
           >
             <Github />
           </a>
@@ -81,7 +81,7 @@ export default function NavbarContent() {
             href="https://discord.gg/5kaErDKDRq"
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-[var(--ifm-navbar-link-hover-color)] mx-3 py-1 laptop:flex hidden"
+            className="navbar__social-link mx-3 py-1 laptop:flex hidden"
           >
             <Discord />
           </a>
