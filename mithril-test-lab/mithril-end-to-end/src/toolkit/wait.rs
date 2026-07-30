@@ -114,7 +114,7 @@ impl WaitToolkit {
         let epochs_to_wait = Self::compute_number_of_epochs_to_wait(target_epoch, current_epoch);
         let timeout = self.context.timeout_for_epochs(epochs_to_wait);
 
-        match poll_until!(timeout, self.context.poll_backoff(), {
+        match poll_until!(timeout, self.context.tenth_of_epoch_poll_backoff(), {
             match aggregator
                 .chain_observer()
                 .get_current_epoch()

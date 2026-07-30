@@ -31,6 +31,13 @@ impl ScenarioToolkitContext {
         Backoff::default()
     }
 
+    /// Backoff polling at a constant tenth of the epoch duration, so that epoch transitions
+    /// are detected shortly after the epoch boundary.
+    pub fn tenth_of_epoch_poll_backoff(&self) -> Backoff {
+        let delay = self.timeout_for_epochs(1) / 10;
+        Backoff::new(delay, delay, 1)
+    }
+
     /// Timeout covering the given number of Cardano epochs.
     pub fn timeout_for_epochs(&self, epochs: u32) -> Duration {
         self.attempt_policy.timeout_for_epochs(epochs)
@@ -94,6 +101,15 @@ mod tests {
         assert_eq!(policy.timeout_for_epochs(0), Duration::from_secs(0));
         assert_eq!(policy.timeout_for_epochs(1), Duration::from_secs(10));
         assert_eq!(policy.timeout_for_epochs(5), Duration::from_secs(50));
+    }
+
+    #[test]
+    fn tenth_of_epoch_poll_backoff_polls_at_a_constant_delay() {
+        let context = ScenarioToolkitContext::new(AttemptPolicy::new(Duration::from_secs(10)));
+        let mut backoff = context.tenth_of_epoch_poll_backoff();
+
+        assert_eq!(backoff.next_delay(), Duration::from_secs(1));
+        assert_eq!(backoff.next_delay(), Duration::from_secs(1));
     }
 
     #[test]
