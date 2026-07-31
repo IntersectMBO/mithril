@@ -45,12 +45,14 @@ pub struct ProtocolConfigurationToolsConfiguration {
     pub on_chain_configurations: ConfigurationComputerFromMarkers,
 }
 
+/// Tools configuration
 pub struct ProtocolConfigurationTools {
     configuration: ProtocolConfigurationToolsConfiguration,
     logger: Logger,
 }
 
 impl ProtocolConfigurationTools {
+    /// Create a new instance of the ProtocolConfigurationTools.
     pub fn new(configuration: ProtocolConfigurationToolsConfiguration, logger: Logger) -> Self {
         Self {
             configuration,
@@ -58,6 +60,7 @@ impl ProtocolConfigurationTools {
         }
     }
 
+    /// Create an instance of the ProtocolConfigurationTools from the dependencies.
     pub async fn from_dependencies(
         dependencies: ProtocolConfigurationCommandDependenciesContainer,
     ) -> StdResult<Self> {
@@ -67,7 +70,10 @@ impl ProtocolConfigurationTools {
             .await?
             .with_context(|| "Chain observer can not retrieve current epoch")?;
 
-        let on_chain_configurations = dependencies.protocol_configuration_reader.read_configuration_markers().await?;
+        let on_chain_configurations = dependencies
+            .protocol_configuration_reader
+            .read_configuration_markers()
+            .await?;
 
         let configuration = ProtocolConfigurationToolsConfiguration {
             epoch,
@@ -77,7 +83,12 @@ impl ProtocolConfigurationTools {
         Ok(Self::new(configuration, dependencies.logger))
     }
 
-    /// Verify if configuration to import share same windows as on chain configuration for current epoch
+    /// Get the on-chain configurations.
+    pub fn get_on_chain_configurations(self) -> ConfigurationComputerFromMarkers {
+        self.configuration.on_chain_configurations
+    }
+
+    /// Verify if configurations to import are compatible with what's on-chain.
     pub fn verify_configurations_against_chain(
         &self,
         configurations_to_import: Vec<HumanReadableProtocolConfiguration>,
@@ -143,6 +154,7 @@ impl ProtocolConfigurationTools {
         Ok(tx_datum.0)
     }
 
+    /// Verify if the size of the TxDatum is under the maximum authorized size.
     pub fn verify_tx_datum_size(
         &self,
         datum: String,
