@@ -10,10 +10,10 @@ display_help() {
     echo
     echo "Options:"
     echo "  -b, --ipfs-bin-path <path> Path to the kubo ipfs binary (required)"
-    echo "  -d, --nodes-dir <dir>      Directory that will contains the nodes configuration (required)"
     echo "  -n, --number <int>         Number of nodes to configure (min: 2)"
     echo "  -h, --help                 Print this help"
     echo "  -o, --overwrite            Allow overwriting existing configuration"
+    echo "  -s, --swarm-dir <dir>      Directory that will contains the swarm nodes (required)"
     echo
     exit 0
 }
@@ -33,11 +33,11 @@ generate_swarm_key() {
 init_node() {
   local -r node_id="$1"
   local -r ipfs_bin_path="$2"
-  local -r nodes_dir="${3%/}"
+  local -r swarm_dir="${3%/}"
   local -r overwrite="$4"
 
   local node_dir
-  node_dir="$nodes_dir/kubo-node-$node_id"
+  node_dir="$swarm_dir/kubo-node-$node_id"
 
   if [[ -e "$node_dir" ]]; then
     if [[ "$overwrite" != true ]]; then
@@ -48,7 +48,7 @@ init_node() {
     rm -rf -- "$node_dir"
   fi
 
-  mkdir -p -- "$nodes_dir"
+  mkdir -p -- "$swarm_dir"
   IPFS_PATH="$node_dir" "$ipfs_bin_path" init --profile test >&2
 
   # Important: only line that print to stdout so function output can be correctly retrieved
@@ -59,10 +59,10 @@ configure_node() {
   local -r node_id="$1"
   local -r swarm_key="$2"
   local -r ipfs_bin_path="$3"
-  local -r nodes_dir="${4%/}"
+  local -r swarm_dir="${4%/}"
 
   local node_dir
-  node_dir="$nodes_dir/kubo-node-$node_id"
+  node_dir="$swarm_dir/kubo-node-$node_id"
 
   local api_port gateway_port swarm_port
   api_port=$((5000 + node_id))
@@ -99,12 +99,12 @@ configure_node_peers() {
   local -r node_id="$1"
   local -r number_of_nodes="$2"
   local -r ipfs_bin_path="$3"
-  local -r nodes_dir="${4%/}"
+  local -r swarm_dir="${4%/}"
   shift 4
   local -a peer_ids=("$@")
 
   local node_dir
-  node_dir="$nodes_dir/kubo-node-$node_id"
+  node_dir="$swarm_dir/kubo-node-$node_id"
 
   local peer_node_id peer_id swarm_port peers_json separator
   peers_json="["
@@ -131,20 +131,20 @@ configure_node_peers() {
 # Argument parsing
 # ---------------------------------------------------------------------------
 
-declare IPFS_BIN="" NODES_DIR="" NUMBER_OF_NODES="" OVERWRITE=false
+declare IPFS_BIN="" SWARM_DIR="" NUMBER_OF_NODES="" OVERWRITE=false
 
 while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
       -b | --ipfs-bin-path) shift; IPFS_BIN=${1:-} ;;
-      -d | --nodes-dir) shift; NODES_DIR=${1:-} ;;
       -n | --number) shift; NUMBER_OF_NODES=${1:-} ;;
       -h | --help ) display_help ;;
       -o | --overwrite ) OVERWRITE=true ;;
+      -s | --swarm-dir) shift; SWARM_DIR=${1:-} ;;
       *) error_exit "Unknown option: $1" ;;
     esac
     shift
 done
 
-readonly NODES_DIR NUMBER_OF_NODES=${NUMBER_OF_NODES:-2} OVERWRITE
+readonly SWARM_DIR NUMBER_OF_NODES=${NUMBER_OF_NODES:-2} OVERWRITE
 
 if [[ -z "$IPFS_BIN" ]]; then
   error_exit "Missing required option: -b, --ipfs-bin-path"
@@ -154,8 +154,8 @@ if [[ ! -x "$IPFS_BIN" ]]; then
   error_exit "IPFS binary is not executable or does not exist: '$IPFS_BIN'"
 fi
 
-if [[ -z "$NODES_DIR" ]]; then
-  error_exit "Missing required option: -d, --nodes-dir"
+if [[ -z "$SWARM_DIR" ]]; then
+  error_exit "Missing required option: -s, --swarm-dir"
 fi
 
 if ! [[ "$NUMBER_OF_NODES" =~ ^[0-9]+$ ]]; then
@@ -170,7 +170,7 @@ fi
 # Main
 # ---------------------------------------------------------------------------
 
-echo ">> Configuring ${NUMBER_OF_NODES} Kubo nodes in '${NODES_DIR}'"
+echo ">> Configuring ${NUMBER_OF_NODES} Kubo nodes in '${SWARM_DIR}'"
 
 SWARM_KEY="$(generate_swarm_key)"
 readonly SWARM_KEY
@@ -179,13 +179,13 @@ echo ">> Swarm key generated (not displayed)."
 declare -a PEER_IDS
 # Init node first - generating their peer Id which will be needed afterward
 for ((node_id = 1; node_id <= NUMBER_OF_NODES; node_id++)); do
-  PEER_IDS[node_id - 1]=$(init_node "$node_id" "$IPFS_BIN" "$NODES_DIR" "$OVERWRITE")
+  PEER_IDS[node_id - 1]=$(init_node "$node_id" "$IPFS_BIN" "$SWARM_DIR" "$OVERWRITE")
 done
 echo ">> nodes ids:"
 printf '%s\n' "${PEER_IDS[@]}"
 
 for ((node_id = 1; node_id <= NUMBER_OF_NODES; node_id++)); do
-  configure_node "$node_id" "$SWARM_KEY" "$IPFS_BIN" "$NODES_DIR"
-  configure_node_peers "$node_id" "$NUMBER_OF_NODES" "$IPFS_BIN" "$NODES_DIR" "${PEER_IDS[@]}"
+  configure_node "$node_id" "$SWARM_KEY" "$IPFS_BIN" "$SWARM_DIR"
+  configure_node_peers "$node_id" "$NUMBER_OF_NODES" "$IPFS_BIN" "$SWARM_DIR" "${PEER_IDS[@]}"
 done
 echo ">> Kubo nodes configuration finished"
