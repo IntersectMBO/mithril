@@ -151,6 +151,10 @@ done
 readonly DOWNLOAD_DIR=${DOWNLOAD_DIR:-"."} OUTPUT_DIR=${OUTPUT_DIR:-"."}
 readonly KUBO_VERSION=${KUBO_VERSION:-$(find_last_released_version)}
 
+if [[ ! -e "$OUTPUT_DIR" ]]; then
+  mkdir -p -- "${OUTPUT_DIR%/}"
+fi
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -169,5 +173,5 @@ DOWNLOADED_ARCHIVE=$(download_bin_archive "$KUBO_VERSION" "$OS" "$ARCH" "$DOWNLO
 readonly DOWNLOADED_ARCHIVE
 
 echo ">> Downloaded archive to: $DOWNLOADED_ARCHIVE"
-tar xzf "$DOWNLOADED_ARCHIVE" -C "${OUTPUT_DIR%/}/"
+tar xzf "$DOWNLOADED_ARCHIVE" -C "${OUTPUT_DIR%/}/" --strip-components=1
 echo ">> Extracted archive to ${OUTPUT_DIR}"
