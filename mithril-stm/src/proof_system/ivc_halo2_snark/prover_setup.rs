@@ -156,9 +156,11 @@ impl IvcSnarkProverSetup {
 
     /// Builds an [`IvcSnarkProverSetup`] from a deterministic, oversized unsafe SRS, exercising the
     /// real `load` path without the production SRS. Shared by the slow IVC tests through a
-    /// content-keyed cache keyed by the protocol parameters, Merkle-tree depth, the unsafe SRS identity
-    /// (degree and seed), and the production verifying keys as a circuit-version salt, so the recursive
-    /// keys — the dominant cost — are computed once and reused across tests and runs.
+    /// content-keyed cache keyed by the protocol parameters, Merkle-tree depth, the unsafe SRS seed,
+    /// and the production verifying keys as a circuit-version salt — not the SRS degree, since `load`
+    /// always downsizes to `RECURSIVE_CIRCUIT_DEGREE` before deriving keys, so any `unsafe_srs_degree`
+    /// reproduces the same recursive keys — the dominant cost — letting calls at different degrees
+    /// share one already-computed key cache instead of each paying for keygen separately.
     #[cfg(test)]
     pub(crate) fn build_for_test(
         parameters: &crate::Parameters,
@@ -182,7 +184,6 @@ impl IvcSnarkProverSetup {
     ) -> StmResult<Self> {
         let parameters_bytes = parameters.to_bytes()?;
         let depth_bytes = merkle_tree_depth.to_le_bytes();
-        let degree_bytes = unsafe_srs_degree.to_le_bytes();
         let seed_bytes = UNSAFE_SRS_SEED.to_le_bytes();
         let cache = FileMutex::for_shared_cache(
             "ivc-setup",
@@ -191,7 +192,6 @@ impl IvcSnarkProverSetup {
                 RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
                 &parameters_bytes,
                 &depth_bytes,
-                &degree_bytes,
                 &seed_bytes,
             ],
         );

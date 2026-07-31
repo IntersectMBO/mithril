@@ -166,21 +166,16 @@ mod tests {
         assert_ne!(baseline.directory(), other_depth.directory());
         assert_ne!(baseline.directory(), other_seed.directory());
 
-        // The IVC setup cache additionally folds in the SRS degree and both production verifying keys
-        // as a circuit-version salt; a change in either must also resolve to a different directory.
+        // The IVC setup cache folds in both production verifying keys as a circuit-version salt, like
+        // the certificate-key cache and it omits the SRS degree for the same reason.
         let ivc_baseline = FileMutex::for_shared_cache(
             "ivc-setup",
-            &[b"parameters-a", b"depth-4", b"degree-19", b"circuit-vk-1"],
-        );
-        let other_degree = FileMutex::for_shared_cache(
-            "ivc-setup",
-            &[b"parameters-a", b"depth-4", b"degree-20", b"circuit-vk-1"],
+            &[b"parameters-a", b"depth-4", b"circuit-vk-1"],
         );
         let other_circuit_version = FileMutex::for_shared_cache(
             "ivc-setup",
-            &[b"parameters-a", b"depth-4", b"degree-19", b"circuit-vk-2"],
+            &[b"parameters-a", b"depth-4", b"circuit-vk-2"],
         );
-        assert_ne!(ivc_baseline.directory(), other_degree.directory());
         assert_ne!(ivc_baseline.directory(), other_circuit_version.directory());
     }
 }

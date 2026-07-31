@@ -192,9 +192,10 @@ impl Default for TrustedSetupProvider {
 }
 
 /// Seed for the deterministic unsafe SRS used by the tests; it pins the SRS's tau. Test key caches
-/// fold in this seed so they stay correct if it ever changes. The IVC setup cache also folds in the
-/// SRS degree; the certificate-key cache omits it, since keygen downsizes the seed-pinned SRS to the
-/// certificate circuit's own degree, so the oversized degree never affects the certificate key.
+/// fold in this seed so they stay correct if it ever changes. Both the certificate-key and IVC setup
+/// caches omit the SRS degree: keygen always downsizes the seed-pinned SRS to the target circuit
+/// degree before deriving keys, so the oversized starting degree never affects the derived keys —
+/// only `TrustedSetupProvider::with_unsafe_srs`'s own file layout, which nests by degree.
 #[cfg(any(test, feature = "benchmark-internals"))]
 pub(crate) const UNSAFE_SRS_SEED: u64 = 42;
 
