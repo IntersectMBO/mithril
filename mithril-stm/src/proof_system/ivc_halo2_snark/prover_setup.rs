@@ -185,7 +185,17 @@ impl IvcSnarkProverSetup {
         let parameters_bytes = parameters.to_bytes()?;
         let depth_bytes = merkle_tree_depth.to_le_bytes();
         let seed_bytes = UNSAFE_SRS_SEED.to_le_bytes();
-        let cache = FileMutex::for_shared_cache(
+
+        // The unsafe SRS depends only on its degree and seed, never on the circuit parameters, so it
+        // is cached independently of them and shared by every parameter set that needs the same degree
+        // (`TrustedSetupProvider::with_unsafe_srs` itself nests its file by degree under this directory).
+        let srs_cache = FileMutex::for_shared_cache("unsafe-srs", &[&seed_bytes]);
+        let srs_directory = srs_cache.directory().to_path_buf();
+        let _srs_cache_lock = srs_cache.lock()?;
+        let trusted_setup_provider =
+            TrustedSetupProvider::with_unsafe_srs(&srs_directory, unsafe_srs_degree);
+
+        let key_cache = FileMutex::for_shared_cache(
             "ivc-setup",
             &[
                 NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
@@ -195,12 +205,10 @@ impl IvcSnarkProverSetup {
                 &seed_bytes,
             ],
         );
-        let cache_directory = cache.directory().to_path_buf();
+        let cache_directory = key_cache.directory().to_path_buf();
         // Serialize cold-start keygen across the parallel slow-test processes.
-        let _key_cache_lock = cache.lock()?;
+        let _key_cache_lock = key_cache.lock()?;
 
-        let trusted_setup_provider =
-            TrustedSetupProvider::with_unsafe_srs(&cache_directory, unsafe_srs_degree);
         let certificate_provider = KeyProvider::new(
             cache_directory.join("certificate"),
             "non-recursive",
