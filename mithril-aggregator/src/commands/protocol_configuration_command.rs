@@ -4,7 +4,7 @@ use config::{ConfigBuilder, Map, Value, builder::DefaultState};
 use serde::{Deserialize, Serialize};
 use slog::{Logger, debug};
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fs::{self, File},
     io::Write,
     path::PathBuf,
@@ -14,19 +14,23 @@ use thiserror::Error;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserverType;
 use mithril_cli_helper::serde_deserialization;
-use mithril_common::entities::{
-    CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
-    HexEncodedProtocolConfigurationMarkersSecretKey, ProtocolParameters,
-    SignedEntityTypeDiscriminants::{self, CardanoBlocksTransactions},
-};
-use mithril_common::{StdResult, messages::SignedEntityTypeDiscriminantsMessage};
 use mithril_common::{
+    StdResult,
     crypto_helper::{
         ProtocolConfigurationMarkersSigner, ProtocolConfigurationMarkersVerifierSecretKey,
     },
-    entities::SignedEntityTypeDiscriminants::CardanoTransactions,
+    entities::{
+        BlockNumber, BlockNumberOffset, CardanoBlocksTransactionsSigningConfig,
+        CardanoTransactionsSigningConfig, Epoch, HexEncodedProtocolConfigurationMarkersSecretKey,
+        ProtocolParameters,
+        SignedEntityTypeDiscriminants::{self, CardanoBlocksTransactions, CardanoTransactions},
+    },
+    messages::SignedEntityTypeDiscriminantsMessage,
 };
 use mithril_doc::{Documenter, StructDoc};
+use mithril_protocol_config::model::{
+    ConfigurationComputerFromMarkers, ProtocolConfigurationForEpoch,
+};
 
 use crate::{
     ConfigurationSource, ExecutionEnvironment,
@@ -86,7 +90,7 @@ impl ConfigurationSource for ProtocolConfigurationParametersConfiguration {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct HumanReadableProtocolConfiguration {
     pub epoch: Epoch,
     pub protocol_parameters: ProtocolParameters,
@@ -177,11 +181,79 @@ impl ExportProtocolConfigurationSubCommand {
         root_logger: Logger,
         config_builder: ConfigBuilder<DefaultState>,
     ) -> StdResult<()> {
+        // 0 conf & dependencies
+        let config: ProtocolConfigurationParametersConfiguration = config_builder
+            .build()
+            .with_context(|| "configuration build error")?
+            .try_deserialize()
+            .with_context(|| "configuration deserialize error")?;
+        debug!(root_logger, "EXPORT PROTOCOL CONFIGURATION command"; "config" => format!("{config:?}"));
+
+        let mut dependencies_builder =
+            DependenciesBuilder::new(root_logger.clone(), Arc::new(config.clone()));
+
+        let dependencies = dependencies_builder
+            .create_protocol_configuration_container()
+            .await
+            .with_context(
+                || "Dependencies Builder can not create protocol configuration command dependencies container",
+            )?;
+
+        let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
+            .await
+            .with_context(|| "protocol-configuration-tools: initialization error")?;
+
+        //1: Retrieve markers from chain or fallback to default configuration
+        let on_chain_configurations = tools.get_on_chain_configurations();
+        let protocol_configurations_markers = if on_chain_configurations.markers.is_empty() {
+            get_default_protocol_configurations()
+        } else {
+            on_chain_configurations
+        };
+
+        //2: transform to human readable
+        let protocol_configurations =
+            to_vec_human_readable_protocol_configuration(protocol_configurations_markers);
+
+        //3: write human readable configurations file
+        println!("Generating JSON protocol configurations output file...");
+        let json_protocol_configurations = serde_json::to_string(&protocol_configurations)?;
+        let mut target_file = File::create(&self.target_path)?;
+        target_file.write_all(json_protocol_configurations.as_bytes())?;
+
+        println!(
+            "Sucessfully wrote JSON protocol configurations file at {}",
+            self.target_path.to_string_lossy()
+        );
         Ok(())
     }
 
     pub fn extract_config(_parent: String) -> HashMap<String, StructDoc> {
         HashMap::new()
+    }
+}
+
+pub fn get_default_protocol_configurations() -> ConfigurationComputerFromMarkers {
+    ConfigurationComputerFromMarkers {
+        markers: BTreeMap::from([(
+            Epoch(42),
+            ProtocolConfigurationForEpoch {
+                protocol_parameters: ProtocolParameters {
+                    k: 1,
+                    m: 2,
+                    phi_f: 0.3,
+                },
+                enabled_signed_entity_types: SignedEntityTypeDiscriminants::all(),
+                cardano_transactions: Some(CardanoTransactionsSigningConfig {
+                    security_parameter: BlockNumberOffset(10),
+                    step: BlockNumber(11),
+                }),
+                cardano_blocks_transactions: Some(CardanoBlocksTransactionsSigningConfig {
+                    security_parameter: BlockNumberOffset(20),
+                    step: BlockNumber(22),
+                }),
+            },
+        )]),
     }
 }
 
@@ -213,7 +285,7 @@ impl ImportProtocolConfigurationSubCommand {
             .with_context(|| "configuration build error")?
             .try_deserialize()
             .with_context(|| "configuration deserialize error")?;
-        debug!(root_logger, "EXPORT PROTOCOL CONFIGURATION command"; "config" => format!("{config:?}"));
+        debug!(root_logger, "IMPORT PROTOCOL CONFIGURATION command"; "config" => format!("{config:?}"));
 
         let mut dependencies_builder =
             DependenciesBuilder::new(root_logger.clone(), Arc::new(config.clone()));
@@ -228,7 +300,7 @@ impl ImportProtocolConfigurationSubCommand {
         //1 - Read the protocol configurations from the file
         println!(
             "Reading file content {}",
-            &self.import_path.to_string_lossy()
+            self.import_path.to_string_lossy()
         );
         let json_protocol_configurations = fs::read_to_string(&self.import_path);
 
@@ -268,8 +340,8 @@ impl ImportProtocolConfigurationSubCommand {
         target_file.write_all(tx_datum.as_bytes())?;
 
         println!(
-            "Sucessfuly write Tx datum file at {}",
-            &self.target_path.to_string_lossy()
+            "Sucessfully wrote Tx datum file at {}",
+            self.target_path.to_string_lossy()
         );
 
         Ok(())
@@ -332,9 +404,43 @@ impl ImportProtocolConfigurationSubCommand {
     }
 }
 
+fn to_human_readable_protocol_configuration(
+    epoch: Epoch,
+    config: ProtocolConfigurationForEpoch,
+) -> HumanReadableProtocolConfiguration {
+    HumanReadableProtocolConfiguration {
+        epoch,
+        protocol_parameters: config.protocol_parameters,
+        enabled_signed_entity_types: config
+            .enabled_signed_entity_types
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+        cardano_transaction_signing_config: config.cardano_transactions,
+        cardano_blocks_transactions_signing_config: config.cardano_blocks_transactions,
+    }
+}
+
+pub fn to_vec_human_readable_protocol_configuration(
+    configs: ConfigurationComputerFromMarkers,
+) -> Vec<HumanReadableProtocolConfiguration> {
+    let mut human_readable_protocol_configurations = Vec::new();
+    for (epoch, config) in configs.markers {
+        human_readable_protocol_configurations
+            .push(to_human_readable_protocol_configuration(epoch, config));
+    }
+    human_readable_protocol_configurations
+}
+
 #[cfg(test)]
 mod tests {
-    use mithril_common::{entities::ProtocolParameters, test::double::Dummy};
+    use mithril_common::{
+        entities::{
+            BlockNumber, BlockNumberOffset, ProtocolParameters,
+            SignedEntityTypeDiscriminants::{CardanoDatabase, MithrilStakeDistribution},
+        },
+        test::double::Dummy,
+    };
 
     use super::*;
 
@@ -405,6 +511,16 @@ mod tests {
     }
 
     #[test]
+    fn export_subcommand_parses_flag() {
+        ExportProtocolConfigurationSubCommand::try_parse_from([
+            "export-markers",
+            "--target-path",
+            "human_readable_protocol_configuration.json",
+        ])
+        .expect("CLI parse should succeed");
+    }
+
+    #[test]
     fn import_subcommand_parses_flag() {
         let signer_secret_key = ProtocolConfigurationMarkersSigner::create_deterministic_signer()
             .secret_key()
@@ -414,12 +530,67 @@ mod tests {
         ImportProtocolConfigurationSubCommand::try_parse_from([
             "import-markers",
             "--import-path",
-            "tests/human_readable_protocol_configuration_toto.json",
+            "human_readable_protocol_configuration.json",
             "--target-path",
-            "/tests/protocol_configuration_tx_datum",
+            "protocol_configuration_tx_datum.json",
             "--protocol-configuration-markers-secret-key",
             &signer_secret_key,
         ])
         .expect("CLI parse should succeed");
+    }
+
+    #[test]
+    fn to_vec_human_readable_protocol_configuration_converts_markers_to_human_readable_list() {
+        let configuration = ProtocolConfigurationForEpoch {
+            protocol_parameters: ProtocolParameters {
+                k: 9,
+                m: 77,
+                phi_f: 0.5,
+            },
+            enabled_signed_entity_types: BTreeSet::from_iter(vec![
+                SignedEntityTypeDiscriminants::MithrilStakeDistribution,
+                SignedEntityTypeDiscriminants::CardanoDatabase,
+                SignedEntityTypeDiscriminants::CardanoTransactions,
+            ]),
+            cardano_transactions: Some(CardanoTransactionsSigningConfig {
+                security_parameter: BlockNumberOffset(100),
+                step: BlockNumber(10),
+            }),
+            cardano_blocks_transactions: Some(CardanoBlocksTransactionsSigningConfig {
+                security_parameter: BlockNumberOffset(150),
+                step: BlockNumber(20),
+            }),
+        };
+        let configurations =
+            ConfigurationComputerFromMarkers::new(BTreeMap::from([(Epoch(42), configuration)]));
+
+        let expected_human_readable_configurations = vec![HumanReadableProtocolConfiguration {
+            epoch: Epoch(42),
+            protocol_parameters: ProtocolParameters {
+                k: 9,
+                m: 77,
+                phi_f: 0.5,
+            },
+            enabled_signed_entity_types: BTreeSet::from_iter(vec![
+                SignedEntityTypeDiscriminantsMessage::Known(MithrilStakeDistribution),
+                SignedEntityTypeDiscriminantsMessage::Known(CardanoDatabase),
+                SignedEntityTypeDiscriminantsMessage::Known(CardanoTransactions),
+            ]),
+            cardano_transaction_signing_config: Some(CardanoTransactionsSigningConfig {
+                security_parameter: BlockNumberOffset(100),
+                step: BlockNumber(10),
+            }),
+            cardano_blocks_transactions_signing_config: Some(
+                CardanoBlocksTransactionsSigningConfig {
+                    security_parameter: BlockNumberOffset(150),
+                    step: BlockNumber(20),
+                },
+            ),
+        }];
+
+        assert_eq!(
+            to_vec_human_readable_protocol_configuration(configurations),
+            expected_human_readable_configurations
+        );
     }
 }

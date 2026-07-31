@@ -78,6 +78,10 @@ impl ProtocolConfigurationTools {
         Ok(Self::new(configuration, dependencies.logger))
     }
 
+    pub fn get_on_chain_configurations(self) -> ConfigurationComputerFromMarkers {
+        self.configuration.on_chain_configurations
+    }
+
     /// Verify if configuration to import share same windows as on chain configuration for current epoch
     pub fn verify_configurations_against_chain(
         &self,
