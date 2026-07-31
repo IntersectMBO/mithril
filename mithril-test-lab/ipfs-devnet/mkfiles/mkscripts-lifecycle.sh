@@ -52,6 +52,20 @@ set +a -eu -o pipefail
 
 if [[ "${TRACE-0}" == "1" ]]; then set -o xtrace; fi
 
+display_help() {
+    echo "Start the Kubo nodes"
+    echo
+    echo "Usage: $0 [OPTIONS]"
+    echo
+    echo "Options:"
+    echo "  -h, --help                Print this help"
+    echo "  --log-level <level>       Kubo log level [default='info']"
+    echo
+    echo "Allowed log levels: debug, info, warn, error"
+    echo
+    exit 0
+}
+
 error_exit() {
   echo "$1" 1>&2
   exit 1
@@ -63,6 +77,27 @@ EOF
     write_nodes_paths_declaration "${nodes_paths[@]}"
 
     cat <<'EOF'
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+
+declare LOG_LEVEL=""
+
+while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
+      -h | --help ) display_help ;;
+      --log-level) shift; LOG_LEVEL=${1:-} ;;
+      *) error_exit "Unknown option: $1" ;;
+    esac
+    shift
+done
+
+readonly LOG_LEVEL=${LOG_LEVEL:-"info"}
+
+case "$LOG_LEVEL" in
+  debug | info | warn | error) : ;;
+  *) error_exit "Invalid value for --log-level: '$LOG_LEVEL'. Expected one of: debug, info, warn, error." ;;
+esac
 
 if [[ ! -x "$IPFS_BIN" ]]; then
   error_exit "IPFS binary is not executable or does not exist: '$IPFS_BIN'"
@@ -87,7 +122,7 @@ for node_path in "${NODES_PATHS[@]}"; do
   fi
 
   echo ">> Starting Kubo node: '$node_path'"
-  IPFS_PATH="$node_path" LIBP2P_FORCE_PNET=1 nohup "$IPFS_BIN" daemon >"$log_file" 2>&1 &
+  IPFS_PATH="$node_path" LIBP2P_FORCE_PNET=1 GOLOG_LOG_LEVEL="$LOG_LEVEL" nohup "$IPFS_BIN" daemon >"$log_file" 2>&1 &
   pid="$!"
 
   printf '%s\n' "$pid" >"$pid_file"
