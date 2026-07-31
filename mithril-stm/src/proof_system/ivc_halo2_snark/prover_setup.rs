@@ -164,9 +164,25 @@ impl IvcSnarkProverSetup {
         parameters: &crate::Parameters,
         merkle_tree_depth: u32,
     ) -> StmResult<Self> {
+        Self::build_for_test_with_unsafe_srs_degree(
+            parameters,
+            merkle_tree_depth,
+            RECURSIVE_CIRCUIT_DEGREE,
+        )
+    }
+
+    /// As [`Self::build_for_test`], but generates the unsafe SRS at `unsafe_srs_degree` instead of
+    /// exactly [`RECURSIVE_CIRCUIT_DEGREE`].  This removes the need to downsize in [`Self::load`] if
+    /// the input degree matches the circuit one.
+    #[cfg(test)]
+    pub(crate) fn build_for_test_with_unsafe_srs_degree(
+        parameters: &crate::Parameters,
+        merkle_tree_depth: u32,
+        unsafe_srs_degree: u32,
+    ) -> StmResult<Self> {
         let parameters_bytes = parameters.to_bytes()?;
         let depth_bytes = merkle_tree_depth.to_le_bytes();
-        let degree_bytes = (RECURSIVE_CIRCUIT_DEGREE + 1).to_le_bytes();
+        let degree_bytes = unsafe_srs_degree.to_le_bytes();
         let seed_bytes = UNSAFE_SRS_SEED.to_le_bytes();
         let cache = FileMutex::for_shared_cache(
             "ivc-setup",
@@ -184,7 +200,7 @@ impl IvcSnarkProverSetup {
         let _key_cache_lock = cache.lock()?;
 
         let trusted_setup_provider =
-            TrustedSetupProvider::with_unsafe_srs(&cache_directory, RECURSIVE_CIRCUIT_DEGREE + 1);
+            TrustedSetupProvider::with_unsafe_srs(&cache_directory, unsafe_srs_degree);
         let certificate_provider = KeyProvider::new(
             cache_directory.join("certificate"),
             "non-recursive",
@@ -264,8 +280,12 @@ mod tests {
                 phi_f: 0.2,
             };
             let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
-            let ivc_setup = IvcSnarkProverSetup::build_for_test(&parameters, merkle_tree_depth)
-                .expect("IvcSnarkProverSetup::load should succeed");
+            let ivc_setup = IvcSnarkProverSetup::build_for_test_with_unsafe_srs_degree(
+                &parameters,
+                merkle_tree_depth,
+                RECURSIVE_CIRCUIT_DEGREE + 1,
+            )
+            .expect("IvcSnarkProverSetup::load should succeed");
 
             let verification_context = load_embedded_verification_context_asset()
                 .expect("verification context asset should load");

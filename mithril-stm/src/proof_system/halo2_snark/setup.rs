@@ -90,6 +90,22 @@ impl SnarkProverSetup {
         parameters: &Parameters,
         merkle_tree_depth: u32,
     ) -> StmResult<Self> {
+        Self::build_for_test_with_unsafe_srs_degree(
+            parameters,
+            merkle_tree_depth,
+            RECURSIVE_CIRCUIT_DEGREE,
+        )
+    }
+
+    /// As [`Self::build_for_test`], but generates the unsafe SRS at `unsafe_srs_degree` instead of
+    /// exactly [`RECURSIVE_CIRCUIT_DEGREE`]. This removes the need to downsize in [`Self::load`] if
+    /// the input degree matches the circuit one.
+    #[cfg(test)]
+    pub(crate) fn build_for_test_with_unsafe_srs_degree(
+        parameters: &crate::Parameters,
+        merkle_tree_depth: u32,
+        unsafe_srs_degree: u32,
+    ) -> StmResult<Self> {
         let parameters_bytes = parameters.to_bytes()?;
         let depth_bytes = merkle_tree_depth.to_le_bytes();
         let seed_bytes = UNSAFE_SRS_SEED.to_le_bytes();
@@ -107,7 +123,7 @@ impl SnarkProverSetup {
         let _key_cache_lock = cache.lock()?;
 
         let trusted_setup_provider =
-            TrustedSetupProvider::with_unsafe_srs(&cache_directory, RECURSIVE_CIRCUIT_DEGREE);
+            TrustedSetupProvider::with_unsafe_srs(&cache_directory, unsafe_srs_degree);
         let circuit = StmCertificateCircuit::try_new(parameters, merkle_tree_depth)?;
         let provider = KeyProvider::new(cache_directory, "non-recursive", &[], circuit);
         Self::load(&trusted_setup_provider, &provider)
