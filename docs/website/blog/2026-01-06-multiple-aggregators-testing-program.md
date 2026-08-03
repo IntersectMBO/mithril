@@ -67,8 +67,8 @@ The rollout plan of the DMQ network is the following:
   - [x] Released a [guide](https://mithril.network/doc/manual/operate/run-aggregator-node) for setting up a follower aggregator
   - [x] Wait for the DMQ adoption to reach the required threshold until aggregators can produce valid certificates
   - [x] 4-6 weeks testing program with selected participants
-- [ ] **Distribution [2617](https://github.com/input-output-hk/mithril/releases/tag/2617.0)**: `unstable` on the `pre-release-preview` network (extended testing)
-  - [ ] 4-6 weeks extended testing program with selected SPOs
+- [x] **Distribution [2617](https://github.com/input-output-hk/mithril/releases/tag/2617.0)**: `unstable` on the `pre-release-preview` network (extended testing)
+  - [x] 4-6 weeks extended testing program with selected SPOs
 - [ ] **Distribution +3**: `stable` on the `release-preprod` and `release-mainnet` networks
   - [ ] Activation of the feature on the `release-preprod` and `release-mainnet` networks
   - [ ] Release of an updated guide for setting up a follower aggregator
