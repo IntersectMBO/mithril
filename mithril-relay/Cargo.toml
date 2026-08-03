@@ -1,6 +1,6 @@
 [package]
 name = "mithril-relay"
-version = "0.2.7"
+version = "0.2.8"
 description = "A Mithril relay"
 authors = { workspace = true }
 edition = { workspace = true }
