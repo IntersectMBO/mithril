@@ -1,6 +1,6 @@
 [package]
 name = "mithril-aggregator"
-version = "0.9.18"
+version = "0.9.19"
 description = "A Mithril Aggregator server"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -11,7 +11,7 @@ repository = { workspace = true }
 
 [features]
 default = ["rustls"]
-rustls = ["reqwest/rustls"]
+rustls = ["mithril-common/rustls", "reqwest/rustls"]
 
 future_snark = ["mithril-common/future_snark", "dep:ciborium"]
 

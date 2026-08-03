@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.1 (08-03-2026)
+
+### Changed
+
+- The `future_snark` feature no longer enables the `rustls` feature: the TLS backend of the SRS download is now selected by the caller, which makes the `native-tls` feature usable.
+
 ## 0.12.0 (07-29-2026)
 
 ### Added

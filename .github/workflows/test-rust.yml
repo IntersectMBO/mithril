@@ -19,7 +19,7 @@ jobs:
             test-args: --features full,unstable --workspace
             cargo-profile: ci-tests
           - os: ubuntu-24.04
-            test-args: --features future_snark -p mithril-stm -p mithril-common -p mithril-aggregator -p mithril-signer -p mithril-relay
+            test-args: --features future_snark,rustls -p mithril-stm -p mithril-common -p mithril-aggregator -p mithril-signer -p mithril-relay
             artifact-suffix: -future-snark
             # Default to the fast profile; the `prepare` step upgrades to `slow-cargo-profile`
             # only when the slow SNARK tests are actually in scope for this run (so we don't pay

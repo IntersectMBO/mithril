@@ -1,6 +1,6 @@
 [package]
 name = "mithril-client"
-version = "0.14.17"
+version = "0.14.18"
 description = "Mithril client library"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -30,13 +30,13 @@ unstable = []
 
 # These features are for support of dependent crates only.
 # They do not change the operation of the main crate.
-native-tls = ["reqwest/native-tls"]
-native-tls-no-alpn = ["reqwest/native-tls-no-alpn"]
-native-tls-vendored = ["reqwest/native-tls-vendored"]
-native-tls-vendored-no-alpn = ["reqwest/native-tls-vendored-no-alpn"]
+native-tls = ["mithril-common/native-tls", "reqwest/native-tls"]
+native-tls-no-alpn = ["mithril-common/native-tls", "reqwest/native-tls-no-alpn"]
+native-tls-vendored = ["mithril-common/native-tls", "reqwest/native-tls-vendored"]
+native-tls-vendored-no-alpn = ["mithril-common/native-tls", "reqwest/native-tls-vendored-no-alpn"]
 
-rustls = ["reqwest/rustls"]
-rustls-no-provider = ["reqwest/rustls-no-provider"]
+rustls = ["mithril-common/rustls", "reqwest/rustls"]
+rustls-no-provider = ["mithril-common/rustls", "reqwest/rustls-no-provider"]
 
 # Support compressed traffic with `reqwest`
 enable-http-compression = ["reqwest/gzip", "reqwest/zstd", "reqwest/deflate", "reqwest/brotli"]
@@ -64,7 +64,7 @@ flate2 = { version = "1.1.9", optional = true }
 flume = { version = "0.12.0", optional = true }
 futures = "0.3.32"
 mithril-aggregator-client = { path = "../internal/mithril-aggregator-client", version = "0.2.4" }
-mithril-common = { path = "../mithril-common", version = "0.7.14", default-features = false }
+mithril-common = { path = "../mithril-common", version = "0.7.15", default-features = false }
 reqwest = { workspace = true, default-features = false, features = ["charset", "http2", "stream", "system-proxy"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

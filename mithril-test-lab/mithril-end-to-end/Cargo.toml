@@ -1,6 +1,6 @@
 [package]
 name = "mithril-end-to-end"
-version = "0.5.7"
+version = "0.5.8"
 authors = { workspace = true }
 edition = { workspace = true }
 documentation = { workspace = true }
@@ -18,7 +18,7 @@ bench = false
 default = ["rustls"]
 allow_skip_signer_certification = []
 future_snark = ["mithril-common/future_snark"]
-rustls = ["reqwest/rustls"]
+rustls = ["mithril-common/rustls", "reqwest/rustls"]
 
 [dependencies]
 anyhow = { workspace = true }
