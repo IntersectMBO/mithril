@@ -38,6 +38,15 @@ error_exit() {
   exit 1
 }
 
+require_value() {
+  local -r option="$1"
+  local -r value="${2:-}"
+
+  if [[ -z "$value" ]]; then
+    error_exit "Missing value for option: $option"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -53,12 +62,28 @@ declare KUBO_VERSION="${KUBO_VERSION:-}" NUMBER_OF_NODES="${NUMBER_OF_NODES:-}"
 declare OVERWRITE="$OVERWRITE_FROM_ENV"
 
 while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
-      -d | --download-dir) shift; DOWNLOAD_DIR=${1:-} ;;
+      -d | --download-dir)
+        shift
+        require_value "--download-dir" "${1:-}"
+        DOWNLOAD_DIR=$1
+        ;;
+      -n | --number)
+        shift
+        require_value "--number" "${1:-}"
+        NUMBER_OF_NODES=$1
+        ;;
+      -s | --swarm-dir)
+        shift
+        require_value "--swarm-dir" "${1:-}"
+        SWARM_DIR=$1
+        ;;
+      -v | --version)
+        shift
+        require_value "--version" "${1:-}"
+        KUBO_VERSION=$1
+        ;;
+      -o | --overwrite) OVERWRITE=true ;;
       -h | --help ) display_help ;;
-      -n | --number) shift; NUMBER_OF_NODES=${1:-} ;;
-      -o | --overwrite ) OVERWRITE=true ;;
-      -s | --swarm-dir) shift; SWARM_DIR=${1:-} ;;
-      -v | --version) shift; KUBO_VERSION=${1:-} ;;
       *) error_exit "Unknown option: $1" ;;
     esac
     shift
@@ -66,6 +91,14 @@ done
 
 readonly DOWNLOAD_DIR=${DOWNLOAD_DIR:-"/tmp/kubo/"} NUMBER_OF_NODES=${NUMBER_OF_NODES:-2}
 readonly KUBO_VERSION SWARM_DIR OVERWRITE
+
+if [[ "${1:-}" == "--" ]]; then
+  shift
+fi
+
+if [[ "$#" -gt 0 ]]; then
+  error_exit "Unexpected argument: $1"
+fi
 
 if [[ -z "$SWARM_DIR" ]]; then
   error_exit "Missing required option: -s, --swarm-dir"
