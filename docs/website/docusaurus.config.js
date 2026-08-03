@@ -35,9 +35,7 @@ const config = {
     },
   },
 
-  scripts: [
-
-  ],
+  scripts: [],
 
   presets: [
     [
