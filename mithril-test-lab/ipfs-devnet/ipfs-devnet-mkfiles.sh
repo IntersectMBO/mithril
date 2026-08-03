@@ -19,6 +19,16 @@ display_help() {
     echo "  -s, --swarm-dir <dir>      Directory that will contain the swarm nodes (required)"
     echo "  -v, --version <version>    Specific version to run (omit to use the latest version)"
     echo
+    echo "Environment variables:"
+    echo "  DOWNLOAD_DIR               Directory where the binary archive will be downloaded"
+    echo "  KUBO_VERSION               Specific Kubo version to run"
+    echo "  NUMBER_OF_NODES            Number of nodes to configure"
+    echo "  SWARM_DIR                  Directory that will contain the swarm nodes"
+    echo "  OVERWRITE                  Allow overwriting existing swarm when set to any value except '0' or 'false'"
+    echo
+    echo "Options and environment variables can be mixed; when both are provided for the same setting,"
+    echo "the command-line option takes priority."
+    echo
     exit 0
 }
 
@@ -31,7 +41,16 @@ error_exit() {
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
-declare DOWNLOAD_DIR="" KUBO_VERSION="" NUMBER_OF_NODES="" SWARM_DIR="" OVERWRITE=false
+
+# Setting anything, '0' or 'false' excepted, to `OVERWRITE` env var is equivalent to `true`
+declare OVERWRITE_FROM_ENV=false
+if [[ -n "${OVERWRITE+x}" && "$OVERWRITE" != "0" && "$OVERWRITE" != "false" ]]; then
+  OVERWRITE_FROM_ENV=true
+fi
+
+declare DOWNLOAD_DIR="${DOWNLOAD_DIR:-}" SWARM_DIR="${SWARM_DIR:-}"
+declare KUBO_VERSION="${KUBO_VERSION:-}" NUMBER_OF_NODES="${NUMBER_OF_NODES:-}"
+declare OVERWRITE="$OVERWRITE_FROM_ENV"
 
 while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
       -d | --download-dir) shift; DOWNLOAD_DIR=${1:-} ;;
