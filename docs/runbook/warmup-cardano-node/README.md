@@ -96,7 +96,7 @@ cd /home/curry/data/temp
 ### Download the Mithril client
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IntersectMBO/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-client -d latest -p $(pwd)
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IntersectMBO/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-client -d latest -p "$(pwd)"
 ```
 
 ### Download the latest Cardano database snapshot

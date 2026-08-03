@@ -35,7 +35,7 @@ The new command requires an **ancillary verification key**. This key can be prov
 To update the Mithril client CLI, use the following one-line command. By default, it downloads to the current directory. To specify a custom folder, use the `-p` option:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/input-output-hk/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-client -d 2517.1 -p $(pwd)
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/input-output-hk/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-client -d 2517.1 -p "$(pwd)"
 ```
 
 For more details, refer to the [Mithril client node](https://mithril.network/doc/manual/develop/nodes/mithril-client) documentation.

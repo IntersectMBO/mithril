@@ -23,7 +23,7 @@ We strongly encourage all `mainnet` users running a **client library or client C
 - The **Mithril client CLI** has been fixed with version `0.12.1` and can be downloaded with the following command:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/input-output-hk/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-client -d 2517.1 -p $(pwd)
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/input-output-hk/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-client -d 2517.1 -p "$(pwd)"
 ```
 
 **Note that all the previous versions must not be used anymore.**
