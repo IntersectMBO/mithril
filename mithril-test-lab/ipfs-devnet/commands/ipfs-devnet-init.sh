@@ -154,3 +154,6 @@ echo ">> nodes dir:" "${NODES_DIR[@]}"
 # Create lifecycle scripts
 bash "${SCRIPT_DIRECTORY}/mkfiles/mkscripts-lifecycle.sh" --ipfs-bin-path "${SWARM_DIR%/}/bin/ipfs" \
     --output "$SWARM_DIR" "${NODES_DIR[@]}"
+
+# Create query scripts
+bash "${SCRIPT_DIRECTORY}/mkfiles/mkscripts-query.sh" --output "$SWARM_DIR" "${NODES_DIR[@]}"
