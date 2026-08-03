@@ -44,17 +44,9 @@ case "$command" in
     shift
     exec bash "${SCRIPT_DIRECTORY}/commands/ipfs-devnet-init.sh" "$@"
     ;;
-  log)
+  log | start | stop)
     shift
-    bash "${SCRIPT_DIRECTORY}/commands/ipfs-devnet-log.sh" "$@"
-    ;;
-  start)
-    shift
-    exec bash "${SCRIPT_DIRECTORY}/commands/ipfs-devnet-start.sh" "$@"
-    ;;
-  stop)
-    shift
-    exec bash "${SCRIPT_DIRECTORY}/commands/ipfs-devnet-stop.sh" "$@"
+    exec bash "${SCRIPT_DIRECTORY}/commands/ipfs-devnet-exec.sh" --command "$command" "$@"
     ;;
   help | -h | --help)
     display_help
