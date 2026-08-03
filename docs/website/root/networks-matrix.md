@@ -33,7 +33,7 @@ Here is an updated list of all **Mithril networks**, including their configurati
 | **Era reader address**          | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/era.addr` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/era.addr)             |
 | **Era reader verification key** | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/era.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/era.vkey)             |
 | **Ancillary verification key**  | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/ancillary.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/ancillary.vkey) |
-| **Build from**                  | **Latest release** [:arrow_upper_right:](https://github.com/input-output-hk/mithril/releases/latest)                                                                                                                                                                   |
+| **Build from**                  | **Latest release** [:arrow_upper_right:](https://github.com/IntersectMBO/mithril/releases/latest)                                                                                                                                                                      |
 
   </TabItem>
   <TabItem value="preprod" label="Preprod">
@@ -57,7 +57,7 @@ Here is an updated list of all **Mithril networks**, including their configurati
 | **Era reader address**          | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-preprod/era.addr` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-preprod/era.addr)             |
 | **Era reader verification key** | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-preprod/era.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-preprod/era.vkey)             |
 | **Ancillary verification key**  | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-preprod/ancillary.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-preprod/ancillary.vkey) |
-| **Build from**                  | **Latest release** [:arrow_upper_right:](https://github.com/input-output-hk/mithril/releases/latest)                                                                                                                                                                   |
+| **Build from**                  | **Latest release** [:arrow_upper_right:](https://github.com/IntersectMBO/mithril/releases/latest)                                                                                                                                                                      |
 
   </TabItem>
   <TabItem value="preview" label="Preview">
@@ -81,7 +81,7 @@ Here is an updated list of all **Mithril networks**, including their configurati
 | **Era reader address**          | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/pre-release-preview/era.addr` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/pre-release-preview/era.addr)             |
 | **Era reader verification key** | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/pre-release-preview/era.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/pre-release-preview/era.vkey)             |
 | **Ancillary verification key**  | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/pre-release-preview/ancillary.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/pre-release-preview/ancillary.vkey) |
-| **Build from**                  | **Latest pre-release** [:arrow_upper_right:](https://github.com/input-output-hk/mithril/releases?q=pre)                                                                                                                                                                        |
+| **Build from**                  | **Latest pre-release** [:arrow_upper_right:](https://github.com/IntersectMBO/mithril/releases?q=pre)                                                                                                                                                                           |
 
 <br/>
 
@@ -110,7 +110,7 @@ This network is only for the developers of the Mithril Core team.
 | **Era reader address**          | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/era.addr` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/era.addr)             |
 | **Era reader verification key** | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/era.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/era.vkey)             |
 | **Ancillary verification key**  | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/ancillary.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/ancillary.vkey) |
-| **Build from**                  | **Main branch** [:arrow_upper_right:](https://github.com/input-output-hk/mithril/tree/main)                                                                                                                                                                            |
+| **Build from**                  | **Main branch** [:arrow_upper_right:](https://github.com/IntersectMBO/mithril/tree/main)                                                                                                                                                                               |
 
   </TabItem>
 </Tabs>
