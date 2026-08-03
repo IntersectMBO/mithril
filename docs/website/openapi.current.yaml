@@ -4,7 +4,7 @@ info:
   # `mithril-common/src/lib.rs` file. If you plan to update it
   # here to reflect changes in the API, please also update the constant in the
   # Rust file.
-  version: 0.1.61
+  version: 0.1.68
   title: Mithril Aggregator Server
   description: |
     The REST API provided by a Mithril Aggregator Node in a Mithril network.
@@ -200,88 +200,6 @@ paths:
           description: certificate not found
         default:
           description: get certificate error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /artifact/snapshots:
-    get:
-      summary: Get most recent snapshots
-      description: |
-        Returns the list of the most recent snapshots
-      responses:
-        "200":
-          description: snapshots found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SnapshotListMessage"
-        default:
-          description: snapshots retrieval error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /artifact/snapshot/{digest}:
-    get:
-      summary: Get snapshot information
-      description: |
-        Returns the information of a snapshot and where to retrieve its binary content
-      parameters:
-        - name: digest
-          in: path
-          description: Digest of the snapshot to retrieve
-          required: true
-          schema:
-            type: string
-            format: bytes
-            examples:
-              - "6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732"
-      responses:
-        "200":
-          description: snapshot found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SnapshotMessage"
-        "404":
-          description: snapshot not found
-        default:
-          description: snapshot retrieval error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /artifact/snapshot/{digest}/download:
-    get:
-      summary: Download the snapshot
-      description: |
-        Returns the snapshot archive binary content
-      parameters:
-        - name: digest
-          in: path
-          description: Digest of the snapshot to download
-          required: true
-          schema:
-            type: string
-            format: bytes
-            examples:
-              - "6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732"
-      responses:
-        "200":
-          description: snapshot found
-          content:
-            application/gzip:
-              schema:
-                type: string
-                format: binary
-        "404":
-          description: snapshot not found
-        default:
-          description: snapshot retrieval error
           content:
             application/json:
               schema:
@@ -825,39 +743,13 @@ paths:
         "404":
           description: open message not found
         "410":
-          description: signatures registration done too late
+          description: signatures registration done too late or the signed entity type was discontinued
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         default:
           description: signatures registration error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-  /statistics/snapshot:
-    post:
-      summary: Records snapshot download event
-      description: Records snapshot download event
-      requestBody:
-        description: Downloaded snapshot message
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SnapshotDownloadMessage"
-      responses:
-        "201":
-          description: Event successfully recorded
-        "400":
-          description: Record event bad request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        default:
-          description: Record event error
           content:
             application/json:
               schema:
@@ -1068,7 +960,7 @@ components:
                 "signed_entity_types":
                   [
                     "MithrilStakeDistribution",
-                    "CardanoImmutableFilesFull",
+                    "CardanoDatabase",
                     "CardanoTransactions"
                   ],
                 "aggregate_signature_type": "Concatenation",
@@ -1105,10 +997,9 @@ components:
       enum:
         - MithrilStakeDistribution
         - CardanoStakeDistribution
-        - CardanoImmutableFilesFull
+        - CardanoDatabase
         - CardanoTransactions
         - CardanoBlocksTransactions
-        - CardanoDatabase
 
     EpochSettingsMessage:
       description: Epoch settings
@@ -1267,7 +1158,7 @@ components:
             "available_signed_entity_types":
               [
                 "MithrilStakeDistribution",
-                "CardanoImmutableFilesFull",
+                "CardanoDatabase",
                 "CardanoTransactions",
                 "CardanoBlocksTransactions"
               ]
@@ -1862,12 +1753,40 @@ components:
           description: Aggregate verification key used to verify the multi signature
           type: string
           format: bytes
+        aggregate_verification_key_snark:
+          description: |
+            Hex-encoded SNARK-friendly aggregate verification key, emitted alongside
+            `aggregate_verification_key` on Lagrange-era certificates. Omitted on
+            Pythagoras and pre-Lagrange certificates: clients that ignore this field
+            remain compatible with the pre-Lagrange wire format.
+          type: string
+          format: bytes
+        ancillary_prover_data:
+          description: |
+            Hex-encoded ancillary data used by the prover to produce the next certificate. Omitted
+            when absent. Its shape depends on the aggregate signature type.
+          type: string
+          format: bytes
+        ancillary_verifier_data:
+          description: |
+            Hex-encoded ancillary data used to verify the certificate. Omitted when absent. Its
+            shape depends on the aggregate signature type.
+          type: string
+          format: bytes
         multi_signature:
           description: STM multi signature created from a quorum of single signatures from the signers
           type: string
           format: bytes
         genesis_signature:
           description: Genesis signature created to bootstrap the certificate chain with the Cardano Genesis Keys
+          type: string
+          format: bytes
+        genesis_schnorr_signature:
+          description: |
+            Hex-encoded SNARK-friendly Schnorr genesis signature, emitted alongside
+            `genesis_signature` on Lagrange-era genesis certificates. Omitted or empty
+            on Pythagoras and non-genesis certificates: clients that ignore this field
+            remain compatible with the pre-Lagrange wire format.
           type: string
           format: bytes
       examples:
@@ -1915,209 +1834,6 @@ components:
             "aggregate_verification_key": "7b232392c3130342c34392c35312c3130332c3136352c37364223a7b22726f6f74223a5b3137392c3135312c3135382c37332c37372c2c3135392c3226d745f636f6d6d69746d656e7",
             "multi_signature": "7bc3139392c3135392c3235342c3231392c3133362c3132392c38342c353227369676e617475726573223a5b5b7b227369676d61223a5b3135312c362c3131222c33382c3135382c3137312c3137312c3234392c32342c3232382c3133302c38352c32362c38382c3135382c32303c323337322c323339362c32342c313530342c313532302c3135323737302c323830372c323831392c323834302c323834342c323836302c323837322c323838362c323839312c323839382c3239333533332c343538352c343632342c343634322c343634372c343636362c334312c31343636382c31343637352c31343639352c31343639392c31343730312c31343730352c31343733302c31343733382c31343733392c31343734362c31343735342c31343736312c31343738362c31343739352c31343739362c31343832362c31343835392c31343836302c31343836322c31343837312c31343837322c31343837392c31343838392c31343839332c31343839372c31343839392c31343932362c31343937372c31343939312c31353032332c31353033382c31353034342c31353036332c31353039312c31353039322c31353039382c31353131392c31353132312c31353136362c31353139362c31353230322c31353231302c31353231392c31353233392c31353234362c31353235322c31353237352c31353238312c31353334372c31353335372c31353338372c31353431372c31353434352c31353434382c31353435332c31353435342c31353530382c31353534352c31353536302c31353537302c31353538392c31353631302c31353631312c31353631322c31353632382c31353633302c31353633392c31353636302c31353636312c31353637392c31353731372c31353731392c31353732362c31353733382c31353734382c31353735392c31353736312c31353739312c31353830312c31353830332c31353831342c31353831392c31353832372c31353832392c31353834392c31353835332c31353835372c31353835392c31353836372c31353839362c31353930312c31353930372c31353931302c31353931332c31353931352c31353935352c31353937362c31353938372c31363031372c31363036332c31363131382c31363132382c31363135352c31363136372c31363230312c31363230362c31363231392c31363232312c31363232392c31363233342c31363234362c31363333302c31363335302c31363336362c31353739312c31353830312c31353830332c31353831342c31353831392c31353832372c31353832392c31353834392c31353835332c31353835372c31353835392c31353836372c31353839362c31353930312c31353930372c31353931302c31353931332c31353931352c31353935352c31353937362c31353938372c31363031372c31363036332c31363131382c31363132382c31363135352c31363136372c31363230312c31363230362c31363231392c31363232312c31363232392c31363233342c31363234362c31363333302c31363335302c31363336362c31363339302c31363430342c31363435342c31363437392c31363533302c31363533382c31363534372c31363535322c31363630382c31363631312c31363631382c31363633312c31363635382c31363637312c31363639352c31363730302c31363731332c31363732372c31363733312c31363733322c31363734322c31363736302c31363737342c31363739322c31363739362c31363739382c31363830342c31363831302c31363834302c31363834382c31363835392c31363836332c31363838362c31363838382c31363930302c31363932372c31363932382c31363932392c31363933372c31363934302c31363934362c31363935302c31363936312c31363938312c31373033302c31373035332c31373036322c31373038322c31373130312c31373130332c31373130352c31373130362c31373132302c31373132312c31373133322c31373133332c31373135312c31373135392c31373138332c31373232302c31373239322c31373331312c31373331332c31373332362c31373333362c31373334352c31373334392c31373335372c31373337352c31373338332c31373338352c31373430302c31373430362c31373431342c31373432322c31373434362c31373435312c31373436362c31373530322c31373531392c31373535382c31373536352c31373537332c31373538302c31373630362c31373632332c31373636382c31373639352c31373732392c31373733312c31373733352c31373733372c31373734342c31373734352c31373734372c31373736382c31373737302c31373737332c31373737352c31373739362c31373830342c31373831302c31373831332c31373832332c31373834352c31373834362c31373838382c31373839342c31373930352c31373931302c31373935372c31373936372c31373938372c31373939342c31383030322c31383030332c31383031312c31383032302c31383032392c31383034362c31383036382c31383037322c31383131372c31383133372c31383134302c31383134332c31383136322c31383137302c31383137342c31383138342c31383138392c31383139392c31383230382c31383232302c31383235312c31383235332c31383237392c31383238312c31383239312c31383239382c31383330312c31383331362c31383332382c31383334312c31383336332c31383337342c31383338352c31383338372c31383434392c31383437362c31383438322c31383439382c31383530352c31383530362c31383531342c31383532362c31383532382c31383533382c31383535322c31383535382c31383537342c31383538342c31383539322c31383631392c32c3832392c3834382c3835312c3835342c3836352c3838332c3838342c3839332c3839372c3930392c3937312c3938362c3939352c313032312c313032362c313035312c313036322c313036382c313038322c313038332c313038352c313133312c313134392c313135392c313136342c313137322c313137332c313231372c313231382c313234372c313239332c313330382c313331352c313333302c313335302c313336342c313337392c313430302c313430362c313432372c313434392c313436342c313436362c313436372c313437362c313530312c313530342c313532302c313532352c313533322c313534322c313536372c313537362c313538322c313538332c313632362c313633322c313633332c313634312c313635322c313730302c313732392c313831322c313832302c313834322c313835392c313837312c313930352c313930372c313931322c313931332c313935362c313936302c313937342c323030302c323031302c323033322c323033372c323037372c323038372c323039382c323130372c323131382c323133322c323133382c323135312c323230332c323230392c323231312c323233372c323234382c323235332c323237372c323238302c323330382c323331342c323333322c323334332c323334382c373535362c373535382c373537372c373630392c373631382c373633392c373635342c373635352c373731392c373732322c373732332c373830342c373832372c373833362c373833372c373835302c373835332c373835362c373837382c373839362c373931392c373933312c373933332c373934332c373934362c373935342c383030302c383031302c383031342c383033302c383034332c383035352c383036342c383036382c383037362c383132322c383134332c383134382c383136362c383139302c383234372c383235312c383236302c383237352c383238312c383238352c383330362c383332352c383337332c383337372c383338372c383339372c383339382c383431362c383433312c383436362c383436372c383437372c383438332c383438392c383439322c383439382c383531372c383533302c383533352c383534302c383536392c383539392c383631322c383634322c383635322c383637302c383730312c383733342c383738382c383739312c383832372c383834352c383835312c383836312c383837362c383932392c383933372c383935322c383937362c393031362c393032302c393032372c393032392c393034382c393036302c393038392c393130332c393130362c393131312c393131322c393131382c393133342c393134392c393137372c393137382c393231312c393231322c393232392c393234332c393236312c393236322c393238362c393239372c393331382c393333392c393338312c393339352c393339362c393431372c393433302c393436332c393439322c393532342c393633332c393633352c393634322c393639322c393731382c393732342c393732362c393733352c393735362c393738302c393738322c393739332c393831332c393837312c393839382c393931382c393932332c393932362c393934312c393934392c393935322c393935382c393936312c393936342c393937352c31303030362c31303032362c31303032392c31303035382c31303037342c31303037392c31303131302c31303132332c31303133392c31303134382c31303135362c31303136392c31303230362c31303235352c31303235372c31303235382c31303237332c31303237342c31303239312c31303239332c31303239342c31303330352c31303334312c31303334332c31303338322c31303338332c31303430342c31303431312c31303431332c31303432302c31303434322c31303434342c31303435372c31303436302c31303437322c31303438372c31303532322c31303535312c31303536342c31303636352c31303638352c31303730302c31303730362c31303733322c31303734332c31303737322c31303831352c31303833332c31303834332c31303836362c31303839322c31303930382c31303938382c31313033362c31313034312c31313037312c31313038322c31313039322c31313039392c31313130392c31313131352c31313134362c31313139332c31313230302c31313232382c31313232392c31313235342c31313236372c31313238302c31313239332c31313239352c31313331312c31313331382c31313332322c31313334302c31313334342c31313335322c31313335342c31313335352c31313335362c31313338352c31313430322c31313431332c31313433342c31313434322c31313436382c31313437322c31313437372c31313439362c31313439392c31313530362c31313531302c31313532342c31313532372c31313534342c31313538312c31313539322c31313630342c31313633352c31313635382c31313733332c31313733362c31313735342c31313739342c31313831332c31313831392c31313832342c31313832372c31313836392c31313837312c31313931342c31313937302c31313937342c31323031362c31323031392c31323034302c31323034342c31323035342c31323036382c31323037302c31323037372c31323039392c31323130342c31323133302c31323133392c31323135302c31323135392c31323136302c31323137352c31323230302c31323230322c31323232382c31323233392c31323330352c31323336382c31323337352c31323337392c31323338392c31323430372c31323431302c31323433322c31323434302c31323434312c31323437352c31323530362c31323531322c31323531332c31323531372c31323532312c31323533302c31323538302c31323633362c31323636392c31323637322c31323637362c31323637372c31323638332c31323638372c31323730352c31323732342c31323734362c31323734382c31323737362c31323739392c31323838352c31323839392c31323930372c31323933302c31323933322c31323935382c31323939332c31333030332c31333033302c31333036312c31333038302c31333038332c31333130352c31333132372c31333133312c31333136392c31333138312c31333138322c31333138352c3133323231231333236352c31333238362c31333234322cc31333239342c3131333438362c1e233332362c31333333392c31333336352c31333337332c31333338352c31333339392c31333433332c31333435312c31333437382c3",
             "genesis_signature": ""
-          }
-
-    SnapshotListMessage:
-      description: SnapshotListMessage represents a list of snapshots
-      type: array
-      items:
-        $ref: "#/components/schemas/Snapshot"
-      examples:
-        - [
-            {
-              "digest": "6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732",
-              "network": "mainnet",
-              "beacon": { "epoch": 329, "immutable_file_number": 7060000 },
-              "certificate_hash": "7905e83ab5d7bc082c1bbc3033bfd19c539078830d19080d1f241c70aa532572",
-              "size": 26058531636,
-              "ancillary_size": 123456789,
-              "created_at": "2022-07-21T17:32:28Z",
-              "locations":
-                [
-                  "https://mithril-cdn-us.iohk.io/snapshot/6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732",
-                  "https://mithril-cdn-eu.iohk.io/snapshot/6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732",
-                  "magnet:?xt=urn:sha1:YNCKHTQCWBTRNJIV4WNAE52SJUQCZO5C",
-                  "ipfs:QmPXME1oRtoT627YKaDPDQ3PwA8tdP9rWuAAweLzqSwAWT"
-                ],
-              "ancillary_locations":
-                [
-                  "https://mithril-cdn-us.iohk.io/snapshot/6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732.ancillary.tar.zst"
-                ]
-            }
-          ]
-
-    Snapshot:
-      description: Snapshot represents a snapshot file and its metadata
-      type: object
-      additionalProperties: false
-      required:
-        - digest
-        - network
-        - beacon
-        - certificate_hash
-        - size
-        - created_at
-        - locations
-      properties:
-        digest:
-          description: Digest that is signed by the signer participants
-          type: string
-          format: bytes
-        network:
-          description: Cardano network
-          type: string
-        beacon:
-          $ref: "#/components/schemas/CardanoDbBeacon"
-        certificate_hash:
-          description: Hash of the associated certificate
-          type: string
-          format: bytes
-        size:
-          description: Size of the immutables snapshot file in Bytes
-          type: integer
-          format: int64
-        ancillary_size:
-          description: Size of the ancillary snapshot file in Bytes
-          type: integer
-          format: int64
-        created_at:
-          description: Date and time at which the snapshot was created
-          type: string
-          format: date-time
-        locations:
-          description: Locations where the snapshot of the immutable files can be retrieved
-          type: array
-          items:
-            type: string
-        ancillary_locations:
-          description: Locations where the snapshot of the ancillary files can be retrieved
-          type: array
-          items:
-            type: string
-        compression_algorithm:
-          description: Compression algorithm for the snapshot archive
-          type: string
-        cardano_node_version:
-          description: Version of the Cardano node which is used to create snapshot archives.
-          type: string
-      examples:
-        - {
-            "digest": "6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732",
-            "network": "mainnet",
-            "beacon": { "epoch": 329, "immutable_file_number": 7060000 },
-            "certificate_hash": "7905e83ab5d7bc082c1bbc3033bfd19c539078830d19080d1f241c70aa532572",
-            "size": 26058531636,
-            "ancillary_size": 123456789,
-            "created_at": "2022-07-21T17:32:28Z",
-            "locations":
-              [
-                "https://mithril-cdn-us.iohk.io/snapshot/6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732",
-                "https://mithril-cdn-eu.iohk.io/snapshot/6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732",
-                "magnet:?xt=urn:sha1:YNCKHTQCWBTRNJIV4WNAE52SJUQCZO5C",
-                "ipfs:QmPXME1oRtoT627YKaDPDQ3PwA8tdP9rWuAAweLzqSwAWT"
-              ],
-            "ancillary_locations":
-              [
-                "https://mithril-cdn-us.iohk.io/snapshot/6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732.ancillary.tar.zst"
-              ],
-            "compression_algorithm": "zstandard",
-            "cardano_node_version": "1.0.0"
-          }
-
-    SnapshotMessage:
-      description: This message represents a snapshot file and its metadata.
-      allOf:
-        - $ref: "#/components/schemas/Snapshot"
-      examples:
-        - {
-            "digest": "6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732",
-            "network": "mainnet",
-            "beacon": { "epoch": 329, "immutable_file_number": 7060000 },
-            "certificate_hash": "7905e83ab5d7bc082c1bbc3033bfd19c539078830d19080d1f241c70aa532572",
-            "size": 26058531636,
-            "ancillary_size": 123456789,
-            "created_at": "2022-07-21T17:32:28Z",
-            "locations":
-              [
-                "https://mithril-cdn-us.iohk.io/snapshot/6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732",
-                "https://mithril-cdn-eu.iohk.io/snapshot/6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732",
-                "magnet:?xt=urn:sha1:YNCKHTQCWBTRNJIV4WNAE52SJUQCZO5C",
-                "ipfs:QmPXME1oRtoT627YKaDPDQ3PwA8tdP9rWuAAweLzqSwAWT"
-              ],
-            "ancillary_locations":
-              [
-                "https://mithril-cdn-us.iohk.io/snapshot/6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732.ancillary.tar.zst"
-              ],
-            "compression_algorithm": "zstandard",
-            "cardano_node_version": "1.0.0"
-          }
-
-    SnapshotDownloadMessage:
-      description: SnapshotDownloadMessage represents a downloaded snapshot event
-      type: object
-      additionalProperties: false
-      required:
-        - digest
-        - network
-        - beacon
-        - size
-        - locations
-        - compression_algorithm
-        - cardano_node_version
-      properties:
-        digest:
-          description: Digest that is signed by the signer participants
-          type: string
-          format: bytes
-        network:
-          description: Cardano network
-          type: string
-        beacon:
-          $ref: "#/components/schemas/CardanoDbBeacon"
-        size:
-          description: Size of the immutables snapshot file in Bytes
-          type: integer
-          format: int64
-        ancillary_size:
-          description: Size of the ancillary snapshot file in Bytes
-          type: integer
-          format: int64
-        locations:
-          description: Locations where the snapshot of the immutable files can be retrieved
-          type: array
-          items:
-            type: string
-        ancillary_locations:
-          description: Locations where the snapshot of the ancillary files can be retrieved
-          type: array
-          items:
-            type: string
-        compression_algorithm:
-          description: Compression algorithm for the snapshot archive
-          type: string
-        cardano_node_version:
-          description: Version of the Cardano node which is used to create snapshot archives.
-          type: string
-      examples:
-        - {
-            "digest": "6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732",
-            "network": "mainnet",
-            "beacon": { "epoch": 329, "immutable_file_number": 7060000 },
-            "size": 26058531636,
-            "ancillary_size": 123456789,
-            "locations":
-              [
-                "https://mithril-cdn-us.iohk.io/snapshot/6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732",
-                "https://mithril-cdn-eu.iohk.io/snapshot/6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732",
-                "magnet:?xt=urn:sha1:YNCKHTQCWBTRNJIV4WNAE52SJUQCZO5C",
-                "ipfs:QmPXME1oRtoT627YKaDPDQ3PwA8tdP9rWuAAweLzqSwAWT"
-              ],
-            "ancillary_locations":
-              [
-                "https://mithril-cdn-us.iohk.io/snapshot/6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732.ancillary.tar.zst"
-              ],
-            "compression_algorithm": "zstandard",
-            "cardano_node_version": "1.0.0"
           }
 
     CardanoDatabaseImmutableFilesRestoredMessage:

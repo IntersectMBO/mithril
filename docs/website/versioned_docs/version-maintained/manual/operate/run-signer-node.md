@@ -944,6 +944,7 @@ The Mithril signer must connect to the DMQ node socket that is on the **same mac
 - Here is the needed information to set up a DMQ node:
   - `**YOUR_DMQ_NODE_SOCKET_PATH**`: replace with the path to the IPC file of the DMQ node
   - `**YOUR_CARDANO_NODE_SOCKET_PATH**`: replace with the path to the IPC file of the Cardano node
+  - `**YOUR_CARDANO_SHELLEY_GENESIS_FILE_PATH**`: replace with the path to the Shelley genesis file of the Cardano node
   - `**YOUR_CARDANO_NETWORK_MAGIC**`: replace with the network magic number of your Cardano network
   - `**YOUR_DMQ_NETWORK_MAGIC**`: replace with the network magic number of your DMQ network (the value can be found in the [Mithril networks](../getting-started/network-configurations.md) table)
   - `**YOUR_DMQ_NODE_RELAY_INTERNAL_ADDRESS**`: replace with the **internal** IP address of your DMQ node on the relay machine
@@ -962,6 +963,7 @@ Here is an **example** set of values for **pre-release-preview** that will be us
 
 - **YOUR_DMQ_NODE_SOCKET_PATH**: `/dmq/ipc/node.socket`
 - **YOUR_CARDANO_NODE_SOCKET_PATH**: `/cardano/ipc/node.socket`
+- **YOUR_CARDANO_SHELLEY_GENESIS_FILE_PATH**: `/cardano/config/shelley-genesis.json`
 - **YOUR_CARDANO_NETWORK_MAGIC**: `2`
 - **YOUR_DMQ_NETWORK_MAGIC**: `2147483650`
 - **YOUR_DMQ_NODE_RELAY_INTERNAL_ADDRESS**: `192.168.1.30`
@@ -982,7 +984,7 @@ As we are still in a testing stage, we only support the `pre-release-preview` ne
 
 You can use these parameters for the **pre-release-preview** network:
 
-- **DMQ_RELEASE_URL**: `https://github.com/IntersectMBO/dmq-node/releases/download/0.4.2.0/dmq-node-linux.tar.gz`
+- **DMQ_RELEASE_URL**: `https://github.com/IntersectMBO/dmq-node/releases/download/0.6.0.0/dmq-node-linux.tar.gz`
 
 _These URLs may change in the future; please refer to this page for the latest released version of the DMQ node binary._
 
@@ -1053,6 +1055,7 @@ bash -c 'cat > /opt/dmq/config-relay.json << EOF
   "NetworkMagic": **YOUR_DMQ_NETWORK_MAGIC**,
   "CardanoNetworkMagic": **YOUR_CARDANO_NETWORK_MAGIC**,
   "CardanoNodeSocket": "**YOUR_CARDANO_NODE_SOCKET_PATH**",
+  "ShelleyGenesisFile": "**YOUR_CARDANO_SHELLEY_GENESIS_FILE_PATH**",
   "PeerSharing": true,
   "PeerSelectionCounters": true,
   "TraceOptions": {
@@ -1078,6 +1081,7 @@ bash -c 'cat > /opt/dmq/config-relay.json << EOF
   "NetworkMagic": 2147483650,
   "CardanoNetworkMagic": 2,
   "CardanoNodeSocket": "/cardano/ipc/node.socket",
+  "ShelleyGenesisFile": "/cardano/config/shelley-genesis.json",
   "PeerSharing": true,
   "PeerSelectionCounters": true,
   "TraceOptions": {
@@ -1103,6 +1107,7 @@ bash -c 'cat > /opt/dmq/config-bp.json << EOF
   "NetworkMagic": **YOUR_DMQ_NETWORK_MAGIC**,
   "CardanoNetworkMagic": **YOUR_CARDANO_NETWORK_MAGIC**,
   "CardanoNodeSocket": "**YOUR_CARDANO_NODE_SOCKET_PATH**",
+  "ShelleyGenesisFile": "**YOUR_CARDANO_SHELLEY_GENESIS_FILE_PATH**",
   "PeerSharing": false,
   "PeerSelectionCounters": true,
   "TraceOptions": {
@@ -1128,6 +1133,7 @@ bash -c 'cat > /opt/dmq/config-bp.json << EOF
   "NetworkMagic": 2147483650,
   "CardanoNetworkMagic": 2,
   "CardanoNodeSocket": "/cardano/ipc/node.socket",
+  "ShelleyGenesisFile": "/cardano/config/shelley-genesis.json",
   "PeerSharing": false,
   "PeerSelectionCounters": true,
   "TraceOptions": {
@@ -1486,6 +1492,69 @@ You should use a configuration that is very similar to your Cardano nodes' confi
 :::tip
 
 More information about the recommended firewall configuration of the Cardano node is available at [Cardano firewall configuration](https://developers.cardano.org/docs/operate-a-stake-pool/deployment-scenarios/hardening-server/#7--firewall-configuration).
+
+:::
+
+### Declare your DMQ node as a ledger peer (CIP-155)
+
+:::info
+
+This step is **optional** but **recommended**. It allows other DMQ nodes of the Mithril network to discover your relay automatically through the Cardano ledger, instead of relying solely on the bootstrap peer.
+
+:::
+
+[CIP-155](https://cips.cardano.org/cip/CIP-0155) defines a registry of `SRV` record prefixes that decentralized protocols can use to publish their service endpoints on the Cardano ledger. By declaring an `SRV` record with the `_mithril._tcp` prefix on your pool relay domain, your DMQ relay node becomes discoverable as a **ledger peer** by any DMQ node that uses ledger peers.
+
+The declaration requires two steps:
+
+1. Publish an `SRV` record for your **relay** DMQ node under the `_mithril._tcp` prefix of your pool domain.
+2. Register your pool domain as a multi-host relay in your stake pool registration certificate.
+
+:::caution
+
+Only the **relay** DMQ node must be published as a ledger peer. The **block producer** DMQ node must **never** be exposed.
+
+Here is the needed information to declare your DMQ node as a ledger peer:
+
+- `**YOUR_SPO_DOMAIN_NAME**`: replace with the domain name registered as a multi-host relay in your stake pool registration certificate (for example `example.com`)
+- `**YOUR_DMQ_NODE_RELAY_PUBLIC_HOSTNAME**`: replace with the public hostname (A or AAAA record) of your DMQ relay node
+- `**YOUR_DMQ_NODE_RELAY_PORT**`: replace with the listening port of your DMQ relay node.
+
+:::
+
+#### Publish the SRV record
+
+Add an `SRV` record to the DNS zone of your pool domain so that `_mithril._tcp.**YOUR_SPO_DOMAIN_NAME**` points to your DMQ relay node:
+
+```
+_mithril._tcp.**YOUR_SPO_DOMAIN_NAME**. 86400 IN SRV 10 5 **YOUR_DMQ_NODE_RELAY_PORT** **YOUR_DMQ_NODE_RELAY_PUBLIC_HOSTNAME**.
+```
+
+:::tip
+
+Here is an example for the pool domain `example.com`, with the DMQ relay node reachable at `cardano.example.com` on port `6161`:
+
+```
+_mithril._tcp.example.com. 86400 IN SRV 10 5 6161 cardano.example.com.
+```
+
+The values after `SRV` are the standard priority (`10`), weight (`5`), port (`6161`), and target hostname (`cardano.example.com`). More information is available in [RFC 2782](https://datatracker.ietf.org/doc/html/rfc2782).
+
+:::
+
+#### Register the pool domain as a multi-host relay
+
+Register `**YOUR_SPO_DOMAIN_NAME**` as a multi-host relay of your stake pool so that it is published on the Cardano ledger:
+
+```bash
+cardano-cli latest stake-pool registration-certificate \
+  ... \
+  --multi-host-pool-relay **YOUR_SPO_DOMAIN_NAME**
+```
+
+:::info
+
+The `_cardano._tcp` prefix is used by the Cardano node to discover Cardano relays on the same domain, while the `_mithril._tcp` prefix is used by the DMQ node to discover Mithril DMQ relays. Both prefixes can coexist on the same pool domain.
 
 :::
 

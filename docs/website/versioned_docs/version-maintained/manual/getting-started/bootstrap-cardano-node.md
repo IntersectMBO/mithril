@@ -461,7 +461,7 @@ You will see more information about the snapshot:
 +-----------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | Size                  | 3.14 GiB                                                                                                                                                                                                        |
 +-----------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| Cardano node version  | 10.7.1                                                                                                                                                                                                          |
+| Cardano node version  | 11.0.1                                                                                                                                                                                                          |
 +-----------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | Location              | https://storage.googleapis.com/cdn.aggregator.pre-release-preview.api.mithril.network/cardano-immutable-files-full/preview-e916-i18323.a1b5e6f43521fd9c5f55e3d6bf27dc4a62f43980681cb67e28cc40582a0d1974.tar.zst |
 +-----------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
@@ -506,16 +506,16 @@ You will see that the selected snapshot archive has been downloaded locally unpa
 7/7 - Verifying the cardano db signature
 Cardano database snapshot '188f65fc7d3bbf30a59ab05ce4ec6649cec96a1b51b909ca0d1702555e8605d0' archives have been successfully unpacked. Immutable files have been successfully verified with Mithril.
 
-    Files in the directory 'db' can be used to run a Cardano node with version >= 10.7.1.
+    Files in the directory 'db' can be used to run a Cardano node with version >= 11.0.1.
 
     If you are using the Cardano Docker image, you can restore a Cardano node with:
 
-    docker run -v cardano-node-ipc:/ipc -v cardano-node-data:/data --mount type=bind,source="/home/mithril/data/testnet/a1b5e6f43521fd9c5f55e3d6bf27dc4a62f43980681cb67e28cc40582a0d1974/db",target=/data/db/ -e NETWORK=preview ghcr.io/intersectmbo/cardano-node:10.7.1
+    docker run -v cardano-node-ipc:/ipc -v cardano-node-data:/data --mount type=bind,source="/home/mithril/data/testnet/a1b5e6f43521fd9c5f55e3d6bf27dc4a62f43980681cb67e28cc40582a0d1974/db",target=/data/db/ -e NETWORK=preview ghcr.io/intersectmbo/cardano-node:11.0.1
 
 
 Upgrade and replace the restored ledger state snapshot to 'LMDB' flavor by running the command:
 
-    mithril-client tools utxo-hd snapshot-converter --db-directory db --cardano-node-version 10.7.1 --utxo-hd-flavor LMDB --commit
+    mithril-client tools utxo-hd snapshot-converter --db-directory db --cardano-node-version 11.0.1 --utxo-hd-flavor LMDB --commit
 ```
 
 ### Step 5 (optional): Convert the ledger state snapshot to another flavor
@@ -543,7 +543,7 @@ You can also replace `latest` with a specific Cardano node version tag which wil
 Launch an empty Cardano node and make it live in minutes!
 
 ```bash
-docker run -v cardano-node-ipc:/ipc -v cardano-node-data:/data --mount type=bind,source="$(pwd)/data/testnet/$SNAPSHOT_DIGEST/db",target=/data/db/ -e NETWORK=$CARDANO_NETWORK ghcr.io/intersectmbo/cardano-node:10.7.1
+docker run -v cardano-node-ipc:/ipc -v cardano-node-data:/data --mount type=bind,source="$(pwd)/data/testnet/$SNAPSHOT_DIGEST/db",target=/data/db/ -e NETWORK=$CARDANO_NETWORK ghcr.io/intersectmbo/cardano-node:11.0.1
 ```
 
 You will see the Cardano node start by validating the files ingested from the snapshot archive. Then, it will synchronize with the other network nodes and start adding blocks:

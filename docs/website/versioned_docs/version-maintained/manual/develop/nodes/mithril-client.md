@@ -468,38 +468,6 @@ mithril_client cardano-stake-distribution list
 mithril_client cardano-stake-distribution download $UNIQUE_IDENTIFIER
 ```
 
-### Local image
-
-Build a local Docker image:
-
-<Tabs groupId="system" queryString>
-  <TabItem value="linux-mac" label="Linux / Mac">
-  ```bash
-  make docker-build
-  ```
-  </TabItem>
-  <TabItem value="windows" label="Windows">
-  ```powershell
-  pushd ..\; docker build -t mithril/mithril-client -f mithril-client-cli\Dockerfile . ; popd
-  ```
-  </TabItem>
-</Tabs>
-
-Run a local Docker container:
-
-<Tabs groupId="system" queryString>
-  <TabItem value="linux-mac" label="Linux / Mac">
-  ```bash
-  make docker-run
-  ```
-  </TabItem>
-  <TabItem value="windows" label="Windows">
-  ```powershell
-  docker run --rm --name='mithril-client' mithril/mithril-client
-  ```
-  </TabItem>
-</Tabs>
-
 ## Subcommands
 
 Here are the subcommands available:
@@ -861,7 +829,9 @@ This command is not compatible with **Linux ARM environments**.
 | `db_directory`         | `--db-directory`         |          -           | -                     | Path to the Cardano node database directory                                                                                                             | -             | -       | :heavy_check_mark: |
 | `cardano_node_version` | `--cardano-node-version` |          -           | -                     | Cardano node version of the Mithril signed snapshot (`latest` and `pre-release` are also supported to download the latest or pre-release distribution). | -             | -       | :heavy_check_mark: |
 | `cardano_network`      | `--cardano-network`      |          -           | -                     | Cardano network                                                                                                                                         | -             | -       |         -          |
-| `utxo_hd_flavor`       | `--utxo-hd-flavor`       |          -           | -                     | UTxO-HD flavor to convert the ledger snapshot to (`Legacy` or `LMDB`)                                                                                   | -             | -       | :heavy_check_mark: |
+| `binary-path`          | `--binary-path`          |          -           | -                     | Path to the Cardano snapshot converter binary                                                                                                           | -             | -       |         -          |
+| `config-path`          | `--config-path`          |          -           | -                     | Path to JSON configuration file for the Cardano snapshot converter                                                                                      | -             | -       |         -          |
+| `utxo_hd_flavor`       | `--utxo-hd-flavor`       |          -           | -                     | UTxO-HD flavor to convert the ledger snapshot to (`Legacy`, `LMDB` or `LSM`)                                                                            | -             | -       | :heavy_check_mark: |
 | `commit`               | `--commit`               |          -           | -                     | Replaces the current ledger state in the `db_directory`.                                                                                                | `false`       | -       |         -          |
 | `github_token`         | `--github-token`         |          -           | `GITHUB_TOKEN`        | GitHub token for authenticated API calls                                                                                                                | -             | -       |         -          |
 | `run_mode`             | `--run-mode`             |          -           | `RUN_MODE`            | Run Mode                                                                                                                                                | `dev`         | -       |         -          |
