@@ -912,16 +912,11 @@ Make sure your domain name points to your server's public IP address and that po
 
 :::
 
-## Set up the DMQ node (unstable)
+## Set up the DMQ node (beta)
 
-:::danger
+:::info
 
-The DMQ node setup is currently **unstable** and not suitable for production use.
-
-During the stabilization and ramp-up phase of the DMQ network:
-
-- Signatures are still sent to the central aggregator (using the DMQ node is harmless)
-- This section is subject to frequent changes.
+The DMQ node setup is currently **beta**. During the stabilization and ramp-up phase of the DMQ network, signatures received through it may not be enough to reach the quorum and thus produce valid certificates.
 
 :::
 
@@ -966,7 +961,7 @@ As we are still in a testing stage, we only support the `pre-release-preview` ne
 
 You can use these parameters for the **pre-release-preview** network:
 
-- **DMQ_RELEASE_URL**: `https://github.com/IntersectMBO/dmq-node/releases/download/0.6.0.0/dmq-node-linux.tar.gz`
+- **DMQ_RELEASE_URL**: `https://github.com/IntersectMBO/dmq-node/releases/download/0.7.0.0/dmq-node-linux.tar.gz`
 
 _These URLs may change in the future; please refer to this page for the latest released version of the DMQ node binary._
 
