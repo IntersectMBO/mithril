@@ -25,7 +25,7 @@ From this release onwards, backward-incompatible changes to the Mithril signer w
 If you operate a Mithril signer on `release-mainnet` or `release-preprod`, upgrade to version `1.0.0` as part of the distribution [`2617.0`](https://github.com/input-output-hk/mithril/releases/tag/2617.0) rollout (no configuration changes are required):
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/input-output-hk/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-signer -d 2617.0 -p $(pwd)
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/input-output-hk/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-signer -d 2617.0 -p "$(pwd)"
 ```
 
 :::info

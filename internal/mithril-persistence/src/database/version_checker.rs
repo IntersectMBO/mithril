@@ -203,7 +203,7 @@ insert into db_version (application_type, version, updated_at) values ('{applica
                 Please migrate your {} node database with the minimum node version compatible available in the distribution: '{}'.
 
                 First, download the required node version in your current directory by running the following command:
-                curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IntersectMBO/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-{} -d {} -p $(pwd)
+                curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IntersectMBO/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-{} -d {} -p "$(pwd)"
 
                 Then run the database migrate command:
                 mithril-{} database migrate --stores-directory /path/to/stores-directory
@@ -564,7 +564,7 @@ mod tests {
             .check_minimum_required_version(1, &migration)
             .expect_err("Check minimum required version should fail when gap between db version and migration version");
 
-        assert!(error.to_string().contains("curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IntersectMBO/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-aggregator -d 2511.0 -p $(pwd)"));
+        assert!(error.to_string().contains("curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IntersectMBO/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-aggregator -d 2511.0 -p \"$(pwd)\""));
     }
 
     #[test]
@@ -596,6 +596,6 @@ mod tests {
             .apply()
             .expect_err("Should fail when applying squashed migration on old database");
 
-        assert!(error.to_string().contains("curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IntersectMBO/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-aggregator -d 2511.0 -p $(pwd)"));
+        assert!(error.to_string().contains("curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IntersectMBO/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-aggregator -d 2511.0 -p \"$(pwd)\""));
     }
 }

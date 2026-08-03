@@ -1,6 +1,6 @@
 [package]
 name = "mithril-persistence"
-version = "0.2.76"
+version = "0.2.77"
 description = "Common types, interfaces, and utilities to persist data for Mithril nodes."
 authors = { workspace = true }
 edition = { workspace = true }

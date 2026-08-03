@@ -39,7 +39,7 @@ All other versions are **not** compatible with the new era and must be updated.
 You can easily update your Mithril signer with this one-line command (it will be downloaded to the current directory by default; you can specify a custom folder with the `-p` option):
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/input-output-hk/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-signer -d latest -p $(pwd)
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/input-output-hk/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-signer -d latest -p "$(pwd)"
 ```
 
 :::

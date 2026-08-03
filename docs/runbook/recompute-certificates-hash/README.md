@@ -70,7 +70,7 @@ cd /home/curry/temp
 Download the mithril pre-compiled binaries package:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IntersectMBO/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-aggregator -d $MITHRIL_DISTRIBUTION -p $(pwd)
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IntersectMBO/mithril/refs/heads/main/mithril-install.sh | sh -s -- -c mithril-aggregator -d $MITHRIL_DISTRIBUTION -p "$(pwd)"
 ```
 
 Make sure you are running the expected version of the aggregator:
