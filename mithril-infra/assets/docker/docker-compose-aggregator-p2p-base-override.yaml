@@ -9,6 +9,7 @@ services:
       - all
     environment:
       - RUST_BACKTRACE=1
+      - RUST_LIB_BACKTRACE=0
       - LISTEN_PORT=${AGGREGATOR_RELAY_LISTEN_PORT}
       - NETWORK=${NETWORK}
       - NETWORK_MAGIC=${NETWORK_MAGIC}
