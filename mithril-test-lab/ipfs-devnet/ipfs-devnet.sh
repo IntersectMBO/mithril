@@ -14,6 +14,8 @@ display_help() {
     echo
     echo "Commands:"
     echo "  init                     Download, configure, and create scripts to manage the Kubo swarm"
+    echo "  start                    Start the Kubo swarm using the generated start script"
+    echo "  stop                     Stop the Kubo swarm using the generated stop script"
     echo "  help                     Print this help"
     echo
     echo "Run '$0 <COMMAND> --help' for command-specific options."
@@ -40,6 +42,14 @@ case "$command" in
   init)
     shift
     exec bash "${SCRIPT_DIRECTORY}/commands/ipfs-devnet-init.sh" "$@"
+    ;;
+  start)
+    shift
+    exec bash "${SCRIPT_DIRECTORY}/commands/ipfs-devnet-start.sh" "$@"
+    ;;
+  stop)
+    shift
+    exec bash "${SCRIPT_DIRECTORY}/commands/ipfs-devnet-stop.sh" "$@"
     ;;
   help | -h | --help)
     display_help
