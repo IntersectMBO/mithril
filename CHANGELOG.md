@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 As a minor extension, we have adopted a slightly different versioning convention for the Mithril distributions (<https://mithril.network/doc/adr/3#decision>)
 
-## Mithril Distribution [2630.0] - UNRELEASED
+## Mithril Distribution [XXXX] - UNRELEASED
+
+| Crate               | Version |
+| ------------------- | ------- |
+| mithril-aggregator  | `-`     |
+| mithril-client      | `-`     |
+| mithril-client-cli  | `-`     |
+| mithril-client-wasm | `-`     |
+| mithril-common      | `-`     |
+| mithril-signer      | `-`     |
+| mithril-stm         | `-`     |
+
+## Mithril Distribution [2630.0] - 2026-08-03
 
 - **REMOVED** support for `CardanoImmutableFilesFull` in Mithril signer and aggregator:
   - Use `CardanoDatabase` (also known as "cardano database v2") instead, which supports partial database restoration and
@@ -42,15 +54,15 @@ As a minor extension, we have adopted a slightly different versioning convention
   - Support for stopping certificate chain verification early on full-chain certifying certificates.
   - Support for recursive (IVC) SNARK proofs for the certificate chain.
 
-| Crate               | Version |
-| ------------------- | ------- |
-| mithril-aggregator  | `-`     |
-| mithril-client      | `-`     |
-| mithril-client-cli  | `-`     |
-| mithril-client-wasm | `-`     |
-| mithril-common      | `-`     |
-| mithril-signer      | `-`     |
-| mithril-stm         | `-`     |
+| Crate               | Version   |
+| ------------------- | --------- |
+| mithril-aggregator  | `0.9.18`  |
+| mithril-client      | `0.14.17` |
+| mithril-client-cli  | `0.13.20` |
+| mithril-client-wasm | `0.10.8`  |
+| mithril-common      | `0.7.14`  |
+| mithril-signer      | `1.1.6`   |
+| mithril-stm         | `0.12.0`  |
 
 ## Mithril Distribution [2617.0] - 2026-04-29
 
