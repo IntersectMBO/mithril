@@ -13,7 +13,8 @@ It wraps the generated swarm scripts and provides a single interface for:
 - initializing a private Kubo swarm;
 - starting all nodes;
 - stopping all nodes;
-- tailing node logs.
+- tailing node logs;
+- querying nodes with the downloaded Kubo `ipfs` binary.
 
 ## Requirements
 
@@ -50,6 +51,12 @@ Start the swarm:
 ./ipfs-devnet.sh start --swarm-dir ./swarm
 ```
 
+Query the first node:
+
+```shell
+./ipfs-devnet.sh query --swarm-dir ./swarm -- id
+```
+
 Display the latest logs from each node:
 
 ```shell
@@ -70,6 +77,7 @@ Stop the swarm:
 >
 > ./ipfs-devnet.sh init --number 5
 > ./ipfs-devnet.sh start
+> ./ipfs-devnet.sh query -- id
 > ./ipfs-devnet.sh log
 > ./ipfs-devnet.sh stop
 > ```
@@ -86,6 +94,7 @@ Available commands:
 | `start` | Start all configured nodes.                                 |
 | `stop`  | Stop all configured nodes.                                  |
 | `log`   | Display recent logs for each node.                          |
+| `query` | Run an `ipfs` command against one configured node.          |
 
 ### `init`
 
@@ -125,9 +134,10 @@ swarm/
 ├── kubo-node-2/
 ├── ...
 ├── kubo-node-5/
+├── log.sh
+├── query.sh
 ├── start.sh
-├── stop.sh
-└── log.sh
+└── stop.sh
 ```
 
 Each node is initialized with its own IPFS repository and a shared private swarm key.
@@ -299,6 +309,63 @@ Example with environment variables:
 
 ```shell
 TAIL_LINES=20 ./ipfs-devnet.sh log --swarm-dir ./swarm
+```
+
+### `query`
+
+Run an `ipfs` command against one configured Kubo node:
+
+```shell
+./ipfs-devnet.sh query [OPTIONS] -- [QUERY_OPTIONS] <ipfs-command> [ipfs-command-options...]
+```
+
+> [!IMPORTANT]
+> Use an additional `--` before the `ipfs` command when the command itself starts with an option:
+>
+> ```shell
+> ./ipfs-devnet.sh query --swarm-dir ./swarm -- -- --help
+> ```
+
+Options:
+
+| Option                  | Environment variable | Description                                             | Default |
+| ----------------------- | -------------------- | ------------------------------------------------------- | ------- |
+| `-s, --swarm-dir <dir>` | `SWARM_DIR`          | **[Required]** Directory that contains the swarm nodes. | -       |
+| `-h, --help`            | -                    | Print command help.                                     | -       |
+
+Options forwardable to the generated `query.sh` after the top-level `--`:
+
+| Option             | Description                            | Default |
+| ------------------ | -------------------------------------- | ------- |
+| `-n, --node <int>` | Node number to query, starting at `1`. | `1`     |
+| `-h, --help`       | Print generated query command help.    | -       |
+
+The generated script automatically sets `IPFS_PATH` for the selected node and uses the Kubo `ipfs` binary downloaded during `init`.
+
+Examples:
+
+- Show the Kubo `ipfs` CLI help:
+
+```shell
+./ipfs-devnet.sh query --swarm-dir ./swarm -- help
+```
+
+- Query the first node id:
+
+```shell
+./ipfs-devnet.sh query --swarm-dir ./swarm -- id
+```
+
+- Query second node id:
+
+```shell
+./ipfs-devnet.sh query --swarm-dir ./swarm -- --node 2 id
+```
+
+- List swarm peers from node 2:
+
+```shell
+SWARM_DIR=./swarm ./ipfs-devnet.sh query -- --node 2 swarm peers
 ```
 
 ## Troubleshooting

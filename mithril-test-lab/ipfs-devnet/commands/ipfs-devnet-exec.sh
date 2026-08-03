@@ -6,10 +6,10 @@ if [[ "${TRACE-0}" == "1" ]]; then set -o xtrace; fi
 display_help() {
   echo "Run a generated Kubo swarm script"
   echo
-  echo "Usage: $0 --command <log|start|stop> [OPTIONS] [-- <generated-script-options>...]"
+  echo "Usage: $0 --command <log|query|start|stop> [OPTIONS] [-- <generated-script-options>...]"
   echo
   echo "Options:"
-  echo "  -c, --command <command>    Generated script command to run: log, start, stop (required)"
+  echo "  -c, --command <command>    Generated script command to run: log, query, start, stop (required)"
   echo "  -h, --help                 Print this help"
   echo "  -s, --swarm-dir <dir>      Directory that contains the swarm nodes (required)"
   echo
@@ -51,8 +51,8 @@ require_command() {
   fi
 
   case "$command" in
-    log | start | stop) : ;;
-    *) error_exit "Invalid value for --command: '$command'. Expected one of: log, start, stop." ;;
+    log | query | start | stop) : ;;
+    *) error_exit "Invalid value for --command: '$command'. Expected one of: log, query, start, stop." ;;
   esac
 }
 

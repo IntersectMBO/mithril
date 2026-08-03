@@ -156,4 +156,5 @@ bash "${SCRIPT_DIRECTORY}/mkfiles/mkscripts-lifecycle.sh" --ipfs-bin-path "${SWA
     --output "$SWARM_DIR" "${NODES_DIR[@]}"
 
 # Create query scripts
-bash "${SCRIPT_DIRECTORY}/mkfiles/mkscripts-query.sh" --output "$SWARM_DIR" "${NODES_DIR[@]}"
+bash "${SCRIPT_DIRECTORY}/mkfiles/mkscripts-query.sh" --ipfs-bin-path "${SWARM_DIR%/}/bin/ipfs" \
+    --output "$SWARM_DIR" "${NODES_DIR[@]}"

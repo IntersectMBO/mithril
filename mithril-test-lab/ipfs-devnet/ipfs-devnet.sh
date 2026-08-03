@@ -15,6 +15,7 @@ display_help() {
     echo "Commands:"
     echo "  init                     Download, configure, and create scripts to manage the Kubo swarm"
     echo "  log                      Tail the logs from all Kubo nodes"
+    echo "  query                    Run an ipfs command against one configured node"
     echo "  start                    Start the Kubo swarm using the generated start script"
     echo "  stop                     Stop the Kubo swarm using the generated stop script"
     echo "  help                     Print this help"
@@ -44,7 +45,7 @@ case "$command" in
     shift
     exec bash "${SCRIPT_DIRECTORY}/commands/ipfs-devnet-init.sh" "$@"
     ;;
-  log | start | stop)
+  log | query | start | stop)
     shift
     exec bash "${SCRIPT_DIRECTORY}/commands/ipfs-devnet-exec.sh" --command "$command" "$@"
     ;;
