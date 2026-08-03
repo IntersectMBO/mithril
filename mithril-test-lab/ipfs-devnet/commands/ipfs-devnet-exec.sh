@@ -3,6 +3,13 @@ set +a -eu -o pipefail
 
 if [[ "${TRACE-0}" == "1" ]]; then set -o xtrace; fi
 
+# Script directory variable (absolute path)
+SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+readonly SCRIPT_DIRECTORY
+
+# shellcheck source=./lib/common.sh
+source "${SCRIPT_DIRECTORY}/lib/common.sh"
+
 display_help() {
   echo "Run a generated Kubo swarm script"
   echo
@@ -21,34 +28,10 @@ display_help() {
   exit 0
 }
 
-error_exit() {
-  echo "$1" 1>&2
-  exit 1
-}
-
-require_value() {
-  local -r option="$1"
-  local -r value="${2:-}"
-
-  if [[ -z "$value" ]]; then
-    error_exit "Missing value for option: $option"
-  fi
-}
-
-require_swarm_dir() {
-  local -r swarm_dir="$1"
-
-  if [[ -z "$swarm_dir" ]]; then
-    error_exit "Missing required option: -s, --swarm-dir"
-  fi
-}
-
 require_command() {
   local -r command="$1"
 
-  if [[ -z "$command" ]]; then
-    error_exit "Missing required option: -c, --command"
-  fi
+  require_option "$command" "-c, --command"
 
   case "$command" in
     log | query | start | stop) : ;;
@@ -94,7 +77,7 @@ if [[ "$command" == "stop" && "${#forwarded_args[@]}" -gt 0 ]]; then
   error_exit "Unexpected forwarded argument for 'stop': ${forwarded_args[0]}"
 fi
 
-require_swarm_dir "$swarm_dir"
+require_option "$swarm_dir" "-s, --swarm-dir"
 
 # ---------------------------------------------------------------------------
 # Main

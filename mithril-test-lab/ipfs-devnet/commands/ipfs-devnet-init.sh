@@ -5,6 +5,10 @@ if [[ "${TRACE-0}" == "1" ]]; then set -o xtrace; fi
 
 # Script directory variable (absolute path)
 SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+readonly SCRIPT_DIRECTORY
+
+# shellcheck source=./lib/common.sh
+source "${SCRIPT_DIRECTORY}/lib/common.sh"
 
 display_help() {
     echo "Download, configure, and create scripts to manage a swarm of IPFS Kubo nodes"
@@ -30,21 +34,6 @@ display_help() {
     echo "the command-line option takes priority."
     echo
     exit 0
-}
-
-# Function to display an error message and exit
-error_exit() {
-  echo "$1" 1>&2
-  exit 1
-}
-
-require_value() {
-  local -r option="$1"
-  local -r value="${2:-}"
-
-  if [[ -z "$value" ]]; then
-    error_exit "Missing value for option: $option"
-  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -100,21 +89,13 @@ if [[ "$#" -gt 0 ]]; then
   error_exit "Unexpected argument: $1"
 fi
 
-if [[ -z "$SWARM_DIR" ]]; then
-  error_exit "Missing required option: -s, --swarm-dir"
-fi
+require_option "$SWARM_DIR" "-s, --swarm-dir"
 
-if [[ ! -e "$SWARM_DIR" ]]; then
-  mkdir -p -- "${SWARM_DIR%/}"
-fi
+create_dir_if_not_exist "$SWARM_DIR"
 
-if [[ ! -e "$DOWNLOAD_DIR" ]]; then
-  mkdir -p -- "${DOWNLOAD_DIR%/}"
-fi
+create_dir_if_not_exist "$DOWNLOAD_DIR"
 
-if ! [[ "$NUMBER_OF_NODES" =~ ^[0-9]+$ ]]; then
-  error_exit "Invalid value for -n, --number: '$NUMBER_OF_NODES'. Expected an integer."
-fi
+require_positive_integer "-n, --number" "$NUMBER_OF_NODES"
 
 # ---------------------------------------------------------------------------
 # Main

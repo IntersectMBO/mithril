@@ -7,6 +7,9 @@ if [[ "${TRACE-0}" == "1" ]]; then set -o xtrace; fi
 SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 readonly SCRIPT_DIRECTORY
 
+# shellcheck source=./commands/lib/common.sh
+source "${SCRIPT_DIRECTORY}/commands/lib/common.sh"
+
 display_help() {
     echo "Manage a swarm of IPFS Kubo nodes"
     echo
@@ -26,12 +29,6 @@ display_help() {
     echo "  SWARM_DIR                Directory that contains the swarm nodes"
     echo
     exit 0
-}
-
-# Function to display an error message and exit
-error_exit() {
-  echo "$1" 1>&2
-  exit 1
 }
 
 # ---------------------------------------------------------------------------

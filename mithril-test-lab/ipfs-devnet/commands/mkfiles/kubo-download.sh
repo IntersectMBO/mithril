@@ -3,6 +3,13 @@ set +a -eu -o pipefail
 
 if [[ "${TRACE-0}" == "1" ]]; then set -o xtrace; fi
 
+# Script directory variable (absolute path)
+SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+readonly SCRIPT_DIRECTORY
+
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIRECTORY}/../lib/common.sh"
+
 readonly BIN_NAME="kubo"
 readonly IPFS_DISTRIBUTIONS_CDN="https://dist.ipfs.tech"
 
@@ -18,12 +25,6 @@ display_help() {
     echo "  -v, --version <version>    Specific version to download (omit to download the latest version)"
     echo
     exit 0
-}
-
-# Function to display an error message and exit
-error_exit() {
-  echo "$1" 1>&2
-  exit 1
 }
 
 # Function to check that required tools are installed
@@ -151,9 +152,7 @@ done
 readonly DOWNLOAD_DIR=${DOWNLOAD_DIR:-"."} OUTPUT_DIR=${OUTPUT_DIR:-"."}
 readonly KUBO_VERSION=${KUBO_VERSION:-$(find_last_released_version)}
 
-if [[ ! -e "$OUTPUT_DIR" ]]; then
-  mkdir -p -- "${OUTPUT_DIR%/}"
-fi
+create_dir_if_not_exist "$OUTPUT_DIR"
 
 # ---------------------------------------------------------------------------
 # Main

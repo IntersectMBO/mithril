@@ -3,6 +3,13 @@ set +a -eu -o pipefail
 
 if [[ "${TRACE-0}" == "1" ]]; then set -o xtrace; fi
 
+# Script directory variable (absolute path)
+SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+readonly SCRIPT_DIRECTORY
+
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIRECTORY}/../lib/common.sh"
+
 display_help() {
     echo "Configure a swarm of kubo ipfs node"
     echo
@@ -16,12 +23,6 @@ display_help() {
     echo "  -s, --swarm-dir <dir>      Directory that will contains the swarm nodes (required)"
     echo
     exit 0
-}
-
-# Function to display an error message and exit
-error_exit() {
-  echo "$1" 1>&2
-  exit 1
 }
 
 # Generate a 64 chars long random hex string
@@ -146,21 +147,13 @@ done
 
 readonly SWARM_DIR NUMBER_OF_NODES=${NUMBER_OF_NODES:-2} OVERWRITE
 
-if [[ -z "$IPFS_BIN" ]]; then
-  error_exit "Missing required option: -b, --ipfs-bin-path"
-fi
+require_option "$IPFS_BIN" "-b, --ipfs-bin-path"
 
-if [[ ! -x "$IPFS_BIN" ]]; then
-  error_exit "IPFS binary is not executable or does not exist: '$IPFS_BIN'"
-fi
+require_executable "$IPFS_BIN" "IPFS binary"
 
-if [[ -z "$SWARM_DIR" ]]; then
-  error_exit "Missing required option: -s, --swarm-dir"
-fi
+require_option "$SWARM_DIR" "-s, --swarm-dir"
 
-if ! [[ "$NUMBER_OF_NODES" =~ ^[0-9]+$ ]]; then
-  error_exit "Invalid value for -n, --number: '$NUMBER_OF_NODES'. Expected an integer."
-fi
+require_positive_integer "-n, --number" "$NUMBER_OF_NODES"
 
 if (( NUMBER_OF_NODES < 2 )); then
   error_exit "Invalid value for -n, --number: '$NUMBER_OF_NODES'. Expected at least 2."

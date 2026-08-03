@@ -3,6 +3,13 @@ set +a -eu -o pipefail
 
 if [[ "${TRACE-0}" == "1" ]]; then set -o xtrace; fi
 
+# Script directory variable (absolute path)
+SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+readonly SCRIPT_DIRECTORY
+
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIRECTORY}/../lib/common.sh"
+
 display_help() {
     echo "Create the scripts that query information from the Kubo swarm nodes"
     echo
@@ -14,27 +21,6 @@ display_help() {
     echo "  -o, --output <dir>         Output directory [default='.']"
     echo
     exit 0
-}
-
-# Function to display an error message and exit
-error_exit() {
-  echo "$1" 1>&2
-  exit 1
-}
-
-shell_quote() {
-  printf '%q' "$1"
-}
-
-write_nodes_paths_declaration() {
-  printf 'readonly NODES_PATHS=('
-
-  local node_path
-  for node_path in "$@"; do
-    printf ' %s' "$(shell_quote "$node_path")"
-  done
-
-  printf ' )\n'
 }
 
 write_log_script() {
@@ -272,17 +258,11 @@ done
 
 readonly IPFS_BIN OUTPUT_DIR=${OUTPUT_DIR:-"."}
 
-if [[ -z "$IPFS_BIN" ]]; then
-  error_exit "Missing required option: -b, --ipfs-bin-path"
-fi
+require_option "$IPFS_BIN" "-b, --ipfs-bin-path"
 
-if [[ ! -x "$IPFS_BIN" ]]; then
-  error_exit "IPFS binary is not executable or does not exist: '$IPFS_BIN'"
-fi
+require_executable "$IPFS_BIN" "IPFS binary"
 
-if [[ ! -d "$OUTPUT_DIR" ]]; then
-  error_exit "Output is not a directory or does not exist: '$OUTPUT_DIR'"
-fi
+require_directory "$OUTPUT_DIR" "Output"
 
 if [[ "${#NODES_PATHS[@]}" -eq 0 ]]; then
   error_exit "Missing node directories"
