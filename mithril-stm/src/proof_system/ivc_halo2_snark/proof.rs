@@ -15,7 +15,11 @@ use midnight_proofs::{
     plonk::{create_proof, prepare},
     poly::{
         commitment::PolynomialCommitmentScheme,
-        kzg::{KZGCommitmentScheme, params::ParamsKZG},
+        kzg::{
+            KZGCommitmentScheme,
+            msm::{DualMSM, MSMKZG},
+            params::ParamsKZG,
+        },
     },
     transcript::{Blake2b256, CircuitTranscript, Hashable, Sampleable, Transcript, TranscriptHash},
 };
@@ -161,7 +165,7 @@ where
     ///
     /// `global` and `verifier_setup` must be built from the same certificate and IVC verifying
     /// keys. If they differ, the public inputs fed to the KZG opening check will not match the
-    /// proof transcript and verification will return [`IvcProofError::KzgOpeningFailed`].
+    /// proof transcript and verification will return [`IvcProofError::MsmCheckFailed`].
     pub(crate) fn verify(
         &self,
         msg: &[u8],
@@ -185,22 +189,32 @@ where
             &mut transcript,
         )
         .map_err(|_| IvcProofError::TranscriptPreparationFailed)?;
-
         transcript
             .assert_empty()
             .map_err(|_| IvcProofError::TranscriptNotFullyConsumed)?;
 
-        if !dual_msm.check(verifier_setup.verifier_params()) {
-            return Err(IvcProofError::KzgOpeningFailed.into());
-        }
+        // Fold the accumulator's own pairing check into `dual_msm` so verification pays for one
+        // pairing instead of two. `r` must be unpredictable to the prover before both `dual_msm`
+        // and `self.accumulator` are fixed; reusing this transcript gives that for free, since its
+        // state already absorbed `self.accumulator`'s public input (above) and the entire proof —
+        // no extra hashing or point encoding needed beyond squeezing one more challenge.
+        let r: CircuitBase = transcript.squeeze_challenge();
 
-        if !self.accumulator.check(
-            verifier_setup.verifier_params(),
-            verifier_setup.combined_fixed_bases(),
-        ) {
-            return Err(IvcProofError::AccumulatorFailed.into());
-        }
+        let accumulator_lhs = self.accumulator.lhs().eval(verifier_setup.combined_fixed_bases());
+        let accumulator_rhs = self.accumulator.rhs().eval(verifier_setup.combined_fixed_bases());
 
+        let mut accumulator_dual_msm = DualMSM::new(
+            MSMKZG::from_base(&accumulator_lhs),
+            MSMKZG::from_base(&accumulator_rhs),
+        );
+        accumulator_dual_msm.scale(r);
+
+        let mut combined = dual_msm.clone(); // kept for the diagnostic fallback below
+        combined.add_msm(accumulator_dual_msm);
+
+        if !combined.check(verifier_setup.verifier_params()) {
+            return Err(IvcProofError::MsmCheckFailed.into());
+        }
         Ok(())
     }
 
@@ -665,7 +679,7 @@ mod tests {
             .expect_err("tampered proof bytes should be rejected by IvcProof::verify");
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::KzgOpeningFailed),
+            Some(&IvcProofError::MsmCheckFailed),
             "tampered bytes must fail the KZG opening check, got: {err}"
         );
     }
@@ -716,7 +730,7 @@ mod tests {
             .expect_err("different protocol message should be rejected by IvcProof::verify");
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::KzgOpeningFailed),
+            Some(&IvcProofError::MsmCheckFailed),
             "different protocol message must fail the KZG opening check, got: {err}"
         );
     }
@@ -743,7 +757,7 @@ mod tests {
             .expect_err("state from a different proof should be rejected by IvcProof::verify");
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::KzgOpeningFailed),
+            Some(&IvcProofError::MsmCheckFailed),
             "mismatched state corrupts public inputs and must fail the KZG opening check, got: {err}"
         );
     }
@@ -770,7 +784,7 @@ mod tests {
         );
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::KzgOpeningFailed),
+            Some(&IvcProofError::MsmCheckFailed),
             "mismatched accumulator corrupts public inputs and must fail the KZG opening check, got: {err}"
         );
     }
@@ -795,7 +809,7 @@ mod tests {
             .expect_err("Poseidon proof bytes should be rejected by IvcProof::<Blake2b>::verify");
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::KzgOpeningFailed),
+            Some(&IvcProofError::MsmCheckFailed),
             "Poseidon bytes via Blake2b path must fail the KZG opening check, got: {err}"
         );
     }
@@ -839,7 +853,7 @@ mod tests {
 
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::AccumulatorFailed),
+            Some(&IvcProofError::MsmCheckFailed),
             "wrong fixed bases must fail the accumulator check (not the KZG check), got: {err}"
         );
     }

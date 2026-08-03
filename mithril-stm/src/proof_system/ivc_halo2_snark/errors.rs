@@ -12,13 +12,9 @@ pub(crate) enum IvcProofError {
     #[error("IVC proof rejected: transcript was not fully consumed")]
     TranscriptNotFullyConsumed,
 
-    /// KZG opening equations (dual MSM check) did not verify.
-    #[error("IVC proof rejected: KZG opening check failed")]
-    KzgOpeningFailed,
-
-    /// Folded accumulator pairing equation did not verify.
-    #[error("IVC proof rejected: accumulator pairing check failed")]
-    AccumulatorFailed,
+    /// Combined accumulator and dual MSM pairing equation did not verify.
+    #[error("IVC proof rejected: combined accumulator and dual MSM pairing check failed")]
+    MsmCheckFailed,
 
     /// The PLONK prover (`create_proof`) failed internally.
     #[error("IVC proof generation failed: {0}")]
