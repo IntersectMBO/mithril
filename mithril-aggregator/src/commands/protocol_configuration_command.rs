@@ -173,6 +173,9 @@ pub struct ExportProtocolConfigurationSubCommand {
     /// Target path
     #[clap(long)]
     target_path: PathBuf,
+
+    #[clap(long, default_value = "false")]
+    default: bool,
 }
 
 impl ExportProtocolConfigurationSubCommand {
@@ -181,34 +184,44 @@ impl ExportProtocolConfigurationSubCommand {
         root_logger: Logger,
         config_builder: ConfigBuilder<DefaultState>,
     ) -> StdResult<()> {
-        // 0 conf & dependencies
-        let config: ProtocolConfigurationParametersConfiguration = config_builder
-            .build()
-            .with_context(|| "configuration build error")?
-            .try_deserialize()
-            .with_context(|| "configuration deserialize error")?;
-        debug!(root_logger, "EXPORT PROTOCOL CONFIGURATION command"; "config" => format!("{config:?}"));
-
-        let mut dependencies_builder =
-            DependenciesBuilder::new(root_logger.clone(), Arc::new(config.clone()));
-
-        let dependencies = dependencies_builder
-            .create_protocol_configuration_container()
-            .await
-            .with_context(
-                || "Dependencies Builder can not create protocol configuration command dependencies container",
-            )?;
-
-        let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
-            .await
-            .with_context(|| "protocol-configuration-tools: initialization error")?;
-
-        //1: Retrieve markers from chain or fallback to default configuration
-        let on_chain_configurations = tools.get_on_chain_configurations();
-        let protocol_configurations_markers = if on_chain_configurations.markers.is_empty() {
+        let protocol_configurations_markers = if self.default {
+            println!("Getting default protocol configurations output file...");
             get_default_protocol_configurations()
         } else {
-            on_chain_configurations
+            let config: ProtocolConfigurationParametersConfiguration = config_builder
+                .build()
+                .with_context(|| "configuration build error")?
+                .try_deserialize()
+                .with_context(|| "configuration deserialize error")?;
+            debug!(root_logger, "EXPORT PROTOCOL CONFIGURATION command"; "config" => format!("{config:?}"));
+
+            let mut dependencies_builder =
+                DependenciesBuilder::new(root_logger.clone(), Arc::new(config.clone()));
+
+            let dependencies = dependencies_builder
+                .create_protocol_configuration_container()
+                .await
+                .with_context(
+                    || "Dependencies Builder can not create protocol configuration command dependencies container",
+                )?;
+
+            let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
+                .await
+                .with_context(|| "protocol-configuration-tools: initialization error")?;
+
+            //1: Retrieve markers from chain or fallback to default configuration
+            let on_chain_configurations = tools.get_on_chain_configurations();
+            if on_chain_configurations.markers.is_empty() {
+                println!(
+                    "No protocol configurations found on chain, getting default protocol configurations output file..."
+                );
+                get_default_protocol_configurations()
+            } else {
+                println!(
+                    "Protocol configurations found on chain, getting protocol configurations output file..."
+                );
+                on_chain_configurations
+            }
         };
 
         //2: transform to human readable
