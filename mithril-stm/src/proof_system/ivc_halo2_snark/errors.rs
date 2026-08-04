@@ -14,7 +14,7 @@ pub(crate) enum IvcProofError {
 
     /// Combined accumulator and dual MSM pairing equation did not verify.
     #[error("IVC proof rejected: combined accumulator and dual MSM pairing check failed")]
-    MsmCheckFailed,
+    MsmPairingCheckFailed,
 
     /// The PLONK prover (`create_proof`) failed internally.
     #[error("IVC proof generation failed: {0}")]
