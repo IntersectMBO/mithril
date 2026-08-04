@@ -11,7 +11,7 @@ readonly SCRIPT_DIRECTORY
 source "${SCRIPT_DIRECTORY}/../lib/common.sh"
 
 display_help() {
-    echo "Configure a swarm of kubo ipfs node"
+    echo "Configure a private swarm of Kubo IPFS node"
     echo
     echo "Usage: $0 [OPTIONS]"
     echo

@@ -11,7 +11,7 @@ readonly SCRIPT_DIRECTORY
 source "${SCRIPT_DIRECTORY}/lib/common.sh"
 
 display_help() {
-    echo "Download, configure, and create scripts to manage a swarm of IPFS Kubo nodes"
+    echo "Download, configure, and create scripts to manage a private swarm of IPFS Kubo nodes"
     echo
     echo "Usage: $0 [OPTIONS]"
     echo
