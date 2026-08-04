@@ -7,13 +7,13 @@ tags: [certification, cardano node database v2]
 
 ### Certification of Cardano node database v2
 
-:::info Update 2025/05/14
+:::info[Update 2025/05/14]
 
 We have activated the **Cardano node database v2 certification** on the `release-mainnet` network.
 
 :::
 
-:::info Update 2025/04/25
+:::info[Update 2025/04/25]
 
 We have activated the **Cardano node database v2 certification** on the `release-preprod` network.
 
