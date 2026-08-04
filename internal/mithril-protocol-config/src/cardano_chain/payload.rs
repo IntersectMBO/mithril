@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use mithril_common::crypto_helper::{
-    ProtocolConfigurationMarkersSigner, ProtocolConfigurationMarkersVerifierSignature,
-    key_decode_hex, key_encode_hex,
+    ProtocolConfigurationMarkersSigner, ProtocolConfigurationMarkersVerifier,
+    ProtocolConfigurationMarkersVerifierSignature,
+    ProtocolConfigurationMarkersVerifierVerificationKey, key_decode_hex, key_encode_hex,
 };
 use mithril_common::{StdError, StdResult};
 
@@ -74,6 +75,25 @@ impl SignedProtocolConfigurationMarkersPayload {
         key_decode_hex(payload).with_context(
             || "SignedProtocolConfigurationMarkersPayload could not be decoded from json hex",
         )
+    }
+
+    fn message_to_bytes(&self) -> Result<Vec<u8>, ProtocolConfigurationMarkersPayloadError> {
+        serde_json::to_vec(&self.markers)
+            .map_err(|e| ProtocolConfigurationMarkersPayloadError::SerializeMessage(e.into()))
+    }
+
+    /// Verify the signature of a signed protocol configuration markers payload
+    pub fn verify_signature(
+        &self,
+        verification_key: ProtocolConfigurationMarkersVerifierVerificationKey,
+    ) -> Result<(), ProtocolConfigurationMarkersPayloadError> {
+        let markers_verifier: ProtocolConfigurationMarkersVerifier =
+            ProtocolConfigurationMarkersVerifier::from_verification_key(verification_key);
+
+        markers_verifier
+            .verify(&self.message_to_bytes()?, &self.signature)
+            .with_context(|| "protocol configuration markers payload could not verify signature")
+            .map_err(ProtocolConfigurationMarkersPayloadError::VerifySignature)
     }
 }
 
@@ -147,5 +167,44 @@ mod tests {
             SignedProtocolConfigurationMarkersPayload::from_json_hex(&json_hex).unwrap();
 
         assert_eq!(payload, payload_from_json_hex);
+    }
+
+    #[test]
+    fn verify_signature_is_ok() {
+        let markers = vec![ProtocolConfigurationMarker::new(
+            Epoch(42),
+            "cbor_protocol_configuration".to_string(),
+        )];
+        let signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
+
+        let payload = ProtocolConfigurationMarkersPayload::new(markers)
+            .sign(&signer)
+            .unwrap();
+
+        assert!(payload.verify_signature(signer.verification_key()).is_ok());
+    }
+
+    #[test]
+    fn verify_signature_fails_with_invalid_verification_key() {
+        let markers = vec![ProtocolConfigurationMarker::new(
+            Epoch(42),
+            "cbor_protocol_configuration".to_string(),
+        )];
+        let signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
+
+        let payload = ProtocolConfigurationMarkersPayload::new(markers)
+            .sign(&signer)
+            .unwrap();
+
+        let bad_signer = ProtocolConfigurationMarkersSigner::create_non_deterministic_signer();
+
+        let error = payload.verify_signature(bad_signer.verification_key()).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                ProtocolConfigurationMarkersPayloadError::VerifySignature(_)
+            ),
+            "unexpected error type: {error:?}"
+        );
     }
 }
