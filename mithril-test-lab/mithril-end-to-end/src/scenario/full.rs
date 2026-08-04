@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use slog_scope::{info, warn};
 use tokio::task::JoinSet;
 
@@ -175,10 +176,14 @@ impl FullScenario {
             .await?;
 
         if aggregator.is_first() || aggregator.version().is_below("0.7.94") {
-            // A certificate chain lagging one epoch behind the chain tip is normal, but a restart
-            // crossing an epoch boundary before the current epoch is certified would create an
-            // unrecoverable epoch gap and block the aggregator
-            let current_epoch = chain_observer.get_current_epoch().await?.unwrap_or_default();
+            // Ensure the current epoch is certified
+            // Given the time needed to restart the aggregator, a restart crossing an epoch
+            // boundary before the current epoch is certified would create an unrecoverable
+            // epoch gap and block the aggregator
+            let current_epoch = chain_observer
+                .get_current_epoch()
+                .await?
+                .ok_or(anyhow!("Current epoch is not available"))?;
             self.toolkit
                 .check
                 .certificate
