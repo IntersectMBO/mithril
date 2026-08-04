@@ -16,7 +16,7 @@ tags:
 
 ### Switching to Cardano database incremental certification
 
-:::info Update 2026/08/03
+:::info[Update 2026/08/03]
 
 The `v1` backend of the Cardano database has been **removed**. The `v2` backend is now the **only supported** backend for the Cardano database certification in the Mithril client CLI and library.
 

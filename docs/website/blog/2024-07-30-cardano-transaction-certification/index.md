@@ -7,13 +7,13 @@ tags: [certification, cardano transaction]
 
 ### Certification of Cardano transactions
 
-:::info Update 2024/10/02
+:::info[Update 2024/10/02]
 
 We have activated the **Cardano transactions certification** on the `release-mainnet` network.
 
 :::
 
-:::info Update 2024/09/25
+:::info[Update 2024/09/25]
 
 We have shipped stable support for the **Cardano transaction certification** with distribution [2437](https://github.com/input-output-hk/mithril/releases/tag/2437.1).
 

@@ -7,13 +7,13 @@ tags: [certification, cardano stake distribution]
 
 ### Certification of Cardano stake distribution
 
-:::info Update 2025/01/13
+:::info[Update 2025/01/13]
 
 We have activated the **Cardano stake distribution certification** on the `release-mainnet` network.
 
 :::
 
-:::info Update 2024/10/21
+:::info[Update 2024/10/21]
 
 We have released stable support for the **Cardano stake distribution certification** with distributions [2437](https://github.com/input-output-hk/mithril/releases/tag/2437.1) and [2442](https://github.com/input-output-hk/mithril/releases/tag/2442.0).
 
