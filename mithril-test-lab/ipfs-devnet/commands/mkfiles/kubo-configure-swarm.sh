@@ -145,6 +145,8 @@ while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
     shift
 done
 
+check_requirements "od" "tr"
+
 readonly SWARM_DIR NUMBER_OF_NODES=${NUMBER_OF_NODES:-2} OVERWRITE
 
 require_option "$IPFS_BIN" "-b, --ipfs-bin-path"

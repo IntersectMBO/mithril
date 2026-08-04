@@ -14,6 +14,13 @@ require_value() {
   fi
 }
 
+check_requirements() {
+  for tool in "$@"; do
+    command -v "$tool" >/dev/null ||
+        error_exit "It seems '$tool' is not installed or not in the path.";
+  done
+}
+
 require_executable() {
   local -r path="$1"
   local -r label="$2"

@@ -27,16 +27,6 @@ display_help() {
     exit 0
 }
 
-# Function to check that required tools are installed
-check_requirements() {
-    command -v curl >/dev/null ||
-        error_exit "It seems 'curl' is not installed or not in the path.";
-    command -v awk >/dev/null ||
-        error_exit "It seems 'awk' is not installed or not in the path.";
-    command -v shasum >/dev/null ||
-        error_exit "It seems 'shasum' is not installed or not in the path.";
-}
-
 find_last_released_version() {
   # The file have the following structure: one version per line, from earliest to latest, named "vXX.YY.ZZ[-rcN]" (e.g "v0.31.0-rc2" or "v0.33.2")
   local -r VERSIONS_LIST_URL="${IPFS_DISTRIBUTIONS_CDN}/${BIN_NAME}/versions"
@@ -148,6 +138,8 @@ while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
     esac
     shift
 done
+
+check_requirements "awk" "curl" "shasum" "tar"
 
 readonly DOWNLOAD_DIR=${DOWNLOAD_DIR:-"."} OUTPUT_DIR=${OUTPUT_DIR:-"."}
 readonly KUBO_VERSION=${KUBO_VERSION:-$(find_last_released_version)}
