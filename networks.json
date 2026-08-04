@@ -4,6 +4,7 @@
       "mithril-signer": "10.7.1",
       "mithril-aggregator": "10.7.1"
     },
+    "dmq-minimum-version": "0.7.0.0",
     "mithril-networks": [
       {
         "release-mainnet": {
@@ -40,6 +41,7 @@
       "mithril-signer": "10.7.1",
       "mithril-aggregator": "10.7.1"
     },
+    "dmq-minimum-version": "0.7.0.0",
     "mithril-networks": [
       {
         "release-preprod": {
@@ -76,7 +78,7 @@
       "mithril-signer": "10.7.1",
       "mithril-aggregator": "10.7.1"
     },
-    "dmq-minimum-version": "0.6.0.0",
+    "dmq-minimum-version": "0.7.0.0",
     "mithril-networks": [
       {
         "pre-release-preview": {

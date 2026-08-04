@@ -133,6 +133,7 @@ $DMQ_NODE \\
   --local-socket                    ${NODE}/ipc/dmq.node.sock \\
   --host-addr                       $(cat ${NODE}/host) \\
   --port                            $(cat ${NODE}/port.dmq) \\
+  --min-sig-delay 0.01s \\
   > ${NODE}/dmq.node.log
 EOF
   chmod u+x ${NODE}/start-dmq.sh

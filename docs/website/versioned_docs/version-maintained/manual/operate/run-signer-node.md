@@ -896,16 +896,13 @@ sudo service netfilter-persistent save
 
 :::
 
-## Set up the DMQ node (unstable)
+## Set up the DMQ node (beta)
 
-:::danger
+:::info
 
-The DMQ node setup is currently **unstable** and not suitable for production use.
+The DMQ node setup is currently **beta** and suitable for production use by SPOs.
 
-During the stabilization and ramp-up phase of the DMQ network:
-
-- Signatures are still sent to the central aggregator (using the DMQ node is harmless)
-- This section is subject to frequent changes.
+During the stabilization and ramp-up phase of the DMQ network, signatures are still sent to the leader aggregator (using the DMQ node is harmless).
 
 :::
 
@@ -984,7 +981,7 @@ As we are still in a testing stage, we only support the `pre-release-preview` ne
 
 You can use these parameters for the **pre-release-preview** network:
 
-- **DMQ_RELEASE_URL**: `https://github.com/IntersectMBO/dmq-node/releases/download/0.6.0.0/dmq-node-linux.tar.gz`
+- **DMQ_RELEASE_URL**: `https://github.com/IntersectMBO/dmq-node/releases/download/0.7.0.0/dmq-node-linux.tar.gz`
 
 _These URLs may change in the future; please refer to this page for the latest released version of the DMQ node binary._
 

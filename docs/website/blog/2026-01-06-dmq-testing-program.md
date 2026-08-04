@@ -7,6 +7,12 @@ tags: [DMQ, decentralization, testing program]
 
 ### DMQ testing program with SPOs
 
+:::info[Update 2026/08/04]
+
+With the release of the [`2630.0`](https://github.com/input-output-hk/mithril/releases/tag/2630.0) distribution, the DMQ node has been upgraded to its first **stable beta release** version `0.7.0.0` on the `release-mainnet` and `release-preprod` networks.
+
+:::
+
 :::info[Update 2026/04/28]
 
 With the release of the [`2617.0`](https://github.com/input-output-hk/mithril/releases/tag/2617.0) distribution, the DMQ node has been upgraded to version `0.4.2.0` on the `pre-release-preview` network. The testing program with SPOs is extended to keep gathering feedback before the stable release on `release-preprod` and `release-mainnet` networks.
@@ -47,14 +53,14 @@ The rollout plan of the DMQ network is the following:
   - [x] DMQ activation on the `pre-release-preview` network
   - [x] Released a [guide](https://mithril.network/doc/manual/operate/run-signer-node/#set-up-the-dmq-node-unstable) for setting up a DMQ node in the SPO infrastructure
   - [x] 4-6 weeks testing program with selected SPOs
-- [ ] **Distribution [2617](https://github.com/input-output-hk/mithril/releases/tag/2617.0)**: `unstable` on the `pre-release-preview` network (extended testing)
+- [x] **Distribution [2617](https://github.com/input-output-hk/mithril/releases/tag/2617.0)**: `unstable` on the `pre-release-preview` network (extended testing)
   - [x] Upgraded the DMQ node to version `0.4.2.0` on the `pre-release-preview` network
-  - [ ] 4-6 weeks extended testing program with selected SPOs
-- [ ] **Distribution +3**: `stable` on the `release-preprod` and `release-mainnet` networks with fallback
-  - [ ] DMQ activation on the `release-preprod` and `release-mainnet` networks
-  - [ ] Activation of the fallback to the legacy signature registration mechanism for all SPOs
-  - [ ] Release of an updated guide for setting up a DMQ node in the SPO infrastructure
-  - [ ] Monitoring and support for SPOs running DMQ nodes
+  - [x] 4-6 weeks extended testing program with selected SPOs
+- [x] **Distribution [2630](https://github.com/input-output-hk/mithril/releases/tag/2630.0)**: `stable` on the `release-preprod` and `release-mainnet` networks with fallback
+  - [x] DMQ activation on the `release-preprod` and `release-mainnet` networks
+  - [x] Activation of the fallback to the legacy signature registration mechanism for all SPOs
+  - [x] Release of an updated guide for setting up a DMQ node in the SPO infrastructure
+  - [x] Monitoring and support for SPOs running DMQ nodes
 - [ ] **Distribution +4**: `stable` on the `release-preprod` and `release-mainnet` networks
   - [ ] Deactivation of the fallback to the legacy signature registration mechanism for all SPOs
   - [ ] Monitoring and support for SPOs running DMQ nodes.

@@ -981,7 +981,7 @@ As we are still in a testing stage, we only support the `pre-release-preview` ne
 
 You can use these parameters for the **pre-release-preview** network:
 
-- **DMQ_RELEASE_URL**: `https://github.com/IntersectMBO/dmq-node/releases/download/0.6.0.0/dmq-node-linux.tar.gz`
+- **DMQ_RELEASE_URL**: `https://github.com/IntersectMBO/dmq-node/releases/download/0.7.0.0/dmq-node-linux.tar.gz`
 
 _These URLs may change in the future; please refer to this page for the latest released version of the DMQ node binary._
 
