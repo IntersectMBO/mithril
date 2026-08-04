@@ -16,6 +16,8 @@ use mithril_common::{
     messages::SignedEntityTypeDiscriminantsMessage,
 };
 
+use crate::model::ProtocolConfigurationForEpoch;
+
 /// The cbor representation of a [ProtocolConfigurationForEpochMessage]
 pub type CborProtocolConfigurationForEpochMessage = String;
 
@@ -86,6 +88,16 @@ impl From<ProtocolParameters> for ProtocolParametersMessage {
     }
 }
 
+impl From<ProtocolParametersMessage> for ProtocolParameters {
+    fn from(params: ProtocolParametersMessage) -> Self {
+        ProtocolParameters {
+            k: params.k,
+            m: params.m,
+            phi_f: params.phi_f,
+        }
+    }
+}
+
 /// Configuration for the signing of Cardano transactions
 ///
 /// used for the CBOR representation of [ProtocolConfigurationForEpochMessage]
@@ -101,6 +113,15 @@ pub struct CardanoTransactionsSigningConfigMessage {
 impl From<CardanoTransactionsSigningConfig> for CardanoTransactionsSigningConfigMessage {
     fn from(config: CardanoTransactionsSigningConfig) -> Self {
         CardanoTransactionsSigningConfigMessage {
+            security_parameter: config.security_parameter,
+            step: config.step,
+        }
+    }
+}
+
+impl From<CardanoTransactionsSigningConfigMessage> for CardanoTransactionsSigningConfig {
+    fn from(config: CardanoTransactionsSigningConfigMessage) -> Self {
+        CardanoTransactionsSigningConfig {
             security_parameter: config.security_parameter,
             step: config.step,
         }
@@ -124,6 +145,17 @@ impl From<CardanoBlocksTransactionsSigningConfig>
 {
     fn from(config: CardanoBlocksTransactionsSigningConfig) -> Self {
         CardanoBlocksTransactionsSigningConfigMessage {
+            security_parameter: config.security_parameter,
+            step: config.step,
+        }
+    }
+}
+
+impl From<CardanoBlocksTransactionsSigningConfigMessage>
+    for CardanoBlocksTransactionsSigningConfig
+{
+    fn from(config: CardanoBlocksTransactionsSigningConfigMessage) -> Self {
+        CardanoBlocksTransactionsSigningConfig {
             security_parameter: config.security_parameter,
             step: config.step,
         }
@@ -186,6 +218,20 @@ impl ProtocolConfigurationForEpochMessage {
         Self::from_cbor_bytes(&hex_vector)
             .with_context(|| "ProtocolConfigurationForEpochMessage can not unserialize cbor data")
             .map_err(ProtocolConfigurationForEpochMessageParseError)
+    }
+}
+
+impl From<ProtocolConfigurationForEpochMessage> for ProtocolConfigurationForEpoch {
+    fn from(message: ProtocolConfigurationForEpochMessage) -> Self {
+        ProtocolConfigurationForEpoch {
+            protocol_parameters: message.protocol_parameters.into(),
+            enabled_signed_entity_types:
+                SignedEntityTypeDiscriminantsMessage::into_known_discriminants(
+                    message.enabled_signed_entity_types,
+                ),
+            cardano_transactions: message.cardano_transactions.map(Into::into),
+            cardano_blocks_transactions: message.cardano_blocks_transactions.map(Into::into),
+        }
     }
 }
 
