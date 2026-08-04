@@ -17,6 +17,7 @@ display_help() {
     echo
     echo "Commands:"
     echo "  init                     Download, configure, and create scripts to manage the Kubo swarm"
+    echo "  load-webui               Download and load the Kubo Web UI on the private IPFS network"
     echo "  log                      Tail the logs from all Kubo nodes"
     echo "  query                    Run an ipfs command against one configured node"
     echo "  start                    Start the Kubo swarm using the generated start script"
@@ -45,6 +46,10 @@ case "$command" in
   log | query | start | stop)
     shift
     exec bash "${SCRIPT_DIRECTORY}/commands/ipfs-devnet-exec.sh" --command "$command" "$@"
+    ;;
+  load-webui)
+    shift
+    exec bash "${SCRIPT_DIRECTORY}/commands/ipfs-devnet-load-webui.sh" "$@"
     ;;
   help | -h | --help)
     display_help

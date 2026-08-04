@@ -88,13 +88,14 @@ Stop the swarm:
 
 Available commands:
 
-| Command | Description                                                 |
-| ------- | ----------------------------------------------------------- |
-| `init`  | Download Kubo, configure nodes, and generate swarm scripts. |
-| `start` | Start all configured nodes.                                 |
-| `stop`  | Stop all configured nodes.                                  |
-| `log`   | Display recent logs for each node.                          |
-| `query` | Run an `ipfs` command against one configured node.          |
+| Command      | Description                                                 |
+| ------------ | ----------------------------------------------------------- |
+| `init`       | Download Kubo, configure nodes, and generate swarm scripts. |
+| `start`      | Start all configured nodes.                                 |
+| `stop`       | Stop all configured nodes.                                  |
+| `log`        | Display recent logs for each node.                          |
+| `query`      | Run an `ipfs` command against one configured node.          |
+| `load-webui` | Download and load the Kubo Web UI into the private network. |
 
 ### `init`
 
@@ -367,6 +368,38 @@ Examples:
 ```shell
 SWARM_DIR=./swarm ./ipfs-devnet.sh query -- --node 2 swarm peers
 ```
+
+### `load-webui`
+
+Download the Kubo Web UI as a CAR archive and import it into the first swarm node, making it available inside the
+private IPFS network.
+
+> [!IMPORTANT]
+> The swarm must be running before using this command. The download may take some time.
+
+```shell
+./ipfs-devnet.sh load-webui [OPTIONS]
+```
+
+Options:
+
+| Option                     | Environment variable | Description                                             | Default      |
+| -------------------------- | -------------------- | ------------------------------------------------------- | ------------ |
+| `-s, --swarm-dir <dir>`    | `SWARM_DIR`          | **[Required]** Directory that contains the swarm nodes. | -            |
+| `-d, --download-dir <dir>` | `DOWNLOAD_DIR`       | Directory where the Web UI CAR archive is downloaded.   | `/tmp/kubo/` |
+| `-h, --help`               | -                    | Print command help.                                     | -            |
+
+Example:
+
+```shell
+./ipfs-devnet.sh load-webui --swarm-dir ./swarm
+```
+
+After loading, the Web UI can be opened from any node gateway. Nodes that do not have it locally will retrieve it
+from the node where it was imported.
+
+> [!NOTE]
+> The downloaded CAR archive is reused on further runs when already present in the download directory.
 
 ## Troubleshooting
 
