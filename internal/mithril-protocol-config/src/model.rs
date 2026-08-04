@@ -1,6 +1,5 @@
 //! Model definitions for Mithril Protocol Configuration and ProtocolConfigurationMarkersReader
 
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use mithril_common::{
@@ -11,7 +10,7 @@ use mithril_common::{
     messages::{ProtocolConfigurationMessage, SignedEntityTypeDiscriminantsMessage},
 };
 
-#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Debug)]
 
 /// Custom configuration for the signed entity types
 pub struct SignedEntityTypeConfiguration {
@@ -39,7 +38,7 @@ pub struct MithrilNetworkConfiguration {
 }
 
 /// A network configuration available for an epoch for MithrilNetworkConfigurationProvider
-#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct MithrilNetworkConfigurationForEpoch {
     /// Cryptographic protocol parameters (`k`, `m` and `phi_f`)
     pub protocol_parameters: ProtocolParameters,
