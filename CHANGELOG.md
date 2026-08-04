@@ -9,6 +9,10 @@ As a minor extension, we have adopted a slightly different versioning convention
 
 ## Mithril Distribution [XXXX] - UNRELEASED
 
+- **UNSTABLE**:
+  - Support for bytes encoding of the SNARK aggregate signatures in the certificates.
+  - Reduced the encoded size of the SNARK proofs by serializing their bytes as CBOR byte strings.
+
 | Crate               | Version |
 | ------------------- | ------- |
 | mithril-aggregator  | `-`     |
