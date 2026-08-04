@@ -14,7 +14,7 @@ include = ["**/*.rs", "Cargo.toml", "README.md", ".gitignore"]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 mithril-aggregator-client = { path = "../mithril-aggregator-client", version = "0.2.4" }
-mithril-common = { path = "../../mithril-common", version = "0.7.15" }
+mithril-common = { path = "../../mithril-common", version = "0.7.16" }
 rand = { version = "0.10.2" }
 reqwest = { workspace = true }
 serde = { workspace = true }
