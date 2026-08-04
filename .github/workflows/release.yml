@@ -191,6 +191,8 @@ jobs:
           cardano_network: ${{ matrix.cardano_network }}
           cardano_node_version: ${{ vars.CARDANO_NODE_VERSION }}
           cardano_node_docker_registry: ${{ vars.CARDANO_NODE_DOCKER_REGISTRY }}
+          dmq_node_version: ${{ vars.DMQ_NODE_VERSION }}
+          dmq_node_docker_registry: ${{ vars.DMQ_NODE_DOCKER_REGISTRY }}
           google_region: ${{ matrix.google_region }}
           google_zone: ${{ matrix.google_zone }}
           google_machine_type: ${{ matrix.google_machine_type }}
