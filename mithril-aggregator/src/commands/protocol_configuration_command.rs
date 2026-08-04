@@ -30,7 +30,7 @@ use mithril_common::{
 };
 use mithril_doc::{Documenter, StructDoc};
 use mithril_protocol_config::model::{
-    ConfigurationComputerFromMarkers, ProtocolConfigurationForEpoch,
+    ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch,
 };
 
 use crate::{
@@ -120,7 +120,7 @@ impl HumanReadableProtocolConfiguration {
     }
 
     pub fn to_vec_human_readable_protocol_configuration(
-        configs: ConfigurationComputerFromMarkers,
+        configs: ConfigurationResolverFromMarkers,
     ) -> Vec<HumanReadableProtocolConfiguration> {
         let mut human_readable_protocol_configurations = Vec::new();
         for (epoch, config) in configs.markers {
@@ -284,8 +284,8 @@ impl ExportProtocolConfigurationSubCommand {
     }
 }
 
-pub fn get_default_protocol_configurations() -> ConfigurationComputerFromMarkers {
-    ConfigurationComputerFromMarkers {
+pub fn get_default_protocol_configurations() -> ConfigurationResolverFromMarkers {
+    ConfigurationResolverFromMarkers {
         markers: BTreeMap::from([(
             Epoch(0),
             ProtocolConfigurationForEpoch {
@@ -579,7 +579,7 @@ mod tests {
             }),
         };
         let configurations =
-            ConfigurationComputerFromMarkers::new(BTreeMap::from([(Epoch(42), configuration)]));
+            ConfigurationResolverFromMarkers::new(BTreeMap::from([(Epoch(42), configuration)]));
 
         let expected_human_readable_configurations = vec![HumanReadableProtocolConfiguration {
             epoch: Epoch(42),

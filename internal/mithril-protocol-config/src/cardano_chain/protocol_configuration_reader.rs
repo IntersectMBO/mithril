@@ -9,7 +9,7 @@ use mithril_common::StdResult;
 use mithril_common::crypto_helper::ProtocolConfigurationMarkersVerifierVerificationKey;
 
 use crate::interface::ProtocolConfigurationMarkersReader;
-use crate::model::ConfigurationComputerFromMarkers;
+use crate::model::ConfigurationResolverFromMarkers;
 
 /// Cardano Chain reader retrieves protocol configuration markers on chain
 pub struct CardanoChainProtocolConfigurationMarkersReader {
@@ -35,7 +35,7 @@ impl CardanoChainProtocolConfigurationMarkersReader {
 
 #[async_trait]
 impl ProtocolConfigurationMarkersReader for CardanoChainProtocolConfigurationMarkersReader {
-    async fn read_configuration_markers(&self) -> StdResult<ConfigurationComputerFromMarkers> {
+    async fn read_configuration_markers(&self) -> StdResult<ConfigurationResolverFromMarkers> {
         //read payload
         // to ProtocolConfigurationForEpochMessage
         // to ProtocolConfigurationForEpoch

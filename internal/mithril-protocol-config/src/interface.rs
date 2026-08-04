@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use mithril_common::{StdResult, entities::Epoch};
 
-use crate::model::{ConfigurationComputerFromMarkers, MithrilNetworkConfiguration};
+use crate::model::{ConfigurationResolverFromMarkers, MithrilNetworkConfiguration};
 
 /// A provider for the Mithril network configuration of the a given epoch.
 #[async_trait]
@@ -19,5 +19,5 @@ pub trait MithrilNetworkConfigurationProvider: Sync + Send {
 #[async_trait]
 pub trait ProtocolConfigurationMarkersReader: Sync + Send {
     /// Read protocol configuration markers.
-    async fn read_configuration_markers(&self) -> StdResult<ConfigurationComputerFromMarkers>;
+    async fn read_configuration_markers(&self) -> StdResult<ConfigurationResolverFromMarkers>;
 }

@@ -15,7 +15,7 @@ use crate::{
         ProtocolConfigurationForEpochMessage, ProtocolParametersMessage,
     },
     model::{
-        ConfigurationComputerFromMarkers, MithrilNetworkConfiguration,
+        ConfigurationResolverFromMarkers, MithrilNetworkConfiguration,
         MithrilNetworkConfigurationForEpoch, ProtocolConfigurationForEpoch,
         SignedEntityTypeConfiguration,
     },
@@ -78,7 +78,7 @@ impl Dummy for SignedEntityTypeConfiguration {
     }
 }
 
-impl Dummy for ConfigurationComputerFromMarkers {
+impl Dummy for ConfigurationResolverFromMarkers {
     fn dummy() -> Self {
         let conf_a = ProtocolConfigurationForEpoch {
             protocol_parameters: ProtocolParameters {

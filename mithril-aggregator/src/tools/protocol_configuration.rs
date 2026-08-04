@@ -12,7 +12,7 @@ use mithril_protocol_config::{
         ProtocolConfigurationMarkersPayloadCardanoChain,
         message::{ProtocolConfigurationForEpochMessage, ProtocolConfigurationMarker},
     },
-    model::{ConfigurationComputerFromMarkers, ProtocolConfigurationForEpoch},
+    model::{ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch},
 };
 use slog::{Logger, info, warn};
 use thiserror::Error;
@@ -42,7 +42,7 @@ pub struct ProtocolConfigurationToolsConfiguration {
     pub epoch: Epoch,
 
     /// On chain configurations by Epoch.
-    pub on_chain_configurations: ConfigurationComputerFromMarkers,
+    pub on_chain_configurations: ConfigurationResolverFromMarkers,
 }
 
 /// Tools configuration
@@ -84,7 +84,7 @@ impl ProtocolConfigurationTools {
     }
 
     /// Get the on-chain configurations.
-    pub fn get_on_chain_configurations(self) -> ConfigurationComputerFromMarkers {
+    pub fn get_on_chain_configurations(self) -> ConfigurationResolverFromMarkers {
         self.configuration.on_chain_configurations
     }
 
@@ -97,7 +97,7 @@ impl ProtocolConfigurationTools {
         info!(&self.logger, "Current epoch is {}", current_epoch);
 
         let markers_from_chain = self.configuration.on_chain_configurations.clone();
-        let markers_to_import = to_configuration_computer_from_markers(configurations_to_import);
+        let markers_to_import = to_configuration_resolver_from_markers(configurations_to_import);
 
         let epoch_start = Epoch(current_epoch.0.saturating_sub(EPOCH_OFFSET));
 
@@ -208,15 +208,15 @@ impl From<HumanReadableProtocolConfiguration> for ProtocolConfigurationForEpoch 
     }
 }
 
-fn to_configuration_computer_from_markers(
+fn to_configuration_resolver_from_markers(
     configs: Vec<HumanReadableProtocolConfiguration>,
-) -> ConfigurationComputerFromMarkers {
+) -> ConfigurationResolverFromMarkers {
     let mut markers = BTreeMap::new();
 
     for config in configs {
         markers.insert(config.epoch, ProtocolConfigurationForEpoch::from(config));
     }
-    ConfigurationComputerFromMarkers::new(markers)
+    ConfigurationResolverFromMarkers::new(markers)
 }
 
 #[cfg(test)]
@@ -241,14 +241,14 @@ mod tests {
     fn build_tools_dummy() -> ProtocolConfigurationTools {
         let configuration = ProtocolConfigurationToolsConfiguration {
             epoch: Epoch(30),
-            on_chain_configurations: ConfigurationComputerFromMarkers::new(BTreeMap::new()),
+            on_chain_configurations: ConfigurationResolverFromMarkers::new(BTreeMap::new()),
         };
         ProtocolConfigurationTools::new(configuration, TestLogger::stdout())
     }
 
     fn build_tools(
         current_epoch: Epoch,
-        on_chain_configurations: ConfigurationComputerFromMarkers,
+        on_chain_configurations: ConfigurationResolverFromMarkers,
         logger: Logger,
     ) -> ProtocolConfigurationTools {
         let configuration = ProtocolConfigurationToolsConfiguration {
@@ -442,12 +442,12 @@ mod tests {
 
         fn build_on_chain_markers(
             configurations: Vec<(Epoch, char)>,
-        ) -> ConfigurationComputerFromMarkers {
+        ) -> ConfigurationResolverFromMarkers {
             let mut on_chain_markers = BTreeMap::new();
             for conf in configurations {
                 on_chain_markers.insert(conf.0, fake_configuration(conf.1));
             }
-            ConfigurationComputerFromMarkers::new(on_chain_markers)
+            ConfigurationResolverFromMarkers::new(on_chain_markers)
         }
 
         fn build_configurations_to_import(
@@ -468,7 +468,7 @@ mod tests {
                 (Epoch(38), fake_configuration('A')),
                 (Epoch(44), fake_configuration('B')),
             ]);
-            let on_chain_configurations = ConfigurationComputerFromMarkers::new(on_chain_markers);
+            let on_chain_configurations = ConfigurationResolverFromMarkers::new(on_chain_markers);
 
             let configurations_to_import =
                 build_configurations_to_import(vec![(Epoch(44), 'B'), (Epoch(56), 'Z')]);
@@ -492,7 +492,7 @@ mod tests {
                 (Epoch(31), fake_configuration('A')),
                 (Epoch(38), fake_configuration('B')),
             ]);
-            let on_chain_configurations = ConfigurationComputerFromMarkers::new(on_chain_markers);
+            let on_chain_configurations = ConfigurationResolverFromMarkers::new(on_chain_markers);
 
             let configurations_to_import = vec![
                 fake_configuration_to_import(Epoch(38), 'B'),
@@ -515,7 +515,7 @@ mod tests {
                 (Epoch(31), fake_configuration('A')),
                 (Epoch(38), fake_configuration('B')),
             ]);
-            let on_chain_configurations = ConfigurationComputerFromMarkers::new(on_chain_markers);
+            let on_chain_configurations = ConfigurationResolverFromMarkers::new(on_chain_markers);
 
             let configurations_to_import = vec![
                 fake_configuration_to_import(Epoch(40), 'B'),
@@ -538,7 +538,7 @@ mod tests {
                 (Epoch(31), fake_configuration('A')),
                 (Epoch(38), fake_configuration('B')),
             ]);
-            let on_chain_configurations = ConfigurationComputerFromMarkers::new(on_chain_markers);
+            let on_chain_configurations = ConfigurationResolverFromMarkers::new(on_chain_markers);
 
             let configurations_to_import = vec![
                 fake_configuration_to_import(Epoch(40), 'C'),
@@ -564,7 +564,7 @@ mod tests {
                 (Epoch(46), fake_configuration('D')),
                 (Epoch(47), fake_configuration('E')),
             ]);
-            let on_chain_configurations = ConfigurationComputerFromMarkers::new(on_chain_markers);
+            let on_chain_configurations = ConfigurationResolverFromMarkers::new(on_chain_markers);
 
             let configurations_to_import = vec![
                 fake_configuration_to_import(Epoch(44), 'B'),
@@ -631,7 +631,7 @@ mod tests {
         #[test]
         fn verification_with_no_markers_on_chain_should_be_ok() {
             let current_epoch = Epoch(47);
-            let on_chain_configurations = ConfigurationComputerFromMarkers::new(BTreeMap::new());
+            let on_chain_configurations = ConfigurationResolverFromMarkers::new(BTreeMap::new());
 
             let configurations_to_import = vec![fake_configuration_to_import(Epoch(53), 'Z')];
 

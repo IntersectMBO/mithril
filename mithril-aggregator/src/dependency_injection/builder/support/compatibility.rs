@@ -7,7 +7,7 @@ use mithril_era::adapters::{EraReaderAdapterBuilder, EraReaderDummyAdapter};
 use mithril_era::{EraChecker, EraMarker, EraReader, EraReaderAdapter};
 use mithril_protocol_config::cardano_chain::protocol_configuration_reader::CardanoChainProtocolConfigurationMarkersReader;
 use mithril_protocol_config::interface::ProtocolConfigurationMarkersReader;
-use mithril_protocol_config::model::ConfigurationComputerFromMarkers;
+use mithril_protocol_config::model::ConfigurationResolverFromMarkers;
 use mithril_protocol_config::test::double::FakeProtocolConfigurationMarkersReader;
 
 use crate::ExecutionEnvironment;
@@ -102,7 +102,7 @@ impl DependenciesBuilder {
                     ))
                 }
                 _ => Arc::new(FakeProtocolConfigurationMarkersReader::from_markers(
-                    ConfigurationComputerFromMarkers::dummy(),
+                    ConfigurationResolverFromMarkers::dummy(),
                 )),
             };
 

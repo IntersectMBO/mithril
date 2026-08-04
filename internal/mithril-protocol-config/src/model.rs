@@ -85,13 +85,13 @@ pub struct ProtocolConfigurationForEpoch {
 
 /// Configuration containing markers by epoch
 #[derive(Default, PartialEq, Clone, Debug)]
-pub struct ConfigurationComputerFromMarkers {
+pub struct ConfigurationResolverFromMarkers {
     /// BTreeMap association of ProtocolConfigurationForEpoch to a coresponding Epoch
     pub markers: BTreeMap<Epoch, ProtocolConfigurationForEpoch>,
 }
 
-impl ConfigurationComputerFromMarkers {
-    /// Create a new [ConfigurationComputerFromMarkers] with the given markers.
+impl ConfigurationResolverFromMarkers {
+    /// Create a new instance with the given markers.
     pub fn new(markers: BTreeMap<Epoch, ProtocolConfigurationForEpoch>) -> Self {
         Self { markers }
     }
@@ -137,7 +137,7 @@ mod tests {
         );
     }
 
-    mod configuration_computer_from_markers {
+    mod configuration_resolver_from_markers {
 
         use super::*;
 
@@ -190,7 +190,7 @@ mod tests {
                 ]
             }
 
-            let configurations = ConfigurationComputerFromMarkers::new(markers);
+            let configurations = ConfigurationResolverFromMarkers::new(markers);
 
             for test_case in test_cases() {
                 assert_eq!(
@@ -207,7 +207,7 @@ mod tests {
                 (Epoch(10), fake_config_for_epoch(Epoch(10))),
             ]);
 
-            let configurations = ConfigurationComputerFromMarkers::new(markers);
+            let configurations = ConfigurationResolverFromMarkers::new(markers);
 
             assert_eq!(configurations.get_network_configuration(Epoch(4)), None);
         }
