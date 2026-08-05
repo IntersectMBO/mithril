@@ -79,29 +79,21 @@ impl SnarkProverSetup {
         })
     }
 
-    /// Builds a [`SnarkProverSetup`] from a deterministic, oversized unsafe SRS, exercising the real
-    /// `load` path without the production SRS. Mirrors `IvcSnarkProverSetup::build_for_test` on the
-    /// recursive side. Shared by the slow certificate tests through a content-keyed cache keyed by the
-    /// protocol parameters, Merkle-tree depth, the unsafe SRS seed, and the production verifying key as
-    /// a circuit-version salt, so the certificate key is computed once and reused across tests and
-    /// runs.
+    /// Builds an [`SnarkProverSetup`] from a deterministic unsafe SRS with degree `RECURSIVE_CIRCUIT_DEGREE`
+    /// using [`Self::build_for_test_degree`].
     #[cfg(test)]
     pub(crate) fn build_for_test(
         parameters: &Parameters,
         merkle_tree_depth: u32,
     ) -> StmResult<Self> {
-        Self::build_for_test_with_unsafe_srs_degree(
-            parameters,
-            merkle_tree_depth,
-            RECURSIVE_CIRCUIT_DEGREE,
-        )
+        Self::build_for_test_degree(parameters, merkle_tree_depth, RECURSIVE_CIRCUIT_DEGREE)
     }
 
-    /// As [`Self::build_for_test`], but generates the unsafe SRS at `unsafe_srs_degree` instead of
-    /// exactly [`RECURSIVE_CIRCUIT_DEGREE`]. This removes the need to downsize in [`Self::load`] if
-    /// the input degree matches the circuit one.
+    /// Builds an [`SnarkProverSetup`] from a deterministic unsafe SRS with degree determined by the input
+    /// `unsafe_srs_degree`.
+    /// Uses a cache for the unsafe SRS to avoid regenerating it when a SRS of the correct degree already exists
     #[cfg(test)]
-    pub(crate) fn build_for_test_with_unsafe_srs_degree(
+    pub(crate) fn build_for_test_degree(
         parameters: &crate::Parameters,
         merkle_tree_depth: u32,
         unsafe_srs_degree: u32,

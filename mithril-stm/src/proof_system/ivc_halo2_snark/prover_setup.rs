@@ -7,13 +7,16 @@ use midnight_curves::{Bls12, G1Projective};
 use midnight_proofs::poly::kzg::{msm::DualMSM, params::ParamsKZG};
 
 #[cfg(test)]
-use crate::circuits::{
-    halo2::{
-        NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::StmCertificateCircuit,
+use crate::{
+    Parameters,
+    circuits::{
+        halo2::{
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::StmCertificateCircuit,
+        },
+        halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        test_utils::file_mutex::FileMutex,
+        trusted_setup::UNSAFE_SRS_SEED,
     },
-    halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
-    test_utils::file_mutex::FileMutex,
-    trusted_setup::UNSAFE_SRS_SEED,
 };
 use crate::{
     StmResult,
@@ -154,31 +157,23 @@ impl IvcSnarkProverSetup {
         Ok(accumulator)
     }
 
-    /// Builds an [`IvcSnarkProverSetup`] from a deterministic, oversized unsafe SRS, exercising the
-    /// real `load` path without the production SRS. Shared by the slow IVC tests through a
-    /// content-keyed cache keyed by the protocol parameters, Merkle-tree depth, the unsafe SRS seed,
-    /// and the production verifying keys as a circuit-version salt — not the SRS degree, since `load`
-    /// always downsizes to `RECURSIVE_CIRCUIT_DEGREE` before deriving keys, so any `unsafe_srs_degree`
-    /// reproduces the same recursive keys — the dominant cost — letting calls at different degrees
-    /// share one already-computed key cache instead of each paying for keygen separately.
+    /// Builds an [`IvcSnarkProverSetup`] from a deterministic unsafe SRS with degree `RECURSIVE_CIRCUIT_DEGREE`
+    /// using [`Self::build_for_test_degree`].
     #[cfg(test)]
     pub(crate) fn build_for_test(
-        parameters: &crate::Parameters,
+        parameters: &Parameters,
         merkle_tree_depth: u32,
     ) -> StmResult<Self> {
-        Self::build_for_test_with_unsafe_srs_degree(
-            parameters,
-            merkle_tree_depth,
-            RECURSIVE_CIRCUIT_DEGREE,
-        )
+        Self::build_for_test_degree(parameters, merkle_tree_depth, RECURSIVE_CIRCUIT_DEGREE)
     }
 
-    /// As [`Self::build_for_test`], but generates the unsafe SRS at `unsafe_srs_degree` instead of
-    /// exactly [`RECURSIVE_CIRCUIT_DEGREE`].  This removes the need to downsize in [`Self::load`] if
-    /// the input degree matches the circuit one.
+    /// Builds an [`IvcSnarkProverSetup`] from a deterministic unsafe SRS with degree determined by the input
+    /// `unsafe_srs_degree`.
+    /// Uses a cache for the unsafe SRS to avoid regenerating it when a SRS of the correct degree already exists
+    /// and also uses a separate cache for the circuit keys
     #[cfg(test)]
-    pub(crate) fn build_for_test_with_unsafe_srs_degree(
-        parameters: &crate::Parameters,
+    pub(crate) fn build_for_test_degree(
+        parameters: &Parameters,
         merkle_tree_depth: u32,
         unsafe_srs_degree: u32,
     ) -> StmResult<Self> {
@@ -186,9 +181,6 @@ impl IvcSnarkProverSetup {
         let depth_bytes = merkle_tree_depth.to_le_bytes();
         let seed_bytes = UNSAFE_SRS_SEED.to_le_bytes();
 
-        // The unsafe SRS depends only on its degree and seed, never on the circuit parameters, so it
-        // is cached independently of them and shared by every parameter set that needs the same degree
-        // (`TrustedSetupProvider::with_unsafe_srs` itself nests its file by degree under this directory).
         let srs_cache = FileMutex::for_shared_cache("unsafe-srs", &[&seed_bytes]);
         let srs_directory = srs_cache.directory().to_path_buf();
         let _srs_cache_lock = srs_cache.lock()?;
@@ -288,7 +280,7 @@ mod tests {
                 phi_f: 0.2,
             };
             let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
-            let ivc_setup = IvcSnarkProverSetup::build_for_test_with_unsafe_srs_degree(
+            let ivc_setup = IvcSnarkProverSetup::build_for_test_degree(
                 &parameters,
                 merkle_tree_depth,
                 RECURSIVE_CIRCUIT_DEGREE + 1,
