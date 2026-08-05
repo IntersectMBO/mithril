@@ -287,7 +287,7 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
   - `SNAPSHOT_UPLOADER_TYPE`: Type of snapshot uploader (`gcp` for Google Cloud Storage or `local` for local storage)
   - `SNAPSHOT_BUCKET_NAME`: Name of the GCP bucket where snapshots are stored (required if `SNAPSHOT_UPLOADER_TYPE` is `gcp`)
   - `SNAPSHOT_USE_CDN_DOMAIN`: Set to `true` to use CDN domain for constructing snapshot URLs (default: `false`, only relevant for GCP)
-  - `SNAPSHOT_COMPRESSION_ALGORITHM`: Compression algorithm for snapshot archives (default: `zstandard`, can also be `gzip`)
+  - `SNAPSHOT_COMPRESSION_ALGORITHM`: Compression algorithm for snapshot archives (default: `zstandard`)
   - `ZSTANDARD_PARAMETERS__LEVEL`: Zstandard compression level (eg, `9` for maximum compression, range 1-22)
   - `ZSTANDARD_PARAMETERS__NUMBER_OF_WORKERS`: Number of worker threads for Zstandard compression (eg, `4`)
   - `ANCILLARY_FILES_SIGNER_CONFIG`: JSON configuration for signing ancillary files. Can be either a secret key or a GCP KMS key. Example with secret key: `{"type": "secret-key", "secret_key": "your_hex_encoded_secret_key"}`.
