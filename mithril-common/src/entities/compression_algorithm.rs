@@ -19,9 +19,9 @@ use strum::{Display, EnumIter, IntoEnumIterator};
 #[serde(rename_all = "lowercase")]
 pub enum CompressionAlgorithm {
     /// Gzip compression format
-    #[default]
     Gzip,
     /// Zstandard compression format
+    #[default]
     Zstandard,
 }
 

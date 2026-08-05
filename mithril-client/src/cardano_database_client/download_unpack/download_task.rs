@@ -204,7 +204,7 @@ mod tests {
                 kind: DownloadKind::Immutable(1),
                 locations_to_try: create_locations_to_download(
                     file_downloader,
-                    ["http://whatever-1/00001.tar.gz", "http://whatever-2/00001.tar.gz"],
+                    ["http://whatever-1/00001.tar.zst", "http://whatever-2/00001.tar.zst"],
                 ),
                 size_uncompressed: 0,
                 target_dir: target_dir.clone(),
@@ -226,11 +226,11 @@ mod tests {
             let logger = TestLogger::stdout();
             let file_downloader = Arc::new(
                 MockFileDownloaderBuilder::default()
-                    .with_file_uri("http://whatever-1/00001.tar.gz")
+                    .with_file_uri("http://whatever-1/00001.tar.zst")
                     .with_target_dir(target_dir.clone())
                     .with_failure()
                     .next_call()
-                    .with_file_uri("http://whatever-2/00001.tar.gz")
+                    .with_file_uri("http://whatever-2/00001.tar.zst")
                     .with_target_dir(target_dir.clone())
                     .with_success()
                     .build(),
@@ -240,7 +240,7 @@ mod tests {
                 kind: DownloadKind::Immutable(1),
                 locations_to_try: create_locations_to_download(
                     file_downloader,
-                    ["http://whatever-1/00001.tar.gz", "http://whatever-2/00001.tar.gz"],
+                    ["http://whatever-1/00001.tar.zst", "http://whatever-2/00001.tar.zst"],
                 ),
                 size_uncompressed: 0,
                 target_dir: target_dir.clone(),
@@ -277,7 +277,7 @@ mod tests {
                 },
                 locations_to_try: create_locations_to_download(
                     file_downloader,
-                    ["http://whatever/ancillary.tar.gz"],
+                    ["http://whatever/ancillary.tar.zst"],
                 ),
                 size_uncompressed: 0,
                 target_dir: target_dir.clone(),
@@ -300,11 +300,11 @@ mod tests {
             let ancillary_signer = ManifestSigner::create_deterministic_signer();
             let file_downloader = Arc::new(
                 MockFileDownloaderBuilder::default()
-                    .with_file_uri("http://whatever-1/ancillary.tar.gz")
+                    .with_file_uri("http://whatever-1/ancillary.tar.zst")
                     .with_target_dir(temp_ancillary_target_dir(&target_dir, "download_id"))
                     .with_failure()
                     .next_call()
-                    .with_file_uri("http://whatever-2/ancillary.tar.gz")
+                    .with_file_uri("http://whatever-2/ancillary.tar.zst")
                     .with_target_dir(temp_ancillary_target_dir(&target_dir, "download_id"))
                     .with_success_and_create_fake_ancillary_files(
                         FakeAncillaryFileBuilder::builder()
@@ -322,8 +322,8 @@ mod tests {
                 locations_to_try: create_locations_to_download(
                     file_downloader,
                     [
-                        "http://whatever-1/ancillary.tar.gz",
-                        "http://whatever-2/ancillary.tar.gz",
+                        "http://whatever-1/ancillary.tar.zst",
+                        "http://whatever-2/ancillary.tar.zst",
                     ],
                 ),
                 size_uncompressed: 0,
@@ -345,7 +345,7 @@ mod tests {
             let ancillary_signer = ManifestSigner::create_deterministic_signer();
             let file_downloader = Arc::new(
                 MockFileDownloaderBuilder::default()
-                    .with_file_uri("http://whatever-1/ancillary.tar.gz")
+                    .with_file_uri("http://whatever-1/ancillary.tar.zst")
                     .with_target_dir(temp_ancillary_target_dir(&target_dir, "download_id"))
                     .with_success_and_create_fake_ancillary_files(
                         FakeAncillaryFileBuilder::builder()
@@ -363,8 +363,8 @@ mod tests {
                 locations_to_try: create_locations_to_download(
                     file_downloader,
                     [
-                        "http://whatever-1/ancillary.tar.gz",
-                        "http://whatever-2/ancillary.tar.gz",
+                        "http://whatever-1/ancillary.tar.zst",
+                        "http://whatever-2/ancillary.tar.zst",
                     ],
                 ),
                 size_uncompressed: 0,
@@ -386,7 +386,7 @@ mod tests {
             // The verifier will fail because the manifest is not signed
             let file_downloader = Arc::new(
                 MockFileDownloaderBuilder::default()
-                    .with_file_uri("http://whatever/ancillary.tar.gz")
+                    .with_file_uri("http://whatever/ancillary.tar.zst")
                     .with_success_and_create_fake_ancillary_files(
                         FakeAncillaryFileBuilder::builder()
                             .files_in_manifest_to_create(vec!["ledger".to_string()])
@@ -401,7 +401,7 @@ mod tests {
                 },
                 locations_to_try: create_locations_to_download(
                     file_downloader,
-                    ["http://whatever/ancillary.tar.gz"],
+                    ["http://whatever/ancillary.tar.zst"],
                 ),
                 size_uncompressed: 0,
                 target_dir: target_dir.clone(),
@@ -424,7 +424,7 @@ mod tests {
             let ancillary_signer = ManifestSigner::create_deterministic_signer();
             let file_downloader = Arc::new(
                 MockFileDownloaderBuilder::default()
-                    .with_file_uri("http://whatever/ancillary.tar.gz")
+                    .with_file_uri("http://whatever/ancillary.tar.zst")
                     .with_target_dir(temp_ancillary_target_dir(&target_dir, "download_id"))
                     .with_success_and_create_fake_ancillary_files(
                         FakeAncillaryFileBuilder::builder()
@@ -442,7 +442,7 @@ mod tests {
                 },
                 locations_to_try: create_locations_to_download(
                     file_downloader,
-                    ["http://whatever/ancillary.tar.gz"],
+                    ["http://whatever/ancillary.tar.zst"],
                 ),
                 size_uncompressed: 0,
                 target_dir: target_dir.clone(),
