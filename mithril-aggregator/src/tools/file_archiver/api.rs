@@ -369,7 +369,7 @@ mod tests {
         let archive_params = ArchiveParameters {
             archive_name_without_extension: "archive".to_string(),
             target_directory: test_dir.clone(),
-            compression_algorithm: CompressionAlgorithm::Gzip,
+            compression_algorithm: CompressionAlgorithm::Zstandard,
         };
         let _ = file_archiver
             .archive(archive_params, AppenderDirAll::new(archived_directory))
@@ -391,14 +391,14 @@ mod tests {
 
         // this file should not be deleted by the archive creation
         create_file(&test_dir, "other-process.file");
-        create_file(&test_dir, "archive.tar.gz");
+        create_file(&test_dir, "archive.tar.zst");
         // an already existing temporary archive file should be deleted
         create_file(&test_dir, "archive.tar.tmp");
 
         let archive_params = ArchiveParameters {
             archive_name_without_extension: "archive".to_string(),
             target_directory: test_dir.clone(),
-            compression_algorithm: CompressionAlgorithm::Gzip,
+            compression_algorithm: CompressionAlgorithm::Zstandard,
         };
         let _ = file_archiver
             .archive(archive_params, AppenderDirAll::new(archived_directory))
@@ -406,7 +406,7 @@ mod tests {
         let remaining_files: Vec<String> = list_remaining_files(&test_dir);
 
         assert_equivalent!(
-            vec!["other-process.file".to_string(), "archive.tar.gz".to_string()],
+            vec!["other-process.file".to_string(), "archive.tar.zst".to_string()],
             remaining_files,
         );
     }
@@ -424,7 +424,7 @@ mod tests {
         let archive_params = ArchiveParameters {
             archive_name_without_extension: "archive".to_string(),
             target_directory: test_dir.clone(),
-            compression_algorithm: CompressionAlgorithm::Gzip,
+            compression_algorithm: CompressionAlgorithm::Zstandard,
         };
         let first_archive = file_archiver
             .archive(
@@ -443,7 +443,7 @@ mod tests {
 
         assert_ne!(first_archive_size, second_archive_size);
 
-        let unpack_path = second_archive.unpack_gzip(&test_dir);
+        let unpack_path = second_archive.unpack_zstandard(&test_dir);
         assert!(unpack_path.join("another_file_to_archive.txt").exists());
     }
 
@@ -460,7 +460,7 @@ mod tests {
         let archive_params = ArchiveParameters {
             archive_name_without_extension: "archive".to_string(),
             target_directory: test_dir.clone(),
-            compression_algorithm: CompressionAlgorithm::Gzip,
+            compression_algorithm: CompressionAlgorithm::Zstandard,
         };
         let archive = file_archiver
             .archive(

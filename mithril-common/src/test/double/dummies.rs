@@ -379,13 +379,13 @@ mod messages {
                             uri: MultiFilesUri::Template(TemplateUri(
                                 "https://host-1/immutables-2".to_string(),
                             )),
-                            compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                            compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                         },
                         ImmutablesLocation::CloudStorage {
                             uri: MultiFilesUri::Template(TemplateUri(
                                 "https://host-2/immutables-2".to_string(),
                             )),
-                            compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                            compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                         },
                     ],
                 },
@@ -393,7 +393,7 @@ mod messages {
                     size_uncompressed: 2048,
                     locations: vec![AncillaryLocation::CloudStorage {
                         uri: "https://host-1/ancillary-3".to_string(),
-                        compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     }],
                 },
                 cardano_node_version: "0.0.1".to_string(),

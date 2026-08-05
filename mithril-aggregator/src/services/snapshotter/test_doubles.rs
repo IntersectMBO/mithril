@@ -63,7 +63,7 @@ impl Default for DumbSnapshotter {
     fn default() -> Self {
         Self {
             last_snapshot: RwLock::new(None),
-            compression_algorithm: CompressionAlgorithm::Gzip,
+            compression_algorithm: CompressionAlgorithm::Zstandard,
             archive_size: 0,
         }
     }
@@ -106,11 +106,11 @@ pub struct FakeSnapshotter {
 }
 
 impl FakeSnapshotter {
-    /// `FakeSnapshotter` factory, with a default compression algorithm of `Gzip`.
+    /// `FakeSnapshotter` factory, with a default compression algorithm of `Zstandard`.
     pub fn new<T: AsRef<Path>>(work_dir: T) -> Self {
         Self {
             work_dir: work_dir.as_ref().to_path_buf(),
-            compression_algorithm: CompressionAlgorithm::Gzip,
+            compression_algorithm: CompressionAlgorithm::Zstandard,
         }
     }
 
@@ -188,11 +188,11 @@ mod tests {
         #[tokio::test]
         async fn test_dumb_snapshotter_snapshot_return_archive_named_with_compression_algorithm_and_size_of_0()
          {
-            let snapshotter = DumbSnapshotter::new(CompressionAlgorithm::Gzip);
+            let snapshotter = DumbSnapshotter::new(CompressionAlgorithm::Zstandard);
 
             let snapshot = snapshotter.snapshot_ancillary(3, "archive_ancillary").await.unwrap();
             assert_eq!(
-                PathBuf::from("archive_ancillary.tar.gz"),
+                PathBuf::from("archive_ancillary.tar.zst"),
                 *snapshot.get_file_path()
             );
             assert_eq!(0, snapshot.get_archive_size());
@@ -202,7 +202,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(
-                PathBuf::from("archive_immutable_trio.tar.gz"),
+                PathBuf::from("archive_immutable_trio.tar.zst"),
                 *snapshot.get_file_path()
             );
             assert_eq!(0, snapshot.get_archive_size());
@@ -248,7 +248,7 @@ mod tests {
 
         #[tokio::test]
         async fn set_dumb_snapshotter_archive_size() {
-            let snapshotter = DumbSnapshotter::new(CompressionAlgorithm::Gzip);
+            let snapshotter = DumbSnapshotter::new(CompressionAlgorithm::Zstandard);
 
             // Default size is 0
             let snapshot = snapshotter.snapshot_immutable_trio(1, "whatever").await.unwrap();
@@ -277,7 +277,7 @@ mod tests {
         async fn test_fake_snapshotter() {
             let test_dir = temp_dir_create!();
             let fake_snapshotter = FakeSnapshotter::new(&test_dir)
-                .with_compression_algorithm(CompressionAlgorithm::Gzip);
+                .with_compression_algorithm(CompressionAlgorithm::Zstandard);
 
             for filename in ["direct_child", "one_level_subdir/child", "two_levels/subdir/child"] {
                 {
@@ -286,7 +286,7 @@ mod tests {
 
                     assert_eq!(
                         ancillary_snapshot.get_file_path(),
-                        &test_dir.join(filename).with_extension("tar.gz")
+                        &test_dir.join(filename).with_extension("tar.zst")
                     );
                     assert!(ancillary_snapshot.get_file_path().is_file());
                 }
@@ -296,7 +296,7 @@ mod tests {
 
                     assert_eq!(
                         immutable_snapshot.get_file_path(),
-                        &test_dir.join(filename).with_extension("tar.gz")
+                        &test_dir.join(filename).with_extension("tar.zst")
                     );
                     assert!(immutable_snapshot.get_file_path().is_file());
                 }

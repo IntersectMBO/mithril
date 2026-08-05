@@ -845,7 +845,7 @@ mod tests {
             let artifact_prover = InternalArtifactProver::new(
                 Arc::new(
                     MockFileDownloaderBuilder::default()
-                        .with_compression(Some(CompressionAlgorithm::Gzip))
+                        .with_compression(Some(CompressionAlgorithm::Zstandard))
                         .with_times(1)
                         .with_success()
                         .build(),
@@ -859,8 +859,8 @@ mod tests {
                     &DigestsMessagePart {
                         locations: vec![
                             DigestLocation::CloudStorage {
-                                uri: "http://whatever-1/digests.tar.gz".to_string(),
-                                compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                                uri: "http://whatever-1/digests.tar.zst".to_string(),
+                                compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                             },
                             DigestLocation::Aggregator {
                                 uri: "http://whatever-2/digest".to_string(),

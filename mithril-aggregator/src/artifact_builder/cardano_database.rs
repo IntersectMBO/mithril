@@ -200,7 +200,7 @@ mod tests {
                 DUMMY_CARDANO_NODE_VERSION,
                 cardano_db.get_dir().to_path_buf(),
                 test_dir.join("ongoing_snapshots"),
-                CompressionAlgorithm::Gzip,
+                CompressionAlgorithm::Zstandard,
                 Arc::new(FileArchiver::new_for_test(test_dir.join("verification"))),
                 Arc::new(MockAncillarySigner::that_succeeds_with_signature(
                     ancillary_manifest_signature,
@@ -215,7 +215,7 @@ mod tests {
             ancillary_uploader.expect_upload().return_once(|_, _| {
                 Ok(AncillaryLocation::CloudStorage {
                     uri: "ancillary_uri".to_string(),
-                    compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                    compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                 })
             });
 
@@ -240,7 +240,7 @@ mod tests {
                 .expect_batch_upload()
                 .with(
                     predicate_length(number_of_immutable_file_loaded),
-                    predicate::eq(Some(CompressionAlgorithm::Gzip)),
+                    predicate::eq(Some(CompressionAlgorithm::Zstandard)),
                 )
                 .return_once(|_, _| {
                     Ok(ImmutablesLocation::CloudStorage {
@@ -275,7 +275,7 @@ mod tests {
                         test_dir.join("verification"),
                     )),
                     target_location: test_dir.clone(),
-                    compression_algorithm: CompressionAlgorithm::Gzip,
+                    compression_algorithm: CompressionAlgorithm::Zstandard,
                 },
                 network,
                 test_dir.join("digests"),
@@ -312,7 +312,7 @@ mod tests {
 
         let expected_ancillary_locations = vec![AncillaryLocation::CloudStorage {
             uri: "ancillary_uri".to_string(),
-            compression_algorithm: Some(CompressionAlgorithm::Gzip),
+            compression_algorithm: Some(CompressionAlgorithm::Zstandard),
         }];
 
         let expected_immutables_locations = vec![ImmutablesLocation::CloudStorage {

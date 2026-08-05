@@ -317,8 +317,11 @@ mod tests {
     #[tokio::test]
     async fn upload_ancillary_archive_should_return_location_even_with_uploaders_errors() {
         let first_uploader = fake_uploader_returning_error();
-        let second_uploader =
-            fake_uploader("archive_path", "an_uri", Some(CompressionAlgorithm::Gzip));
+        let second_uploader = fake_uploader(
+            "archive_path",
+            "an_uri",
+            Some(CompressionAlgorithm::Zstandard),
+        );
         let third_uploader = fake_uploader_returning_error();
 
         let uploaders: Vec<Arc<dyn AncillaryFileUploader>> = vec![
@@ -340,7 +343,7 @@ mod tests {
                 PathBuf::from("archive_path"),
                 0,
                 0,
-                CompressionAlgorithm::Gzip,
+                CompressionAlgorithm::Zstandard,
             ))
             .await
             .unwrap();
@@ -349,19 +352,22 @@ mod tests {
             locations,
             vec![AncillaryLocation::CloudStorage {
                 uri: "an_uri".to_string(),
-                compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                compression_algorithm: Some(CompressionAlgorithm::Zstandard),
             }],
         );
     }
 
     #[tokio::test]
     async fn upload_ancillary_archive_should_return_all_uploaders_returned_locations() {
-        let first_uploader =
-            fake_uploader("archive_path", "an_uri", Some(CompressionAlgorithm::Gzip));
+        let first_uploader = fake_uploader(
+            "archive_path",
+            "an_uri",
+            Some(CompressionAlgorithm::Zstandard),
+        );
         let second_uploader = fake_uploader(
             "archive_path",
             "another_uri",
-            Some(CompressionAlgorithm::Gzip),
+            Some(CompressionAlgorithm::Zstandard),
         );
 
         let uploaders: Vec<Arc<dyn AncillaryFileUploader>> =
@@ -369,7 +375,7 @@ mod tests {
 
         let builder = AncillaryArtifactBuilder::new(
             uploaders,
-            Arc::new(DumbSnapshotter::new(CompressionAlgorithm::Gzip)),
+            Arc::new(DumbSnapshotter::new(CompressionAlgorithm::Zstandard)),
             CardanoNetwork::TestNet(123),
             TestLogger::stdout(),
         )
@@ -380,7 +386,7 @@ mod tests {
                 PathBuf::from("archive_path"),
                 0,
                 0,
-                CompressionAlgorithm::Gzip,
+                CompressionAlgorithm::Zstandard,
             ))
             .await
             .unwrap();
@@ -390,11 +396,11 @@ mod tests {
             vec![
                 AncillaryLocation::CloudStorage {
                     uri: "an_uri".to_string(),
-                    compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                    compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                 },
                 AncillaryLocation::CloudStorage {
                     uri: "another_uri".to_string(),
-                    compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                    compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                 },
             ],
         );
@@ -406,17 +412,17 @@ mod tests {
             "ancillary",
             "upload_ancillary_archive_should_remove_archive_after_upload",
         );
-        let archive_path = create_fake_archive(&source_dir, "ancillary.tar.gz");
-        let archive = FileArchive::new(archive_path.clone(), 0, 0, CompressionAlgorithm::Gzip);
+        let archive_path = create_fake_archive(&source_dir, "ancillary.tar.zst");
+        let archive = FileArchive::new(archive_path.clone(), 0, 0, CompressionAlgorithm::Zstandard);
         let uploader = fake_uploader(
             archive_path.as_os_str().to_str().unwrap(),
             "an_uri",
-            Some(CompressionAlgorithm::Gzip),
+            Some(CompressionAlgorithm::Zstandard),
         );
 
         let builder = AncillaryArtifactBuilder::new(
             vec![Arc::new(uploader)],
-            Arc::new(DumbSnapshotter::new(CompressionAlgorithm::Gzip)),
+            Arc::new(DumbSnapshotter::new(CompressionAlgorithm::Zstandard)),
             CardanoNetwork::TestNet(123),
             TestLogger::stdout(),
         )
@@ -435,8 +441,8 @@ mod tests {
             "ancillary",
             "upload_ancillary_archive_should_remove_archive_when_no_uploader_succeed",
         );
-        let archive_path = create_fake_archive(&source_dir, "ancillary.tar.gz");
-        let archive = FileArchive::new(archive_path.clone(), 0, 0, CompressionAlgorithm::Gzip);
+        let archive_path = create_fake_archive(&source_dir, "ancillary.tar.zst");
+        let archive = FileArchive::new(archive_path.clone(), 0, 0, CompressionAlgorithm::Zstandard);
         let uploader = fake_uploader_returning_error();
 
         let builder = AncillaryArtifactBuilder::new(
@@ -484,17 +490,17 @@ mod tests {
         snapshotter.expect_snapshot_ancillary().returning(|_, _| {
             let expected_uncompressed_size = 123456;
             Ok(FileArchive::new(
-                PathBuf::from("whatever.tar.gz"),
+                PathBuf::from("whatever.tar.zst"),
                 0,
                 expected_uncompressed_size,
-                CompressionAlgorithm::Gzip,
+                CompressionAlgorithm::Zstandard,
             ))
         });
         let mut uploader = MockAncillaryFileUploader::new();
         uploader.expect_upload().returning(|_, _| {
             Ok(AncillaryLocation::CloudStorage {
                 uri: "an_uri".to_string(),
-                compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                compression_algorithm: Some(CompressionAlgorithm::Zstandard),
             })
         });
 

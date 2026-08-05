@@ -82,12 +82,12 @@ mod tests {
     async fn get_location_not_using_cdn_domain_return_google_api_uri() {
         let use_cdn_domain = false;
         let bucket = "cdn.mithril.network".to_string();
-        let remote_file_path = CloudRemotePath::new("remote_folder").join("snapshot.xxx.tar.gz");
+        let remote_file_path = CloudRemotePath::new("remote_folder").join("snapshot.xxx.tar.zst");
 
         let location = remote_file_path.to_gcloud_storage_location(&bucket, use_cdn_domain);
 
         assert_eq!(
-            FileUri("https://storage.googleapis.com/cdn.mithril.network/remote_folder/snapshot.xxx.tar.gz".to_string()),
+            FileUri("https://storage.googleapis.com/cdn.mithril.network/remote_folder/snapshot.xxx.tar.zst".to_string()),
             location
         );
     }
@@ -96,12 +96,12 @@ mod tests {
     async fn get_location_using_cdn_domain_return_cdn_in_uri() {
         let use_cdn_domain = true;
         let bucket = "cdn.mithril.network".to_string();
-        let remote_file_path = CloudRemotePath::new("remote_folder").join("snapshot.xxx.tar.gz");
+        let remote_file_path = CloudRemotePath::new("remote_folder").join("snapshot.xxx.tar.zst");
 
         let location = remote_file_path.to_gcloud_storage_location(&bucket, use_cdn_domain);
 
         assert_eq!(
-            FileUri("https://cdn.mithril.network/remote_folder/snapshot.xxx.tar.gz".to_string()),
+            FileUri("https://cdn.mithril.network/remote_folder/snapshot.xxx.tar.zst".to_string()),
             location
         );
     }

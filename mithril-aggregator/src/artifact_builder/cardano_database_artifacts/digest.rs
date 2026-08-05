@@ -288,12 +288,12 @@ impl DigestArtifactBuilder {
 #[cfg(test)]
 mod tests {
     use anyhow::anyhow;
-    use flate2::read::GzDecoder;
     use std::{
         collections::BTreeMap,
         fs::{File, read_to_string},
     };
     use tar::Archive;
+    use zstd::Decoder;
 
     use mithril_common::{
         current_function,
@@ -362,9 +362,9 @@ mod tests {
 
     fn unpack_archive(archive_path: &Path, unpack_dir: &Path) -> StdResult<()> {
         let mut archive = {
-            let file_tar_gz = File::open(archive_path)?;
-            let file_tar_gz_decoder = GzDecoder::new(file_tar_gz);
-            Archive::new(file_tar_gz_decoder)
+            let file_tar_zst = File::open(archive_path)?;
+            let file_tar_zst_decoder = Decoder::new(file_tar_zst)?;
+            Archive::new(file_tar_zst_decoder)
         };
 
         archive.unpack(unpack_dir)?;
@@ -386,7 +386,7 @@ mod tests {
             DigestSnapshotter {
                 file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
                 target_location: temp_dir.clone(),
-                compression_algorithm: CompressionAlgorithm::Gzip,
+                compression_algorithm: CompressionAlgorithm::Zstandard,
             },
             CardanoNetwork::TestNet(123),
             temp_dir,
@@ -419,7 +419,7 @@ mod tests {
             DigestSnapshotter {
                 file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
                 target_location: temp_dir.clone(),
-                compression_algorithm: CompressionAlgorithm::Gzip,
+                compression_algorithm: CompressionAlgorithm::Zstandard,
             },
             CardanoNetwork::TestNet(123),
             temp_dir,
@@ -453,7 +453,7 @@ mod tests {
             DigestSnapshotter {
                 file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
                 target_location: temp_dir.clone(),
-                compression_algorithm: CompressionAlgorithm::Gzip,
+                compression_algorithm: CompressionAlgorithm::Zstandard,
             },
             CardanoNetwork::TestNet(123),
             PathBuf::from("/tmp/whatever"),
@@ -478,7 +478,7 @@ mod tests {
             DigestSnapshotter {
                 file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
                 target_location: temp_dir.clone(),
-                compression_algorithm: CompressionAlgorithm::Gzip,
+                compression_algorithm: CompressionAlgorithm::Zstandard,
             },
             CardanoNetwork::TestNet(123),
             PathBuf::from("/tmp/whatever"),
@@ -496,7 +496,7 @@ mod tests {
     async fn upload_digest_file_should_return_location_even_with_uploaders_errors() {
         let temp_dir = TempDir::create("digest", current_function!());
         let first_uploader = fake_uploader_returning_error();
-        let second_uploader = fake_uploader("an_uri", Some(CompressionAlgorithm::Gzip));
+        let second_uploader = fake_uploader("an_uri", Some(CompressionAlgorithm::Zstandard));
         let third_uploader = fake_uploader_returning_error();
 
         let uploaders: Vec<Arc<dyn DigestFileUploader>> = vec![
@@ -511,7 +511,7 @@ mod tests {
             DigestSnapshotter {
                 file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
                 target_location: temp_dir.clone(),
-                compression_algorithm: CompressionAlgorithm::Gzip,
+                compression_algorithm: CompressionAlgorithm::Zstandard,
             },
             CardanoNetwork::TestNet(123),
             PathBuf::from("/tmp/whatever"),
@@ -527,7 +527,7 @@ mod tests {
             vec![
                 DigestLocation::CloudStorage {
                     uri: "an_uri".to_string(),
-                    compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                    compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                 },
                 DigestLocation::Aggregator {
                     uri: "https://aggregator/artifact/cardano-database/digests".to_string(),
@@ -539,8 +539,8 @@ mod tests {
     #[tokio::test]
     async fn upload_digest_file_should_return_all_uploaders_returned_locations() {
         let temp_dir = TempDir::create("digest", current_function!());
-        let first_uploader = fake_uploader("an_uri", Some(CompressionAlgorithm::Gzip));
-        let second_uploader = fake_uploader("another_uri", Some(CompressionAlgorithm::Gzip));
+        let first_uploader = fake_uploader("an_uri", Some(CompressionAlgorithm::Zstandard));
+        let second_uploader = fake_uploader("another_uri", Some(CompressionAlgorithm::Zstandard));
 
         let uploaders: Vec<Arc<dyn DigestFileUploader>> =
             vec![Arc::new(first_uploader), Arc::new(second_uploader)];
@@ -551,7 +551,7 @@ mod tests {
             DigestSnapshotter {
                 file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
                 target_location: temp_dir.clone(),
-                compression_algorithm: CompressionAlgorithm::Gzip,
+                compression_algorithm: CompressionAlgorithm::Zstandard,
             },
             CardanoNetwork::TestNet(123),
             PathBuf::from("/tmp/whatever"),
@@ -567,11 +567,11 @@ mod tests {
             vec![
                 DigestLocation::CloudStorage {
                     uri: "an_uri".to_string(),
-                    compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                    compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                 },
                 DigestLocation::CloudStorage {
                     uri: "another_uri".to_string(),
-                    compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                    compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                 },
                 DigestLocation::Aggregator {
                     uri: "https://aggregator/artifact/cardano-database/digests".to_string(),
@@ -599,7 +599,7 @@ mod tests {
             DigestSnapshotter {
                 file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
                 target_location: temp_dir.clone(),
-                compression_algorithm: CompressionAlgorithm::Gzip,
+                compression_algorithm: CompressionAlgorithm::Zstandard,
             },
             CardanoNetwork::TestNet(123),
             temp_dir,
@@ -631,7 +631,7 @@ mod tests {
         let digests_archive_dir = tmp_dir.join("archive");
         let uploader_path = tmp_dir.join("uploaded_digests");
 
-        let compression_algorithm = CompressionAlgorithm::Gzip;
+        let compression_algorithm = CompressionAlgorithm::Zstandard;
         let beacon = CardanoDbBeacon::new(3, 456);
         let network = CardanoNetwork::TestNet(24);
 

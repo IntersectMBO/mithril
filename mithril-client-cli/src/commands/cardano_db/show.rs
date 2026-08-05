@@ -243,11 +243,11 @@ mod tests {
         let locations = vec![
             ImmutablesLocation::CloudStorage {
                 uri: MultiFilesUri::Template(TemplateUri("http://cloudstorage1.com/".to_string())),
-                compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                compression_algorithm: Some(CompressionAlgorithm::Zstandard),
             },
             ImmutablesLocation::CloudStorage {
                 uri: MultiFilesUri::Template(TemplateUri("http://cloudstorage2.com/".to_string())),
-                compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                compression_algorithm: Some(CompressionAlgorithm::Zstandard),
             },
         ];
 
@@ -274,7 +274,7 @@ mod tests {
             ImmutablesLocation::Unknown {},
             ImmutablesLocation::CloudStorage {
                 uri: MultiFilesUri::Template(TemplateUri("http://cloudstorage2.com/".to_string())),
-                compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                compression_algorithm: Some(CompressionAlgorithm::Zstandard),
             },
         ];
 
@@ -297,11 +297,11 @@ mod tests {
         let locations = vec![
             AncillaryLocation::CloudStorage {
                 uri: "http://cloudstorage1.com/".to_string(),
-                compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                compression_algorithm: Some(CompressionAlgorithm::Zstandard),
             },
             AncillaryLocation::CloudStorage {
                 uri: "http://cloudstorage2.com/".to_string(),
-                compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                compression_algorithm: Some(CompressionAlgorithm::Zstandard),
             },
         ];
 
@@ -324,7 +324,7 @@ mod tests {
             AncillaryLocation::Unknown {},
             AncillaryLocation::CloudStorage {
                 uri: "http://cloudstorage2.com/".to_string(),
-                compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                compression_algorithm: Some(CompressionAlgorithm::Zstandard),
             },
         ];
 

@@ -330,9 +330,9 @@ mod tests {
                     average_size_uncompressed: 512,
                     locations: vec![ImmutablesLocation::CloudStorage {
                         uri: MultiFilesUri::Template(TemplateUri(
-                            "http://whatever/{immutable_file_number}.tar.gz".to_string(),
+                            "http://whatever/{immutable_file_number}.tar.zst".to_string(),
                         )),
-                        compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     }],
                 },
 
@@ -402,16 +402,16 @@ mod tests {
                     average_size_uncompressed: 512,
                     locations: vec![ImmutablesLocation::CloudStorage {
                         uri: MultiFilesUri::Template(TemplateUri(
-                            "http://whatever/{immutable_file_number}.tar.gz".to_string(),
+                            "http://whatever/{immutable_file_number}.tar.zst".to_string(),
                         )),
-                        compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     }],
                 },
                 ancillary: AncillaryMessagePart {
                     size_uncompressed: 2048,
                     locations: vec![AncillaryLocation::CloudStorage {
-                        uri: "http://whatever/ancillary.tar.gz".to_string(),
-                        compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                        uri: "http://whatever/ancillary.tar.zst".to_string(),
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     }],
                 },
                 digests: DigestsMessagePart {
@@ -424,16 +424,16 @@ mod tests {
             let client = CardanoDatabaseClientDependencyInjector::new()
                 .with_http_file_downloader(Arc::new({
                     MockFileDownloaderBuilder::default()
-                        .with_file_uri("http://whatever/00001.tar.gz")
+                        .with_file_uri("http://whatever/00001.tar.zst")
                         .with_target_dir(target_dir.clone())
                         .with_success()
                         .next_call()
-                        .with_file_uri("http://whatever/00002.tar.gz")
+                        .with_file_uri("http://whatever/00002.tar.zst")
                         .with_target_dir(target_dir.clone())
                         .with_success()
                         .next_call()
-                        .with_file_uri("http://whatever/ancillary.tar.gz")
-                        .with_compression(Some(CompressionAlgorithm::Gzip))
+                        .with_file_uri("http://whatever/ancillary.tar.zst")
+                        .with_compression(Some(CompressionAlgorithm::Zstandard))
                         .with_success_and_create_fake_ancillary_files(
                             FakeAncillaryFileBuilder::builder()
                                 .files_in_manifest_to_create(vec!["ledger".to_string()])
@@ -596,9 +596,9 @@ mod tests {
                     average_size_uncompressed: 512,
                     locations: vec![ImmutablesLocation::CloudStorage {
                         uri: MultiFilesUri::Template(TemplateUri(
-                            "http://whatever/{immutable_file_number}.tar.gz".to_string(),
+                            "http://whatever/{immutable_file_number}.tar.zst".to_string(),
                         )),
-                        compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     }],
                 },
                 ancillary: AncillaryMessagePart {
@@ -650,9 +650,9 @@ mod tests {
                     average_size_uncompressed: 512,
                     locations: vec![ImmutablesLocation::CloudStorage {
                         uri: MultiFilesUri::Template(TemplateUri(
-                            "http://whatever/{immutable_file_number}.tar.gz".to_string(),
+                            "http://whatever/{immutable_file_number}.tar.zst".to_string(),
                         )),
-                        compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     }],
                 },
                 ancillary: AncillaryMessagePart {

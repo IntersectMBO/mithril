@@ -201,7 +201,7 @@ pub fn snapshot(snapshot_id: u64) -> entities::Snapshot {
         ancillary_size: Some(ancillary_size),
         locations,
         ancillary_locations: Some(ancillary_locations),
-        compression_algorithm: CompressionAlgorithm::Gzip,
+        compression_algorithm: CompressionAlgorithm::Zstandard,
         cardano_node_version: cardano_node_version.to_string(),
     }
 }
