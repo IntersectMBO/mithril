@@ -1962,8 +1962,7 @@ components:
       examples:
         - {
             "type": "cloud_storage",
-            "uri": "https://mithril-cdn-us.iohk.io/snapshot/digests-6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732.txt",
-            "compression_algorithm": "gzip"
+            "uri": "https://mithril-cdn-us.iohk.io/snapshot/digests-6367ee65d0d1272e6e70736a1ea2cae34015874517f6328364f6b73930966732.txt"
           }
 
     CardanoDatabaseImmutableLocationMessagePart:
@@ -1986,9 +1985,9 @@ components:
             "type": "cloud_storage",
             "uri":
               {
-                "Template": "https://aggregator/{immutable_file_number}.tar.gz"
+                "Template": "https://aggregator/{immutable_file_number}.tar.zst"
               },
-            "compression_algorithm": "gzip"
+            "compression_algorithm": "zstandard"
           }
 
     MultiFilesUri:
@@ -1996,7 +1995,7 @@ components:
       oneOf:
         - $ref: "#/components/schemas/TemplateUri"
       examples:
-        - { "Template": "https://aggregator/{immutable_file_number}.tar.gz" }
+        - { "Template": "https://aggregator/{immutable_file_number}.tar.zst" }
 
     TemplateUri:
       description: TemplateUri represents a URI template for multiple files
@@ -2009,7 +2008,7 @@ components:
           description: URI template
           type: string
       examples:
-        - { "Template": "https://aggregator/{immutable_file_number}.tar.gz" }
+        - { "Template": "https://aggregator/{immutable_file_number}.tar.zst" }
 
     CardanoDatabaseSnapshotListMessage:
       description: CardanoDatabaseSnapshotListMessage represents a list of Cardano database snapshots
