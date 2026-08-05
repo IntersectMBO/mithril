@@ -815,6 +815,9 @@ jobs:
           mithril_era_reader_address_url: ${{ vars.ERA_READER_ADDRESS_URL }}
           mithril_era_reader_verification_key_url: ${{ vars.ERA_READER_VERIFICATION_KEY_URL }}
           mithril_era_reader_secret_key: ${{ secrets.ERA_READER_SECRET_KEY }}
+          mithril_protocol_configuration_reader_address_url: ${{ vars.PROTOCOL_CONFIGURATION_READER_ADDRESS_URL }}
+          mithril_protocol_configuration_reader_verification_key_url: ${{ vars.PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY_URL }}
+          mithril_protocol_configuration_reader_secret_key: ${{ secrets.PROTOCOL_CONFIGURATION_READER_SECRET_KEY }}
           mithril_aggregator_signed_entity_types: ${{ vars.AGGREGATOR_SIGNED_ENTITY_TYPES }}
           mithril_aggregator_aggregate_signature_type: ${{ vars.AGGREGATOR_AGGREGATE_SIGNATURE_TYPE }}
           mithril_aggregator_cdn_cname: ${{ vars.AGGREGATOR_CDN_CNAME }}

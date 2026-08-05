@@ -125,6 +125,19 @@ inputs:
   mithril_era_reader_secret_key:
     description: Mithril era reader secret key (onlye for test networks).
     required: false
+  mithril_protocol_configuration_reader_adapter_type:
+    description: Mithril protocol configuration reader adapter type.
+    required: false
+    default: "cardano-chain"
+  mithril_protocol_configuration_reader_address_url:
+    description: Mithril protocol configuration reader address location.
+    required: true
+  mithril_protocol_configuration_reader_verification_key_url:
+    description: Mithril protocol configuration reader verification key url.
+    required: true
+  mithril_protocol_configuration_reader_secret_key:
+    description: Mithril protocol configuration reader secret key (only for test networks).
+    required: false
   mithril_aggregator_signed_entity_types:
     description: Mithril aggregator signed entity types parameters (discriminants names in an ordered comma separated list).
     required: false
@@ -300,6 +313,10 @@ runs:
           mithril_era_reader_address_url                                                = "${{ inputs.mithril_era_reader_address_url }}"
           mithril_era_reader_verification_key_url                                       = "${{ inputs.mithril_era_reader_verification_key_url }}"
           mithril_era_reader_secret_key                                                 = "${{ inputs.mithril_era_reader_secret_key }}"
+          mithril_protocol_configuration_reader_adapter_type                            = "${{ inputs.mithril_protocol_configuration_reader_adapter_type }}"
+          mithril_protocol_configuration_reader_address_url                             = "${{ inputs.mithril_protocol_configuration_reader_address_url }}"
+          mithril_protocol_configuration_reader_verification_key_url                    = "${{ inputs.mithril_protocol_configuration_reader_verification_key_url }}"
+          mithril_protocol_configuration_reader_secret_key                              = "${{ inputs.mithril_protocol_configuration_reader_secret_key }}"
           mithril_aggregator_signed_entity_types                                        = "${{ inputs.mithril_aggregator_signed_entity_types }}"
           mithril_aggregator_aggregate_signature_type                                   = "${{ inputs.mithril_aggregator_aggregate_signature_type }}"
           mithril_aggregator_cdn_cname                                                  = "${{ inputs.mithril_aggregator_cdn_cname }}"
