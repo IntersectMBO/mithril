@@ -1,5 +1,4 @@
 use anyhow::{Context, anyhow};
-use flate2::{Compression, read::GzDecoder, write::GzEncoder};
 use slog::{Logger, info, warn};
 use std::{
     fs,
@@ -148,20 +147,6 @@ impl FileArchiver {
         })?;
 
         match compression_algorithm {
-            CompressionAlgorithm::Gzip => {
-                let enc = GzEncoder::new(tar_file, Compression::default());
-                let mut tar = tar::Builder::new(enc);
-
-                appender
-                    .append(&mut tar)
-                    .with_context(|| "GzEncoder Builder failed to append content")?;
-
-                let mut gz = tar
-                    .into_inner()
-                    .with_context(|| "GzEncoder Builder can not write the archive")?;
-                gz.try_finish()
-                    .with_context(|| "GzEncoder can not finish the output stream after writing")?;
-            }
             CompressionAlgorithm::Zstandard => {
                 let mut enc = Encoder::new(tar_file, self.zstandard_compression_parameter.level)?;
                 enc.multithread(self.zstandard_compression_parameter.number_of_workers)
@@ -220,10 +205,6 @@ impl FileArchiver {
         archive_file_tar.seek(SeekFrom::Start(0))?;
 
         let mut tar_archive: Archive<Box<dyn Read>> = match archive.compression_algorithm {
-            CompressionAlgorithm::Gzip => {
-                let archive_decoder = GzDecoder::new(archive_file_tar);
-                Archive::new(Box::new(archive_decoder))
-            }
             CompressionAlgorithm::Zstandard => {
                 let archive_decoder = Decoder::new(archive_file_tar)?;
                 Archive::new(Box::new(archive_decoder))
@@ -309,27 +290,6 @@ mod tests {
             .unwrap()
             .map(|f| f.unwrap().file_name().to_str().unwrap().to_owned())
             .collect()
-    }
-
-    #[test]
-    fn should_create_a_valid_archive_with_gzip_compression() {
-        let test_dir = get_test_directory("should_create_a_valid_archive_with_gzip_compression");
-        let target_archive = test_dir.join("archive.tar.gz");
-        let archived_directory = test_dir.join(create_dir(&test_dir, "archived_directory"));
-        create_file(&archived_directory, "file_to_archive.txt");
-
-        let file_archiver = FileArchiver::new_for_test(test_dir.join("verification"));
-
-        let archive = file_archiver
-            .create_archive(
-                &target_archive,
-                AppenderDirAll::new(archived_directory),
-                CompressionAlgorithm::Gzip,
-            )
-            .expect("create_archive should not fail");
-        file_archiver
-            .verify_archive(&archive)
-            .expect("verify_archive should not fail");
     }
 
     #[test]

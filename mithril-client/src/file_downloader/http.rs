@@ -5,7 +5,6 @@ use std::{
 
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
-use flate2::read::GzDecoder;
 use flume::{Receiver, Sender};
 use futures::StreamExt;
 use reqwest::{Response, StatusCode, Url};
@@ -162,16 +161,6 @@ impl HttpFileDownloader {
     ) -> StdResult<()> {
         let input = StreamReader::new(stream);
         match compression_algorithm {
-            Some(CompressionAlgorithm::Gzip) => {
-                let gzip_decoder = GzDecoder::new(input);
-                let mut file_archive = Archive::new(gzip_decoder);
-                file_archive.unpack(unpack_dir).with_context(|| {
-                    format!(
-                        "Could not unpack with 'Gzip' from streamed data to directory '{}'",
-                        unpack_dir.display()
-                    )
-                })?;
-            }
             Some(CompressionAlgorithm::Zstandard) => {
                 let zstandard_decoder = zstd::Decoder::new(input)
                     .with_context(|| "Unpack failed: Create Zstandard decoder error")?;

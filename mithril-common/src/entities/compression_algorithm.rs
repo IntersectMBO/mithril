@@ -18,8 +18,6 @@ use strum::{Display, EnumIter, IntoEnumIterator};
 )]
 #[serde(rename_all = "lowercase")]
 pub enum CompressionAlgorithm {
-    /// Gzip compression format
-    Gzip,
     /// Zstandard compression format
     #[default]
     Zstandard,
@@ -29,7 +27,6 @@ impl CompressionAlgorithm {
     /// Get the extension associated to tar archive using the current algorithm.
     pub fn tar_file_extension(&self) -> String {
         match self {
-            CompressionAlgorithm::Gzip => "tar.gz".to_owned(),
             CompressionAlgorithm::Zstandard => "tar.zst".to_owned(),
         }
     }
@@ -45,7 +42,6 @@ impl CompressionAlgorithm {
     /// Those ratio have been experimentally established.
     pub fn free_space_snapshot_ratio(&self) -> f64 {
         match self {
-            CompressionAlgorithm::Gzip => 2.5,
             CompressionAlgorithm::Zstandard => 4.0,
         }
     }
