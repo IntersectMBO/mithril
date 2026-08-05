@@ -1,9 +1,10 @@
 //! Ed25519 cryptographic helpers
 
 use anyhow::anyhow;
+use ed25519_dalek::rand_core::{CryptoRng, UnwrapErr};
 use ed25519_dalek::{Signer, SigningKey};
-use rand_chacha::ChaCha20Rng;
-use rand_chacha::rand_core::{CryptoRng, RngCore, SeedableRng};
+use getrandom::SysRng;
+use rand_chacha_ed25519::{ChaCha20Rng, rand_core::SeedableRng};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -35,7 +36,7 @@ impl Ed25519Signer {
     /// [Ed25519Signer] factory
     pub fn create_test_signer<R>(mut rng: R) -> Self
     where
-        R: CryptoRng + RngCore,
+        R: CryptoRng,
     {
         let secret_key = SigningKey::generate(&mut rng);
         Self::from_secret_key(secret_key.into())
@@ -49,7 +50,7 @@ impl Ed25519Signer {
 
     /// [Ed25519Signer] non deterministic
     pub fn create_non_deterministic_signer() -> Self {
-        let rng = rand_core::OsRng;
+        let rng = UnwrapErr(SysRng);
         Self::create_test_signer(rng)
     }
 
