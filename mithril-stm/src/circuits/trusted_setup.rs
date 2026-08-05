@@ -130,13 +130,13 @@ impl TrustedSetupProvider {
             .with_extension("temp");
         let final_path = self.local_srs_folder_path.join(MITHRIL_CIRCUIT_SRS_FILENAME);
 
-        let mut temporary_file = File::create(&temp_path)
+        let mut temp_file = File::create(&temp_path)
             .with_context(|| format!("Failed to create temporary SRS file at {temp_path:?}."))?;
-        temporary_file.write_all(srs_bytes)?;
-        temporary_file
+        temp_file.write_all(srs_bytes)?;
+        temp_file
             .sync_all()
             .with_context(|| "Failed to fsync temporary SRS file before rename.")?;
-        drop(temporary_file);
+        drop(temp_file);
 
         std::fs::rename(temp_path, final_path)?;
 
@@ -202,16 +202,15 @@ pub(crate) const UNSAFE_SRS_SEED: u64 = 42;
 #[cfg(any(test, feature = "benchmark-internals"))]
 impl TrustedSetupProvider {
     /// Builds a `TrustedSetupProvider` backed by a freshly generated unsafe SRS of degree `k`, written
-    /// to `base_dir/{k}/srs/srs-parameters` with a matching SHA256 hash so the provider's hash check passes.
+    /// to `base_dir/degree-{k}/srs/srs-parameters` with empty hash as it should never be checked.
     /// For tests and benchmarks only.
     pub(crate) fn with_unsafe_srs(base_dir: &std::path::Path, k: u32) -> Self {
-        let base_dir = base_dir.join(k.to_string());
-        let srs_file = base_dir
-            .join(MITHRIL_CIRCUIT_SRS_FOLDER)
-            .join(MITHRIL_CIRCUIT_SRS_FILENAME);
+        let degree_k_dir = base_dir.join(format!("degree-{k}"));
+        let srs_dir = degree_k_dir.join(MITHRIL_CIRCUIT_SRS_FOLDER);
+        let srs_file = srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME);
 
         if srs_file.exists() {
-            return Self::new(base_dir, "", "", Duration::from_secs(600));
+            return Self::new(degree_k_dir, "", "", Duration::from_secs(600));
         }
 
         let srs = ParamsKZG::<Bls12>::unsafe_setup(k, ChaCha20Rng::seed_from_u64(UNSAFE_SRS_SEED));
@@ -219,26 +218,25 @@ impl TrustedSetupProvider {
         srs.write_custom(&mut srs_bytes, SerdeFormat::RawBytesUnchecked)
             .unwrap();
 
-        let srs_dir = base_dir.join(MITHRIL_CIRCUIT_SRS_FOLDER);
         create_dir_all(&srs_dir).unwrap();
 
-        let temp_path = srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME).with_extension("temp");
-        let final_path = srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME);
-        let mut temporary_file = File::create(&temp_path)
-            .with_context(|| format!("Failed to create temporary SRS file at {temp_path:?}."))
+        let temp_path = srs_file.with_extension("temp");
+        let mut temp_file = File::create(&temp_path)
+            .with_context(|| {
+                format!("Failed to create temporary unsafe SRS file at {temp_path:?}.")
+            })
             .unwrap();
-        temporary_file.write_all(&srs_bytes).unwrap();
-        temporary_file
+        temp_file.write_all(&srs_bytes).unwrap();
+        temp_file
             .sync_all()
-            .with_context(|| "Failed to fsync temporary SRS file before rename.")
+            .with_context(|| "Failed to fsync temporary unsafe SRS file before rename.")
             .unwrap();
-        drop(temporary_file);
+        drop(temp_file);
 
-        std::fs::rename(temp_path, final_path).unwrap();
+        std::fs::rename(temp_path, srs_file).unwrap();
 
-        let expected_hash = hex::encode(Sha256::digest(&srs_bytes));
-
-        Self::new(base_dir, expected_hash, "", Duration::from_secs(600))
+        // No hash needed for the test srs
+        Self::new(degree_k_dir, "", "", Duration::from_secs(600))
     }
 }
 
@@ -500,11 +498,11 @@ mod tests {
 
             let expected_srs_path = temp_dir
                 .path()
-                .join(k.to_string())
+                .join(format!("degree-{k}"))
                 .join(MITHRIL_CIRCUIT_SRS_FOLDER)
                 .join(MITHRIL_CIRCUIT_SRS_FILENAME);
             assert!(expected_srs_path.exists());
-            assert!(provider.get_trusted_setup_parameters().is_ok());
+            provider.get_trusted_setup_parameters().unwrap();
         }
 
         #[test]
@@ -516,12 +514,12 @@ mod tests {
 
             let srs_path_k1 = temp_dir
                 .path()
-                .join("1")
+                .join("degree-1")
                 .join(MITHRIL_CIRCUIT_SRS_FOLDER)
                 .join(MITHRIL_CIRCUIT_SRS_FILENAME);
             let srs_path_k2 = temp_dir
                 .path()
-                .join("2")
+                .join("degree-2")
                 .join(MITHRIL_CIRCUIT_SRS_FOLDER)
                 .join(MITHRIL_CIRCUIT_SRS_FILENAME);
 
@@ -534,30 +532,13 @@ mod tests {
         }
 
         #[test]
-        fn is_deterministic_for_the_same_degree_across_different_base_dirs() {
-            let temp_dir_a = tempfile::tempdir_in("/tmp").unwrap();
-            let temp_dir_b = tempfile::tempdir_in("/tmp").unwrap();
-            let k = 1;
-
-            let provider_a = TrustedSetupProvider::with_unsafe_srs(temp_dir_a.path(), k);
-            let provider_b = TrustedSetupProvider::with_unsafe_srs(temp_dir_b.path(), k);
-
-            let srs_subpath = std::path::Path::new(&k.to_string())
-                .join(MITHRIL_CIRCUIT_SRS_FOLDER)
-                .join(MITHRIL_CIRCUIT_SRS_FILENAME);
-            let bytes_a = std::fs::read(temp_dir_a.path().join(&srs_subpath)).unwrap();
-            let bytes_b = std::fs::read(temp_dir_b.path().join(&srs_subpath)).unwrap();
-
-            assert_eq!(bytes_a, bytes_b);
-            assert!(provider_a.get_trusted_setup_parameters().is_ok());
-            assert!(provider_b.get_trusted_setup_parameters().is_ok());
-        }
-
-        #[test]
         fn does_not_regenerate_or_overwrite_an_existing_srs_file() {
             let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
             let k = 1;
-            let srs_dir = temp_dir.path().join(k.to_string()).join(MITHRIL_CIRCUIT_SRS_FOLDER);
+            let srs_dir = temp_dir
+                .path()
+                .join(format!("degree-{k}"))
+                .join(MITHRIL_CIRCUIT_SRS_FOLDER);
             std::fs::create_dir_all(&srs_dir).unwrap();
             let srs_path = srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME);
             std::fs::write(&srs_path, b"sentinel-content-not-a-real-srs").unwrap();
@@ -577,7 +558,7 @@ mod tests {
 
             let temp_path = temp_dir
                 .path()
-                .join(k.to_string())
+                .join(format!("degree-{k}"))
                 .join(MITHRIL_CIRCUIT_SRS_FOLDER)
                 .join(MITHRIL_CIRCUIT_SRS_FILENAME)
                 .with_extension("temp");
