@@ -102,9 +102,9 @@ impl ExecToolkit {
         aggregator.stop().await?;
         let protocol_parameters_new = match aggregate_signature_type {
             AggregateSignatureType::Concatenation => ProtocolParameters {
-                k: 145,
-                m: 210,
-                phi_f: 0.80,
+                k: 83,
+                m: 130,
+                phi_f: 0.75,
             },
             AggregateSignatureType::Snark => ProtocolParameters {
                 k: 7,

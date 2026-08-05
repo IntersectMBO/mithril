@@ -59,7 +59,7 @@ impl CheckCertificateToolkit {
         }
 
         match poll_until!(
-            self.context.artifact_production_timeout(),
+            self.context.existing_artifact_fetch_timeout(),
             self.context.poll_backoff(),
             { fetch_certificate_message(url.clone()).await }
         ) {
