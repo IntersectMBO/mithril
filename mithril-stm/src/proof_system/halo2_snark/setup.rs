@@ -79,7 +79,7 @@ impl SnarkProverSetup {
         })
     }
 
-    /// Builds an [`SnarkProverSetup`] from a deterministic unsafe SRS with degree `RECURSIVE_CIRCUIT_DEGREE`
+    /// Builds a [`SnarkProverSetup`] from a deterministic unsafe SRS with degree `RECURSIVE_CIRCUIT_DEGREE`
     /// using [`Self::build_for_test_degree`].
     #[cfg(test)]
     pub(crate) fn build_for_test(
@@ -89,7 +89,7 @@ impl SnarkProverSetup {
         Self::build_for_test_degree(parameters, merkle_tree_depth, RECURSIVE_CIRCUIT_DEGREE)
     }
 
-    /// Builds an [`SnarkProverSetup`] from a deterministic unsafe SRS with degree determined by the input
+    /// Builds a [`SnarkProverSetup`] from a deterministic unsafe SRS with degree determined by the input
     /// `unsafe_srs_degree`.
     /// Uses a cache for the unsafe SRS to avoid regenerating it when a SRS of the correct degree already exists
     #[cfg(test)]

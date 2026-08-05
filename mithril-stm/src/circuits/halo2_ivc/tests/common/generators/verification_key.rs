@@ -31,7 +31,11 @@ pub(crate) fn golden_recursive_circuit_verification_key_bytes() -> Vec<u8> {
     let circuit_degree = MidnightCircuit::from_relation(&circuit, None).k();
 
     let srs_for_non_recursive_circuit = build_deterministic_params(circuit_degree);
-    let srs_for_recursive_circuit = build_deterministic_params(RECURSIVE_CIRCUIT_DEGREE);
+    let srs_for_recursive_circuit = if circuit_degree == RECURSIVE_CIRCUIT_DEGREE {
+        srs_for_non_recursive_circuit.clone()
+    } else {
+        build_deterministic_params(RECURSIVE_CIRCUIT_DEGREE)
+    };
 
     let circuit_verification_key = NonRecursiveCircuitVerifyingKey::new(
         midnight_zk_stdlib::setup_vk(&srs_for_non_recursive_circuit, &circuit),

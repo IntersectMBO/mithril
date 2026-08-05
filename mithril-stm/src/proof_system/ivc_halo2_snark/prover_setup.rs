@@ -177,6 +177,7 @@ impl IvcSnarkProverSetup {
         merkle_tree_depth: u32,
         unsafe_srs_degree: u32,
     ) -> StmResult<Self> {
+        assert!(unsafe_srs_degree >= RECURSIVE_CIRCUIT_DEGREE);
         let parameters_bytes = parameters.to_bytes()?;
         let depth_bytes = merkle_tree_depth.to_le_bytes();
         let seed_bytes = UNSAFE_SRS_SEED.to_le_bytes();

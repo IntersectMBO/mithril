@@ -181,18 +181,18 @@ pub(crate) fn build_shared_recursive_context(
     let universal_kzg_parameters = build_deterministic_params(shared_srs_degree);
     let universal_verifier_params = universal_kzg_parameters.verifier_params();
 
-    let (certificate_commitment_parameters, recursive_commitment_parameters) =
-        if CERTIFICATE_CIRCUIT_DEGREE == shared_srs_degree {
-            (
-                universal_kzg_parameters.clone(),
-                build_deterministic_params(RECURSIVE_CIRCUIT_DEGREE),
-            )
+    let params_for = |degree| {
+        if degree == shared_srs_degree {
+            universal_kzg_parameters.clone()
         } else {
-            (
-                build_deterministic_params(CERTIFICATE_CIRCUIT_DEGREE),
-                universal_kzg_parameters.clone(),
-            )
-        };
+            build_deterministic_params(degree)
+        }
+    };
+
+    let (certificate_commitment_parameters, recursive_commitment_parameters) = (
+        params_for(CERTIFICATE_CIRCUIT_DEGREE),
+        params_for(RECURSIVE_CIRCUIT_DEGREE),
+    );
 
     let certificate_verifying_key = NonRecursiveCircuitVerifyingKey::new(zk_lib::setup_vk(
         &certificate_commitment_parameters,
