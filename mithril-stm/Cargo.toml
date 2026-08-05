@@ -1,6 +1,6 @@
 [package]
 name = "mithril-stm"
-version = "0.12.1"
+version = "0.12.2"
 edition = { workspace = true }
 authors = { workspace = true }
 homepage = { workspace = true }
@@ -9,6 +9,10 @@ repository = { workspace = true }
 description = "A Rust implementation of Mithril Stake-based Threshold Multisignatures (STMs)."
 categories = ["cryptography"]
 include = ["**/*.rs", "Cargo.toml", "README.md", ".gitignore"]
+
+[package.metadata.cargo-machete]
+# `serde_bytes` is used for proof bytes serialization
+ignored = ["serde_bytes"]
 
 [lib]
 crate-type = ["lib", "cdylib", "staticlib"]
@@ -63,6 +67,7 @@ rand_core = { workspace = true, features = ["std"] }
 rayon = { workspace = true }
 reqwest = { workspace = true, default-features = false, features = ["blocking"], optional = true }
 serde = { workspace = true }
+serde_bytes = "0.11.19"
 sha2 = { version = "0.10.9", optional = true }
 thiserror = { workspace = true }
 

@@ -257,7 +257,7 @@ impl CertificateProofBytes {
 
 /// Provisional recursive proof-byte wrapper until `IvcProof` is wired end-to-end.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct IvcProofBytes(Vec<u8>);
+pub(crate) struct IvcProofBytes(#[serde(with = "serde_bytes")] Vec<u8>);
 
 impl IvcProofBytes {
     pub(crate) fn new(bytes: Vec<u8>) -> Self {

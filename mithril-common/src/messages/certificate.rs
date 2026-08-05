@@ -270,7 +270,7 @@ impl TryFrom<Certificate> for CertificateMessage {
         let (multi_signature, genesis_signature) = match certificate.signature {
             CertificateSignature::GenesisSignature(signature) => (
                 String::new(),
-                signature.to_bytes_hex().with_context(|| {
+                String::try_from(&signature).with_context(|| {
                     "Can not convert certificate to message: can not encode the genesis signature"
                 })?,
             ),
@@ -279,13 +279,13 @@ impl TryFrom<Certificate> for CertificateMessage {
                 genesis_schnorr_signature = hex::encode(schnorr_signature.to_bytes());
                 (
                     String::new(),
-                    ed_signature.to_bytes_hex().with_context(|| {
+                    String::try_from(&ed_signature).with_context(|| {
                         "Can not convert certificate to message: can not encode the genesis signature"
                     })?,
                 )
             }
             CertificateSignature::MultiSignature(_, signature) => (
-                signature.to_json_hex().with_context(|| {
+                String::try_from(&signature).with_context(|| {
                     "Can not convert certificate to message: can not encode the multi-signature"
                 })?,
                 String::new(),
@@ -300,30 +300,28 @@ impl TryFrom<Certificate> for CertificateMessage {
             metadata,
             protocol_message: certificate.protocol_message,
             signed_message: certificate.signed_message,
-            aggregate_verification_key: certificate
-                .aggregate_verification_key
-                .to_json_hex()
+            aggregate_verification_key: String::try_from(&certificate.aggregate_verification_key)
                 .with_context(|| {
                     "Can not convert certificate to message: can not encode aggregate verification key for Concatenation"
                 })?,
             #[cfg(feature = "future_snark")]
             aggregate_verification_key_snark: certificate
                 .aggregate_verification_key_snark
-                .map(|avk| avk.to_bytes_hex())
+                .map(String::try_from)
                 .transpose()
                 .with_context(|| {
                     "Can not convert certificate to message: can not encode aggregate verification key for SNARK"
                 })?,
             ancillary_prover_data: certificate
                 .ancillary_prover_data
-                .map(|data| data.to_bytes_hex())
+                .map(String::try_from)
                 .transpose()
                 .with_context(|| {
                     "Can not convert certificate to message: can not encode the ancillary prover data"
                 })?,
             ancillary_verifier_data: certificate
                 .ancillary_verifier_data
-                .map(|data| data.to_bytes_hex())
+                .map(String::try_from)
                 .transpose()
                 .with_context(|| {
                     "Can not convert certificate to message: can not encode the ancillary verifier data"
@@ -692,6 +690,47 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    mod multi_signature_encoding {
+        use crate::test::double::fake_data;
+
+        use super::*;
+
+        #[test]
+        fn concatenation_multi_signature_is_encoded_as_json_hex() {
+            let certificate = fake_data::certificate("hash");
+            let expected_json_hex = match &certificate.signature {
+                CertificateSignature::MultiSignature(_, signature) => {
+                    signature.to_json_hex().unwrap()
+                }
+                _ => panic!("expected a multi-signature certificate"),
+            };
+
+            let message = CertificateMessage::try_from(certificate).unwrap();
+
+            assert_eq!(expected_json_hex, message.multi_signature);
+        }
+
+        #[cfg(feature = "future_snark")]
+        #[test]
+        fn snark_multi_signature_is_encoded_as_bytes_hex() {
+            let snark_signature = fake_data::snark_aggregate_signature();
+            let expected_bytes_hex = snark_signature.to_bytes_hex().unwrap();
+            let mut certificate = fake_data::certificate("hash");
+            let signed_entity_type = match &certificate.signature {
+                CertificateSignature::MultiSignature(signed_entity_type, _) => {
+                    signed_entity_type.clone()
+                }
+                _ => panic!("expected a multi-signature certificate"),
+            };
+            certificate.signature =
+                CertificateSignature::MultiSignature(signed_entity_type, snark_signature);
+
+            let message = CertificateMessage::try_from(certificate).unwrap();
+
+            assert_eq!(expected_bytes_hex, message.multi_signature);
         }
     }
 }
