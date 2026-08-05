@@ -15,8 +15,6 @@ use mithril_doc::{Documenter, GenerateDocCommands, StructDoc};
 use slog::{Level, Logger, debug};
 use std::{collections::HashMap, path::PathBuf};
 
-pub use protocol_configuration_command::*;
-
 use crate::{DefaultConfiguration, extract_all};
 
 /// Main command selector

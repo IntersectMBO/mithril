@@ -10,7 +10,7 @@ use mithril_common::{
     test::double::{Dummy, fake_data},
 };
 
-use crate::commands::HumanReadableProtocolConfiguration;
+use crate::tools::HumanReadableProtocolConfiguration;
 
 mod record {
     use mithril_common::entities::{ProtocolMessage, SignedEntityType};

@@ -1,9 +1,14 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Context;
 use mithril_cardano_node_chain::entities::{TxDatumBuilder, TxDatumFieldValue};
 use mithril_common::{
-    StdResult, crypto_helper::ProtocolConfigurationMarkersSigner, entities::Epoch,
+    StdResult,
+    crypto_helper::ProtocolConfigurationMarkersSigner,
+    entities::{
+        CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
+        ProtocolParameters,
+    },
     messages::SignedEntityTypeDiscriminantsMessage,
 };
 
@@ -14,13 +19,11 @@ use mithril_protocol_config::{
     },
     model::{ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch},
 };
+use serde::{Deserialize, Serialize};
 use slog::{Logger, info, warn};
 use thiserror::Error;
 
-use crate::{
-    commands::HumanReadableProtocolConfiguration,
-    dependency_injection::ProtocolConfigurationCommandDependenciesContainer,
-};
+use crate::dependency_injection::ProtocolConfigurationCommandDependenciesContainer;
 
 const EPOCH_OFFSET: u64 = 3;
 const DATUM_MAX_SIZE_KB: usize = 10;
@@ -49,6 +52,65 @@ pub struct ProtocolConfigurationToolsConfiguration {
 pub struct ProtocolConfigurationTools {
     configuration: ProtocolConfigurationToolsConfiguration,
     logger: Logger,
+}
+
+/// Human readable protocol configuration
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct HumanReadableProtocolConfiguration {
+    pub epoch: Epoch,
+    pub protocol_parameters: ProtocolParameters,
+    pub cardano_transaction_signing_config: Option<CardanoTransactionsSigningConfig>,
+    pub cardano_blocks_transactions_signing_config: Option<CardanoBlocksTransactionsSigningConfig>,
+    pub enabled_signed_entity_types: BTreeSet<SignedEntityTypeDiscriminantsMessage>,
+}
+
+impl HumanReadableProtocolConfiguration {
+    pub fn new(
+        epoch: Epoch,
+        protocol_parameters: ProtocolParameters,
+        cardano_transaction_signing_config: Option<CardanoTransactionsSigningConfig>,
+        cardano_blocks_transactions_signing_config: Option<CardanoBlocksTransactionsSigningConfig>,
+        enabled_signed_entity_types: BTreeSet<SignedEntityTypeDiscriminantsMessage>,
+    ) -> Self {
+        HumanReadableProtocolConfiguration {
+            epoch,
+            protocol_parameters,
+            cardano_transaction_signing_config,
+            cardano_blocks_transactions_signing_config,
+            enabled_signed_entity_types,
+        }
+    }
+
+    pub fn to_vec_human_readable_protocol_configuration(
+        configs: ConfigurationResolverFromMarkers,
+    ) -> Vec<HumanReadableProtocolConfiguration> {
+        let mut human_readable_protocol_configurations = Vec::new();
+        for (epoch, config) in configs.markers {
+            human_readable_protocol_configurations.push(
+                HumanReadableProtocolConfiguration::from_protocol_configuration_for_epoch(
+                    epoch, config,
+                ),
+            );
+        }
+        human_readable_protocol_configurations
+    }
+
+    fn from_protocol_configuration_for_epoch(
+        epoch: Epoch,
+        config: ProtocolConfigurationForEpoch,
+    ) -> HumanReadableProtocolConfiguration {
+        HumanReadableProtocolConfiguration {
+            epoch,
+            protocol_parameters: config.protocol_parameters,
+            enabled_signed_entity_types: config
+                .enabled_signed_entity_types
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            cardano_transaction_signing_config: config.cardano_transactions,
+            cardano_blocks_transactions_signing_config: config.cardano_blocks_transactions,
+        }
+    }
 }
 
 impl ProtocolConfigurationTools {

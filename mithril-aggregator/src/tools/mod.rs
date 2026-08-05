@@ -14,7 +14,7 @@ pub use era::EraTools;
 #[cfg(feature = "future_snark")]
 pub use genesis::GenesisSignedPayload;
 pub use genesis::GenesisTools;
-pub use protocol_configuration::ProtocolConfigurationTools;
+pub use protocol_configuration::{HumanReadableProtocolConfiguration, ProtocolConfigurationTools};
 pub use single_signature_authenticator::*;
 pub use vacuum_tracker::VacuumTracker;
 
