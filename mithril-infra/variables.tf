@@ -551,6 +551,30 @@ variable "mithril_era_reader_secret_key" {
   default     = ""
 }
 
+variable "mithril_protocol_configuration_reader_adapter_type" {
+  type        = string
+  description = "The Mithril protocol configuration reader adapter used to read the protocol configuration markers"
+  default     = "cardano-chain"
+}
+
+variable "mithril_protocol_configuration_reader_address_url" {
+  type        = string
+  description = "The url of the Mithril protocol configuration reader address used to query the on chain Utxo containing the protocol configuration markers payload"
+  default     = ""
+}
+
+variable "mithril_protocol_configuration_reader_verification_key_url" {
+  type        = string
+  description = "The url of the Mithril protocol configuration reader verification key used to verify a protocol configuration markers payload"
+  default     = ""
+}
+
+variable "mithril_protocol_configuration_reader_secret_key" {
+  type        = string
+  description = "The Mithril protocol configuration reader secret key used by the aggregator to generate a protocol configuration markers payload TxDatum file (test only)"
+  default     = ""
+}
+
 variable "mithril_signers" {
   type = map(object({
     type    = string

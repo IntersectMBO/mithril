@@ -168,6 +168,13 @@ export ERA_READER_ADAPTER_PARAMS=$ERA_READER_ADAPTER_PARAMS
 EOT
       ,
       "export ERA_READER_SECRET_KEY='${var.mithril_era_reader_secret_key}'",
+      "export PROTOCOL_CONFIGURATION_READER_ADAPTER_TYPE='${var.mithril_protocol_configuration_reader_adapter_type}'",
+      <<-EOT
+PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS=$(jq -nc --arg address $(wget -q -O - ${var.mithril_protocol_configuration_reader_address_url}) --arg verification_key $(wget -q -O - ${var.mithril_protocol_configuration_reader_verification_key_url}) '{"address": $address, "verification_key": $verification_key}')
+export PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS=$PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS
+EOT
+      ,
+      "export PROTOCOL_CONFIGURATION_READER_SECRET_KEY='${var.mithril_protocol_configuration_reader_secret_key}'",
       <<-EOT
 export ANCILLARY_FILES_SIGNER_TYPE=${var.mithril_aggregator_ancillary_signer_type}
 if [ "$ANCILLARY_FILES_SIGNER_TYPE" = "secret-key" ]; then

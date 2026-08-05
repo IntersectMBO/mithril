@@ -219,6 +219,12 @@ ERA_READER_ADAPTER_PARAMS=$(jq -nc --arg address $(wget -q -O - ${var.mithril_er
 export ERA_READER_ADAPTER_PARAMS=$ERA_READER_ADAPTER_PARAMS
 EOT
       ,
+      "export PROTOCOL_CONFIGURATION_READER_ADAPTER_TYPE='${var.mithril_protocol_configuration_reader_adapter_type}'",
+      <<-EOT
+PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS=$(jq -nc --arg address $(wget -q -O - ${var.mithril_protocol_configuration_reader_address_url}) --arg verification_key $(wget -q -O - ${var.mithril_protocol_configuration_reader_verification_key_url}) '{"address": $address, "verification_key": $verification_key}')
+export PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS=$PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS
+EOT
+      ,
       "export AGGREGATOR_RELAY_LISTEN_PORT='${local.mithril_aggregator_relay_mithril_listen_port}'",
       "export SIGNER_RELAY_LISTEN_PORT='${local.mithril_signers_relay_listen_port[each.key]}'",
       "export SIGNER_RELAY_SERVER_PORT='${local.mithril_signers_relay_server_port[each.key]}'",
