@@ -284,7 +284,7 @@ impl MithrilInfrastructure {
             AggregateSignatureType::Concatenation => ProtocolParameters {
                 k: 70,
                 m: 105,
-                phi_f: 0.95,
+                phi_f: 0.77,
             },
             AggregateSignatureType::Snark | AggregateSignatureType::IvcSnark => {
                 ProtocolParameters {
