@@ -7,26 +7,26 @@ if [[ -n $DEBUG ]]; then
     set -x
 fi
 
-# Script directory variable
-SCRIPT_DIRECTORY=$(dirname $0)
+# Script directory variable (absolute path)
+SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 
 # Init script
-. $SCRIPT_DIRECTORY/mkfiles/mkfiles-init.sh
+. ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-init.sh
 
 # Generate the Cardano nodes topology
 . ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-topology-cardano.sh
 
 # Generate Cardano devnet artifacts
-. $SCRIPT_DIRECTORY/mkfiles/mkfiles-cardano.sh
+. ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-cardano.sh
 
 # Generate the DMQ nodes topology
 . ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-topology-dmq.sh
 
 # Generate Cardano DMQ artifacts
-. $SCRIPT_DIRECTORY/mkfiles/mkfiles-dmq.sh
+. ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-dmq.sh
 
 # Generate the start scripts
-. $SCRIPT_DIRECTORY/mkfiles/mkfiles-start.sh
+. ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-start.sh
 
 # Generate the pools scripts
 . ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-pools.sh
@@ -41,8 +41,8 @@ SCRIPT_DIRECTORY=$(dirname $0)
 . ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-mithril-payment.sh
 
 # Generate the query scripts
-. $SCRIPT_DIRECTORY/mkfiles/mkfiles-query.sh
+. ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-query.sh
 
 # Cleanup
-. $SCRIPT_DIRECTORY/mkfiles/mkfiles-cleanup.sh
+. ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-cleanup.sh
 
