@@ -74,19 +74,19 @@ impl FileArchive {
     ///
     /// An 'unpack' directory will be created in the given parent directory.
     #[cfg(test)]
-    pub fn unpack_gzip<P: AsRef<Path>>(&self, parent_dir: P) -> PathBuf {
+    pub fn unpack_zstandard<P: AsRef<Path>>(&self, parent_dir: P) -> PathBuf {
         use super::test_tools::create_dir;
-        use flate2::read::GzDecoder;
         use std::fs::File;
         use tar::Archive;
-        if self.compression_algorithm != CompressionAlgorithm::Gzip {
-            panic!("Only Gzip compression is supported");
+        use zstd::stream::read::Decoder;
+        if self.compression_algorithm != CompressionAlgorithm::Zstandard {
+            panic!("Only Zstandard compression is supported");
         }
 
         let parent_dir = parent_dir.as_ref();
-        let file_tar_gz = File::open(self.get_file_path()).unwrap();
-        let file_tar_gz_decoder = GzDecoder::new(file_tar_gz);
-        let mut archive = Archive::new(file_tar_gz_decoder);
+        let file_tar_zst = File::open(self.get_file_path()).unwrap();
+        let file_tar_zst_decoder = Decoder::new(file_tar_zst).unwrap();
+        let mut archive = Archive::new(file_tar_zst_decoder);
         let unpack_path = parent_dir.join(create_dir(parent_dir, "unpack"));
         archive.unpack(&unpack_path).unwrap();
 
@@ -98,10 +98,10 @@ impl FileArchive {
 impl mithril_common::test::double::Dummy for FileArchive {
     fn dummy() -> Self {
         Self {
-            filepath: PathBuf::from("archive.tar.gz"),
+            filepath: PathBuf::from("archive.tar.zst"),
             archive_filesize: 10,
             uncompressed_size: 789,
-            compression_algorithm: CompressionAlgorithm::Gzip,
+            compression_algorithm: CompressionAlgorithm::Zstandard,
         }
     }
 }
@@ -115,11 +115,11 @@ mod tests {
         let archive_parameters = ArchiveParameters {
             archive_name_without_extension: "archive.test_xxx".to_owned(),
             target_directory: PathBuf::from("/tmp"),
-            compression_algorithm: CompressionAlgorithm::Gzip,
+            compression_algorithm: CompressionAlgorithm::Zstandard,
         };
 
         assert_eq!(
-            PathBuf::from("/tmp/archive.test_xxx.tar.gz"),
+            PathBuf::from("/tmp/archive.test_xxx.tar.zst"),
             archive_parameters.target_path()
         );
     }
@@ -129,7 +129,7 @@ mod tests {
         let archive_parameters = ArchiveParameters {
             archive_name_without_extension: "archive.test_xxx".to_owned(),
             target_directory: PathBuf::from("/tmp"),
-            compression_algorithm: CompressionAlgorithm::Gzip,
+            compression_algorithm: CompressionAlgorithm::Zstandard,
         };
 
         assert_eq!(

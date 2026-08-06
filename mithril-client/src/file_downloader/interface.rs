@@ -405,7 +405,7 @@ mod tests {
     fn file_downloader_uri_from_ancillary_location() {
         let location = AncillaryLocation::CloudStorage {
             uri: "http://whatever/ancillary-1".to_string(),
-            compression_algorithm: Some(CompressionAlgorithm::Gzip),
+            compression_algorithm: Some(CompressionAlgorithm::Zstandard),
         };
         let file_downloader_uri: FileDownloaderUri = location.try_into().unwrap();
 

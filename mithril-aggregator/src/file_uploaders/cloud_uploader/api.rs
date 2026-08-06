@@ -126,14 +126,14 @@ mod tests {
     #[tokio::test]
     async fn upload_public_file_succeeds_without_uploading_it_if_file_exists_in_cache() {
         let allow_overwrite = false;
-        let local_file_path = Path::new("local_folder").join("snapshot.xxx.tar.gz");
+        let local_file_path = Path::new("local_folder").join("snapshot.xxx.tar.zst");
         let remote_folder_path = CloudRemotePath::new("remote_folder");
         let expected_file_uri =
-            FileUri("https://cloud-host/remote_folder/snapshot.xxx.tar.gz".to_string());
+            FileUri("https://cloud-host/remote_folder/snapshot.xxx.tar.zst".to_string());
         let files_in_cache = vec![
-            CloudRemotePath::new("remote_folder/snapshot.yyy.tar.gz"),
-            CloudRemotePath::new("remote_folder/snapshot.xxx.tar.gz"),
-            CloudRemotePath::new("remote_folder/snapshot.zzz.tar.gz"),
+            CloudRemotePath::new("remote_folder/snapshot.yyy.tar.zst"),
+            CloudRemotePath::new("remote_folder/snapshot.xxx.tar.zst"),
+            CloudRemotePath::new("remote_folder/snapshot.zzz.tar.zst"),
         ];
 
         let cloud_backend_uploader = {
@@ -147,7 +147,7 @@ mod tests {
             mock_cloud_backend_uploader
                 .expect_get_file_uri()
                 .with(eq(CloudRemotePath::new(
-                    "remote_folder/snapshot.xxx.tar.gz",
+                    "remote_folder/snapshot.xxx.tar.zst",
                 )))
                 .return_once(move |_| expected_file_uri_clone)
                 .once();
@@ -174,11 +174,11 @@ mod tests {
     async fn upload_public_file_succeeds_if_cache_is_empty_and_fallback_checking_for_file_existence()
      {
         let allow_overwrite = false;
-        let local_file_path = Path::new("local_folder").join("snapshot.xxx.tar.gz");
+        let local_file_path = Path::new("local_folder").join("snapshot.xxx.tar.zst");
         let remote_folder_path = CloudRemotePath::new("remote_folder");
-        let remote_file_path = remote_folder_path.join("snapshot.xxx.tar.gz");
+        let remote_file_path = remote_folder_path.join("snapshot.xxx.tar.zst");
         let expected_file_uri =
-            FileUri("https://cloud-host/remote_folder/snapshot.xxx.tar.gz".to_string());
+            FileUri("https://cloud-host/remote_folder/snapshot.xxx.tar.zst".to_string());
         let files_in_cache = vec![];
 
         let cloud_backend_uploader = {
@@ -216,11 +216,11 @@ mod tests {
     async fn upload_public_file_succeeds_when_file_does_not_exist_remotely_and_without_overwriting_allowed()
      {
         let allow_overwrite = false;
-        let local_file_path = Path::new("local_folder").join("snapshot.xxx.tar.gz");
+        let local_file_path = Path::new("local_folder").join("snapshot.xxx.tar.zst");
         let remote_folder_path = CloudRemotePath::new("remote_folder");
-        let remote_file_path = remote_folder_path.join("snapshot.xxx.tar.gz");
+        let remote_file_path = remote_folder_path.join("snapshot.xxx.tar.zst");
         let expected_file_uri =
-            FileUri("https://cloud-host/remote_folder/snapshot.xxx.tar.gz".to_string());
+            FileUri("https://cloud-host/remote_folder/snapshot.xxx.tar.zst".to_string());
         let cloud_backend_uploader = {
             let mut mock_cloud_backend_uploader = MockCloudBackendUploader::new();
             mock_cloud_backend_uploader
@@ -258,11 +258,11 @@ mod tests {
     async fn upload_public_file_succeeds_when_file_exists_remotely_and_without_overwriting_allowed()
     {
         let allow_overwrite = false;
-        let local_file_path = Path::new("local_folder").join("snapshot.xxx.tar.gz");
+        let local_file_path = Path::new("local_folder").join("snapshot.xxx.tar.zst");
         let remote_folder_path = CloudRemotePath::new("remote_folder");
-        let remote_file_path = remote_folder_path.join("snapshot.xxx.tar.gz");
+        let remote_file_path = remote_folder_path.join("snapshot.xxx.tar.zst");
         let expected_file_uri =
-            FileUri("https://cloud-host/remote_folder/snapshot.xxx.tar.gz".to_string());
+            FileUri("https://cloud-host/remote_folder/snapshot.xxx.tar.zst".to_string());
         let cloud_backend_uploader = {
             let mut mock_cloud_backend_uploader = MockCloudBackendUploader::new();
             let expected_file_uri_clone = expected_file_uri.clone();
@@ -289,11 +289,11 @@ mod tests {
     #[tokio::test]
     async fn upload_public_file_succeeds_with_overwriting_allowed() {
         let allow_overwrite = true;
-        let local_file_path = Path::new("local_folder").join("snapshot.xxx.tar.gz");
+        let local_file_path = Path::new("local_folder").join("snapshot.xxx.tar.zst");
         let remote_folder_path = CloudRemotePath::new("remote_folder");
-        let remote_file_path = remote_folder_path.join("snapshot.xxx.tar.gz");
+        let remote_file_path = remote_folder_path.join("snapshot.xxx.tar.zst");
         let expected_file_uri =
-            FileUri("https://cloud-host/remote_folder/snapshot.xxx.tar.gz".to_string());
+            FileUri("https://cloud-host/remote_folder/snapshot.xxx.tar.zst".to_string());
         let cloud_backend_uploader = {
             let mut mock_cloud_backend_uploader = MockCloudBackendUploader::new();
             let expected_file_uri_clone = expected_file_uri.clone();

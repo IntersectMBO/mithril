@@ -107,12 +107,12 @@ mod tests {
     #[test]
     fn returns_template() {
         let file_uris = vec![
-            "http://whatever/00001.tar.gz".to_string(),
-            "http://whatever/00002.tar.gz".to_string(),
+            "http://whatever/00001.tar.zst".to_string(),
+            "http://whatever/00002.tar.zst".to_string(),
         ];
         fn extractor_returning_same_uri(_file_uri: &str) -> StdResult<Option<String>> {
             Ok(Some(
-                "http://whatever/{immutable_file_number}.tar.gz".to_string(),
+                "http://whatever/{immutable_file_number}.tar.zst".to_string(),
             ))
         }
 
@@ -123,7 +123,7 @@ mod tests {
         assert_eq!(
             template,
             Some(TemplateUri(
-                "http://whatever/{immutable_file_number}.tar.gz".to_string()
+                "http://whatever/{immutable_file_number}.tar.zst".to_string()
             ))
         );
     }
@@ -131,8 +131,8 @@ mod tests {
     #[test]
     fn returns_error_with_multiple_templates() {
         let file_uris = vec![
-            "http://whatever/00001.tar.gz".to_string(),
-            "http://00002.tar.gz/whatever".to_string(),
+            "http://whatever/00001.tar.zst".to_string(),
+            "http://00002.tar.zst/whatever".to_string(),
         ];
         fn extractor_returning_different_uri(file_uri: &str) -> StdResult<Option<String>> {
             Ok(Some(file_uri.to_string()))
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn expand_multi_file_template_to_one_file_uri() {
         let template = MultiFilesUri::Template(TemplateUri(
-            "http://whatever/{var1}-{var2}.tar.gz".to_string(),
+            "http://whatever/{var1}-{var2}.tar.zst".to_string(),
         ));
 
         assert_eq!(
@@ -155,7 +155,7 @@ mod tests {
                 ("var1".to_string(), "00001".to_string()),
                 ("var2".to_string(), "abc".to_string()),
             ]),),
-            FileUri("http://whatever/00001-abc.tar.gz".to_string()),
+            FileUri("http://whatever/00001-abc.tar.zst".to_string()),
         );
 
         assert_eq!(
@@ -163,7 +163,7 @@ mod tests {
                 ("var1".to_string(), "00001".to_string()),
                 ("var2".to_string(), "def".to_string()),
             ]),),
-            FileUri("http://whatever/00001-def.tar.gz".to_string()),
+            FileUri("http://whatever/00001-def.tar.zst".to_string()),
         );
 
         assert_eq!(
@@ -171,36 +171,36 @@ mod tests {
                 ("var1".to_string(), "00002".to_string()),
                 ("var2".to_string(), "def".to_string()),
             ]),),
-            FileUri("http://whatever/00002-def.tar.gz".to_string()),
+            FileUri("http://whatever/00002-def.tar.zst".to_string()),
         );
     }
 
     #[test]
     fn expand_multi_file_template_to_immutable_file_number() {
         let template = MultiFilesUri::Template(TemplateUri(
-            "http://whatever/{immutable_file_number}.tar.gz".to_string(),
+            "http://whatever/{immutable_file_number}.tar.zst".to_string(),
         ));
 
         assert_eq!(
             template.expand_for_immutable_file_number(6),
-            FileUri("http://whatever/00006.tar.gz".to_string()),
+            FileUri("http://whatever/00006.tar.zst".to_string()),
         );
 
         assert_eq!(
             template.expand_for_immutable_file_number(15329),
-            FileUri("http://whatever/15329.tar.gz".to_string()),
+            FileUri("http://whatever/15329.tar.zst".to_string()),
         );
 
         assert_eq!(
             template.expand_for_immutable_file_number(199999),
-            FileUri("http://whatever/199999.tar.gz".to_string()),
+            FileUri("http://whatever/199999.tar.zst".to_string()),
         );
     }
 
     #[test]
     fn expand_multi_file_template_to_multiple_file_uris() {
         let template = MultiFilesUri::Template(TemplateUri(
-            "http://whatever/{var1}-{var2}.tar.gz".to_string(),
+            "http://whatever/{var1}-{var2}.tar.zst".to_string(),
         ));
         let variables = vec![
             HashMap::from([
@@ -220,9 +220,9 @@ mod tests {
         let expanded_file_uris = template.expand_to_file_uris(variables).unwrap();
         assert_eq!(
             vec![
-                FileUri("http://whatever/00001-abc.tar.gz".to_string()),
-                FileUri("http://whatever/00001-def.tar.gz".to_string()),
-                FileUri("http://whatever/00002-def.tar.gz".to_string()),
+                FileUri("http://whatever/00001-abc.tar.zst".to_string()),
+                FileUri("http://whatever/00001-def.tar.zst".to_string()),
+                FileUri("http://whatever/00002-def.tar.zst".to_string()),
             ],
             expanded_file_uris,
         );

@@ -377,7 +377,7 @@ mod tests {
             DUMMY_CARDANO_NODE_VERSION,
             db_directory,
             ongoing_snapshot_directory.clone(),
-            CompressionAlgorithm::Gzip,
+            CompressionAlgorithm::Zstandard,
             Arc::new(FileArchiver::new_for_test(test_dir.join("verification"))),
             Arc::new(MockAncillarySigner::new()),
             TestLogger::stdout(),
@@ -401,7 +401,7 @@ mod tests {
             DUMMY_CARDANO_NODE_VERSION,
             db_directory,
             ongoing_snapshot_directory.clone(),
-            CompressionAlgorithm::Gzip,
+            CompressionAlgorithm::Zstandard,
             Arc::new(FileArchiver::new_for_test(test_dir.join("verification"))),
             Arc::new(MockAncillarySigner::new()),
             TestLogger::stdout(),
@@ -424,7 +424,7 @@ mod tests {
             DUMMY_CARDANO_NODE_VERSION,
             cardano_db.get_dir().clone(),
             pending_snapshot_directory.clone(),
-            CompressionAlgorithm::Gzip,
+            CompressionAlgorithm::Zstandard,
             Arc::new(FileArchiver::new_for_test(test_dir.join("verification"))),
             Arc::new(MockAncillarySigner::new()),
             TestLogger::stdout(),
@@ -451,12 +451,15 @@ mod tests {
                 .with_non_immutables(&["random_file.txt", "00002.trap"])
                 .build();
 
-            let snapshotter =
-                snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip);
+            let snapshotter = snapshotter_for_test(
+                &test_dir,
+                cardano_db.get_dir(),
+                CompressionAlgorithm::Zstandard,
+            );
 
             let snapshot = snapshotter.snapshot_immutable_trio(2, "immutable-2").await.unwrap();
 
-            let unpack_dir = snapshot.unpack_gzip(&test_dir);
+            let unpack_dir = snapshot.unpack_zstandard(&test_dir);
             let unpacked_files = list_files(&unpack_dir);
             let unpacked_immutable_files = list_files(&unpack_dir.join(IMMUTABLE_DIR));
 
@@ -485,8 +488,11 @@ mod tests {
                 .with_immutables(&[1, 2])
                 .with_legacy_ledger_snapshots(&[737])
                 .build();
-            let snapshotter =
-                snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip);
+            let snapshotter = snapshotter_for_test(
+                &test_dir,
+                cardano_db.get_dir(),
+                CompressionAlgorithm::Zstandard,
+            );
             let ancillary_snapshot_dir = test_dir.join("ancillary_snapshot");
             fs::create_dir(&ancillary_snapshot_dir).unwrap();
 
@@ -516,8 +522,11 @@ mod tests {
                 .with_immutables(&[1, 2])
                 .with_in_memory_ledger_snapshots(&[737])
                 .build();
-            let snapshotter =
-                snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip);
+            let snapshotter = snapshotter_for_test(
+                &test_dir,
+                cardano_db.get_dir(),
+                CompressionAlgorithm::Zstandard,
+            );
             let ancillary_snapshot_dir = test_dir.join("ancillary_snapshot");
             fs::create_dir(&ancillary_snapshot_dir).unwrap();
 
@@ -553,8 +562,11 @@ mod tests {
             let cardano_db = DummyCardanoDbBuilder::new(current_function!())
                 .with_immutables(&[1, 2])
                 .build();
-            let snapshotter =
-                snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip);
+            let snapshotter = snapshotter_for_test(
+                &test_dir,
+                cardano_db.get_dir(),
+                CompressionAlgorithm::Zstandard,
+            );
             let ancillary_snapshot_dir = test_dir.join("ancillary_snapshot");
             fs::create_dir(&ancillary_snapshot_dir).unwrap();
 
@@ -575,7 +587,11 @@ mod tests {
                 ancillary_signer: Arc::new(MockAncillarySigner::that_succeeds_with_signature(
                     fake_keys::signable_manifest_signature()[0],
                 )),
-                ..snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip)
+                ..snapshotter_for_test(
+                    &test_dir,
+                    cardano_db.get_dir(),
+                    CompressionAlgorithm::Zstandard,
+                )
             };
 
             snapshotter.snapshot_ancillary(1, "ancillary").await.unwrap();
@@ -598,7 +614,11 @@ mod tests {
                 .build();
             let snapshotter = CompressedArchiveSnapshotter {
                 ancillary_signer: Arc::new(MockAncillarySigner::that_fails_with_message("failure")),
-                ..snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip)
+                ..snapshotter_for_test(
+                    &test_dir,
+                    cardano_db.get_dir(),
+                    CompressionAlgorithm::Zstandard,
+                )
             };
 
             snapshotter.snapshot_ancillary(1, "ancillary").await.unwrap_err();
@@ -629,12 +649,16 @@ mod tests {
                 ancillary_signer: Arc::new(MockAncillarySigner::that_succeeds_with_signature(
                     fake_keys::signable_manifest_signature()[0],
                 )),
-                ..snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip)
+                ..snapshotter_for_test(
+                    &test_dir,
+                    cardano_db.get_dir(),
+                    CompressionAlgorithm::Zstandard,
+                )
             };
 
             let snapshot = snapshotter.snapshot_ancillary(2, "ancillary").await.unwrap();
 
-            let unpack_dir = snapshot.unpack_gzip(&test_dir);
+            let unpack_dir = snapshot.unpack_zstandard(&test_dir);
             assert_dir_eq!(
                 &unpack_dir,
                 // Only the two last ledger files should be included
@@ -669,12 +693,16 @@ mod tests {
                 ancillary_signer: Arc::new(MockAncillarySigner::that_succeeds_with_signature(
                     fake_keys::signable_manifest_signature()[0],
                 )),
-                ..snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip)
+                ..snapshotter_for_test(
+                    &test_dir,
+                    cardano_db.get_dir(),
+                    CompressionAlgorithm::Zstandard,
+                )
             };
 
             let snapshot = snapshotter.snapshot_ancillary(2, "ancillary").await.unwrap();
 
-            let unpack_dir = snapshot.unpack_gzip(&test_dir);
+            let unpack_dir = snapshot.unpack_zstandard(&test_dir);
             assert_dir_eq!(
                 &unpack_dir,
                 // Only the last ledger files should be included
@@ -703,7 +731,11 @@ mod tests {
                 ancillary_signer: Arc::new(MockAncillarySigner::that_fails_with_message(
                     "MockAncillarySigner failed",
                 )),
-                ..snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip)
+                ..snapshotter_for_test(
+                    &test_dir,
+                    cardano_db.get_dir(),
+                    CompressionAlgorithm::Zstandard,
+                )
             };
 
             let err = snapshotter
@@ -731,11 +763,15 @@ mod tests {
                 ancillary_signer: Arc::new(MockAncillarySigner::that_succeeds_with_signature(
                     fake_keys::signable_manifest_signature()[0],
                 )),
-                ..snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip)
+                ..snapshotter_for_test(
+                    &test_dir,
+                    cardano_db.get_dir(),
+                    CompressionAlgorithm::Zstandard,
+                )
             };
 
             let archive = snapshotter.snapshot_ancillary(2, "ancillary").await.unwrap();
-            let unpacked = archive.unpack_gzip(test_dir);
+            let unpacked = archive.unpack_zstandard(test_dir);
             let manifest_path = unpacked.join(AncillaryFilesManifest::ANCILLARY_MANIFEST_FILE_NAME);
 
             assert!(manifest_path.exists());
@@ -776,11 +812,15 @@ mod tests {
                 ancillary_signer: Arc::new(MockAncillarySigner::that_succeeds_with_signature(
                     fake_keys::signable_manifest_signature()[0],
                 )),
-                ..snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip)
+                ..snapshotter_for_test(
+                    &test_dir,
+                    cardano_db.get_dir(),
+                    CompressionAlgorithm::Zstandard,
+                )
             };
 
             let archive = snapshotter.snapshot_ancillary(2, "ancillary").await.unwrap();
-            let unpacked = archive.unpack_gzip(test_dir);
+            let unpacked = archive.unpack_zstandard(test_dir);
             let manifest_path = unpacked.join(AncillaryFilesManifest::ANCILLARY_MANIFEST_FILE_NAME);
 
             assert!(manifest_path.exists());
@@ -844,8 +884,11 @@ mod tests {
                 .set_volatile_file_size(99)
                 .build();
 
-            let snapshotter =
-                snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip);
+            let snapshotter = snapshotter_for_test(
+                &test_dir,
+                cardano_db.get_dir(),
+                CompressionAlgorithm::Zstandard,
+            );
 
             let sizes = snapshotter
                 .compute_immutable_files_total_uncompressed_size(2)
@@ -860,8 +903,11 @@ mod tests {
             let test_dir = temp_dir_create!();
             let cardano_db = DummyCardanoDbBuilder::new(current_function!()).build();
 
-            let snapshotter =
-                snapshotter_for_test(&test_dir, cardano_db.get_dir(), CompressionAlgorithm::Gzip);
+            let snapshotter = snapshotter_for_test(
+                &test_dir,
+                cardano_db.get_dir(),
+                CompressionAlgorithm::Zstandard,
+            );
 
             snapshotter
                 .compute_immutable_files_total_uncompressed_size(0)

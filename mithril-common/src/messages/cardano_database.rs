@@ -190,7 +190,7 @@ mod tests {
                     "uri": {
                         "Template": "https://host-1/immutables-{immutable_file_number}"
                     },
-                    "compression_algorithm": "gzip"
+                    "compression_algorithm": "zstandard"
                 },
                 {
                     "type": "cloud_storage",
@@ -206,7 +206,7 @@ mod tests {
                 {
                     "type": "cloud_storage",
                     "uri": "https://host-1/ancillary-3",
-                    "compression_algorithm": "gzip"
+                    "compression_algorithm": "zstandard"
                 }
             ]
         },
@@ -243,7 +243,7 @@ mod tests {
                         uri: MultiFilesUri::Template(TemplateUri(
                             "https://host-1/immutables-{immutable_file_number}".to_string(),
                         )),
-                        compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     },
                     ImmutablesLocation::CloudStorage {
                         uri: MultiFilesUri::Template(TemplateUri(
@@ -257,7 +257,7 @@ mod tests {
                 size_uncompressed: 4096,
                 locations: vec![AncillaryLocation::CloudStorage {
                     uri: "https://host-1/ancillary-3".to_string(),
-                    compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                    compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                 }],
             },
             cardano_node_version: "0.0.1".to_string(),
@@ -314,7 +314,7 @@ mod tests {
                     }
                 ]
             },
-            "compression_algorithm": "gzip",
+            "compression_algorithm": "zstandard",
             "cardano_node_version": "0.0.1",
             "created_at": "2023-01-19T13:43:05.618857482Z"
         }"#;
@@ -340,7 +340,7 @@ mod tests {
             let immutable_locations = ImmutablesMessagePart {
                 locations: vec![ImmutablesLocation::CloudStorage {
                     uri: MultiFilesUri::Template(TemplateUri(
-                        "http://whatever/{immutable_file_number}.tar.gz".to_string(),
+                        "http://whatever/{immutable_file_number}.tar.zst".to_string(),
                     )),
                     compression_algorithm: None,
                 }],
@@ -359,7 +359,7 @@ mod tests {
                 locations: vec![
                     ImmutablesLocation::CloudStorage {
                         uri: MultiFilesUri::Template(TemplateUri(
-                            "http://whatever/{immutable_file_number}.tar.gz".to_string(),
+                            "http://whatever/{immutable_file_number}.tar.zst".to_string(),
                         )),
                         compression_algorithm: None,
                     },
@@ -375,7 +375,7 @@ mod tests {
                 sanitize_locations,
                 vec![ImmutablesLocation::CloudStorage {
                     uri: MultiFilesUri::Template(TemplateUri(
-                        "http://whatever/{immutable_file_number}.tar.gz".to_string(),
+                        "http://whatever/{immutable_file_number}.tar.zst".to_string(),
                     )),
                     compression_algorithm: None,
                 }]
@@ -400,7 +400,7 @@ mod tests {
         fn succeeds_and_leave_all_locations_intact_if_no_unknown_location() {
             let ancillary_locations = AncillaryMessagePart {
                 locations: vec![AncillaryLocation::CloudStorage {
-                    uri: "http://whatever/ancillary.tar.gz".to_string(),
+                    uri: "http://whatever/ancillary.tar.zst".to_string(),
                     compression_algorithm: None,
                 }],
                 size_uncompressed: 1024,
@@ -417,7 +417,7 @@ mod tests {
             let ancillary_locations = AncillaryMessagePart {
                 locations: vec![
                     AncillaryLocation::CloudStorage {
-                        uri: "http://whatever/digests.tar.gz".to_string(),
+                        uri: "http://whatever/digests.tar.zst".to_string(),
                         compression_algorithm: None,
                     },
                     AncillaryLocation::Unknown,
@@ -431,7 +431,7 @@ mod tests {
             assert_eq!(
                 sanitize_locations,
                 vec![AncillaryLocation::CloudStorage {
-                    uri: "http://whatever/digests.tar.gz".to_string(),
+                    uri: "http://whatever/digests.tar.zst".to_string(),
                     compression_algorithm: None,
                 }]
             );
@@ -455,7 +455,7 @@ mod tests {
         fn succeeds_and_leave_all_locations_intact_if_no_unknown_location() {
             let digests_locations = DigestsMessagePart {
                 locations: vec![DigestLocation::CloudStorage {
-                    uri: "http://whatever/digests.tar.gz".to_string(),
+                    uri: "http://whatever/digests.tar.zst".to_string(),
                     compression_algorithm: None,
                 }],
                 size_uncompressed: 512,
@@ -472,7 +472,7 @@ mod tests {
             let digests_locations = DigestsMessagePart {
                 locations: vec![
                     DigestLocation::CloudStorage {
-                        uri: "http://whatever/digests.tar.gz".to_string(),
+                        uri: "http://whatever/digests.tar.zst".to_string(),
                         compression_algorithm: None,
                     },
                     DigestLocation::Unknown,
@@ -486,7 +486,7 @@ mod tests {
             assert_eq!(
                 sanitize_locations,
                 vec![DigestLocation::CloudStorage {
-                    uri: "http://whatever/digests.tar.gz".to_string(),
+                    uri: "http://whatever/digests.tar.zst".to_string(),
                     compression_algorithm: None,
                 }]
             );

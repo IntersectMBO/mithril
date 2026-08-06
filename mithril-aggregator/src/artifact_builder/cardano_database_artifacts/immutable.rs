@@ -359,7 +359,7 @@ mod tests {
             DUMMY_CARDANO_NODE_VERSION,
             db_directory.clone(),
             db_directory.parent().unwrap().join("snapshot_dest"),
-            CompressionAlgorithm::Gzip,
+            CompressionAlgorithm::Zstandard,
             Arc::new(FileArchiver::new_for_test(work_dir.join("verification"))),
             Arc::new(MockAncillarySigner::new()),
             TestLogger::stdout(),
@@ -368,12 +368,12 @@ mod tests {
 
         let uploader = fake_uploader(
             vec![
-                work_dir.join("00000.tar.gz").to_str().unwrap(),
-                work_dir.join("00001.tar.gz").to_str().unwrap(),
-                work_dir.join("00002.tar.gz").to_str().unwrap(),
+                work_dir.join("00000.tar.zst").to_str().unwrap(),
+                work_dir.join("00001.tar.zst").to_str().unwrap(),
+                work_dir.join("00002.tar.zst").to_str().unwrap(),
             ],
-            "archive.tar.gz",
-            Some(CompressionAlgorithm::Gzip),
+            "archive.tar.zst",
+            Some(CompressionAlgorithm::Zstandard),
         );
 
         let builder = ImmutableArtifactBuilder::new(
@@ -389,8 +389,8 @@ mod tests {
         assert_equivalent!(
             upload.locations,
             vec![ImmutablesLocation::CloudStorage {
-                uri: MultiFilesUri::Template(TemplateUri("archive.tar.gz".to_string())),
-                compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                uri: MultiFilesUri::Template(TemplateUri("archive.tar.zst".to_string())),
+                compression_algorithm: Some(CompressionAlgorithm::Zstandard),
             }],
         )
     }
@@ -453,7 +453,7 @@ mod tests {
                 DUMMY_CARDANO_NODE_VERSION,
                 db_directory.clone(),
                 db_directory.parent().unwrap().join("snapshot_dest"),
-                CompressionAlgorithm::Gzip,
+                CompressionAlgorithm::Zstandard,
                 Arc::new(FileArchiver::new_for_test(work_dir.join("verification"))),
                 Arc::new(MockAncillarySigner::new()),
                 TestLogger::stdout(),
@@ -476,9 +476,9 @@ mod tests {
             assert_equivalent!(
                 archive_paths,
                 vec![
-                    work_dir.join("00000.tar.gz"),
-                    work_dir.join("00001.tar.gz"),
-                    work_dir.join("00002.tar.gz"),
+                    work_dir.join("00000.tar.zst"),
+                    work_dir.join("00001.tar.zst"),
+                    work_dir.join("00002.tar.zst"),
                 ],
             )
         }
@@ -500,7 +500,7 @@ mod tests {
                 DUMMY_CARDANO_NODE_VERSION,
                 db_directory.clone(),
                 db_directory.parent().unwrap().join("snapshot_dest"),
-                CompressionAlgorithm::Gzip,
+                CompressionAlgorithm::Zstandard,
                 Arc::new(FileArchiver::new_for_test(work_dir.join("verification"))),
                 Arc::new(MockAncillarySigner::new()),
                 TestLogger::stdout(),
@@ -535,7 +535,7 @@ mod tests {
                 DUMMY_CARDANO_NODE_VERSION,
                 db_directory.clone(),
                 db_directory.parent().unwrap().join("snapshot_dest"),
-                CompressionAlgorithm::Gzip,
+                CompressionAlgorithm::Zstandard,
                 Arc::new(FileArchiver::new_for_test(work_dir.join("verification"))),
                 Arc::new(MockAncillarySigner::new()),
                 TestLogger::stdout(),
@@ -568,7 +568,7 @@ mod tests {
                 DUMMY_CARDANO_NODE_VERSION,
                 db_directory.clone(),
                 db_directory.parent().unwrap().join("snapshot_dest"),
-                CompressionAlgorithm::Gzip,
+                CompressionAlgorithm::Zstandard,
                 Arc::new(FileArchiver::new_for_test(work_dir.join("verification"))),
                 Arc::new(MockAncillarySigner::new()),
                 TestLogger::stdout(),
@@ -625,16 +625,16 @@ mod tests {
                 DUMMY_CARDANO_NODE_VERSION,
                 db_directory.clone(),
                 db_directory.parent().unwrap().join("snapshot_dest"),
-                CompressionAlgorithm::Gzip,
+                CompressionAlgorithm::Zstandard,
                 Arc::new(FileArchiver::new_for_test(work_dir.join("verification"))),
                 Arc::new(MockAncillarySigner::new()),
                 TestLogger::stdout(),
             )
             .unwrap();
 
-            create_fake_file(&work_dir.join("00000.tar.gz"), "00000 content");
-            create_fake_file(&work_dir.join("00001.tar.gz"), "00001 content");
-            create_fake_file(&work_dir.join("00002.tar.gz"), "00002 content");
+            create_fake_file(&work_dir.join("00000.tar.zst"), "00000 content");
+            create_fake_file(&work_dir.join("00001.tar.zst"), "00001 content");
+            create_fake_file(&work_dir.join("00002.tar.zst"), "00002 content");
 
             let builder = ImmutableArtifactBuilder::new(
                 work_dir.clone(),
@@ -652,16 +652,16 @@ mod tests {
             assert_equivalent!(
                 archive_paths,
                 vec![
-                    work_dir.join("00000.tar.gz"),
-                    work_dir.join("00001.tar.gz"),
-                    work_dir.join("00002.tar.gz"),
-                    work_dir.join("00003.tar.gz"),
+                    work_dir.join("00000.tar.zst"),
+                    work_dir.join("00001.tar.zst"),
+                    work_dir.join("00002.tar.zst"),
+                    work_dir.join("00003.tar.zst"),
                 ],
             );
             // Check that the existing archives content have not changed
-            assert_file_content!(work_dir.join("00000.tar.gz"), "00000 content");
-            assert_file_content!(work_dir.join("00001.tar.gz"), "00001 content");
-            assert_file_content!(work_dir.join("00002.tar.gz"), "00002 content");
+            assert_file_content!(work_dir.join("00000.tar.zst"), "00000 content");
+            assert_file_content!(work_dir.join("00001.tar.zst"), "00001 content");
+            assert_file_content!(work_dir.join("00002.tar.zst"), "00002 content");
         }
 
         #[tokio::test]
@@ -671,12 +671,12 @@ mod tests {
             let mut snapshotter = MockSnapshotter::new();
             snapshotter
                 .expect_compression_algorithm()
-                .returning(|| CompressionAlgorithm::Gzip);
+                .returning(|| CompressionAlgorithm::Zstandard);
 
-            create_fake_file(&work_dir.join("00000.tar.gz"), "00000 content");
-            create_fake_file(&work_dir.join("00001.tar.gz"), "00001 content");
-            create_fake_file(&work_dir.join("00002.tar.gz"), "00002 content");
-            create_fake_file(&work_dir.join("00003.tar.gz"), "00003 content");
+            create_fake_file(&work_dir.join("00000.tar.zst"), "00000 content");
+            create_fake_file(&work_dir.join("00001.tar.zst"), "00001 content");
+            create_fake_file(&work_dir.join("00002.tar.zst"), "00002 content");
+            create_fake_file(&work_dir.join("00003.tar.zst"), "00003 content");
 
             let builder = ImmutableArtifactBuilder::new(
                 work_dir.clone(),
@@ -694,10 +694,10 @@ mod tests {
             assert_equivalent!(
                 archive_paths,
                 vec![
-                    work_dir.join("00000.tar.gz"),
-                    work_dir.join("00001.tar.gz"),
-                    work_dir.join("00002.tar.gz"),
-                    work_dir.join("00003.tar.gz"),
+                    work_dir.join("00000.tar.zst"),
+                    work_dir.join("00001.tar.zst"),
+                    work_dir.join("00002.tar.zst"),
+                    work_dir.join("00003.tar.zst"),
                 ],
             )
         }
@@ -738,8 +738,8 @@ mod tests {
 
             let _ = builder
                 .upload_immutable_archives(
-                    &[PathBuf::from("01.tar.gz"), PathBuf::from("02.tar.gz")],
-                    CompressionAlgorithm::Gzip,
+                    &[PathBuf::from("01.tar.zst"), PathBuf::from("02.tar.zst")],
+                    CompressionAlgorithm::Zstandard,
                 )
                 .await;
 
@@ -761,8 +761,8 @@ mod tests {
 
             let result = builder
                 .upload_immutable_archives(
-                    &[PathBuf::from("01.tar.gz"), PathBuf::from("02.tar.gz")],
-                    CompressionAlgorithm::Gzip,
+                    &[PathBuf::from("01.tar.zst"), PathBuf::from("02.tar.zst")],
+                    CompressionAlgorithm::Zstandard,
                 )
                 .await;
 
@@ -777,9 +777,9 @@ mod tests {
             let uploaders: Vec<Arc<dyn ImmutableFilesUploader>> = vec![
                 Arc::new(fake_uploader_returning_error()),
                 Arc::new(fake_uploader(
-                    vec!["01.tar.gz", "02.tar.gz"],
-                    "archive_2.tar.gz",
-                    Some(CompressionAlgorithm::Gzip),
+                    vec!["01.tar.zst", "02.tar.zst"],
+                    "archive_2.tar.zst",
+                    Some(CompressionAlgorithm::Zstandard),
                 )),
                 Arc::new(fake_uploader_returning_error()),
             ];
@@ -796,8 +796,8 @@ mod tests {
 
             let archive_paths = builder
                 .upload_immutable_archives(
-                    &[PathBuf::from("01.tar.gz"), PathBuf::from("02.tar.gz")],
-                    CompressionAlgorithm::Gzip,
+                    &[PathBuf::from("01.tar.zst"), PathBuf::from("02.tar.zst")],
+                    CompressionAlgorithm::Zstandard,
                 )
                 .await
                 .unwrap();
@@ -805,8 +805,8 @@ mod tests {
             assert_equivalent!(
                 archive_paths,
                 vec![ImmutablesLocation::CloudStorage {
-                    uri: MultiFilesUri::Template(TemplateUri("archive_2.tar.gz".to_string())),
-                    compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                    uri: MultiFilesUri::Template(TemplateUri("archive_2.tar.zst".to_string())),
+                    compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                 }],
             )
         }
@@ -815,14 +815,14 @@ mod tests {
         async fn upload_immutable_archives_should_return_all_uploaders_returned_locations() {
             let uploaders: Vec<Arc<dyn ImmutableFilesUploader>> = vec![
                 Arc::new(fake_uploader(
-                    vec!["01.tar.gz", "02.tar.gz"],
-                    "archive_1.tar.gz",
-                    Some(CompressionAlgorithm::Gzip),
+                    vec!["01.tar.zst", "02.tar.zst"],
+                    "archive_1.tar.zst",
+                    Some(CompressionAlgorithm::Zstandard),
                 )),
                 Arc::new(fake_uploader(
-                    vec!["01.tar.gz", "02.tar.gz"],
-                    "archive_2.tar.gz",
-                    Some(CompressionAlgorithm::Gzip),
+                    vec!["01.tar.zst", "02.tar.zst"],
+                    "archive_2.tar.zst",
+                    Some(CompressionAlgorithm::Zstandard),
                 )),
             ];
 
@@ -838,8 +838,8 @@ mod tests {
 
             let archive_paths = builder
                 .upload_immutable_archives(
-                    &[PathBuf::from("01.tar.gz"), PathBuf::from("02.tar.gz")],
-                    CompressionAlgorithm::Gzip,
+                    &[PathBuf::from("01.tar.zst"), PathBuf::from("02.tar.zst")],
+                    CompressionAlgorithm::Zstandard,
                 )
                 .await
                 .unwrap();
@@ -848,12 +848,12 @@ mod tests {
                 archive_paths,
                 vec![
                     ImmutablesLocation::CloudStorage {
-                        uri: MultiFilesUri::Template(TemplateUri("archive_1.tar.gz".to_string())),
-                        compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                        uri: MultiFilesUri::Template(TemplateUri("archive_1.tar.zst".to_string())),
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     },
                     ImmutablesLocation::CloudStorage {
-                        uri: MultiFilesUri::Template(TemplateUri("archive_2.tar.gz".to_string())),
-                        compression_algorithm: Some(CompressionAlgorithm::Gzip),
+                        uri: MultiFilesUri::Template(TemplateUri("archive_2.tar.zst".to_string())),
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     },
                 ],
             )
@@ -888,8 +888,8 @@ mod tests {
                 "extract_archive_name_to_deduce_template_location_target",
             );
 
-            let archive_1 = create_fake_archive(&source_dir, "00001.tar.gz");
-            let archive_2 = create_fake_archive(&source_dir, "00002.tar.gz");
+            let archive_1 = create_fake_archive(&source_dir, "00001.tar.zst");
+            let archive_2 = create_fake_archive(&source_dir, "00002.tar.zst");
 
             let url_prefix =
                 SanitizedUrlWithTrailingSlash::parse("http://test.com:8080/base-root").unwrap();
@@ -912,7 +912,7 @@ mod tests {
 
             let expected_location = ImmutablesLocation::CloudStorage {
                 uri: MultiFilesUri::Template(TemplateUri(
-                    "http://test.com:8080/base-root/{immutable_file_number}.tar.gz".to_string(),
+                    "http://test.com:8080/base-root/{immutable_file_number}.tar.zst".to_string(),
                 )),
                 compression_algorithm: None,
             };
@@ -930,7 +930,7 @@ mod tests {
                 "returns_error_when_uploaded_filename_not_templatable",
             );
 
-            let archive = create_fake_archive(&source_dir, "not-templatable.tar.gz");
+            let archive = create_fake_archive(&source_dir, "not-templatable.tar.zst");
 
             let url_prefix =
                 SanitizedUrlWithTrailingSlash::parse("http://test.com:8080/base-root").unwrap();
@@ -952,40 +952,41 @@ mod tests {
 
         #[test]
         fn returns_none_when_not_templatable_without_5_digits() {
-            let template = immutable_file_number_extractor("not-templatable.tar.gz").unwrap();
+            let template = immutable_file_number_extractor("not-templatable.tar.zst").unwrap();
 
             assert!(template.is_none());
         }
 
         #[test]
         fn returns_template() {
-            let template = immutable_file_number_extractor("http://whatever/00001.tar.gz").unwrap();
+            let template =
+                immutable_file_number_extractor("http://whatever/00001.tar.zst").unwrap();
 
             assert_eq!(
                 template,
-                Some("http://whatever/{immutable_file_number}.tar.gz".to_string())
+                Some("http://whatever/{immutable_file_number}.tar.zst".to_string())
             );
         }
 
         #[test]
         fn replaces_last_occurence_of_5_digits() {
             let template =
-                immutable_file_number_extractor("http://00001/whatever/00001.tar.gz").unwrap();
+                immutable_file_number_extractor("http://00001/whatever/00001.tar.zst").unwrap();
 
             assert_eq!(
                 template,
-                Some("http://00001/whatever/{immutable_file_number}.tar.gz".to_string())
+                Some("http://00001/whatever/{immutable_file_number}.tar.zst".to_string())
             );
         }
 
         #[test]
         fn replaces_last_occurence_when_more_than_5_digits() {
             let template =
-                immutable_file_number_extractor("http://whatever/123456789.tar.gz").unwrap();
+                immutable_file_number_extractor("http://whatever/123456789.tar.zst").unwrap();
 
             assert_eq!(
                 template,
-                Some("http://whatever/1234{immutable_file_number}.tar.gz".to_string())
+                Some("http://whatever/1234{immutable_file_number}.tar.zst".to_string())
             );
         }
     }

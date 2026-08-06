@@ -232,13 +232,13 @@ mod tests {
             .build();
 
         let mock_file_downloader = MockFileDownloaderBuilder::default()
-            .with_file_uri("http://ancillary.tar.gz")
+            .with_file_uri("http://ancillary.tar.zst")
             .with_success_and_create_fake_ancillary_files(fake_ancillary_file_builder)
             .build();
 
         mock_file_downloader
             .download_unpack(
-                &FileDownloaderUri::FileUri(FileUri("http://ancillary.tar.gz".to_string())),
+                &FileDownloaderUri::FileUri(FileUri("http://ancillary.tar.zst".to_string())),
                 0,
                 &target_dir,
                 Some(CompressionAlgorithm::default()),

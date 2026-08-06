@@ -598,7 +598,7 @@ pub struct ServeCommandConfiguration {
     pub signed_entity_types: Option<String>,
 
     /// Compression algorithm used for the snapshot archive artifacts.
-    #[example = "`gzip` or `zstandard`"]
+    #[example = "`zstandard`"]
     pub snapshot_compression_algorithm: CompressionAlgorithm,
 
     /// Specific parameters when [snapshot_compression_algorithm][Self::snapshot_compression_algorithm]

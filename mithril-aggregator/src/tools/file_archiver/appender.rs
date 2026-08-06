@@ -288,7 +288,7 @@ mod tests {
                     ArchiveParameters {
                         archive_name_without_extension: "archive".to_string(),
                         target_directory: test_dir.clone(),
-                        compression_algorithm: CompressionAlgorithm::Gzip,
+                        compression_algorithm: CompressionAlgorithm::Zstandard,
                     },
                     AppenderEntries::new(
                         vec![directory_to_archive_path.clone(), file_to_archive_path.clone()],
@@ -298,7 +298,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let unpack_path = archive.unpack_gzip(&test_dir);
+            let unpack_path = archive.unpack_zstandard(&test_dir);
 
             assert_dir_eq!(
                 &unpack_path,
@@ -310,7 +310,7 @@ mod tests {
         #[test]
         fn return_error_when_appending_file_or_directory_that_does_not_exist() {
             let test_dir = temp_dir_create!();
-            let target_archive = test_dir.join("whatever.tar.gz");
+            let target_archive = test_dir.join("whatever.tar.zst");
             let source = test_dir.join(create_dir(&test_dir, "source"));
 
             let file_archiver = FileArchiver::new_for_test(test_dir.join("verification"));
@@ -320,7 +320,7 @@ mod tests {
                     ArchiveParameters {
                         archive_name_without_extension: "archive".to_string(),
                         target_directory: test_dir.clone(),
-                        compression_algorithm: CompressionAlgorithm::Gzip,
+                        compression_algorithm: CompressionAlgorithm::Zstandard,
                     },
                     AppenderEntries::new(vec![PathBuf::from("not_exist")], source).unwrap(),
                 )
@@ -350,7 +350,7 @@ mod tests {
                     ArchiveParameters {
                         archive_name_without_extension: "archive".to_string(),
                         target_directory: test_dir.clone(),
-                        compression_algorithm: CompressionAlgorithm::Gzip,
+                        compression_algorithm: CompressionAlgorithm::Zstandard,
                     },
                     AppenderEntries::new(
                         vec![
@@ -365,7 +365,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let unpack_path = archive.unpack_gzip(&test_dir);
+            let unpack_path = archive.unpack_zstandard(&test_dir);
 
             assert_dir_eq!(
                 &unpack_path,
@@ -423,13 +423,13 @@ mod tests {
                     ArchiveParameters {
                         archive_name_without_extension: "archive".to_string(),
                         target_directory: test_dir.clone(),
-                        compression_algorithm: CompressionAlgorithm::Gzip,
+                        compression_algorithm: CompressionAlgorithm::Zstandard,
                     },
                     AppenderFile::append_at_archive_root(test_dir.join(&file_to_archive)).unwrap(),
                 )
                 .unwrap();
 
-            let unpack_path = archive.unpack_gzip(&test_dir);
+            let unpack_path = archive.unpack_zstandard(&test_dir);
 
             assert!(unpack_path.join(file_to_archive).exists());
         }
@@ -491,8 +491,8 @@ mod tests {
     }
 
     mod appender_data {
-        use flate2::read::GzDecoder;
         use serde::Deserialize;
+        use zstd::Decoder;
 
         use super::*;
 
@@ -519,13 +519,13 @@ mod tests {
                     ArchiveParameters {
                         archive_name_without_extension: "archive".to_string(),
                         target_directory: test_dir.clone(),
-                        compression_algorithm: CompressionAlgorithm::Gzip,
+                        compression_algorithm: CompressionAlgorithm::Zstandard,
                     },
                     data_appender,
                 )
                 .unwrap();
 
-            let unpack_path = archive.unpack_gzip(&test_dir);
+            let unpack_path = archive.unpack_zstandard(&test_dir);
             let unpacked_file_path = unpack_path.join(&location_in_archive);
 
             assert!(unpacked_file_path.exists());
@@ -553,14 +553,14 @@ mod tests {
                     ArchiveParameters {
                         archive_name_without_extension: "archive".to_string(),
                         target_directory: test_dir.clone(),
-                        compression_algorithm: CompressionAlgorithm::Gzip,
+                        compression_algorithm: CompressionAlgorithm::Zstandard,
                     },
                     data_appender,
                 )
                 .unwrap();
 
             let archive_file = File::open(archive.get_file_path()).unwrap();
-            let mut archive = tar::Archive::new(GzDecoder::new(archive_file));
+            let mut archive = tar::Archive::new(Decoder::new(archive_file).unwrap());
             let mut archive_entries = archive.entries().unwrap();
             let appended_entry = archive_entries.next().unwrap().unwrap();
 
@@ -607,7 +607,7 @@ mod tests {
                     ArchiveParameters {
                         archive_name_without_extension: "archive".to_string(),
                         target_directory: test_dir.clone(),
-                        compression_algorithm: CompressionAlgorithm::Gzip,
+                        compression_algorithm: CompressionAlgorithm::Zstandard,
                     },
                     ChainAppender::new(
                         AppenderFile::append_at_archive_root(test_dir.join(&file_to_archive))
@@ -617,7 +617,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let unpack_path = archive.unpack_gzip(&test_dir);
+            let unpack_path = archive.unpack_zstandard(&test_dir);
 
             assert!(unpack_path.join(file_to_archive).exists());
             assert!(unpack_path.join(json_location_in_archive).exists());
@@ -634,7 +634,7 @@ mod tests {
                     ArchiveParameters {
                         archive_name_without_extension: "archive".to_string(),
                         target_directory: test_dir.clone(),
-                        compression_algorithm: CompressionAlgorithm::Gzip,
+                        compression_algorithm: CompressionAlgorithm::Zstandard,
                     },
                     ChainAppender::new(
                         AppenderData::from_json(
@@ -647,7 +647,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let unpack_path = archive.unpack_gzip(&test_dir);
+            let unpack_path = archive.unpack_zstandard(&test_dir);
             let unpacked_json_path = unpack_path.join(&json_location_in_archive);
 
             let deserialized_object: String =

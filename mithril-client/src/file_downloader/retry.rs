@@ -105,7 +105,7 @@ mod tests {
     #[tokio::test]
     async fn download_return_the_result_of_download_without_retry() {
         let mock_file_downloader = MockFileDownloaderBuilder::default()
-            .with_file_uri("http://whatever/00001.tar.gz")
+            .with_file_uri("http://whatever/00001.tar.zst")
             .with_compression(None)
             .with_success()
             .build();
@@ -116,7 +116,7 @@ mod tests {
 
         retry_downloader
             .download_unpack(
-                &FileDownloaderUri::FileUri(FileUri("http://whatever/00001.tar.gz".to_string())),
+                &FileDownloaderUri::FileUri(FileUri("http://whatever/00001.tar.zst".to_string())),
                 0,
                 Path::new("."),
                 None,
@@ -132,7 +132,7 @@ mod tests {
     #[tokio::test]
     async fn when_download_fails_do_not_retry_by_default() {
         let mock_file_downloader = MockFileDownloaderBuilder::default()
-            .with_file_uri("http://whatever/00001.tar.gz")
+            .with_file_uri("http://whatever/00001.tar.zst")
             .with_compression(None)
             .with_failure()
             .build();
@@ -143,7 +143,7 @@ mod tests {
 
         retry_downloader
             .download_unpack(
-                &FileDownloaderUri::FileUri(FileUri("http://whatever/00001.tar.gz".to_string())),
+                &FileDownloaderUri::FileUri(FileUri("http://whatever/00001.tar.zst".to_string())),
                 0,
                 Path::new("."),
                 None,
@@ -159,12 +159,12 @@ mod tests {
     #[tokio::test]
     async fn should_retry_if_fail() {
         let mock_file_downloader = MockFileDownloaderBuilder::default()
-            .with_file_uri("http://whatever/00001.tar.gz")
+            .with_file_uri("http://whatever/00001.tar.zst")
             .with_compression(None)
             .with_failure()
             .with_times(2)
             .next_call()
-            .with_file_uri("http://whatever/00001.tar.gz")
+            .with_file_uri("http://whatever/00001.tar.zst")
             .with_compression(None)
             .with_times(1)
             .with_success()
@@ -179,7 +179,7 @@ mod tests {
 
         retry_downloader
             .download_unpack(
-                &FileDownloaderUri::FileUri(FileUri("http://whatever/00001.tar.gz".to_string())),
+                &FileDownloaderUri::FileUri(FileUri("http://whatever/00001.tar.zst".to_string())),
                 0,
                 Path::new("."),
                 None,
@@ -194,7 +194,7 @@ mod tests {
     #[tokio::test]
     async fn should_recall_a_failing_inner_downloader_up_to_the_limit() {
         let mock_file_downloader = MockFileDownloaderBuilder::default()
-            .with_file_uri("http://whatever/00001.tar.gz")
+            .with_file_uri("http://whatever/00001.tar.zst")
             .with_compression(None)
             .with_failure()
             .with_times(3)
@@ -209,7 +209,7 @@ mod tests {
 
         retry_downloader
             .download_unpack(
-                &FileDownloaderUri::FileUri(FileUri("http://whatever/00001.tar.gz".to_string())),
+                &FileDownloaderUri::FileUri(FileUri("http://whatever/00001.tar.zst".to_string())),
                 0,
                 Path::new("."),
                 None,
@@ -279,7 +279,7 @@ mod tests {
 
         retry_downloader
             .download_unpack(
-                &FileDownloaderUri::FileUri(FileUri("http://whatever/00001.tar.gz".to_string())),
+                &FileDownloaderUri::FileUri(FileUri("http://whatever/00001.tar.zst".to_string())),
                 0,
                 Path::new("."),
                 None,

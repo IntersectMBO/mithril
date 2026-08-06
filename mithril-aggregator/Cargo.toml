@@ -23,7 +23,6 @@ chrono = { workspace = true }
 ciborium = { version = "0.2.2", optional = true }
 clap = { workspace = true, features = ["cargo"] }
 config = { workspace = true }
-flate2 = "1.1.9"
 gcloud-kms = { version = "1.5.0", default-features = false, features = ["auth", "jwt-aws-lc-rs"] }
 gcloud-storage = { version = "1.3.0", default-features = false, features = ["auth", "jwt-aws-lc-rs"] }
 mithril-aggregator-client = { path = "../internal/mithril-aggregator-client" }

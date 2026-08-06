@@ -99,7 +99,7 @@ mod tests {
     use super::*;
 
     fn create_fake_archive(dir: &Path, name: &str) -> PathBuf {
-        let file_path = dir.join(format!("{name}.tar.gz"));
+        let file_path = dir.join(format!("{name}.tar.zst"));
         let mut file = File::create(&file_path).unwrap();
         writeln!(
             file,
