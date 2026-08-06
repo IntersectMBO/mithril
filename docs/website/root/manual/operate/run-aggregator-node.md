@@ -265,7 +265,7 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
 - `NETWORK`: Cardano network name (eg, `mainnet`, `preprod`, or `preview`)
 - `NETWORK_MAGIC`: Cardano network magic number (required only if not using `mainnet`, `preprod` or `preview`)
 - `CARDANO_NODE_SOCKET_PATH`: Path to the IPC file of the Cardano node
-- `CARDANO_NODE_VERSION`: Version of the Cardano node running (eg, `10.5.0`)
+- `CARDANO_NODE_VERSION`: Version of the Cardano node running (eg, `10.7.1`)
 - `CHAIN_OBSERVER_TYPE`: Type of chain observer (default: `pallas`)
 - `ERA_READER_ADAPTER_TYPE`: Type of era reader adapter to use (default: `bootstrap`, use `cardano-chain` for production networks as specified in [Network configurations](../getting-started/network-configurations.md))
 - `ERA_READER_ADAPTER_PARAMS`: JSON encoded parameters for the era reader adapter. For `cardano-chain` type, compute using: `jq -nc --arg address $(wget -q -O - **YOUR_ERA_READER_ADDRESS**) --arg verification_key $(wget -q -O - **YOUR_ERA_READER_VERIFICATION_KEY**) '{"address": $address, "verification_key": $verification_key}'` (URLs can be found in the [Network configurations](../getting-started/network-configurations.md))
@@ -314,7 +314,7 @@ Here is an **example** set of values for **release-mainnet** that will be used i
   - **NETWORK**: `mainnet`
   - **NETWORK_MAGIC**: `764824073`
   - **CARDANO_NODE_SOCKET_PATH**: `/cardano/ipc/node.socket`
-  - **CARDANO_NODE_VERSION**: `10.5.0`
+  - **CARDANO_NODE_VERSION**: `10.7.1`
   - **CHAIN_OBSERVER_TYPE**: `pallas`
   - **ERA_READER_ADAPTER_TYPE**: `cardano-chain`
   - **ERA_READER_ADAPTER_PARAMS**: `$(jq -nc --arg address $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/era.addr) --arg verification_key $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/era.vkey) '{"address": $address, "verification_key": $verification_key}')`
@@ -428,7 +428,7 @@ STORE_RETENTION_LIMIT=5
 NETWORK=mainnet
 NETWORK_MAGIC=764824073
 CARDANO_NODE_SOCKET_PATH=/cardano/ipc/node.socket
-CARDANO_NODE_VERSION=10.5.0
+CARDANO_NODE_VERSION=10.7.1
 CHAIN_OBSERVER_TYPE=pallas
 ERA_READER_ADAPTER_TYPE=cardano-chain
 ERA_READER_ADAPTER_PARAMS={"address": "addr1qy72kwgm6kypyc5maw0h8mfagwag8wjnx6emgfnsnhqaml6gx7gg4tzplw9l32nsgclqax7stc4u6c5dn0ctljwscm2sqv0teg", "verification_key": "5b31312c3133342c3231352c37362c3134312c3232302c3131312c3135342c36332c3233302c3131342c31322c38372c37342c39342c3137322c3133322c32372c39362c3138362c3132362c3137382c31392c3131342c33302c3234332c36342c3134312c3131302c38332c38362c31395d"}
