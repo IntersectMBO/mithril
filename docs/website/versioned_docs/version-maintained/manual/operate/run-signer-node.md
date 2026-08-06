@@ -977,9 +977,9 @@ Here is an **example** set of values for **pre-release-preview** that will be us
 
 :::tip
 
-As we are still in a testing stage, we only support the `pre-release-preview` network.
+The DMQ node is supported on the `release-mainnet`, `release-preprod` and `pre-release-preview` networks.
 
-You can use these parameters for the **pre-release-preview** network:
+You can use these parameters for all the supported networks:
 
 - **DMQ_RELEASE_URL**: `https://github.com/IntersectMBO/dmq-node/releases/download/0.7.0.0/dmq-node-linux.tar.gz`
 
