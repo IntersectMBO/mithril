@@ -4,5 +4,6 @@
 pub mod cardano_chain;
 pub mod http;
 pub mod interface;
+pub mod markers;
 pub mod model;
 pub mod test;
