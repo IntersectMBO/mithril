@@ -7,6 +7,12 @@ tags: [DMQ, decentralization, testing program, aggregator, follower]
 
 ### Multiple aggregators testing program
 
+:::info[Update 2026/08/04]
+
+The DMQ node is now officially supported in **beta** on the `release-mainnet` and `release-preprod` networks (see this [post](https://mithril.network/doc/dev-blog/2026/08/04/dmq-beta-release)). Running multiple aggregators remains in testing on the `pre-release-preview` network until the DMQ network adoption reaches the required threshold on the release networks.
+
+:::
+
 :::info[Update 2026/04/28]
 
 With the release of the [`2617.0`](https://github.com/input-output-hk/mithril/releases/tag/2617.0) distribution, the testing program for running multiple aggregators is extended on the `pre-release-preview` network to keep gathering feedback before the stable release on `release-preprod` and `release-mainnet` networks.
@@ -60,7 +66,7 @@ The Mithril team will provide dedicated support and guidance to help participant
 
 #### Rollout plan
 
-The rollout plan of the DMQ network is the following:
+The rollout plan of the multiple aggregators feature is the following:
 
 - [x] **Distribution [2603](https://github.com/input-output-hk/mithril/releases/tag/2603.1)**: `unstable` on the `pre-release-preview` network
   - [x] Activation of the feature on the `pre-release-preview` network
@@ -69,7 +75,7 @@ The rollout plan of the DMQ network is the following:
   - [x] 4-6 weeks testing program with selected participants
 - [x] **Distribution [2617](https://github.com/input-output-hk/mithril/releases/tag/2617.0)**: `unstable` on the `pre-release-preview` network (extended testing)
   - [x] 4-6 weeks extended testing program with selected SPOs
-- [ ] **Distribution +3**: `stable` on the `release-preprod` and `release-mainnet` networks
+- [ ] **Distribution +4**: `stable` on the `release-preprod` and `release-mainnet` networks
   - [ ] Activation of the feature on the `release-preprod` and `release-mainnet` networks
   - [ ] Release of an updated guide for setting up a follower aggregator
   - [ ] Monitoring and support for operators running follower aggregators.
