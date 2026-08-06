@@ -7,13 +7,16 @@ use midnight_curves::{Bls12, G1Projective};
 use midnight_proofs::poly::kzg::{msm::DualMSM, params::ParamsKZG};
 
 #[cfg(test)]
-use crate::circuits::{
-    halo2::{
-        NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::StmCertificateCircuit,
+use crate::{
+    Parameters,
+    circuits::{
+        halo2::{
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::StmCertificateCircuit,
+        },
+        halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        test_utils::file_mutex::FileMutex,
+        trusted_setup::UNSAFE_SRS_SEED,
     },
-    halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
-    test_utils::file_mutex::FileMutex,
-    trusted_setup::UNSAFE_SRS_SEED,
 };
 use crate::{
     StmResult,
@@ -154,37 +157,51 @@ impl IvcSnarkProverSetup {
         Ok(accumulator)
     }
 
-    /// Builds an [`IvcSnarkProverSetup`] from a deterministic, oversized unsafe SRS, exercising the
-    /// real `load` path without the production SRS. Shared by the slow IVC tests through a
-    /// content-keyed cache keyed by the protocol parameters, Merkle-tree depth, the unsafe SRS identity
-    /// (degree and seed), and the production verifying keys as a circuit-version salt, so the recursive
-    /// keys — the dominant cost — are computed once and reused across tests and runs.
+    /// Builds an [`IvcSnarkProverSetup`] from a deterministic unsafe SRS with degree `RECURSIVE_CIRCUIT_DEGREE`
+    /// using [`Self::build_for_test_degree`].
     #[cfg(test)]
     pub(crate) fn build_for_test(
-        parameters: &crate::Parameters,
+        parameters: &Parameters,
         merkle_tree_depth: u32,
     ) -> StmResult<Self> {
+        Self::build_for_test_degree(parameters, merkle_tree_depth, RECURSIVE_CIRCUIT_DEGREE)
+    }
+
+    /// Builds an [`IvcSnarkProverSetup`] from a deterministic unsafe SRS with degree determined by the input
+    /// `unsafe_srs_degree`.
+    /// Uses a cache for the unsafe SRS to avoid regenerating it when a SRS of the correct degree already exists
+    /// and also uses a separate cache for the circuit keys
+    #[cfg(test)]
+    pub(crate) fn build_for_test_degree(
+        parameters: &Parameters,
+        merkle_tree_depth: u32,
+        unsafe_srs_degree: u32,
+    ) -> StmResult<Self> {
+        assert!(unsafe_srs_degree >= RECURSIVE_CIRCUIT_DEGREE);
         let parameters_bytes = parameters.to_bytes()?;
         let depth_bytes = merkle_tree_depth.to_le_bytes();
-        let degree_bytes = (RECURSIVE_CIRCUIT_DEGREE + 1).to_le_bytes();
         let seed_bytes = UNSAFE_SRS_SEED.to_le_bytes();
-        let cache = FileMutex::for_shared_cache(
+
+        let srs_cache = FileMutex::for_shared_cache("unsafe-srs", &[&seed_bytes]);
+        let srs_directory = srs_cache.directory().to_path_buf();
+        let _srs_cache_lock = srs_cache.lock()?;
+        let trusted_setup_provider =
+            TrustedSetupProvider::with_unsafe_srs(&srs_directory, unsafe_srs_degree);
+
+        let key_cache = FileMutex::for_shared_cache(
             "ivc-setup",
             &[
                 NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
                 RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
                 &parameters_bytes,
                 &depth_bytes,
-                &degree_bytes,
                 &seed_bytes,
             ],
         );
-        let cache_directory = cache.directory().to_path_buf();
+        let cache_directory = key_cache.directory().to_path_buf();
         // Serialize cold-start keygen across the parallel slow-test processes.
-        let _key_cache_lock = cache.lock()?;
+        let _key_cache_lock = key_cache.lock()?;
 
-        let trusted_setup_provider =
-            TrustedSetupProvider::with_unsafe_srs(&cache_directory, RECURSIVE_CIRCUIT_DEGREE + 1);
         let certificate_provider = KeyProvider::new(
             cache_directory.join("certificate"),
             "non-recursive",
@@ -264,8 +281,12 @@ mod tests {
                 phi_f: 0.2,
             };
             let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
-            let ivc_setup = IvcSnarkProverSetup::build_for_test(&parameters, merkle_tree_depth)
-                .expect("IvcSnarkProverSetup::load should succeed");
+            let ivc_setup = IvcSnarkProverSetup::build_for_test_degree(
+                &parameters,
+                merkle_tree_depth,
+                RECURSIVE_CIRCUIT_DEGREE + 1,
+            )
+            .expect("IvcSnarkProverSetup::load should succeed");
 
             let verification_context = load_embedded_verification_context_asset()
                 .expect("verification context asset should load");

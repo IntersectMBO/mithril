@@ -79,16 +79,24 @@ impl SnarkProverSetup {
         })
     }
 
-    /// Builds a [`SnarkProverSetup`] from a deterministic, oversized unsafe SRS, exercising the real
-    /// `load` path without the production SRS. Mirrors `IvcSnarkProverSetup::build_for_test` on the
-    /// recursive side. Shared by the slow certificate tests through a content-keyed cache keyed by the
-    /// protocol parameters, Merkle-tree depth, the unsafe SRS seed, and the production verifying key as
-    /// a circuit-version salt, so the certificate key is computed once and reused across tests and
-    /// runs.
+    /// Builds a [`SnarkProverSetup`] from a deterministic unsafe SRS with degree `RECURSIVE_CIRCUIT_DEGREE`
+    /// using [`Self::build_for_test_degree`].
     #[cfg(test)]
     pub(crate) fn build_for_test(
         parameters: &Parameters,
         merkle_tree_depth: u32,
+    ) -> StmResult<Self> {
+        Self::build_for_test_degree(parameters, merkle_tree_depth, RECURSIVE_CIRCUIT_DEGREE)
+    }
+
+    /// Builds a [`SnarkProverSetup`] from a deterministic unsafe SRS with degree determined by the input
+    /// `unsafe_srs_degree`.
+    /// Uses a cache for the unsafe SRS to avoid regenerating it when a SRS of the correct degree already exists
+    #[cfg(test)]
+    pub(crate) fn build_for_test_degree(
+        parameters: &crate::Parameters,
+        merkle_tree_depth: u32,
+        unsafe_srs_degree: u32,
     ) -> StmResult<Self> {
         let parameters_bytes = parameters.to_bytes()?;
         let depth_bytes = merkle_tree_depth.to_le_bytes();
@@ -107,7 +115,7 @@ impl SnarkProverSetup {
         let _key_cache_lock = cache.lock()?;
 
         let trusted_setup_provider =
-            TrustedSetupProvider::with_unsafe_srs(&cache_directory, RECURSIVE_CIRCUIT_DEGREE);
+            TrustedSetupProvider::with_unsafe_srs(&cache_directory, unsafe_srs_degree);
         let circuit = StmCertificateCircuit::try_new(parameters, merkle_tree_depth)?;
         let provider = KeyProvider::new(cache_directory, "non-recursive", &[], circuit);
         Self::load(&trusted_setup_provider, &provider)

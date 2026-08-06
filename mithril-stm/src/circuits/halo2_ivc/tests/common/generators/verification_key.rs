@@ -21,8 +21,6 @@ use crate::{
 use super::setup::build_deterministic_params;
 
 pub(crate) fn golden_recursive_circuit_verification_key_bytes() -> Vec<u8> {
-    let srs_for_recursive_circuit = build_deterministic_params(RECURSIVE_CIRCUIT_DEGREE);
-
     let small_parameters = Parameters {
         m: 10,
         k: 1,
@@ -32,8 +30,12 @@ pub(crate) fn golden_recursive_circuit_verification_key_bytes() -> Vec<u8> {
     let circuit = StmCertificateCircuit::try_new(&small_parameters, merkle_tree_depth).unwrap();
     let circuit_degree = MidnightCircuit::from_relation(&circuit, None).k();
 
-    let mut srs_for_non_recursive_circuit = srs_for_recursive_circuit.clone();
-    srs_for_non_recursive_circuit.downsize(circuit_degree);
+    let srs_for_non_recursive_circuit = build_deterministic_params(circuit_degree);
+    let srs_for_recursive_circuit = if circuit_degree == RECURSIVE_CIRCUIT_DEGREE {
+        srs_for_non_recursive_circuit.clone()
+    } else {
+        build_deterministic_params(RECURSIVE_CIRCUIT_DEGREE)
+    };
 
     let circuit_verification_key = NonRecursiveCircuitVerifyingKey::new(
         midnight_zk_stdlib::setup_vk(&srs_for_non_recursive_circuit, &circuit),

@@ -130,13 +130,13 @@ impl TrustedSetupProvider {
             .with_extension("temp");
         let final_path = self.local_srs_folder_path.join(MITHRIL_CIRCUIT_SRS_FILENAME);
 
-        let mut temporary_file = File::create(&temp_path)
+        let mut temp_file = File::create(&temp_path)
             .with_context(|| format!("Failed to create temporary SRS file at {temp_path:?}."))?;
-        temporary_file.write_all(srs_bytes)?;
-        temporary_file
+        temp_file.write_all(srs_bytes)?;
+        temp_file
             .sync_all()
             .with_context(|| "Failed to fsync temporary SRS file before rename.")?;
-        drop(temporary_file);
+        drop(temp_file);
 
         std::fs::rename(temp_path, final_path)?;
 
@@ -192,31 +192,51 @@ impl Default for TrustedSetupProvider {
 }
 
 /// Seed for the deterministic unsafe SRS used by the tests; it pins the SRS's tau. Test key caches
-/// fold in this seed so they stay correct if it ever changes. The IVC setup cache also folds in the
-/// SRS degree; the certificate-key cache omits it, since keygen downsizes the seed-pinned SRS to the
-/// certificate circuit's own degree, so the oversized degree never affects the certificate key.
+/// fold in this seed so they stay correct if it ever changes. Both the certificate-key and IVC setup
+/// caches omit the SRS degree: keygen always downsizes the seed-pinned SRS to the target circuit
+/// degree before deriving keys, so the oversized starting degree never affects the derived keys —
+/// only `TrustedSetupProvider::with_unsafe_srs`'s own file layout, which nests by degree.
 #[cfg(any(test, feature = "benchmark-internals"))]
 pub(crate) const UNSAFE_SRS_SEED: u64 = 42;
 
 #[cfg(any(test, feature = "benchmark-internals"))]
 impl TrustedSetupProvider {
     /// Builds a `TrustedSetupProvider` backed by a freshly generated unsafe SRS of degree `k`, written
-    /// to `base_dir/srs/srs-parameters` with a matching SHA256 hash so the provider's hash check passes.
+    /// to `base_dir/degree-{k}/srs/srs-parameters` with empty hash as it should never be checked.
     /// For tests and benchmarks only.
     pub(crate) fn with_unsafe_srs(base_dir: &std::path::Path, k: u32) -> Self {
+        let degree_k_dir = base_dir.join(format!("degree-{k}"));
+        let srs_dir = degree_k_dir.join(MITHRIL_CIRCUIT_SRS_FOLDER);
+        let srs_file = srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME);
+
+        if srs_file.exists() {
+            return Self::new(degree_k_dir, "", "", Duration::from_secs(600));
+        }
+
         let srs = ParamsKZG::<Bls12>::unsafe_setup(k, ChaCha20Rng::seed_from_u64(UNSAFE_SRS_SEED));
         let mut srs_bytes = Vec::new();
-        srs.write_custom(&mut srs_bytes, SerdeFormat::RawBytes).unwrap();
-
-        let srs_dir = base_dir.join(MITHRIL_CIRCUIT_SRS_FOLDER);
-        create_dir_all(&srs_dir).unwrap();
-        File::create(srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME))
-            .unwrap()
-            .write_all(&srs_bytes)
+        srs.write_custom(&mut srs_bytes, SerdeFormat::RawBytesUnchecked)
             .unwrap();
 
-        let expected_hash = hex::encode(Sha256::digest(&srs_bytes));
-        Self::new(base_dir, expected_hash, "", Duration::from_secs(600))
+        create_dir_all(&srs_dir).unwrap();
+
+        let temp_path = srs_file.with_extension("temp");
+        let mut temp_file = File::create(&temp_path)
+            .with_context(|| {
+                format!("Failed to create temporary unsafe SRS file at {temp_path:?}.")
+            })
+            .unwrap();
+        temp_file.write_all(&srs_bytes).unwrap();
+        temp_file
+            .sync_all()
+            .with_context(|| "Failed to fsync temporary unsafe SRS file before rename.")
+            .unwrap();
+        drop(temp_file);
+
+        std::fs::rename(temp_path, srs_file).unwrap();
+
+        // No hash needed for the test srs
+        Self::new(degree_k_dir, "", "", Duration::from_secs(600))
     }
 }
 
@@ -466,6 +486,85 @@ mod tests {
         assert!(result.is_err());
     }
 
+    mod with_unsafe_srs {
+        use super::*;
+
+        #[test]
+        fn creates_srs_file_nested_under_degree_subdirectory_and_loads_successfully() {
+            let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
+            let k = 1;
+
+            let provider = TrustedSetupProvider::with_unsafe_srs(temp_dir.path(), k);
+
+            let expected_srs_path = temp_dir
+                .path()
+                .join(format!("degree-{k}"))
+                .join(MITHRIL_CIRCUIT_SRS_FOLDER)
+                .join(MITHRIL_CIRCUIT_SRS_FILENAME);
+            assert!(expected_srs_path.exists());
+            provider.get_trusted_setup_parameters().unwrap();
+        }
+
+        #[test]
+        fn uses_separate_subdirectory_and_produces_distinct_files_per_degree() {
+            let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
+
+            TrustedSetupProvider::with_unsafe_srs(temp_dir.path(), 1);
+            TrustedSetupProvider::with_unsafe_srs(temp_dir.path(), 2);
+
+            let srs_path_k1 = temp_dir
+                .path()
+                .join("degree-1")
+                .join(MITHRIL_CIRCUIT_SRS_FOLDER)
+                .join(MITHRIL_CIRCUIT_SRS_FILENAME);
+            let srs_path_k2 = temp_dir
+                .path()
+                .join("degree-2")
+                .join(MITHRIL_CIRCUIT_SRS_FOLDER)
+                .join(MITHRIL_CIRCUIT_SRS_FILENAME);
+
+            assert!(srs_path_k1.exists());
+            assert!(srs_path_k2.exists());
+            assert_ne!(
+                std::fs::read(srs_path_k1).unwrap(),
+                std::fs::read(srs_path_k2).unwrap()
+            );
+        }
+
+        #[test]
+        fn does_not_regenerate_or_overwrite_an_existing_srs_file() {
+            let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
+            let k = 1;
+            let srs_dir = temp_dir
+                .path()
+                .join(format!("degree-{k}"))
+                .join(MITHRIL_CIRCUIT_SRS_FOLDER);
+            std::fs::create_dir_all(&srs_dir).unwrap();
+            let srs_path = srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME);
+            std::fs::write(&srs_path, b"sentinel-content-not-a-real-srs").unwrap();
+
+            TrustedSetupProvider::with_unsafe_srs(temp_dir.path(), k);
+
+            let bytes_after = std::fs::read(&srs_path).unwrap();
+            assert_eq!(bytes_after, b"sentinel-content-not-a-real-srs");
+        }
+
+        #[test]
+        fn leaves_no_temporary_file_behind_after_generation() {
+            let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
+            let k = 1;
+
+            TrustedSetupProvider::with_unsafe_srs(temp_dir.path(), k);
+
+            let temp_path = temp_dir
+                .path()
+                .join(format!("degree-{k}"))
+                .join(MITHRIL_CIRCUIT_SRS_FOLDER)
+                .join(MITHRIL_CIRCUIT_SRS_FILENAME)
+                .with_extension("temp");
+            assert!(!temp_path.exists());
+        }
+    }
     mod golden {
         use super::*;
 

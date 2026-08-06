@@ -361,16 +361,12 @@ mod tests {
         params: Parameters,
         depth: u32,
     ) -> (Arc<IvcSnarkProverSetup>, NonRecursiveCircuitVerifyingKey) {
-        let srs: Arc<ParamsKZG<Bls12>> = Arc::new(ParamsKZG::<Bls12>::unsafe_setup(
-            12,
-            ChaCha20Rng::from_seed([42u8; 32]),
-        ));
         let circuit = StmCertificateCircuit::try_new(&params, depth)
             .expect("certificate circuit should build");
         let circuit_degree = MidnightCircuit::from_relation(&circuit, None).k();
 
-        let mut cert_srs = (*srs).clone();
-        cert_srs.downsize(circuit_degree);
+        let cert_srs =
+            ParamsKZG::<Bls12>::unsafe_setup(circuit_degree, ChaCha20Rng::from_seed([42u8; 32]));
 
         let midnight_vk = zk::setup_vk(&cert_srs, &circuit);
         let midnight_pk = zk::setup_pk(&circuit, &midnight_vk);

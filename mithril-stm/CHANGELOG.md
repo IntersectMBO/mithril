@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.3 (08-05-2026)
+
+### Changed
+
+- Updated the test handling of the unsafe srs. It is now shared across more tests.
+- Updated the cache of the test circuit keys so they can be shared more broadly.
+- Removed most of the srs downsizing used in the tests.
+
 ## 0.12.2 (08-04-2026)
 
 ### Changed
