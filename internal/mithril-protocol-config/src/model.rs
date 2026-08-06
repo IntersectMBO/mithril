@@ -103,6 +103,19 @@ pub struct ProtocolConfigurationForEpoch {
     pub cardano_blocks_transactions: Option<CardanoBlocksTransactionsSigningConfig>,
 }
 
+impl From<ProtocolConfigurationForEpoch> for MithrilNetworkConfigurationForEpoch {
+    fn from(protocol_configuration: ProtocolConfigurationForEpoch) -> Self {
+        MithrilNetworkConfigurationForEpoch {
+            protocol_parameters: protocol_configuration.protocol_parameters,
+            enabled_signed_entity_types: protocol_configuration.enabled_signed_entity_types,
+            signed_entity_types_config: SignedEntityTypeConfiguration {
+                cardano_transactions: protocol_configuration.cardano_transactions,
+                cardano_blocks_transactions: protocol_configuration.cardano_blocks_transactions,
+            },
+        }
+    }
+}
+
 /// Configuration containing markers by epoch
 #[derive(Default, PartialEq, Clone, Debug)]
 pub struct ConfigurationResolverFromMarkers {
