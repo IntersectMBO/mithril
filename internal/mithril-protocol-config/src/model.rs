@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use mithril_common::{
     entities::{
         CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
-        ProtocolParameters, SignedEntityTypeDiscriminants,
+        InconsistentSignedEntityConfigError, ProtocolParameters, SignedEntityConfigValidator,
+        SignedEntityTypeDiscriminants,
     },
     messages::{ProtocolConfigurationMessage, SignedEntityTypeDiscriminantsMessage},
 };
@@ -48,6 +49,26 @@ pub struct MithrilNetworkConfigurationForEpoch {
 
     /// Custom configurations for signed entity types
     pub signed_entity_types_config: SignedEntityTypeConfiguration,
+}
+
+impl MithrilNetworkConfigurationForEpoch {
+    /// Ensures signed-entity configuration is consistent
+    /// and clean if needed `enabled_signed_entity_types` with the validated usable subset.
+    pub(crate) fn ensure_consistency<F>(mut self, consistency_error_inspector: F) -> Self
+    where
+        F: FnOnce(&InconsistentSignedEntityConfigError),
+    {
+        if let Err(err) = SignedEntityConfigValidator::check_consistency(
+            &self.enabled_signed_entity_types,
+            &self.signed_entity_types_config.cardano_transactions,
+            &self.signed_entity_types_config.cardano_blocks_transactions,
+        ) {
+            consistency_error_inspector(&err);
+            self.enabled_signed_entity_types = err.usable_discriminants;
+        }
+
+        self
+    }
 }
 
 impl From<ProtocolConfigurationMessage> for MithrilNetworkConfigurationForEpoch {
