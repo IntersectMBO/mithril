@@ -9,7 +9,7 @@ tags: [DMQ, decentralization, beta, release, distribution, 2630]
 
 We are happy to announce that the **Decentralized Message Queue (DMQ)** node is now officially supported in **beta** on the `release-mainnet` and `release-preprod` networks. This milestone follows the [DMQ testing program with SPOs](https://mithril.network/doc/dev-blog/2026/01/06/dmq-testing-program) conducted on the `pre-release-preview` network, and would not have been possible without the feedback of the participating stake pool operators (SPOs).
 
-With the [`2630.0`](https://github.com/IntersectMBO/mithril/releases/tag/2630.0) distribution, the DMQ node version `0.7.0.0` has been promoted as **stable (beta)**, and the DMQ network is activated on both release networks.
+With the [`2630.0`](https://github.com/IntersectMBO/mithril/releases/tag/2630.0) distribution, the DMQ node version `0.7.0.0` has been promoted as **beta**, and the DMQ network is activated on both release networks.
 
 #### All SPOs should now run a DMQ node
 
