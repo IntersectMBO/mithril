@@ -949,7 +949,7 @@ Here is an **example** set of values for **pre-release-preview** that will be us
 - **YOUR_DMQ_NODE_PUBLIC_ADDRESS**: `34.14.65.160`
 - **YOUR_DMQ_NODE_PORT**: `6161`
 - **YOUR_DMQ_BOOTSTRAP_PEER_ADDRESS**: `34.76.22.193`
-- **YOUR_DMQ_BOOTSTRAP_PEER_PORT**: `11001`.
+- **YOUR_DMQ_BOOTSTRAP_PEER_PORT**: `6161`.
 
 :::
 
@@ -1128,7 +1128,7 @@ bash -c 'cat > /opt/dmq/topology.json << EOF
       "accessPoints": [
         {
           "address": "34.76.22.193",
-          "port": 11001,
+          "port": 6161,
           "valency": 1
         }
       ],
@@ -1194,7 +1194,8 @@ Type=simple
 Restart=always
 RestartSec=60
 User=cardano
-ExecStart=/opt/dmq/dmq-node --configuration-file /opt/dmq/config.json --topology-file /opt/dmq/topology.json --local-socket /dmq/ipc/node.socket --host-addr 34.14.65.160 --port 11001
+ExecStart=/opt/dmq/dmq-node --configuration-file /opt/dmq/config.json --topology-file /opt/dmq/topology.json --local-socket /dmq/ipc/node.socket --host-addr 34.14.65.160 --port 6161
+
 [Install]
 WantedBy=multi-user.target
 EOF'
