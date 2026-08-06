@@ -23,6 +23,13 @@ As a minor extension, we have adopted a slightly different versioning convention
 | mithril-signer      | `-`     |
 | mithril-stm         | `-`     |
 
+- **REMOVED** support for `Gzip` compression/decompression in the Mithril aggregator and client:
+  - The aggregator no longer produces or supports `Gzip` compression for snapshot-related artifacts: immutable files and ancillaries.
+  - The Mithril client no longer supports `Gzip` decompression when downloading snapshot artifacts.
+  - `Zstandard` has been the default compression algorithm for snapshot archives since distribution [`2337.0`](https://github.com/IntersectMBO/mithril/releases/tag/2337.0), so this
+    removal should not impact standard operations using current Mithril distributions.
+  - Users relying on older `Gzip` snapshot artifacts or custom aggregators producing `Gzip` archives must migrate to `Zstandard`.
+
 ## Mithril Distribution [2630.0] - 2026-08-03
 
 - **REMOVED** support for `CardanoImmutableFilesFull` in Mithril signer and aggregator:
