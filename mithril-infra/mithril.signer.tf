@@ -215,14 +215,14 @@ EOT
       "export SIGNER_DMQ_BLOCK_PRODUCER_PORT=${local.mithril_signers_dmq_block_producer_port[each.key]}",
       "export ERA_READER_ADAPTER_TYPE='${var.mithril_era_reader_adapter_type}'",
       <<-EOT
-ERA_READER_ADAPTER_PARAMS=$(jq -nc --arg address $(wget -q -O - ${var.mithril_era_reader_address_url}) --arg verification_key $(wget -q -O - ${var.mithril_era_reader_verification_key_url}) '{"address": $address, "verification_key": $verification_key}')
-export ERA_READER_ADAPTER_PARAMS=$ERA_READER_ADAPTER_PARAMS
+ERA_READER_ADAPTER_PARAMS=$(jq -nc --arg address "$(wget -q -O - '${var.mithril_era_reader_address_url}')" --arg verification_key "$(wget -q -O - '${var.mithril_era_reader_verification_key_url}')" '{"address": $address, "verification_key": $verification_key}')
+export ERA_READER_ADAPTER_PARAMS="$ERA_READER_ADAPTER_PARAMS"
 EOT
       ,
       "export PROTOCOL_CONFIGURATION_READER_ADAPTER_TYPE='${var.mithril_protocol_configuration_reader_adapter_type}'",
       <<-EOT
-PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS=$(jq -nc --arg address $(wget -q -O - ${var.mithril_protocol_configuration_reader_address_url}) --arg verification_key $(wget -q -O - ${var.mithril_protocol_configuration_reader_verification_key_url}) '{"address": $address, "verification_key": $verification_key}')
-export PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS=$PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS
+PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS=$(jq -nc --arg address "$(wget -q -O - '${var.mithril_protocol_configuration_reader_address_url}')" --arg verification_key "$(wget -q -O - '${var.mithril_protocol_configuration_reader_verification_key_url}')" '{"address": $address, "verification_key": $verification_key}')
+export PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS="$PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS"
 EOT
       ,
       "export AGGREGATOR_RELAY_LISTEN_PORT='${local.mithril_aggregator_relay_mithril_listen_port}'",
