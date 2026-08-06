@@ -34,7 +34,9 @@ use mithril_common::{
 };
 use mithril_era::{EraChecker, EraReader, EraReaderAdapter};
 use mithril_persistence::sqlite::{SqliteConnection, SqliteConnectionPool};
-use mithril_protocol_config::interface::MithrilNetworkConfigurationProvider;
+use mithril_protocol_config::interface::{
+    MithrilNetworkConfigurationProvider, ProtocolConfigurationMarkersReader,
+};
 use mithril_signed_entity_lock::SignedEntityTypeLock;
 use mithril_ticker::TickerService;
 
@@ -49,6 +51,7 @@ use crate::{
         AggregatorCardanoChainDataRepository, CertificateRepository, EpochSettingsStore,
         OpenMessageRepository, SignedEntityStorer, SignerStore, StakePoolStore,
     },
+    dependency_injection::ProtocolConfigurationCommandDependenciesContainer,
     event_store::{EventMessage, TransmitterService},
     file_uploaders::FileUploader,
     http_server::routes::router::{self, RouterConfig, RouterState},
@@ -221,6 +224,9 @@ pub struct DependenciesBuilder {
     /// Era reader service
     pub era_reader: Option<Arc<EraReader>>,
 
+    /// Protocol configuration reader service
+    pub protocol_configuration_reader: Option<Arc<dyn ProtocolConfigurationMarkersReader>>,
+
     /// Event Transmitter Service
     pub event_transmitter: Option<Arc<TransmitterService<EventMessage>>>,
 
@@ -337,6 +343,7 @@ impl DependenciesBuilder {
             era_reader_adapter: None,
             era_checker: None,
             era_reader: None,
+            protocol_configuration_reader: None,
             event_transmitter: None,
             event_transmitter_channel: (None, None),
             api_version_provider: None,
@@ -491,6 +498,23 @@ impl DependenciesBuilder {
             protocol_parameters_retriever: self.get_protocol_parameters_retriever().await?,
             verification_key_store: self.get_verification_key_store().await?,
             mithril_era,
+            logger: self.root_logger(),
+        };
+
+        Ok(dependencies)
+    }
+
+    /// Create dependencies for protocol configuration commands
+    pub async fn create_protocol_configuration_container(
+        &mut self,
+    ) -> Result<ProtocolConfigurationCommandDependenciesContainer> {
+        let network = self.configuration.get_network().with_context(
+            || "Dependencies Builder can not get Cardano network while building protocol configuration container",
+        )?;
+        let dependencies = ProtocolConfigurationCommandDependenciesContainer {
+            network,
+            chain_observer: self.get_chain_observer().await?,
+            protocol_configuration_reader: self.get_protocol_configuration_reader().await?,
             logger: self.root_logger(),
         };
 

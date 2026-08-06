@@ -13,7 +13,7 @@ include = ["**/*.rs", "Cargo.toml", "README.md"]
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-mithril-common = { path = "../../mithril-common", version = "0.7.16" }
+mithril-common = { path = "../../mithril-common", version = "0.7.17" }
 reqwest = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }

@@ -1,7 +1,16 @@
 use chrono::Utc;
 use uuid::Uuid;
 
-use mithril_common::test::double::{Dummy, fake_data};
+use mithril_common::{
+    entities::{
+        CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
+        ProtocolParameters,
+    },
+    messages::SignedEntityTypeDiscriminantsMessage,
+    test::double::{Dummy, fake_data},
+};
+
+use crate::tools::HumanReadableProtocolConfiguration;
 
 mod record {
     use mithril_common::entities::{ProtocolMessage, SignedEntityType};
@@ -99,5 +108,17 @@ mod entities {
                 expires_at: None,
             }
         }
+    }
+}
+
+impl Dummy for HumanReadableProtocolConfiguration {
+    fn dummy() -> Self {
+        HumanReadableProtocolConfiguration::new(
+            Epoch(42),
+            ProtocolParameters::new(10, 20, 0.123),
+            Some(CardanoTransactionsSigningConfig::dummy()),
+            Some(CardanoBlocksTransactionsSigningConfig::dummy()),
+            SignedEntityTypeDiscriminantsMessage::all_known(),
+        )
     }
 }

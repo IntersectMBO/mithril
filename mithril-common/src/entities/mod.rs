@@ -72,7 +72,7 @@ pub use protocol_message::RigidProtocolMessageIntegrityError;
 pub use protocol_message::{
     ProtocolMessage, ProtocolMessageHashScheme, ProtocolMessagePartKey, ProtocolMessagePartValue,
 };
-pub use protocol_parameters::ProtocolParameters;
+pub use protocol_parameters::{ProtocolParameters, ProtocolParametersError};
 pub use signable_manifest::*;
 pub use signed_entity_config::*;
 pub use signed_entity_config_validator::*;

@@ -2,8 +2,13 @@ use std::sync::Arc;
 
 use mithril_common::api_version::APIVersionProvider;
 use mithril_common::entities::{Epoch, SupportedEra};
+use mithril_common::test::double::Dummy;
 use mithril_era::adapters::{EraReaderAdapterBuilder, EraReaderDummyAdapter};
 use mithril_era::{EraChecker, EraMarker, EraReader, EraReaderAdapter};
+use mithril_protocol_config::cardano_chain::protocol_configuration_reader::CardanoChainProtocolConfigurationMarkersReader;
+use mithril_protocol_config::interface::ProtocolConfigurationMarkersReader;
+use mithril_protocol_config::model::ConfigurationResolverFromMarkers;
+use mithril_protocol_config::test::double::FakeProtocolConfigurationMarkersReader;
 
 use crate::ExecutionEnvironment;
 use crate::dependency_injection::{DependenciesBuilder, DependenciesBuilderError, Result};
@@ -81,5 +86,33 @@ impl DependenciesBuilder {
     /// [EraReader] service
     pub async fn get_era_checker(&mut self) -> Result<Arc<EraChecker>> {
         get_dependency!(self.era_checker)
+    }
+
+    async fn build_protocol_configuration_reader(
+        &mut self,
+    ) -> Result<Arc<dyn ProtocolConfigurationMarkersReader>> {
+        let protocol_configuration_markers_reader: Arc<dyn ProtocolConfigurationMarkersReader> =
+            match self.configuration.environment() {
+                ExecutionEnvironment::Production => {
+                    let parameters = self.configuration.protocol_configuration_reader_parameters();
+                    Arc::new(CardanoChainProtocolConfigurationMarkersReader::new(
+                        parameters.address,
+                        self.get_chain_observer().await?,
+                        parameters.verification_key,
+                    ))
+                }
+                _ => Arc::new(FakeProtocolConfigurationMarkersReader::from_markers(
+                    ConfigurationResolverFromMarkers::dummy(),
+                )),
+            };
+
+        Ok(protocol_configuration_markers_reader)
+    }
+
+    /// [ProtocolConfigurationMarkersReader] service
+    pub async fn get_protocol_configuration_reader(
+        &mut self,
+    ) -> Result<Arc<dyn ProtocolConfigurationMarkersReader>> {
+        get_dependency!(self.protocol_configuration_reader)
     }
 }

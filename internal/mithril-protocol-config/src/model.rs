@@ -1,6 +1,6 @@
-//! Model definitions for Mithril Protocol Configuration.
+//! Model definitions for Mithril Protocol Configuration and ProtocolConfigurationMarkersReader
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use mithril_common::{
     entities::{
@@ -37,9 +37,8 @@ pub struct MithrilNetworkConfiguration {
     pub configuration_for_registration: MithrilNetworkConfigurationForEpoch,
 }
 
-//A epoch configuration
+/// A network configuration available for an epoch for MithrilNetworkConfigurationProvider
 #[derive(PartialEq, Clone, Debug)]
-/// A network configuration available for an epoch
 pub struct MithrilNetworkConfigurationForEpoch {
     /// Cryptographic protocol parameters (`k`, `m` and `phi_f`)
     pub protocol_parameters: ProtocolParameters,
@@ -64,6 +63,44 @@ impl From<ProtocolConfigurationMessage> for MithrilNetworkConfigurationForEpoch 
                 cardano_blocks_transactions: message.cardano_blocks_transactions_signing_config,
             },
         }
+    }
+}
+
+/// A network configuration available for an epoch for ProtocolConfigurationMarkersReader
+#[derive(PartialEq, Clone, Debug)]
+pub struct ProtocolConfigurationForEpoch {
+    /// Cryptographic protocol parameters (`k`, `m` and `phi_f`)
+    pub protocol_parameters: ProtocolParameters,
+
+    /// List of available types of certifications
+    pub enabled_signed_entity_types: BTreeSet<SignedEntityTypeDiscriminants>,
+
+    /// Signing configuration for Cardano transactions
+    pub cardano_transactions: Option<CardanoTransactionsSigningConfig>,
+
+    /// Signing configuration for Cardano blocks and transactions
+    pub cardano_blocks_transactions: Option<CardanoBlocksTransactionsSigningConfig>,
+}
+
+/// Configuration containing markers by epoch
+#[derive(Default, PartialEq, Clone, Debug)]
+pub struct ConfigurationResolverFromMarkers {
+    /// BTreeMap association of ProtocolConfigurationForEpoch to a coresponding Epoch
+    pub markers: BTreeMap<Epoch, ProtocolConfigurationForEpoch>,
+}
+
+impl ConfigurationResolverFromMarkers {
+    /// Create a new instance with the given markers.
+    pub fn new(markers: BTreeMap<Epoch, ProtocolConfigurationForEpoch>) -> Self {
+        Self { markers }
+    }
+
+    /// resolve configuration for given Epoch
+    pub fn get_network_configuration(&self, epoch: Epoch) -> Option<ProtocolConfigurationForEpoch> {
+        self.markers
+            .range(..=epoch)
+            .next_back()
+            .map(|(_, marker)| marker.clone())
     }
 }
 
@@ -97,5 +134,81 @@ mod tests {
             BTreeSet::from([SignedEntityTypeDiscriminants::MithrilStakeDistribution]),
             network_config.enabled_signed_entity_types,
         );
+    }
+
+    mod configuration_resolver_from_markers {
+
+        use super::*;
+
+        fn fake_config_for_epoch(epoch: Epoch) -> ProtocolConfigurationForEpoch {
+            ProtocolConfigurationForEpoch {
+                protocol_parameters: ProtocolParameters::new(*epoch, *epoch, 0.1),
+                enabled_signed_entity_types: SignedEntityTypeDiscriminants::all(),
+                cardano_transactions: Some(CardanoTransactionsSigningConfig::dummy()),
+                cardano_blocks_transactions: Some(CardanoBlocksTransactionsSigningConfig::dummy()),
+            }
+        }
+
+        #[derive(Debug)]
+        struct TestCase {
+            requested_epoch: Epoch,
+            expected_conf_epoch: Epoch,
+        }
+
+        macro_rules! test_case {
+            (
+                requested: $requested_epoch:expr,
+                expected: $expected_conf_epoch:expr
+            ) => {
+                TestCase {
+                    requested_epoch: Epoch($requested_epoch),
+                    expected_conf_epoch: Epoch($expected_conf_epoch),
+                }
+            };
+        }
+
+        #[test]
+        fn get_network_configuration_falls_back_to_last_known_configuration_when_epoch_has_no_marker()
+         {
+            let markers = BTreeMap::from([
+                (Epoch(2), fake_config_for_epoch(Epoch(2))),
+                (Epoch(6), fake_config_for_epoch(Epoch(6))),
+                (Epoch(10), fake_config_for_epoch(Epoch(10))),
+            ]);
+
+            fn test_cases() -> Vec<TestCase> {
+                vec![
+                    test_case!(requested: 3, expected: 2 ),
+                    test_case!(requested: 5, expected: 2 ),
+                    test_case!(requested: 6, expected: 6 ),
+                    test_case!(requested: 7, expected: 6 ),
+                    test_case!(requested: 9, expected: 6 ),
+                    test_case!(requested: 10, expected: 10),
+                    test_case!(requested: 11, expected: 10),
+                    test_case!(requested: 12, expected: 10),
+                ]
+            }
+
+            let configurations = ConfigurationResolverFromMarkers::new(markers);
+
+            for test_case in test_cases() {
+                assert_eq!(
+                    configurations.get_network_configuration(test_case.requested_epoch),
+                    Some(fake_config_for_epoch(test_case.expected_conf_epoch))
+                );
+            }
+        }
+
+        #[test]
+        fn test_get_network_configuration_return_none_if_no_fallback_conf_is_available() {
+            let markers = BTreeMap::from([
+                (Epoch(6), fake_config_for_epoch(Epoch(6))),
+                (Epoch(10), fake_config_for_epoch(Epoch(10))),
+            ]);
+
+            let configurations = ConfigurationResolverFromMarkers::new(markers);
+
+            assert_eq!(configurations.get_network_configuration(Epoch(4)), None);
+        }
     }
 }

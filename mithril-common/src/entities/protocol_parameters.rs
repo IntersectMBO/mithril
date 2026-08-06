@@ -1,6 +1,27 @@
 use fixed::types::U8F24;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use thiserror::Error;
+
+/// [ProtocolParameters] verification related errors.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum ProtocolParametersError {
+    /// Error raised when k is invalid (k must be greater than 0).
+    #[error("k must be greater than 0")]
+    InvalidK,
+
+    /// Error raised when m is invalid (m must be greater than 0).
+    #[error("m must be greater than 0")]
+    InvalidM,
+
+    /// Error raised when k is greater than m
+    #[error("k must be less than or equal to m")]
+    KGreaterThanM,
+
+    /// Error raised when phi_f is out of range (phi_f must be in the range (0, 1]).
+    #[error("phi_f must be in the range (0, 1]")]
+    PhiFOutOfRange,
+}
 
 /// Protocol cryptographic parameters
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,6 +55,24 @@ impl ProtocolParameters {
         hasher.update(self.m.to_be_bytes());
         hasher.update(self.phi_f_fixed().to_be_bytes());
         hex::encode(hasher.finalize())
+    }
+
+    /// Checks if the ProtocolParameters are valid
+    pub fn check_parameters(&self) -> Result<(), ProtocolParametersError> {
+        if self.k == 0 {
+            return Err(ProtocolParametersError::InvalidK);
+        }
+        if self.m == 0 {
+            return Err(ProtocolParametersError::InvalidM);
+        }
+        if self.k > self.m {
+            return Err(ProtocolParametersError::KGreaterThanM);
+        }
+        if self.phi_f <= 0.0 || self.phi_f > 1.0 {
+            return Err(ProtocolParametersError::PhiFOutOfRange);
+        }
+
+        Ok(())
     }
 }
 
@@ -91,5 +130,63 @@ mod tests {
             hash_expected,
             ProtocolParameters::new(1000, 100, 0.124).compute_hash()
         );
+    }
+
+    mod verify_parameters {
+        use super::*;
+
+        #[test]
+        fn test_valid_parameters() {
+            let params = ProtocolParameters::new(10, 100, 0.123);
+            assert!(params.check_parameters().is_ok());
+        }
+
+        #[test]
+        fn test_invalid_k() {
+            let params = ProtocolParameters::new(0, 100, 0.123);
+            assert_eq!(
+                params.check_parameters(),
+                Err(ProtocolParametersError::InvalidK)
+            );
+        }
+
+        #[test]
+        fn test_invalid_m() {
+            let params = ProtocolParameters::new(100, 0, 0.123);
+            assert_eq!(
+                params.check_parameters(),
+                Err(ProtocolParametersError::InvalidM)
+            );
+        }
+
+        #[test]
+        fn test_invalid_k_greater_than_m() {
+            let params = ProtocolParameters::new(100, 10, 0.123);
+            assert_eq!(
+                params.check_parameters(),
+                Err(ProtocolParametersError::KGreaterThanM)
+            );
+        }
+
+        #[test]
+        fn test_phi_f_out_of_range() {
+            let params = ProtocolParameters::new(10, 100, 0.0);
+            assert_eq!(
+                params.check_parameters(),
+                Err(ProtocolParametersError::PhiFOutOfRange)
+            );
+
+            let params = ProtocolParameters::new(10, 100, -0.123);
+            assert_eq!(
+                params.check_parameters(),
+                Err(ProtocolParametersError::PhiFOutOfRange)
+            );
+
+            let params = ProtocolParameters::new(10, 100, 1.123);
+            assert_eq!(
+                params.check_parameters(),
+                Err(ProtocolParametersError::PhiFOutOfRange)
+            );
+        }
     }
 }
