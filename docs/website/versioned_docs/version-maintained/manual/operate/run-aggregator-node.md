@@ -8,7 +8,7 @@ import CompiledBinaries from '../../compiled-binaries.mdx'
 
 :::danger
 
-Running multiple Mithril aggregators on a Mithril network is enabled by the DMQ protocol, which is currently **unstable** and not suitable for production use.
+Running multiple Mithril aggregators on a Mithril network relies on the DMQ protocol, which is currently in **beta**. Until the DMQ network adoption reaches the required threshold, follower aggregators may not be able to produce valid certificates, and this setup is not suitable for production use.
 
 :::
 

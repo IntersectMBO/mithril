@@ -919,7 +919,7 @@ If you choose the **production** deployment, you will need to install and config
 
 **Which deployment should I use?**
 
-In this section, **production deployment** refers only to the recommended **two-machine deployment model** (Cardano block producer + Cardano relay), not to the maturity or production-readiness of the **DMQ** itself. The earlier warning that the DMQ setup is **not suitable for production use on mainnet** still applies.
+In this section, **production deployment** refers only to the recommended **two-machine deployment model** (Cardano block producer + Cardano relay), not to the maturity of the **DMQ** itself, which is currently in **beta**.
 
 On **testnet**, we recommend the **production** deployment model, but you can use the **naive** deployment for testing purposes only.
 
