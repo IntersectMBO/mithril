@@ -110,10 +110,10 @@ You can also fetch the minimum supported version for your network using the comm
 wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/networks.json | jq -r '."**YOUR_CARDANO_NETWORK**"."cardano-minimum-version"."mithril-aggregator"'
 ```
 
-Here is an example for `preprod`:
+Here is an example for `mainnet`:
 
 ```bash
-wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/networks.json | jq -r '."preprod"."cardano-minimum-version"."mithril-aggregator"'
+wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/networks.json | jq -r '."mainnet"."cardano-minimum-version"."mithril-aggregator"'
 ```
 
 :::
@@ -275,7 +275,7 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
 
 - **Base configuration** **optional** values are:
 
-  - `BLOCKFROST_PARAMETERS`: Parameters to connect to the Blockfrost API. Used to fetch the ticker and name of the registered stake pools. Example: `{"project_id":"preprodWuV1ICdtOWfZYfdcxpZ0tsS1N9rVZomQ"}`
+  - `BLOCKFROST_PARAMETERS`: Parameters to connect to the Blockfrost API. Used to fetch the ticker and name of the registered stake pools. Example: `{"project_id":"mainnetWuV1ICdtOWfZYfdcxpZ0tsS1N9rVZomQ"}`
   - `SIGNER_IMPORTER_RUN_INTERVAL`: Time interval at which the pools names and ticker in blockfrost will be imported (in minutes, default: `720`).
 
 - The **Cardano database** configuration values are (only needed if supporting Cardano database certification):
@@ -300,31 +300,31 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
 
 :::tip
 
-Here is an **example** set of values for **release-preprod** that will be used in this guide in the **tip** boxes to illustrate some commands:
+Here is an **example** set of values for **release-mainnet** that will be used in this guide in the **tip** boxes to illustrate some commands:
 
 - **Base configuration**:
 
   - **SIGNED_ENTITY_TYPES**: `MithrilStakeDistribution,CardanoStakeDistribution,CardanoTransactions` (only supporting stake distributions and transactions, excluding database snapshots)
   - **SERVER_PORT**: `8080`
   - **PUBLIC_SERVER_URL**: `https://aggregator.example.com/aggregator`
-  - **LEADER_AGGREGATOR_ENDPOINT**: `https://aggregator.release-preprod.api.mithril.network/aggregator`
+  - **LEADER_AGGREGATOR_ENDPOINT**: `https://aggregator.release-mainnet.api.mithril.network/aggregator`
   - **RUN_INTERVAL**: `60000`
   - **AGGREGATE_SIGNATURE_TYPE**: `Concatenation`
   - **STORE_RETENTION_LIMIT**: `5`
-  - **NETWORK**: `preprod`
-  - **NETWORK_MAGIC**: `1`
+  - **NETWORK**: `mainnet`
+  - **NETWORK_MAGIC**: `764824073`
   - **CARDANO_NODE_SOCKET_PATH**: `/cardano/ipc/node.socket`
   - **CARDANO_NODE_VERSION**: `10.5.0`
   - **CHAIN_OBSERVER_TYPE**: `pallas`
   - **ERA_READER_ADAPTER_TYPE**: `cardano-chain`
-  - **ERA_READER_ADAPTER_PARAMS**: `$(jq -nc --arg address $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-preprod/era.addr) --arg verification_key $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-preprod/era.vkey) '{"address": $address, "verification_key": $verification_key}')`
-  - **GENESIS_VERIFICATION_KEY**: `$(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-preprod/genesis.vkey)`
+  - **ERA_READER_ADAPTER_PARAMS**: `$(jq -nc --arg address $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/era.addr) --arg verification_key $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/era.vkey) '{"address": $address, "verification_key": $verification_key}')`
+  - **GENESIS_VERIFICATION_KEY**: `$(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/genesis.vkey)`
   - **DMQ_NODE_SOCKET_PATH**: `/dmq/ipc/node.socket`
   - **CUSTOM_ORIGIN_TAG_WHITE_LIST**: `EXPLORER,BENCHMARK,CI,NA`
 
 - **Optional configuration**:
 
-  - **BLOCKFROST_PARAMETERS**: `{"project_id":"preprodWuV1ICdtOWfZYfdcxpZ0tsS1N9rVZomQ"}`
+  - **BLOCKFROST_PARAMETERS**: `{"project_id":"mainnetWuV1ICdtOWfZYfdcxpZ0tsS1N9rVZomQ"}`
   - **SIGNER_IMPORTER_RUN_INTERVAL**: 720
 
 - **Cardano database configuration**:
@@ -413,7 +413,7 @@ EOF`
 
 :::tip
 
-Here is an example of the aforementioned command created with the example set for `release-preprod`:
+Here is an example of the aforementioned command created with the example set for `release-mainnet`:
 
 ```bash
 sudo bash -c 'cat > /opt/mithril/mithril-aggregator.env << EOF
@@ -421,17 +421,17 @@ sudo bash -c 'cat > /opt/mithril/mithril-aggregator.env << EOF
 SIGNED_ENTITY_TYPES=MithrilStakeDistribution,CardanoStakeDistribution,CardanoTransactions
 SERVER_PORT=8080
 PUBLIC_SERVER_URL=https://aggregator.example.com/aggregator
-LEADER_AGGREGATOR_ENDPOINT=https://aggregator.release-preprod.api.mithril.network/aggregator
+LEADER_AGGREGATOR_ENDPOINT=https://aggregator.release-mainnet.api.mithril.network/aggregator
 RUN_INTERVAL=60000
 AGGREGATE_SIGNATURE_TYPE=Concatenation
 STORE_RETENTION_LIMIT=5
-NETWORK=preprod
-NETWORK_MAGIC=1
+NETWORK=mainnet
+NETWORK_MAGIC=764824073
 CARDANO_NODE_SOCKET_PATH=/cardano/ipc/node.socket
 CARDANO_NODE_VERSION=10.5.0
 CHAIN_OBSERVER_TYPE=pallas
 ERA_READER_ADAPTER_TYPE=cardano-chain
-ERA_READER_ADAPTER_PARAMS={"address": "addr_test1qpkyv2ws0deszm67t840sdnruqgr492n80g3y96xw3p2ksk6suj5musy6w8lsg3yjd09cnpgctc2qh386rtxphxt248qr0npnx", "verification_key": "5b35352c3232382c3134342c38372c3133382c3133362c34382c382c31342c3138372c38352c3134382c39372c3233322c3235352c3232392c33382c3234342c3234372c3230342c3139382c31332c33312c3232322c32352c3136342c35322c3130322c39312c3132302c3230382c3134375d"}
+ERA_READER_ADAPTER_PARAMS={"address": "addr1qy72kwgm6kypyc5maw0h8mfagwag8wjnx6emgfnsnhqaml6gx7gg4tzplw9l32nsgclqax7stc4u6c5dn0ctljwscm2sqv0teg", "verification_key": "5b31312c3133342c3231352c37362c3134312c3232302c3131312c3135342c36332c3233302c3131342c31322c38372c37342c39342c3137322c3133322c32372c39362c3138362c3132362c3137382c31392c3131342c33302c3234332c36342c3134312c3131302c38332c38362c31395d"}
 DMQ_NODE_SOCKET_PATH=/dmq/ipc/node.socket
 CUSTOM_ORIGIN_TAG_WHITE_LIST=EXPLORER,BENCHMARK,CI,NA
 EOF'
@@ -442,7 +442,7 @@ If you want to configure **Optional** parameters, append the following variables
 ```bash
 sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 # Optional configuration
-BLOCKFROST_PARAMETERS={"project_id":"preprodWuV1ICdtOWfZYfdcxpZ0tsS1N9rVZomQ"}
+BLOCKFROST_PARAMETERS={"project_id":"mainnetWuV1ICdtOWfZYfdcxpZ0tsS1N9rVZomQ"}
 SIGNER_IMPORTER_RUN_INTERVAL=720
 EOF'
 ```
@@ -939,16 +939,16 @@ The DMQ node supports the implementation of a **Decentralized Message Queue** (D
 
 :::tip
 
-Here is an **example** set of values for **pre-release-preview** that will be used in this guide in the **tip** boxes to illustrate some commands:
+Here is an **example** set of values for **release-mainnet** that will be used in this guide in the **tip** boxes to illustrate some commands:
 
 - **YOUR_DMQ_NODE_SOCKET_PATH**: `/dmq/ipc/node.socket`
 - **YOUR_CARDANO_NODE_SOCKET_PATH**: `/cardano/ipc/node.socket`
 - **YOUR_CARDANO_SHELLEY_GENESIS_FILE_PATH**: `/cardano/config/shelley-genesis.json`
-- **YOUR_CARDANO_NETWORK_MAGIC**: `2`
-- **YOUR_DMQ_NETWORK_MAGIC**: `2147483650`
+- **YOUR_CARDANO_NETWORK_MAGIC**: `764824073`
+- **YOUR_DMQ_NETWORK_MAGIC**: `2912307721`
 - **YOUR_DMQ_NODE_PUBLIC_ADDRESS**: `34.14.65.160`
 - **YOUR_DMQ_NODE_PORT**: `6161`
-- **YOUR_DMQ_BOOTSTRAP_PEER_ADDRESS**: `34.76.22.193`
+- **YOUR_DMQ_BOOTSTRAP_PEER_ADDRESS**: `35.233.75.24`
 - **YOUR_DMQ_BOOTSTRAP_PEER_PORT**: `6161`.
 
 :::
@@ -1013,7 +1013,7 @@ sudo chown cardano:cardano $(dirname **YOUR_DMQ_NODE_SOCKET_PATH**)
 
 :::tip
 
-Here is an example of the aforementioned command created with the example set for `pre-release-preview`:
+Here is an example of the aforementioned command created with the example set for `release-mainnet`:
 
 ```bash
 sudo mkdir -p $(dirname /dmq/ipc/node.socket)
@@ -1050,13 +1050,13 @@ EOF'
 
 :::tip
 
-Here is an example of the aforementioned command created with the example set for `pre-release-preview`:
+Here is an example of the aforementioned command created with the example set for `release-mainnet`:
 
 ```bash
 bash -c 'cat > /opt/dmq/config.json << EOF
 {
-  "NetworkMagic": 2147483650,
-  "CardanoNetworkMagic": 2,
+  "NetworkMagic": 2912307721,
+  "CardanoNetworkMagic": 764824073,
   "CardanoNodeSocket": "/cardano/ipc/node.socket",
   "ShelleyGenesisFile": "/cardano/config/shelley-genesis.json",
   "PeerSharing": true,
@@ -1117,7 +1117,7 @@ EOF'
 
 :::tip
 
-Here is an example of the aforementioned command created with the example set for `pre-release-preview`:
+Here is an example of the aforementioned command created with the example set for `release-mainnet`:
 
 ```bash
 bash -c 'cat > /opt/dmq/topology.json << EOF
@@ -1127,7 +1127,7 @@ bash -c 'cat > /opt/dmq/topology.json << EOF
     {
       "accessPoints": [
         {
-          "address": "34.76.22.193",
+          "address": "35.233.75.24",
           "port": 6161,
           "valency": 1
         }
@@ -1181,7 +1181,7 @@ EOF'
 
 :::tip
 
-Here is an example of the aforementioned command created with the example set for `pre-release-preview`:
+Here is an example of the aforementioned command created with the example set for `release-mainnet`:
 
 ```bash
 sudo bash -c 'cat > /etc/systemd/system/dmq-aggregator.service << EOF
@@ -1245,7 +1245,7 @@ EOF'
 
 :::tip
 
-Here is an example of the aforementioned command created with the example set for `pre-release-preview`:
+Here is an example of the aforementioned command created with the example set for `release-mainnet`:
 
 ```bash
 sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
@@ -1281,10 +1281,10 @@ You can monitor your aggregator's activity using the [Mithril explorer](https://
 https://mithril.network/explorer/?aggregator=**URL_ENCODED_AGGREGATOR_ENDPOINT**
 ```
 
-For example, to monitor the `release-preprod` leader aggregator:
+For example, to monitor the `release-mainnet` leader aggregator:
 
 ```
-https://mithril.network/explorer/?aggregator=https%3A%2F%2Faggregator.release-preprod.api.mithril.network%2Faggregator
+https://mithril.network/explorer/?aggregator=https%3A%2F%2Faggregator.release-mainnet.api.mithril.network%2Faggregator
 ```
 
 To monitor your own aggregator, replace the endpoint with your aggregator's public URL (URL-encoded).
@@ -1310,10 +1310,10 @@ If you want to make your follower aggregator publicly discoverable, you should:
    - Opening an issue in the [Mithril GitHub repository](https://github.com/IntersectMBO/mithril/issues)
    - Or by creating a pull request that modifies the [`networks.json`](https://github.com/IntersectMBO/mithril/blob/main/networks.json) file and updates the `aggregators` field in the Cardano network you are targeting.
 
-   Here is an example command to add an aggregator to the `release-preprod` network configuration:
+   Here is an example command to add an aggregator to the `release-mainnet` network configuration:
 
    ```bash
-   jq '.preprod.mithril-networks.release-preprodaggregators += [{"name": "My Aggregator", "endpoint": "https://aggregator.example.com/aggregator"}]' networks.json > networks.json.tmp && mv networks.json.tmp networks.json
+   jq '.mainnet."mithril-networks"[0]."release-mainnet".aggregators += [{"url": "https://aggregator.example.com/aggregator"}]' networks.json > networks.json.tmp && mv networks.json.tmp networks.json
    ```
 
 :::info
