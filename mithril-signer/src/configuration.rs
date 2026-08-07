@@ -1,20 +1,22 @@
 use anyhow::Context;
 use config::{ConfigError, Map, Source, Value};
-use mithril_dmq::DmqNetwork;
-use mithril_doc::{Documenter, DocumenterDefault, StructDoc};
 use serde::Deserialize;
 use std::{path::PathBuf, sync::Arc};
 
 use mithril_cardano_node_chain::chain_observer::ChainObserver;
-use mithril_cli_helper::register_config_value;
+use mithril_cli_helper::{register_config_value, serde_deserialization};
 use mithril_common::{
     CardanoNetwork, StdResult,
+    crypto_helper::ProtocolConfigurationMarkersSigner,
     entities::{BlockNumber, PartyId},
 };
+use mithril_dmq::DmqNetwork;
+use mithril_doc::{Documenter, DocumenterDefault, StructDoc};
 use mithril_era::{
     EraReaderAdapter,
     adapters::{EraReaderAdapterBuilder, EraReaderAdapterType},
 };
+use mithril_protocol_config::builder::AdapterConfig;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SignaturePublisherConfig {
@@ -117,6 +119,13 @@ pub struct Configuration {
     /// Era reader adapter parameters
     pub era_reader_adapter_params: Option<String>,
 
+    /// Protocol configuration reader adapter configuration
+    #[example = "\
+    - cardano-chain:<br/>`{ \"type\": \"cardano-chain\", \"address\": \"test_address\",  \"verification_key\": \"136372c3138312c3138382c3130352c3233312c3135\" }`<br/>\
+    "]
+    #[serde(deserialize_with = "serde_deserialization::string_or_struct")]
+    pub protocol_configuration_reader_adapter_config: AdapterConfig,
+
     /// Enable metrics server (Prometheus endpoint on /metrics).
     pub enable_metrics_server: bool,
 
@@ -188,6 +197,11 @@ impl Configuration {
             reset_digests_cache: false,
             era_reader_adapter_type: EraReaderAdapterType::Bootstrap,
             era_reader_adapter_params: None,
+            protocol_configuration_reader_adapter_config: AdapterConfig::CardanoChain {
+                address: "address".to_string(),
+                verification_key: ProtocolConfigurationMarkersSigner::create_deterministic_signer()
+                    .verification_key(),
+            },
             enable_metrics_server: true,
             metrics_server_ip: "0.0.0.0".to_string(),
             metrics_server_port: 9090,

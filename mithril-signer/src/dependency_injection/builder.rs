@@ -46,7 +46,10 @@ use mithril_persistence::sqlite::{
     ConnectionBuilder, ConnectionOptions, SqliteConnection, SqliteConnectionPool,
 };
 
-use mithril_protocol_config::http::HttpMithrilNetworkConfigurationProvider;
+use mithril_protocol_config::{
+    builder::build_protocol_configuration_adapter,
+    markers::MarkersMithrilNetworkConfigurationProvider,
+};
 
 use mithril_dmq::{DmqMessageBuilder, DmqPublisherClientPallas};
 
@@ -420,10 +423,17 @@ impl<'a> DependenciesBuilder<'a> {
             self.root_logger(),
         ));
         let metrics_service = Arc::new(MetricsService::new(self.root_logger())?);
-        let network_configuration_service = Arc::new(HttpMithrilNetworkConfigurationProvider::new(
-            aggregator_client.clone(),
-            self.root_logger(),
-        ));
+
+        let protocol_configuration_adapter = build_protocol_configuration_adapter(
+            self.config.protocol_configuration_reader_adapter_config.clone(),
+            chain_observer.clone(),
+        );
+        let network_configuration_service =
+            Arc::new(MarkersMithrilNetworkConfigurationProvider::new(
+                self.root_logger(),
+                protocol_configuration_adapter,
+            ));
+
         let preloader_activation = CardanoTransactionsPreloaderActivationSigner::new(
             network_configuration_service.clone(),
             ticker_service.clone(),
