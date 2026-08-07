@@ -168,10 +168,9 @@ export ERA_READER_ADAPTER_PARAMS="$ERA_READER_ADAPTER_PARAMS"
 EOT
       ,
       "export ERA_READER_SECRET_KEY='${var.mithril_era_reader_secret_key}'",
-      "export PROTOCOL_CONFIGURATION_READER_ADAPTER_TYPE='${var.mithril_protocol_configuration_reader_adapter_type}'",
       <<-EOT
-PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS=$(jq -nc --arg address "$(wget -q -O - '${var.mithril_protocol_configuration_reader_address_url}')" --arg verification_key "$(wget -q -O - '${var.mithril_protocol_configuration_reader_verification_key_url}')" '{"address": $address, "verification_key": $verification_key}')
-export PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS="$PROTOCOL_CONFIGURATION_READER_ADAPTER_PARAMS"
+PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG=$(jq -nc --arg type '${var.mithril_protocol_configuration_reader_adapter_type}' --arg address "$(wget -q -O - '${var.mithril_protocol_configuration_reader_address_url}')" --arg verification_key "$(wget -q -O - '${var.mithril_protocol_configuration_reader_verification_key_url}')" '{"type": $type, "address": $address, "verification_key": $verification_key}')
+export PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG="$PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG"
 EOT
       ,
       "export PROTOCOL_CONFIGURATION_READER_SECRET_KEY='${var.mithril_protocol_configuration_reader_secret_key}'",
