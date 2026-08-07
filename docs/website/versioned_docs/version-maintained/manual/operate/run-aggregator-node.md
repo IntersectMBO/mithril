@@ -1041,7 +1041,7 @@ bash -c 'cat > /opt/dmq/config.json << EOF
         "Stdout MachineFormat",
         "PrometheusSimple suffix 127.0.0.1 12000"
       ],
-      "severity": "Debug"
+      "severity": "Info"
     }
   }
 }
@@ -1067,7 +1067,7 @@ bash -c 'cat > /opt/dmq/config.json << EOF
         "Stdout MachineFormat",
         "PrometheusSimple suffix 127.0.0.1 12000"
       ],
-      "severity": "Debug"
+      "severity": "Info"
     }
   }
 }
