@@ -50,6 +50,16 @@ impl Ed25519Signer {
 
     /// [Ed25519Signer] non deterministic
     pub fn create_non_deterministic_signer() -> Self {
+        // `rand_core`'s `OsRng` was removed and replaced by `getrandom::SysRng`. `OsRng` was
+        // a wrapper around `getrandom` internally so the functionality does not change.
+        // `SysRng` reads from the same OS entropy sources as before (e.g. the `getrandom`
+        // syscall on Linux, `ProcessPrng` on Windows, `getentropy` on macOS) under
+        // the same documented security guarantee.
+        //
+        // `SysRng` only implements the fallible `TryRng`/`TryCryptoRng` (an OS entropy call can,
+        // in principle, fail). `UnwrapErr` makes `SysRng` Infallible to fit the `generate` bounds.
+        // It can panic on failure in the same way `OsRng` did so the chance of failure stays the
+        // same.
         let rng = UnwrapErr(SysRng);
         Self::create_test_signer(rng)
     }
