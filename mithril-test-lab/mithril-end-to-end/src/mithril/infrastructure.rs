@@ -282,8 +282,8 @@ impl MithrilInfrastructure {
 
         let protocol_parameters_new = match config.aggregate_signature_type {
             AggregateSignatureType::Concatenation => ProtocolParameters {
-                k: 70,
-                m: 105,
+                k: 274,
+                m: 420,
                 phi_f: 0.77,
             },
             AggregateSignatureType::Snark | AggregateSignatureType::IvcSnark => {
