@@ -155,7 +155,7 @@ EOT
       "export SNAPSHOT_COMPRESSION_ALGORITHM=${var.mithril_aggregator_snapshot_compression_algorithm}",
       "export ZSTANDARD_PARAMETERS__LEVEL=${var.mithril_aggregator_zstandard_parameters_level}",
       "export ZSTANDARD_PARAMETERS__NUMBER_OF_WORKERS=${var.mithril_aggregator_zstandard_parameters_workers}",
-      "export GENESIS_VERIFICATION_KEY=$(wget -q -O - ${var.mithril_genesis_verification_key_url})",
+      "export GENESIS_VERIFICATION_KEY=\"$(wget -q -O - '${var.mithril_genesis_verification_key_url}')\"",
       "export GENESIS_SECRET_KEY='${var.mithril_genesis_secret_key}'",
       "export PROTOCOL_PARAMETERS__K='${var.mithril_protocol_parameters.k}'",
       "export PROTOCOL_PARAMETERS__M='${var.mithril_protocol_parameters.m}'",
@@ -163,18 +163,24 @@ EOT
       "export CHAIN_OBSERVER_TYPE='${var.mithril_aggregator_chain_observer_type}'",
       "export ERA_READER_ADAPTER_TYPE='${var.mithril_era_reader_adapter_type}'",
       <<-EOT
-ERA_READER_ADAPTER_PARAMS=$(jq -nc --arg address $(wget -q -O - ${var.mithril_era_reader_address_url}) --arg verification_key $(wget -q -O - ${var.mithril_era_reader_verification_key_url}) '{"address": $address, "verification_key": $verification_key}')
-export ERA_READER_ADAPTER_PARAMS=$ERA_READER_ADAPTER_PARAMS
+ERA_READER_ADAPTER_PARAMS=$(jq -nc --arg address "$(wget -q -O - '${var.mithril_era_reader_address_url}')" --arg verification_key "$(wget -q -O - '${var.mithril_era_reader_verification_key_url}')" '{"address": $address, "verification_key": $verification_key}')
+export ERA_READER_ADAPTER_PARAMS="$ERA_READER_ADAPTER_PARAMS"
 EOT
       ,
       "export ERA_READER_SECRET_KEY='${var.mithril_era_reader_secret_key}'",
       <<-EOT
+PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG=$(jq -nc --arg type '${var.mithril_protocol_configuration_reader_adapter_type}' --arg address "$(wget -q -O - '${var.mithril_protocol_configuration_reader_address_url}')" --arg verification_key "$(wget -q -O - '${var.mithril_protocol_configuration_reader_verification_key_url}')" '{"type": $type, "address": $address, "verification_key": $verification_key}')
+export PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG="$PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG"
+EOT
+      ,
+      "export PROTOCOL_CONFIGURATION_READER_SECRET_KEY='${var.mithril_protocol_configuration_reader_secret_key}'",
+      <<-EOT
 export ANCILLARY_FILES_SIGNER_TYPE=${var.mithril_aggregator_ancillary_signer_type}
 if [ "$ANCILLARY_FILES_SIGNER_TYPE" = "secret-key" ]; then
-  export ANCILLARY_FILES_SIGNER_CONFIG=$(jq -nc --arg secret_key ${var.mithril_aggregator_ancillary_signer_secret_key} '{"type": "secret-key", "secret_key": $secret_key}')
+  export ANCILLARY_FILES_SIGNER_CONFIG=$(jq -nc --arg secret_key '${var.mithril_aggregator_ancillary_signer_secret_key}' '{"type": "secret-key", "secret_key": $secret_key}')
 fi
 if [ "$ANCILLARY_FILES_SIGNER_TYPE" = "gcp-kms" ]; then
-  export ANCILLARY_FILES_SIGNER_CONFIG=$(jq -nc --arg resource_name ${var.mithril_aggregator_ancillary_signer_gcp_kms_resource_name} '{"type": "gcp-kms", "resource_name": $resource_name, "credentials_json_env_var": "GOOGLE_APPLICATION_CREDENTIALS_GCP_KMS_JSON"}')
+  export ANCILLARY_FILES_SIGNER_CONFIG=$(jq -nc --arg resource_name '${var.mithril_aggregator_ancillary_signer_gcp_kms_resource_name}' '{"type": "gcp-kms", "resource_name": $resource_name, "credentials_json_env_var": "GOOGLE_APPLICATION_CREDENTIALS_GCP_KMS_JSON"}')
   export GOOGLE_APPLICATION_CREDENTIALS_GCP_KMS_JSON='${local.mithril_aggregator_ancillary_signer_gcp_kms_credentials}'
 fi
 EOT

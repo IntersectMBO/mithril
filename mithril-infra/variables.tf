@@ -382,6 +382,7 @@ variable "mithril_aggregator_auth_username" {
 variable "mithril_aggregator_auth_password" {
   type        = string
   description = "The password for authentication on the mithril aggregator"
+  sensitive   = true
   default     = ""
 }
 
@@ -416,6 +417,7 @@ variable "mithril_aggregator_ancillary_signer_type" {
 variable "mithril_aggregator_ancillary_signer_secret_key" {
   type        = string
   description = "The secret key used to sign ancillary files (used with mithril_aggregator_ancillary_signer_type='secret-key')"
+  sensitive   = true
   default     = ""
 }
 
@@ -428,6 +430,7 @@ variable "mithril_aggregator_ancillary_signer_gcp_kms_resource_name" {
 variable "mithril_aggregator_ancillary_signer_gcp_kms_credentials" {
   type        = string
   description = "The JSON credentials to access GCP KMS base64 encoded (used with mithril_aggregator_ancillary_signer_type='gcp-kms')"
+  sensitive   = true
   default     = ""
 }
 
@@ -446,6 +449,7 @@ variable "prometheus_auth_username" {
 variable "prometheus_auth_password" {
   type        = string
   description = "The password for authentication on local prometheus endpoint"
+  sensitive   = true
   default     = ""
 }
 
@@ -464,6 +468,7 @@ variable "prometheus_ingest_username" {
 variable "prometheus_ingest_password" {
   type        = string
   description = "The password to ingest on remote prometheus endpoint"
+  sensitive   = true
   default     = ""
 }
 
@@ -476,6 +481,7 @@ variable "loki_auth_username" {
 variable "loki_auth_password" {
   type        = string
   description = "The password for authentication on local loki endpoint"
+  sensitive   = true
   default     = ""
 }
 
@@ -494,6 +500,7 @@ variable "loki_ingest_username" {
 variable "loki_ingest_password" {
   type        = string
   description = "The password to ingest on remote loki endpoint"
+  sensitive   = true
   default     = ""
 }
 
@@ -512,6 +519,7 @@ variable "mithril_genesis_verification_key_url" {
 variable "mithril_genesis_secret_key" {
   type        = string
   description = "The Mithril genesis secret key used by the aggregator to bootstrap a genesis certificate (test only)"
+  sensitive   = true
 }
 
 variable "mithril_protocol_parameters" {
@@ -548,6 +556,32 @@ variable "mithril_era_reader_verification_key_url" {
 variable "mithril_era_reader_secret_key" {
   type        = string
   description = "The Mithril genesis secret key used by the aggregator to generate an era marker payload TxDatum file (test only)"
+  sensitive   = true
+  default     = ""
+}
+
+variable "mithril_protocol_configuration_reader_adapter_type" {
+  type        = string
+  description = "The Mithril protocol configuration reader adapter used to read the protocol configuration markers"
+  default     = "cardano-chain"
+}
+
+variable "mithril_protocol_configuration_reader_address_url" {
+  type        = string
+  description = "The url of the Mithril protocol configuration reader address used to query the on chain Utxo containing the protocol configuration markers payload"
+  default     = ""
+}
+
+variable "mithril_protocol_configuration_reader_verification_key_url" {
+  type        = string
+  description = "The url of the Mithril protocol configuration reader verification key used to verify a protocol configuration markers payload"
+  default     = ""
+}
+
+variable "mithril_protocol_configuration_reader_secret_key" {
+  type        = string
+  description = "The Mithril protocol configuration reader secret key used by the aggregator to generate a protocol configuration markers payload TxDatum file (test only)"
+  sensitive   = true
   default     = ""
 }
 

@@ -3,7 +3,8 @@ output "google_project" {
 }
 
 output "mithril_aggregator_endpoint" {
-  value = local.mithril_aggregator_endpoint_url
+  value     = local.mithril_aggregator_endpoint_url
+  sensitive = true
 }
 
 output "mithril_signers_endpoint_url" {
@@ -11,11 +12,13 @@ output "mithril_signers_endpoint_url" {
 }
 
 output "prometheus_endpoint_url" {
-  value = local.prometheus_endpoint_url
+  value     = local.prometheus_endpoint_url
+  sensitive = true
 }
 
 output "loki_endpoint_url" {
-  value = local.loki_endpoint_url
+  value     = local.loki_endpoint_url
+  sensitive = true
 }
 
 output "storage_bucket" {

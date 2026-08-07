@@ -13,6 +13,7 @@ services:
       - AGGREGATOR_ENDPOINT=${AGGREGATOR_ENDPOINT}
       - ERA_READER_ADAPTER_TYPE=${ERA_READER_ADAPTER_TYPE}
       - ERA_READER_ADAPTER_PARAMS=${ERA_READER_ADAPTER_PARAMS}
+      - PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG=${PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG}
     volumes:
       - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/cardano/db/block-producer:/data/db
       - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/mithril:/data/mithril
