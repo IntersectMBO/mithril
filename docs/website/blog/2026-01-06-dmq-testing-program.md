@@ -9,7 +9,9 @@ tags: [DMQ, decentralization, testing program]
 
 :::info[Update 2026/08/04]
 
-With the release of the [`2630.0`](https://github.com/input-output-hk/mithril/releases/tag/2630.0) distribution, the DMQ node has been upgraded to its first **stable beta release** version `0.7.0.0` on the `release-mainnet` and `release-preprod` networks.
+The testing program with SPOs has been successfully completed, and the DMQ node is now officially supported in **beta** on the release networks. The Mithril team thanks all participating SPOs for their valuable feedback and contributions to this milestone.
+
+See update about the DMQ node beta release on the release networks in this [post](https://mithril.network/doc/dev-blog/2026/08/04/dmq-beta-release).
 
 :::
 
@@ -51,12 +53,12 @@ The rollout plan of the DMQ network is the following:
 
 - [x] **Distribution [2603](https://github.com/input-output-hk/mithril/releases/tag/2603.1)**: `unstable` on the `pre-release-preview` network
   - [x] DMQ activation on the `pre-release-preview` network
-  - [x] Released a [guide](https://mithril.network/doc/manual/operate/run-signer-node/#set-up-the-dmq-node-unstable) for setting up a DMQ node in the SPO infrastructure
+  - [x] Released a [guide](https://mithril.network/doc/manual/operate/run-signer-node/#set-up-the-dmq-node-beta) for setting up a DMQ node in the SPO infrastructure
   - [x] 4-6 weeks testing program with selected SPOs
 - [x] **Distribution [2617](https://github.com/input-output-hk/mithril/releases/tag/2617.0)**: `unstable` on the `pre-release-preview` network (extended testing)
   - [x] Upgraded the DMQ node to version `0.4.2.0` on the `pre-release-preview` network
   - [x] 4-6 weeks extended testing program with selected SPOs
-- [x] **Distribution [2630](https://github.com/input-output-hk/mithril/releases/tag/2630.0)**: `stable` on the `release-preprod` and `release-mainnet` networks with fallback
+- [x] **Distribution [2630](https://github.com/input-output-hk/mithril/releases/tag/2630.0)**: `beta` on the `release-preprod` and `release-mainnet` networks with fallback
   - [x] DMQ activation on the `release-preprod` and `release-mainnet` networks
   - [x] Activation of the fallback to the legacy signature registration mechanism for all SPOs
   - [x] Release of an updated guide for setting up a DMQ node in the SPO infrastructure
