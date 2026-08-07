@@ -1,6 +1,8 @@
 mod api;
 pub mod appender;
 mod entities;
+#[cfg(test)]
+mod tests;
 
 pub use api::*;
 pub use entities::*;
