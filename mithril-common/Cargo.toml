@@ -51,7 +51,7 @@ fixed = "1.31.0"
 hex = { workspace = true }
 kes-summed-ed25519 = { version = "0.2.1", features = ["serde_enabled", "sk_clone_enabled"] }
 mithril-merkle-tree = { path = "../internal/mithril-merkle-tree", version = "0.1.4" }
-mithril-stm = { path = "../mithril-stm", version = "0.12.4", default-features = false }
+mithril-stm = { path = "../mithril-stm", version = "0.12.5", default-features = false }
 nom = "8.0.0"
 rand_chacha = { workspace = true }
 rand_core = { workspace = true }

@@ -37,11 +37,11 @@ use crate::{
 /// The certificate and IVC verifying keys used to build this struct must match those used to
 /// build the [`Global`] passed to [`IvcProof::verify`]. A mismatch silently produces wrong
 /// public inputs and will cause verification to fail with
-/// [`IvcProofError::KzgOpeningFailed`].
+/// [`IvcProofError::MsmPairingCheckFailed`].
 ///
 /// [`Global`]: crate::circuits::halo2_ivc::state::Global
 /// [`IvcProof::verify`]: crate::proof_system::ivc_halo2_snark::proof::IvcProof::verify
-/// [`IvcProofError::KzgOpeningFailed`]: crate::proof_system::ivc_halo2_snark::errors::IvcProofError::KzgOpeningFailed
+/// [`IvcProofError::MsmPairingCheckFailed`]: crate::proof_system::ivc_halo2_snark::errors::IvcProofError::MsmPairingCheckFailed
 pub(crate) struct IvcVerifierSetup {
     /// Stabilized KZG verifier parameters (embedded constant, no SRS load required).
     verifier_params: ParamsVerifierKZG<Bls12>,

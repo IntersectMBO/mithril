@@ -15,7 +15,11 @@ use midnight_proofs::{
     plonk::{create_proof, prepare},
     poly::{
         commitment::PolynomialCommitmentScheme,
-        kzg::{KZGCommitmentScheme, params::ParamsKZG},
+        kzg::{
+            KZGCommitmentScheme,
+            msm::{DualMSM, MSMKZG},
+            params::ParamsKZG,
+        },
     },
     transcript::{Blake2b256, CircuitTranscript, Hashable, Sampleable, Transcript, TranscriptHash},
 };
@@ -151,24 +155,13 @@ where
     <KZGCommitmentScheme<Bls12> as PolynomialCommitmentScheme<CircuitBase>>::Commitment:
         Hashable<H>,
 {
-    /// Verifies the IVC proof and its folded accumulator using transcript hash `H`.
-    ///
-    /// Checks:
-    /// 1. The KZG opening equations against the IVC verifying key.
-    /// 2. The folded accumulator pairing equation.
-    ///
-    /// # Invariant
-    ///
-    /// `global` and `verifier_setup` must be built from the same certificate and IVC verifying
-    /// keys. If they differ, the public inputs fed to the KZG opening check will not match the
-    /// proof transcript and verification will return [`IvcProofError::KzgOpeningFailed`].
-    pub(crate) fn verify(
+    /// Prepares the KZG opening MSM and derives the Fiat-Shamir combiner `r` used to fold the
+    /// accumulator's pairing check into it.
+    pub(crate) fn prepare_combined_check(
         &self,
-        msg: &[u8],
         global: &Global,
         verifier_setup: &IvcVerifierSetup,
-    ) -> StmResult<()> {
-        self.check_input_message_matches_state_message(msg)?;
+    ) -> StmResult<(DualMSM<Bls12>, G1Projective, G1Projective, CircuitBase)> {
         let public_inputs: Vec<CircuitBase> = [
             global.as_public_input(),
             self.state.as_public_input(),
@@ -185,22 +178,60 @@ where
             &mut transcript,
         )
         .map_err(|_| IvcProofError::TranscriptPreparationFailed)?;
-
         transcript
             .assert_empty()
             .map_err(|_| IvcProofError::TranscriptNotFullyConsumed)?;
 
-        if !dual_msm.check(verifier_setup.verifier_params()) {
-            return Err(IvcProofError::KzgOpeningFailed.into());
-        }
+        let accumulator_lhs = self.accumulator.lhs().eval(verifier_setup.combined_fixed_bases());
+        let accumulator_rhs = self.accumulator.rhs().eval(verifier_setup.combined_fixed_bases());
 
-        if !self.accumulator.check(
-            verifier_setup.verifier_params(),
-            verifier_setup.combined_fixed_bases(),
-        ) {
-            return Err(IvcProofError::AccumulatorFailed.into());
+        // `r` must depend on both `dual_msm` and `self.accumulator` to make sure the combination can't be manipulated.
+        // The transcript should already absorb the dual_msm and accumulator but we make it explicit here
+        // in case the midnight library changes this in the future.
+        let (dual_msm_left_terms, dual_msm_right_terms) = dual_msm.split();
+        for (_, scalar, base) in dual_msm_left_terms.into_iter().chain(dual_msm_right_terms) {
+            transcript.common(scalar)?;
+            transcript.common(base)?;
         }
+        transcript.common(&accumulator_lhs)?;
+        transcript.common(&accumulator_rhs)?;
+        let r: CircuitBase = transcript.squeeze_challenge();
 
+        Ok((dual_msm, accumulator_lhs, accumulator_rhs, r))
+    }
+
+    /// Verifies the IVC proof and its folded accumulator using transcript hash `H` by
+    /// combining both value as MSMs using a random scalar `r` and performing one
+    /// pairing check.
+    ///
+    /// # Invariant
+    ///
+    /// `global` and `verifier_setup` must be built from the same certificate and IVC verifying
+    /// keys used to produce this proof. If they differ, the combined pairing check will fail and
+    /// verification will return [`IvcProofError::MsmPairingCheckFailed`].
+    pub(crate) fn verify(
+        &self,
+        msg: &[u8],
+        global: &Global,
+        verifier_setup: &IvcVerifierSetup,
+    ) -> StmResult<()> {
+        self.check_input_message_matches_state_message(msg)?;
+
+        let (dual_msm, accumulator_lhs, accumulator_rhs, r) =
+            self.prepare_combined_check(global, verifier_setup)?;
+
+        let mut accumulator_dual_msm = DualMSM::new(
+            MSMKZG::from_base(&accumulator_lhs),
+            MSMKZG::from_base(&accumulator_rhs),
+        );
+        accumulator_dual_msm.scale(r);
+
+        let mut combined = dual_msm;
+        combined.add_msm(accumulator_dual_msm);
+
+        if !combined.check(verifier_setup.verifier_params()) {
+            return Err(IvcProofError::MsmPairingCheckFailed.into());
+        }
         Ok(())
     }
 
@@ -454,9 +485,14 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
 #[cfg(test)]
 mod tests {
 
-    use midnight_proofs::transcript::Blake2b256;
+    use ff::Field;
+    use midnight_proofs::{
+        poly::kzg::msm::{DualMSM, MSMKZG},
+        transcript::Blake2b256,
+    };
 
     use crate::{
+        circuits::halo2::types::CircuitBase,
         circuits::halo2_ivc::{
             state::Global,
             tests::common::{
@@ -510,8 +546,8 @@ mod tests {
     #[test]
     fn ivc_proof_verify_accepts_stored_recursive_step_output() {
         // Exercises the `IvcProof::verify` high-level API end-to-end against the
-        // stored next-epoch Blake2b proof, confirming that the unified verification
-        // path (KZG opening + accumulator pairing) accepts a known-good proof.
+        // stored next-epoch Blake2b proof, confirming that the combined pairing check
+        // accepts a known-good proof.
         let verification_context = load_embedded_verification_context_asset()
             .expect("verification context asset should load");
         let step_output = load_embedded_next_epoch_step_output_asset()
@@ -637,15 +673,15 @@ mod tests {
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
             Some(&IvcProofError::InvalidMessage),
-            "tampered message must fail the KZG opening check, got: {err}"
+            "tampered message must fail message verification in IvcProof::verify, got: {err}"
         );
     }
 
     #[test]
     fn ivc_proof_verify_rejects_tampered_proof_bytes() {
-        // A single flipped byte anywhere in the proof transcript must cause `verify` to
-        // return `Err`: the KZG opening equations are computed over the raw bytes, so
-        // any corruption propagates to a bad MSM and the `dual_msm.check` fails.
+        // A single flipped byte anywhere in the proof transcript corrupts the raw bytes
+        // `dual_msm` is built from, so its side of the combined pairing equation no longer
+        // holds and `verify` returns `Err`.
         let (global, verifier_setup) = build_proof_verifier_context();
         let step_output = load_embedded_next_epoch_step_output_asset()
             .expect("recursive step output asset should load");
@@ -665,8 +701,8 @@ mod tests {
             .expect_err("tampered proof bytes should be rejected by IvcProof::verify");
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::KzgOpeningFailed),
-            "tampered bytes must fail the KZG opening check, got: {err}"
+            Some(&IvcProofError::MsmPairingCheckFailed),
+            "tampered bytes must fail the combined pairing check, got: {err}"
         );
     }
 
@@ -690,7 +726,7 @@ mod tests {
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
             Some(&IvcProofError::InvalidMessage),
-            "different protocol message must fail the KZG opening check, got: {err}"
+            "different protocol message must fail message verification in IvcProof::verify, got: {err}"
         );
     }
 
@@ -716,16 +752,16 @@ mod tests {
             .expect_err("different protocol message should be rejected by IvcProof::verify");
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::KzgOpeningFailed),
-            "different protocol message must fail the KZG opening check, got: {err}"
+            Some(&IvcProofError::MsmPairingCheckFailed),
+            "different protocol message must fail the combined pairing check, got: {err}"
         );
     }
 
     #[test]
     fn ivc_proof_verify_rejects_mismatched_state() {
         // Substituting the state from a different proof step changes the public inputs
-        // fed to `prepare`, causing `dual_msm.check` to fail against the unmodified
-        // proof bytes.
+        // fed to `prepare`, so `dual_msm`'s side of the combined equation no longer matches
+        // the unmodified proof bytes.
         let (global, verifier_setup) = build_proof_verifier_context();
         let step_output = load_embedded_next_epoch_step_output_asset()
             .expect("recursive step output asset should load");
@@ -743,8 +779,8 @@ mod tests {
             .expect_err("state from a different proof should be rejected by IvcProof::verify");
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::KzgOpeningFailed),
-            "mismatched state corrupts public inputs and must fail the KZG opening check, got: {err}"
+            Some(&IvcProofError::MsmPairingCheckFailed),
+            "mismatched state corrupts public inputs and must fail the combined pairing check, got: {err}"
         );
     }
 
@@ -752,7 +788,7 @@ mod tests {
     fn ivc_proof_verify_rejects_mismatched_accumulator() {
         // Substituting the accumulator from a different proof step corrupts the public
         // inputs fed to `prepare` (the accumulator is serialised into them), so
-        // `dual_msm.check` fails before the pairing equation is ever reached.
+        // `dual_msm`'s side of the combined equation no longer matches.
         let (global, verifier_setup) = build_proof_verifier_context();
         let step_output = load_embedded_next_epoch_step_output_asset()
             .expect("recursive step output asset should load");
@@ -770,8 +806,8 @@ mod tests {
         );
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::KzgOpeningFailed),
-            "mismatched accumulator corrupts public inputs and must fail the KZG opening check, got: {err}"
+            Some(&IvcProofError::MsmPairingCheckFailed),
+            "mismatched accumulator corrupts public inputs and must fail the combined pairing check, got: {err}"
         );
     }
 
@@ -795,16 +831,16 @@ mod tests {
             .expect_err("Poseidon proof bytes should be rejected by IvcProof::<Blake2b>::verify");
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::KzgOpeningFailed),
-            "Poseidon bytes via Blake2b path must fail the KZG opening check, got: {err}"
+            Some(&IvcProofError::MsmPairingCheckFailed),
+            "Poseidon bytes via Blake2b path must fail the combined pairing check, got: {err}"
         );
     }
 
     #[test]
     fn ivc_proof_verify_rejects_wrong_fixed_bases() {
-        // A verifier setup with a wrong fixed bases but otherwise correct parameters passes
-        // the KZG opening check and fails at the accumulator pairing equation,
-        // exercising the AccumulatorFailed path.
+        // A verifier setup with wrong fixed bases but otherwise correct parameters leaves
+        // `dual_msm`'s side of the combined equation valid but corrupts the accumulator's
+        // side, so `combined.check` still fails.
         let ctx = load_embedded_verification_context_asset()
             .expect("verification context asset should load");
         let step_output = load_embedded_next_epoch_step_output_asset()
@@ -815,7 +851,8 @@ mod tests {
             &ctx.certificate_verifying_key,
             &ctx.recursive_verifying_key,
         );
-        // negate every fixed base: KZG opening check still passes, accumulator pairing breaks
+        // negate every fixed base: dual_msm's side of the equation still holds, only the
+        // accumulator's doesn't
         let wrong_fixed_bases = ctx
             .combined_fixed_bases
             .into_iter()
@@ -835,13 +872,52 @@ mod tests {
 
         let err = proof
             .verify(&STEP_OUTPUT_MSG, &global, &verifier_setup)
-            .expect_err("wrong fixed bases should cause the accumulator pairing check to fail");
+            .expect_err("wrong fixed bases should cause the combined pairing check to fail");
 
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::AccumulatorFailed),
-            "wrong fixed bases must fail the accumulator check (not the KZG check), got: {err}"
+            Some(&IvcProofError::MsmPairingCheckFailed),
+            "wrong fixed bases must fail the combined pairing check, got: {err}"
         );
+    }
+
+    #[test]
+    fn ivc_proof_verify_combined_check_holds_for_any_scalar_r() {
+        let (global, verifier_setup) = build_proof_verifier_context();
+        let step_output = load_embedded_next_epoch_step_output_asset()
+            .expect("recursive step output asset should load");
+        let proof = IvcProof::<Blake2b256>::new(
+            step_output.ivc_proof,
+            step_output.next_state,
+            step_output.next_accumulator,
+        );
+
+        let (dual_msm, accumulator_lhs, accumulator_rhs, _) = proof
+            .prepare_combined_check(&global, &verifier_setup)
+            .expect("prepare_combined_check should succeed for a valid proof");
+
+        let candidate_rs = [
+            CircuitBase::ONE,
+            CircuitBase::from(2u64),
+            CircuitBase::from(123_456_789u64),
+            -CircuitBase::ONE,
+        ];
+
+        for r in candidate_rs {
+            let mut accumulator_dual_msm = DualMSM::new(
+                MSMKZG::from_base(&accumulator_lhs),
+                MSMKZG::from_base(&accumulator_rhs),
+            );
+            accumulator_dual_msm.scale(r);
+
+            let mut combined = dual_msm.clone();
+            combined.add_msm(accumulator_dual_msm);
+
+            assert!(
+                combined.check(verifier_setup.verifier_params()),
+                "combined check must hold for a valid proof regardless of the combiner r={r:?}"
+            );
+        }
     }
 
     // The context guard is the first thing `IvcProver::prove` runs. It is tested directly here
@@ -1434,6 +1510,36 @@ mod tests {
             run_rejects_mismatched_avk_path(&ctx);
             run_rejects_corrupted_previous_ivc_proof_path(&ctx);
             run_rejects_mismatched_global_path(&ctx);
+        }
+    }
+
+    mod golden {
+        use super::*;
+
+        const GOLDEN_R: [u8; 32] = [
+            167, 66, 11, 195, 134, 213, 22, 97, 36, 22, 169, 16, 222, 26, 110, 27, 81, 13, 53, 172,
+            191, 68, 90, 117, 248, 154, 30, 122, 198, 17, 214, 30,
+        ];
+
+        #[test]
+        fn golden_combiner_r_for_stored_recursive_step_output() {
+            // Pins the exact Fiat-Shamir combiner r for a fixed, known-good proof.
+            // This test can fail if the assets are updated or if the dependency of
+            // r on the dual_msm and accumulator is changed.
+            let (global, verifier_setup) = build_proof_verifier_context();
+            let step_output = load_embedded_next_epoch_step_output_asset()
+                .expect("recursive step output asset should load");
+            let proof = IvcProof::<Blake2b256>::new(
+                step_output.ivc_proof,
+                step_output.next_state,
+                step_output.next_accumulator,
+            );
+
+            let (_, _, _, r) = proof
+                .prepare_combined_check(&global, &verifier_setup)
+                .expect("prepare_combined_check should succeed for a valid proof");
+
+            assert_eq!(r.to_bytes_le(), GOLDEN_R);
         }
     }
 }
