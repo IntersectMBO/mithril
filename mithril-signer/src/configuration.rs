@@ -199,8 +199,10 @@ impl Configuration {
             era_reader_adapter_params: None,
             protocol_configuration_reader_adapter_config: AdapterConfig::CardanoChain {
                 address: "address".to_string(),
-                verification_key: ProtocolConfigurationMarkersSigner::create_deterministic_signer()
-                    .verification_key(),
+                verification_key: Box::new(
+                    ProtocolConfigurationMarkersSigner::create_deterministic_signer()
+                        .verification_key(),
+                ),
             },
             enable_metrics_server: true,
             metrics_server_ip: "0.0.0.0".to_string(),

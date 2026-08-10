@@ -1,5 +1,7 @@
 mod test_extensions;
 
+use std::collections::BTreeMap;
+
 use mithril_aggregator::ServeCommandConfiguration;
 use mithril_common::{
     entities::{
@@ -12,6 +14,9 @@ use mithril_common::{
         entities_extensions::SignedEntityTypeDiscriminantsTestExtension,
     },
 };
+use mithril_protocol_config::model::{
+    ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch,
+};
 use test_extensions::{ExpectedCertificate, RuntimeTester, utilities::get_test_dir};
 
 #[tokio::test]
@@ -22,11 +27,29 @@ async fn genesis_to_signing_with_all_signed_entities() {
         phi_f: 0.65,
     };
     let configuration = ServeCommandConfiguration {
-        protocol_parameters: Some(protocol_parameters.clone()),
         data_stores_directory: get_test_dir("genesis_to_signing_with_all_signed_entities"),
         signed_entity_types: Some(SignedEntityTypeDiscriminants::all_with_unstable_string(",")),
         ..ServeCommandConfiguration::new_sample(temp_dir!())
     };
+    let protocol_configuration_markers = ConfigurationResolverFromMarkers::new(BTreeMap::from([(
+        Epoch(0),
+        ProtocolConfigurationForEpoch {
+            protocol_parameters: protocol_parameters.clone(),
+            enabled_signed_entity_types: SignedEntityTypeDiscriminants::all_with_unstable(),
+            cardano_blocks_transactions: Some(
+                mithril_common::entities::CardanoBlocksTransactionsSigningConfig {
+                    security_parameter: mithril_common::entities::BlockNumberOffset(120),
+                    step: BlockNumber(15),
+                },
+            ),
+            cardano_transactions: Some(
+                mithril_common::entities::CardanoTransactionsSigningConfig {
+                    security_parameter: mithril_common::entities::BlockNumberOffset(120),
+                    step: BlockNumber(15),
+                },
+            ),
+        },
+    )]));
     let mut tester = RuntimeTester::build(
         TimePoint::new(
             1,
@@ -34,6 +57,7 @@ async fn genesis_to_signing_with_all_signed_entities() {
             ChainPoint::new(SlotNumber(10), BlockNumber(1), "block_hash-1"),
         ),
         configuration,
+        protocol_configuration_markers,
     )
     .await;
 

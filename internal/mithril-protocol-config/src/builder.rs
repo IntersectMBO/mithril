@@ -1,4 +1,4 @@
-//! Builder helping creating a ProtocolConfigurationMarkersReader base on AdapterConfig.
+//! Builder for creating a ProtocolConfigurationMarkersReader based on AdapterConfig.
 
 use std::{str::FromStr, sync::Arc};
 
@@ -10,10 +10,11 @@ use mithril_common::crypto_helper::ProtocolConfigurationMarkersVerifierVerificat
 use crate::{
     cardano_chain::protocol_configuration_reader::CardanoChainProtocolConfigurationMarkersReader,
     interface::ProtocolConfigurationMarkersReader,
+    test::double::FakeProtocolConfigurationMarkersReader,
 };
 
 /// Configuration of Protocol Configuration Adapter
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case", tag = "type")]
 pub enum AdapterConfig {
     /// Cardano chain protocol configuration adapter
@@ -22,8 +23,11 @@ pub enum AdapterConfig {
         address: ChainAddress,
 
         /// Verification key
-        verification_key: ProtocolConfigurationMarkersVerifierVerificationKey,
+        verification_key: Box<ProtocolConfigurationMarkersVerifierVerificationKey>,
     },
+
+    /// Fake protocol configuration adapter with default value at epoch 0 (for test usage)
+    Fake,
 }
 
 impl FromStr for AdapterConfig {
@@ -46,8 +50,9 @@ pub fn build_protocol_configuration_adapter(
         } => Arc::new(CardanoChainProtocolConfigurationMarkersReader::new(
             address,
             chain_observer,
-            verification_key,
+            *verification_key,
         )),
+        AdapterConfig::Fake => Arc::new(FakeProtocolConfigurationMarkersReader::default()),
     }
 }
 
@@ -73,7 +78,7 @@ mod test {
             deserialized,
             AdapterConfig::CardanoChain {
                 address: "my_address".to_string(),
-                verification_key: VERIFICATION_KEY.try_into().expect("should not fail")
+                verification_key: Box::new(VERIFICATION_KEY.try_into().expect("should not fail"))
             }
         );
     }

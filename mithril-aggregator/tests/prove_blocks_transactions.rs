@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use mithril_aggregator::{ServeCommandConfiguration, services::ProverService};
 use mithril_common::{
@@ -9,6 +12,9 @@ use mithril_common::{
     },
     temp_dir,
     test::{builder::MithrilFixtureBuilder, entities_extensions::BlockRangeTestExtension},
+};
+use mithril_protocol_config::model::{
+    ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch,
 };
 use test_extensions::{
     ExpectedCertificate, ExpectedMetrics, RuntimeTester, utilities::get_test_dir,
@@ -31,17 +37,26 @@ async fn prove_blocks_transactions() {
         smaller than one block range (5 blocks)"
     );
     let configuration = ServeCommandConfiguration {
-        protocol_parameters: Some(protocol_parameters.clone()),
         signed_entity_types: Some(
             SignedEntityTypeDiscriminants::CardanoBlocksTransactions.to_string(),
         ),
         data_stores_directory: get_test_dir("prove_blocks_transactions"),
-        cardano_blocks_transactions_signing_config: Some(CardanoBlocksTransactionsSigningConfig {
-            security_parameter: BlockNumberOffset(0),
-            step: BlockNumber(5),
-        }),
         ..ServeCommandConfiguration::new_sample(temp_dir!())
     };
+    let protocol_configuration_markers = ConfigurationResolverFromMarkers::new(BTreeMap::from([(
+        Epoch(0),
+        ProtocolConfigurationForEpoch {
+            protocol_parameters: protocol_parameters.clone(),
+            enabled_signed_entity_types: BTreeSet::from([
+                SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
+            ]),
+            cardano_transactions: None,
+            cardano_blocks_transactions: Some(CardanoBlocksTransactionsSigningConfig {
+                security_parameter: BlockNumberOffset(0),
+                step: BlockNumber(5),
+            }),
+        },
+    )]));
     let mut tester = RuntimeTester::build(
         TimePoint {
             epoch: Epoch(1),
@@ -53,6 +68,7 @@ async fn prove_blocks_transactions() {
             },
         },
         configuration,
+        protocol_configuration_markers,
     )
     .await;
     let observer = tester.observer.clone();

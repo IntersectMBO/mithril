@@ -129,6 +129,13 @@ impl ConfigurationResolverFromMarkers {
         Self { markers }
     }
 
+    /// Create a new instance with a empty BTreeMap markers.
+    pub fn new_empty() -> Self {
+        Self {
+            markers: BTreeMap::new(),
+        }
+    }
+
     /// resolve configuration for given Epoch
     pub fn get_network_configuration(&self, epoch: Epoch) -> Option<ProtocolConfigurationForEpoch> {
         self.markers

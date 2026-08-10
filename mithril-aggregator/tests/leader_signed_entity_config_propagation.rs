@@ -1,5 +1,7 @@
 mod test_extensions;
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use mithril_aggregator::ServeCommandConfiguration;
 use mithril_cardano_node_chain::chain_observer::ChainObserver;
 use mithril_common::{
@@ -12,7 +14,9 @@ use mithril_common::{
     temp_dir,
     test::builder::{MithrilFixture, MithrilFixtureBuilder},
 };
-use std::collections::BTreeSet;
+use mithril_protocol_config::model::{
+    ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch,
+};
 use test_extensions::{ExpectedMetrics, RuntimeTester, utilities::get_test_dir};
 
 #[tokio::test]
@@ -34,7 +38,6 @@ async fn leader_signed_entity_config_propagation() {
     // First, start a runtime without the CardanoTransactions and CardanoBlocksTransactions signed entity
     // types but their configuration set to store them in the database and diffuse them.
     let start_configuration = ServeCommandConfiguration {
-        protocol_parameters: Some(protocol_parameters.clone()),
         signed_entity_types: Some(
             allowed_discriminants_at_start
                 .iter()
@@ -43,16 +46,23 @@ async fn leader_signed_entity_config_propagation() {
                 .join(","),
         ),
         data_stores_directory: get_test_dir(current_function!()),
-        cardano_transactions_signing_config: Some(CardanoTransactionsSigningConfig {
-            security_parameter: BlockNumberOffset(0),
-            step: BlockNumber(30),
-        }),
-        cardano_blocks_transactions_signing_config: Some(CardanoBlocksTransactionsSigningConfig {
-            security_parameter: BlockNumberOffset(0),
-            step: BlockNumber(30),
-        }),
         ..ServeCommandConfiguration::new_sample(temp_dir!())
     };
+    let protocol_configuration_markers = ConfigurationResolverFromMarkers::new(BTreeMap::from([(
+        Epoch(0),
+        ProtocolConfigurationForEpoch {
+            protocol_parameters: protocol_parameters.clone(),
+            enabled_signed_entity_types: SignedEntityTypeDiscriminants::all(),
+            cardano_transactions: Some(CardanoTransactionsSigningConfig {
+                security_parameter: BlockNumberOffset(0),
+                step: BlockNumber(30),
+            }),
+            cardano_blocks_transactions: Some(CardanoBlocksTransactionsSigningConfig {
+                security_parameter: BlockNumberOffset(0),
+                step: BlockNumber(30),
+            }),
+        },
+    )]));
     let mut tester = RuntimeTester::build(
         TimePoint {
             epoch: Epoch(1),
@@ -64,6 +74,7 @@ async fn leader_signed_entity_config_propagation() {
             },
         },
         start_configuration.clone(),
+        protocol_configuration_markers.clone(),
     )
     .await;
 
@@ -94,16 +105,19 @@ async fn leader_signed_entity_config_propagation() {
         "restart the runtime state machine but with all remaining signed entity types enabled and configured"
     );
     tester
-        .rebuild(ServeCommandConfiguration {
-            signed_entity_types: Some(
-                SignedEntityTypeDiscriminants::all()
-                    .iter()
-                    .map(|d| d.to_string())
-                    .collect::<Vec<_>>()
-                    .join(","),
-            ),
-            ..start_configuration
-        })
+        .rebuild(
+            ServeCommandConfiguration {
+                signed_entity_types: Some(
+                    SignedEntityTypeDiscriminants::all()
+                        .iter()
+                        .map(|d| d.to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                ),
+                ..start_configuration
+            },
+            protocol_configuration_markers,
+        )
         .await;
     cycle!(tester, "ready");
     cycle!(tester, "signing");
