@@ -132,7 +132,7 @@ impl TarAppender for AppenderEntries {
         for entry in &self.entries {
             let entry_path = self.base_directory.join(entry);
             if entry_path.is_dir() {
-                tar.append_dir_all(entry, entry_path.clone()).with_context(|| {
+                tar.append_dir(entry, entry_path.clone()).with_context(|| {
                     format!(
                         "Can not add directory: '{}' to the archive",
                         entry_path.display()
@@ -277,9 +277,17 @@ mod tests {
             let source = test_dir.join(create_dir(&test_dir, "source"));
 
             let directory_to_archive_path = create_dir(&source, "directory_to_archive");
+            let file_in_dir_to_archive_path =
+                create_file(&source, "directory_to_archive/file_in_dir_to_archive.txt");
             let file_to_archive_path = create_file(&source, "file_to_archive.txt");
+            let empty_directory_to_archive_path = create_dir(&source, "empty_directory_to_archive");
+
             create_dir(&source, "directory_not_to_archive");
             create_file(&source, "file_not_to_archive.txt");
+            create_file(
+                &source,
+                "directory_to_archive/file_in_dir_not_to_archive.txt",
+            );
 
             let file_archiver = FileArchiver::new_for_test(test_dir.join("verification"));
 
@@ -291,7 +299,12 @@ mod tests {
                         compression_algorithm: CompressionAlgorithm::Zstandard,
                     },
                     AppenderEntries::new(
-                        vec![directory_to_archive_path.clone(), file_to_archive_path.clone()],
+                        vec![
+                            directory_to_archive_path,
+                            file_in_dir_to_archive_path,
+                            file_to_archive_path,
+                            empty_directory_to_archive_path,
+                        ],
                         source,
                     )
                     .unwrap(),
@@ -303,6 +316,8 @@ mod tests {
             assert_dir_eq!(
                 &unpack_path,
                 "* directory_to_archive/
+                 ** file_in_dir_to_archive.txt
+                 * empty_directory_to_archive/
                  * file_to_archive.txt"
             );
         }
