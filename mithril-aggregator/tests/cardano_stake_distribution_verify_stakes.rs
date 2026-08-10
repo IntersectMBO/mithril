@@ -1,5 +1,7 @@
 mod test_extensions;
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use mithril_aggregator::ServeCommandConfiguration;
 use mithril_common::entities::SignerWithStake;
 use mithril_common::temp_dir;
@@ -10,6 +12,9 @@ use mithril_common::{
         TimePoint,
     },
     test::builder::MithrilFixtureBuilder,
+};
+use mithril_protocol_config::model::{
+    ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch,
 };
 use test_extensions::ExpectedMetrics;
 use test_extensions::{ExpectedCertificate, RuntimeTester, utilities::get_test_dir};
@@ -22,13 +27,23 @@ async fn cardano_stake_distribution_verify_stakes() {
         phi_f: 0.95,
     };
     let configuration = ServeCommandConfiguration {
-        protocol_parameters: Some(protocol_parameters.clone()),
         signed_entity_types: Some(
             SignedEntityTypeDiscriminants::CardanoStakeDistribution.to_string(),
         ),
         data_stores_directory: get_test_dir("cardano_stake_distribution_verify_stakes"),
         ..ServeCommandConfiguration::new_sample(temp_dir!())
     };
+    let protocol_configuration_markers = ConfigurationResolverFromMarkers::new(BTreeMap::from([(
+        Epoch(0),
+        ProtocolConfigurationForEpoch {
+            protocol_parameters: protocol_parameters.clone(),
+            enabled_signed_entity_types: BTreeSet::from([
+                SignedEntityTypeDiscriminants::CardanoStakeDistribution,
+            ]),
+            cardano_blocks_transactions: None,
+            cardano_transactions: None,
+        },
+    )]));
     let mut tester = RuntimeTester::build(
         TimePoint::new(
             2,
@@ -36,6 +51,7 @@ async fn cardano_stake_distribution_verify_stakes() {
             ChainPoint::new(SlotNumber(10), BlockNumber(1), "block_hash-1"),
         ),
         configuration,
+        protocol_configuration_markers,
     )
     .await;
 

@@ -1,5 +1,7 @@
 mod test_extensions;
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use mithril_aggregator::ServeCommandConfiguration;
 use mithril_common::{
     entities::{
@@ -11,6 +13,9 @@ use mithril_common::{
     test::builder::MithrilFixtureBuilder,
 };
 
+use mithril_protocol_config::model::{
+    ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch,
+};
 use test_extensions::{
     ExpectedCertificate, ExpectedMetrics, RuntimeTester, utilities::get_test_dir,
 };
@@ -23,7 +28,6 @@ async fn create_certificate() {
         phi_f: 0.95,
     };
     let configuration = ServeCommandConfiguration {
-        protocol_parameters: Some(protocol_parameters.clone()),
         signed_entity_types: Some(
             [
                 SignedEntityTypeDiscriminants::CardanoTransactions.to_string(),
@@ -43,6 +47,25 @@ async fn create_certificate() {
         }),
         ..ServeCommandConfiguration::new_sample(temp_dir!())
     };
+    let protocol_configuration_markers = ConfigurationResolverFromMarkers::new(BTreeMap::from([(
+        Epoch(0),
+        ProtocolConfigurationForEpoch {
+            protocol_parameters: protocol_parameters.clone(),
+            enabled_signed_entity_types: BTreeSet::from([
+                SignedEntityTypeDiscriminants::CardanoTransactions,
+                SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
+                SignedEntityTypeDiscriminants::CardanoDatabase,
+            ]),
+            cardano_transactions: Some(CardanoTransactionsSigningConfig {
+                security_parameter: BlockNumberOffset(0),
+                step: BlockNumber(30),
+            }),
+            cardano_blocks_transactions: Some(CardanoBlocksTransactionsSigningConfig {
+                security_parameter: BlockNumberOffset(0),
+                step: BlockNumber(24),
+            }),
+        },
+    )]));
     let mut tester = RuntimeTester::build(
         TimePoint {
             epoch: Epoch(1),
@@ -54,6 +77,7 @@ async fn create_certificate() {
             },
         },
         configuration,
+        protocol_configuration_markers,
     )
     .await;
 
