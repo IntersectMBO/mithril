@@ -9,9 +9,7 @@ use serde::Deserialize;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserverType;
 use mithril_cli_helper::{register_config_value, serde_deserialization};
-use mithril_common::crypto_helper::{
-    GenesisEd25519Signer, ManifestSigner, ProtocolConfigurationMarkersVerifierVerificationKey,
-};
+use mithril_common::crypto_helper::{GenesisEd25519Signer, ManifestSigner};
 use mithril_common::entities::{
     BlockNumber, BlockNumberOffset, CardanoBlocksTransactionsSigningConfig,
     CardanoTransactionsSigningConfig, CompressionAlgorithm, ConfigSecret,
@@ -198,11 +196,6 @@ pub trait ConfigurationSource {
     /// Era reader adapter parameters
     fn era_reader_adapter_params(&self) -> Option<String> {
         panic!("era_reader_adapter_params is not implemented.");
-    }
-
-    /// Protocol configuration reader adapter parameters
-    fn protocol_configuration_reader_parameters(&self) -> ProtocolConfigurationReaderParameters {
-        panic!("protocol_configuration_reader_parameters is not implemented.");
     }
 
     /// Protocol configuration reader adapter configuration
@@ -767,24 +760,6 @@ fn default_gcp_kms_credentials_json_env_var() -> String {
 }
 
 impl FromStr for AncillaryFilesSignerConfig {
-    type Err = serde_json::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_str(s)
-    }
-}
-
-/// Configuration of the protocol Configuration Reader
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-pub struct ProtocolConfigurationReaderParameters {
-    /// Address
-    pub address: String,
-
-    /// Verification key
-    pub verification_key: ProtocolConfigurationMarkersVerifierVerificationKey,
-}
-
-impl FromStr for ProtocolConfigurationReaderParameters {
     type Err = serde_json::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
