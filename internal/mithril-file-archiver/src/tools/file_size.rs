@@ -1,3 +1,5 @@
+//! Tooling to compute File and Directory Sizes
+
 use anyhow::Context;
 use std::{
     collections::HashSet,
@@ -7,7 +9,7 @@ use std::{
 use mithril_common::StdResult;
 
 /// Compute the size of the given paths that could be files or folders.
-pub(crate) fn compute_size(paths: Vec<PathBuf>) -> StdResult<u64> {
+pub fn compute_size(paths: Vec<PathBuf>) -> StdResult<u64> {
     fn remove_duplicated_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
         let mut result_folders = vec![];
         let mut result_files = HashSet::new();
@@ -42,7 +44,7 @@ pub(crate) fn compute_size(paths: Vec<PathBuf>) -> StdResult<u64> {
 /// Compute the size of one given path that could be a file or a folder.
 ///
 /// Returns 0 if the path is not a file or a folder.
-pub(crate) fn compute_size_of_path(path: &Path) -> StdResult<u64> {
+pub fn compute_size_of_path(path: &Path) -> StdResult<u64> {
     if path.is_file() {
         let metadata = std::fs::metadata(path)
             .with_context(|| format!("Failed to read metadata for file: {path:?}"))?;

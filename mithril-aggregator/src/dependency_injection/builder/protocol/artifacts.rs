@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use mithril_common::crypto_helper::ManifestSigner;
+use mithril_file_archiver::FileArchiver;
 
 use crate::artifact_builder::{
     AncillaryArtifactBuilder, AncillaryFileUploader, CardanoBlocksTransactionsArtifactBuilder,
@@ -28,7 +29,6 @@ use crate::services::{
     SignedEntityServiceArtifactsDependencies, Snapshotter,
 };
 use crate::tools::DEFAULT_GCP_CREDENTIALS_JSON_ENV_VAR;
-use crate::tools::file_archiver::FileArchiver;
 use crate::{DumbUploader, ExecutionEnvironment, FileUploader, SnapshotUploaderType};
 
 impl DependenciesBuilder {

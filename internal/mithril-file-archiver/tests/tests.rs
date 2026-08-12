@@ -15,9 +15,10 @@ use std::path::{Path, PathBuf};
 use mithril_common::entities::CompressionAlgorithm;
 use mithril_common::temp_dir_create;
 
-use crate::ZstandardCompressionParameters;
-use crate::test::TestLogger;
-use crate::tools::file_archiver::{ArchiveParameters, FileArchive, FileArchiver, appender::*};
+use mithril_file_archiver::appender::*;
+use mithril_file_archiver::{
+    ArchiveParameters, FileArchive, FileArchiver, ZstandardCompressionParameters,
+};
 
 mod helpers {
     use sha2::{Digest, Sha256};
@@ -64,10 +65,9 @@ mod helpers {
 
     /// **IMPORTANT** Default zstandard compression parameters are used.
     pub fn file_archiver(work_dir: &Path) -> FileArchiver {
-        FileArchiver::new(
-            ZstandardCompressionParameters::default(),
+        FileArchiver::new_with_default_parameters(
             work_dir.join("verification"),
-            TestLogger::stdout(),
+            slog::Logger::root(slog::Discard, slog::o!()),
         )
     }
 
@@ -309,8 +309,8 @@ mod reproducibility {
                 .unwrap();
 
             helpers::assert_files_are_byte_identical(
-                reference_archive.filepath,
-                repeated_archive.filepath,
+                reference_archive.get_file_path(),
+                repeated_archive.get_file_path(),
             );
         }
 
@@ -482,8 +482,8 @@ mod reproducibility {
                 .unwrap();
 
             helpers::assert_files_are_byte_identical(
-                reference_archive.filepath,
-                archive_with_different_metadata.filepath,
+                reference_archive.get_file_path(),
+                archive_with_different_metadata.get_file_path(),
             );
         }
 
@@ -618,8 +618,8 @@ mod reproducibility {
                 .unwrap();
 
             helpers::assert_files_are_byte_identical(
-                &archive.filepath,
-                &archive_with_same_content_but_from_another_dir.filepath,
+                archive.get_file_path(),
+                archive_with_same_content_but_from_another_dir.get_file_path(),
             );
         }
 
@@ -647,8 +647,8 @@ mod reproducibility {
                 .unwrap();
 
             helpers::assert_files_are_byte_identical(
-                &archive.filepath,
-                &archive_with_same_content_but_from_another_dir.filepath,
+                archive.get_file_path(),
+                archive_with_same_content_but_from_another_dir.get_file_path(),
             );
         }
 
@@ -677,8 +677,8 @@ mod reproducibility {
                 .unwrap();
 
             helpers::assert_files_are_byte_identical(
-                &archive.filepath,
-                &archive_with_same_content_but_from_another_dir.filepath,
+                archive.get_file_path(),
+                archive_with_same_content_but_from_another_dir.get_file_path(),
             );
         }
     }
@@ -714,8 +714,8 @@ mod reproducibility {
                 .unwrap();
 
             helpers::assert_files_are_byte_identical(
-                &reference_archive.filepath,
-                &archive_with_equivalent_entries_spelling.filepath,
+                reference_archive.get_file_path(),
+                archive_with_equivalent_entries_spelling.get_file_path(),
             );
         }
 
@@ -763,8 +763,8 @@ mod reproducibility {
                         .unwrap();
 
                 helpers::assert_files_are_byte_identical(
-                    &reference_archive.filepath,
-                    &archive_with_same_content_but_different_entries_order.filepath,
+                    reference_archive.get_file_path(),
+                    archive_with_same_content_but_different_entries_order.get_file_path(),
                 );
             }
         }
@@ -847,16 +847,16 @@ mod golden_master {
     #[track_caller]
     fn assert_archive_not_empty(archive: &FileArchive) {
         assert!(
-            archive.uncompressed_size > 0,
+            archive.get_uncompressed_size() > 0,
             "Archive '{}' has no content, fix the archive creation and try again",
-            archive.filepath.display()
+            archive.get_file_path().display()
         );
     }
 
     /// Assert an archive matches its golden hash.
     #[track_caller]
     fn assert_archive_matches_golden_sha256(archive: &FileArchive, expected_sha256: &str) {
-        let actual_sha256 = helpers::compute_file_sha256(&archive.filepath);
+        let actual_sha256 = helpers::compute_file_sha256(archive.get_file_path());
 
         assert_eq!(
             expected_sha256,
@@ -864,8 +864,8 @@ mod golden_master {
             "Archive bytes changed ('{}', {} bytes).\n\
              Either the archive format is no longer reproducible, or the change is intentional \
              and the TAR_ZSTD_V* constants must be recomputed and their version bumped.",
-            archive.filepath.display(),
-            archive.archive_filesize,
+            archive.get_file_path().display(),
+            archive.get_archive_size(),
         );
     }
 

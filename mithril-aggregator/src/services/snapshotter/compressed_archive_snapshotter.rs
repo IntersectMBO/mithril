@@ -13,11 +13,13 @@ use mithril_cardano_node_internal_database::{IMMUTABLE_DIR, LEDGER_DIR, immutabl
 use mithril_common::StdResult;
 use mithril_common::entities::{CompressionAlgorithm, ImmutableFileNumber};
 use mithril_common::logging::LoggerExtensions;
+use mithril_file_archiver::{
+    ArchiveParameters, FileArchive, FileArchiver,
+    appender::{AppenderData, AppenderEntries, TarAppender},
+    tools::file_size,
+};
 
 use crate::dependency_injection::DependenciesBuilderError;
-use crate::tools::file_archiver::appender::{AppenderData, AppenderEntries, TarAppender};
-use crate::tools::file_archiver::{ArchiveParameters, FileArchive, FileArchiver};
-use crate::tools::file_size;
 
 use super::{Snapshotter, ancillary_signer::AncillarySigner};
 
@@ -318,6 +320,7 @@ mod tests {
     use mithril_cardano_node_internal_database::test::DummyCardanoDbBuilder;
     use mithril_common::test::assert_equivalent;
     use mithril_common::{assert_dir_eq, current_function, temp_dir_create};
+    use mithril_file_archiver::test::FileArchiveTestExtension;
 
     use crate::services::ancillary_signer::MockAncillarySigner;
     use crate::test::TestLogger;
@@ -333,6 +336,13 @@ mod tests {
             .collect()
     }
 
+    fn file_archiver_for_test(work_dir: &Path) -> FileArchiver {
+        FileArchiver::new_with_default_parameters(
+            work_dir.join("verification"),
+            TestLogger::stdout(),
+        )
+    }
+
     fn snapshotter_for_test(
         test_directory: &Path,
         db_directory: &Path,
@@ -343,9 +353,7 @@ mod tests {
             db_directory.to_path_buf(),
             test_directory.join("ongoing_snapshot"),
             compression_algorithm,
-            Arc::new(FileArchiver::new_for_test(
-                test_directory.join("verification"),
-            )),
+            Arc::new(file_archiver_for_test(test_directory)),
             Arc::new(MockAncillarySigner::new()),
             TestLogger::stdout(),
         )
@@ -378,7 +386,7 @@ mod tests {
             db_directory,
             ongoing_snapshot_directory.clone(),
             CompressionAlgorithm::Zstandard,
-            Arc::new(FileArchiver::new_for_test(test_dir.join("verification"))),
+            Arc::new(file_archiver_for_test(&test_dir)),
             Arc::new(MockAncillarySigner::new()),
             TestLogger::stdout(),
         )
@@ -402,7 +410,7 @@ mod tests {
             db_directory,
             ongoing_snapshot_directory.clone(),
             CompressionAlgorithm::Zstandard,
-            Arc::new(FileArchiver::new_for_test(test_dir.join("verification"))),
+            Arc::new(file_archiver_for_test(&test_dir)),
             Arc::new(MockAncillarySigner::new()),
             TestLogger::stdout(),
         )
@@ -425,7 +433,7 @@ mod tests {
             cardano_db.get_dir().clone(),
             pending_snapshot_directory.clone(),
             CompressionAlgorithm::Zstandard,
-            Arc::new(FileArchiver::new_for_test(test_dir.join("verification"))),
+            Arc::new(file_archiver_for_test(&test_dir)),
             Arc::new(MockAncillarySigner::new()),
             TestLogger::stdout(),
         )

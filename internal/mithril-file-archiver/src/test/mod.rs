@@ -1,18 +1,24 @@
-mod api;
-pub mod appender;
-mod entities;
-#[cfg(test)]
-mod tests;
+//! Test utilities.
+//!
+//! ⚠ Do not use in production code ⚠
+//!
+//! This module provides in particular test doubles for the traits defined in this crate.
 
-pub use api::*;
-pub use entities::*;
+pub mod double;
+mod extensions;
+
+pub use extensions::*;
+#[cfg(test)]
+pub(crate) use internal_tests_only::*;
 
 #[cfg(test)]
-pub(crate) mod test_tools {
+mod internal_tests_only {
     use std::fs::File;
     use std::path::{Path, PathBuf};
 
     use mithril_common::test::TempDir;
+
+    mithril_common::define_test_logger!();
 
     pub fn get_test_directory(dir_name: &str) -> PathBuf {
         TempDir::create("file_archiver", dir_name)

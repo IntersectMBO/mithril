@@ -33,6 +33,7 @@ mithril-common = { path = "../mithril-common" }
 mithril-dmq = { path = "../internal/mithril-dmq" }
 mithril-doc = { path = "../internal/mithril-doc" }
 mithril-era = { path = "../internal/mithril-era" }
+mithril-file-archiver = { path = "../internal/mithril-file-archiver" }
 mithril-metric = { path = "../internal/mithril-metric" }
 mithril-persistence = { path = "../internal/mithril-persistence" }
 mithril-protocol-config = { path = "../internal/mithril-protocol-config" }
@@ -78,7 +79,6 @@ mithril-api-spec = { path = "../internal/tests/mithril-api-spec" }
 mithril-common = { path = "../mithril-common", features = ["allow_skip_signer_certification"] }
 mithril-test-http-server = { path = "../internal/tests/mithril-test-http-server" }
 mockall = { workspace = true }
-sha2 = "0.10.9"
 slog-scope = "4.4.1"
 slog-term = { workspace = true }
 tempfile = "3.27.0"
