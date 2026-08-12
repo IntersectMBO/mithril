@@ -4266,7 +4266,6 @@ dependencies = [
  "slog-scope",
  "slog-term",
  "sqlite",
- "tar",
  "tempfile",
  "thiserror 2.0.18",
  "tikv-jemallocator",
@@ -4274,7 +4273,6 @@ dependencies = [
  "tokio-util",
  "uuid",
  "warp",
- "zstd",
 ]
 
 [[package]]
