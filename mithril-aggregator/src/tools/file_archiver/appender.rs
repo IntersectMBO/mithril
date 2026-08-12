@@ -129,12 +129,13 @@ impl AppenderEntries {
     }
 
     fn normalize_entries(entries: Vec<PathBuf>) -> Vec<PathBuf> {
-        let mut normalized: Vec<PathBuf> = entries
-            .into_iter()
-            .map(|entry| entry.components().collect())
-            .collect();
+        let mut normalized: Vec<PathBuf> = entries.into_iter().map(Self::normalize_entry).collect();
         normalized.sort();
         normalized
+    }
+
+    fn normalize_entry(entry: PathBuf) -> PathBuf {
+        entry.components().collect()
     }
 }
 
@@ -313,6 +314,40 @@ mod tests {
                     PathBuf::from("foo/pika/chuu.txt"),
                 ],
                 appender.entries
+            );
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn normalizes_windows_separators_and_sorts_entries() {
+            let appender = AppenderEntries::new(
+                vec![
+                    PathBuf::from(r"foo\pika\chuu.txt"),
+                    PathBuf::from(r"foo\bar.txt"),
+                    PathBuf::from(r"bar\\"),
+                    PathBuf::from(r"foo\\"),
+                ],
+                PathBuf::from("source"),
+            )
+            .unwrap();
+
+            assert_eq!(
+                vec![
+                    PathBuf::from("bar"),
+                    PathBuf::from("foo"),
+                    PathBuf::from("foo").join("bar.txt"),
+                    PathBuf::from("foo").join("pika").join("chuu.txt"),
+                ],
+                appender.entries
+            );
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn forward_and_backward_separators_have_the_same_normalized_path() {
+            assert_eq!(
+                AppenderEntries::normalize_entry(PathBuf::from("foo/bar.txt")),
+                AppenderEntries::normalize_entry(PathBuf::from(r"foo\bar.txt")),
             );
         }
 
