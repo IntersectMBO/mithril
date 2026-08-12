@@ -75,11 +75,9 @@ http = "1.4.2"
 httpmock = "0.8.3"
 mithril-api-spec = { path = "../internal/tests/mithril-api-spec" }
 mithril-common = { path = "../mithril-common", features = ["allow_skip_signer_certification"] }
-mithril-test-http-server = { path = "../internal/tests/mithril-test-http-server" }
 mockall = { workspace = true }
 slog-scope = "4.4.1"
 slog-term = { workspace = true }
-tempfile = "3.27.0"
 warp = { workspace = true, features = ["test"] }
 
 [[bench]]
