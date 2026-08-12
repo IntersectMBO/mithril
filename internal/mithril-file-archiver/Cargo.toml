@@ -14,8 +14,8 @@ mithril-common = { path = "../../mithril-common" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 slog = { workspace = true }
-tar = "0.4.46"
-zstd = { version = "0.13.3", features = ["zstdmt"] }
+tar = "=0.4.46" # Pinned to ensure archive bytes stability across builds
+zstd = { version = "=0.13.3", features = ["zstdmt"] } # Pinned to ensure archive bytes stability across builds
 
 [dev-dependencies]
 hex = { workspace = true }
