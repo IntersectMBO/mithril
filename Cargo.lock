@@ -4643,6 +4643,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "mithril-file-archiver"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "mithril-cardano-node-internal-database",
+ "mithril-common",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "slog",
+ "slog-async",
+ "slog-term",
+ "tar",
+ "zstd",
+]
+
+[[package]]
 name = "mithril-merkle-tree"
 version = "0.1.4"
 dependencies = [
