@@ -1,0 +1,25 @@
+[package]
+name = "mithril-file-archiver"
+version = "0.1.0"
+authors.workspace = true
+documentation.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+mithril-common = { path = "../../mithril-common" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+slog = { workspace = true }
+tar = "0.4.46"
+zstd = { version = "0.13.3", features = ["zstdmt"] }
+
+[dev-dependencies]
+hex = { workspace = true }
+mithril-cardano-node-internal-database = { path = "../cardano-node/mithril-cardano-node-internal-database" }
+sha2 = "0.10.9"
+slog-async = { workspace = true }
+slog-term = { workspace = true }

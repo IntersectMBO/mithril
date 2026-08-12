@@ -872,8 +872,8 @@ jobs:
           cargo doc --no-deps --lib -p mithril-stm -p mithril-common \
                     -p mithril-cardano-node-chain -p mithril-cardano-node-internal-database \
                     -p mithril-aggregator-client -p mithril-aggregator-discovery -p mithril-build-script -p mithril-cli-helper \
-                    -p mithril-dmq -p mithril-doc -p mithril-doc-derive \
-                    -p mithril-era -p mithril-merkle-tree -p mithril-metric -p mithril-persistence -p mithril-resource-pool \
+                    -p mithril-dmq -p mithril-doc -p mithril-doc-derive -p mithril-era -p mithril-file-archiver \
+                    -p mithril-merkle-tree -p mithril-metric -p mithril-persistence -p mithril-resource-pool \
                     -p mithril-ticker -p mithril-signed-entity-lock -p mithril-signed-entity-preloader \
                     -p mithril-aggregator -p mithril-signer -p mithril-client -p mithril-client-cli \
                     -p mithril-api-spec -p mithril-test-http-server \
