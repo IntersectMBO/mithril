@@ -8,3 +8,12 @@
 //! * The version of the zstandard compression library
 //! * The parameters of the zstandard compression
 //!
+
+mod api;
+pub mod appender;
+mod entities;
+pub mod test;
+pub mod tools;
+
+pub use api::*;
+pub use entities::*;

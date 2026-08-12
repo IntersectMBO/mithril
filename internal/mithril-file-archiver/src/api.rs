@@ -13,11 +13,9 @@ use mithril_common::StdResult;
 use mithril_common::entities::CompressionAlgorithm;
 use mithril_common::logging::LoggerExtensions;
 
-use crate::ZstandardCompressionParameters;
+use crate::appender::TarAppender;
+use crate::entities::{ArchiveParameters, FileArchive, ZstandardCompressionParameters};
 use crate::tools::file_size;
-
-use super::appender::TarAppender;
-use super::{ArchiveParameters, FileArchive};
 
 /// Tool to archive files and directories.
 pub struct FileArchiver {
@@ -41,14 +39,18 @@ impl FileArchiver {
         }
     }
 
-    #[cfg(test)]
-    pub fn new_for_test(verification_temp_dir: PathBuf) -> Self {
-        use crate::test::TestLogger;
-        Self {
-            zstandard_compression_parameter: ZstandardCompressionParameters::default(),
+    /// Constructs a new `FileArchiver` that uses the default compression parameters.
+    pub fn new_with_default_parameters(verification_temp_dir: PathBuf, logger: Logger) -> Self {
+        Self::new(
+            ZstandardCompressionParameters::default(),
             verification_temp_dir,
-            logger: TestLogger::stdout(),
-        }
+            logger,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_test(verification_temp_dir: PathBuf) -> Self {
+        Self::new_with_default_parameters(verification_temp_dir, crate::test::TestLogger::stdout())
     }
 
     /// Archive the content of a directory.
@@ -286,8 +288,8 @@ mod tests {
 
     use mithril_common::test::assert_equivalent;
 
-    use crate::tools::file_archiver::appender::{AppenderDirAll, AppenderFile};
-    use crate::tools::file_archiver::test_tools::*;
+    use crate::appender::{AppenderDirAll, AppenderFile};
+    use crate::test::{FileArchiveTestExtension, create_dir, create_file, get_test_directory};
 
     use super::*;
 

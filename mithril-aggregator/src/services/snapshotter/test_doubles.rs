@@ -6,9 +6,9 @@ use std::sync::RwLock;
 
 use mithril_common::StdResult;
 use mithril_common::entities::{CompressionAlgorithm, ImmutableFileNumber};
+use mithril_file_archiver::FileArchive;
 
 use crate::services::Snapshotter;
-use crate::tools::file_archiver::FileArchive;
 
 /// Snapshotter that does nothing. It is mainly used for test purposes.
 pub struct DumbSnapshotter {

@@ -6,21 +6,20 @@ use std::{
 
 use anyhow::Context;
 use async_trait::async_trait;
+use slog::{Logger, error};
+
 use mithril_common::{
     CardanoNetwork, StdResult,
     entities::{CardanoDbBeacon, CompressionAlgorithm, DigestLocation},
     logging::LoggerExtensions,
     messages::CardanoDatabaseDigestListItemMessage,
 };
-use slog::{Logger, error};
+use mithril_file_archiver::{ArchiveParameters, FileArchive, FileArchiver, appender::AppenderFile};
 
 use crate::{
     DumbUploader, FileUploader, ImmutableFileDigestMapper,
     file_uploaders::{CloudUploader, LocalUploader},
-    tools::{
-        file_archiver::{ArchiveParameters, FileArchive, FileArchiver, appender::AppenderFile},
-        url_sanitizer::SanitizedUrlWithTrailingSlash,
-    },
+    tools::url_sanitizer::SanitizedUrlWithTrailingSlash,
 };
 
 /// The [DigestFileUploader] trait allows identifying uploaders that return locations for digest files.
@@ -301,11 +300,11 @@ mod tests {
         messages::{CardanoDatabaseDigestListItemMessage, CardanoDatabaseDigestListMessage},
         test::{TempDir, assert_equivalent, double::Dummy},
     };
+    use mithril_file_archiver::FileArchiver;
 
     use crate::{
         file_uploaders::FileUploadRetryPolicy,
         immutable_file_digest_mapper::MockImmutableFileDigestMapper, test::TestLogger,
-        tools::file_archiver::FileArchiver,
     };
 
     use super::*;
@@ -371,6 +370,13 @@ mod tests {
         Ok(())
     }
 
+    fn file_archiver_for_test(work_dir: &Path) -> FileArchiver {
+        FileArchiver::new_with_default_parameters(
+            work_dir.join("verification"),
+            TestLogger::stdout(),
+        )
+    }
+
     #[tokio::test]
     async fn digest_artifact_builder_return_digests_route_on_aggregator() {
         let temp_dir = TempDir::create("digest", current_function!());
@@ -384,7 +390,7 @@ mod tests {
             SanitizedUrlWithTrailingSlash::parse("https://aggregator/").unwrap(),
             vec![],
             DigestSnapshotter {
-                file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
+                file_archiver: Arc::new(file_archiver_for_test(&temp_dir)),
                 target_location: temp_dir.clone(),
                 compression_algorithm: CompressionAlgorithm::Zstandard,
             },
@@ -417,7 +423,7 @@ mod tests {
             SanitizedUrlWithTrailingSlash::parse("https://aggregator/").unwrap(),
             vec![],
             DigestSnapshotter {
-                file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
+                file_archiver: Arc::new(file_archiver_for_test(&temp_dir)),
                 target_location: temp_dir.clone(),
                 compression_algorithm: CompressionAlgorithm::Zstandard,
             },
@@ -451,7 +457,7 @@ mod tests {
             SanitizedUrlWithTrailingSlash::parse("https://aggregator/").unwrap(),
             vec![Arc::new(uploader)],
             DigestSnapshotter {
-                file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
+                file_archiver: Arc::new(file_archiver_for_test(&temp_dir)),
                 target_location: temp_dir.clone(),
                 compression_algorithm: CompressionAlgorithm::Zstandard,
             },
@@ -476,7 +482,7 @@ mod tests {
             SanitizedUrlWithTrailingSlash::parse("https://aggregator/").unwrap(),
             vec![Arc::new(uploader)],
             DigestSnapshotter {
-                file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
+                file_archiver: Arc::new(file_archiver_for_test(&temp_dir)),
                 target_location: temp_dir.clone(),
                 compression_algorithm: CompressionAlgorithm::Zstandard,
             },
@@ -509,7 +515,7 @@ mod tests {
             SanitizedUrlWithTrailingSlash::parse("https://aggregator/").unwrap(),
             uploaders,
             DigestSnapshotter {
-                file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
+                file_archiver: Arc::new(file_archiver_for_test(&temp_dir)),
                 target_location: temp_dir.clone(),
                 compression_algorithm: CompressionAlgorithm::Zstandard,
             },
@@ -549,7 +555,7 @@ mod tests {
             SanitizedUrlWithTrailingSlash::parse("https://aggregator/").unwrap(),
             uploaders,
             DigestSnapshotter {
-                file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
+                file_archiver: Arc::new(file_archiver_for_test(&temp_dir)),
                 target_location: temp_dir.clone(),
                 compression_algorithm: CompressionAlgorithm::Zstandard,
             },
@@ -597,7 +603,7 @@ mod tests {
             SanitizedUrlWithTrailingSlash::parse("https://aggregator/").unwrap(),
             vec![],
             DigestSnapshotter {
-                file_archiver: Arc::new(FileArchiver::new_for_test(temp_dir.join("verification"))),
+                file_archiver: Arc::new(file_archiver_for_test(&temp_dir)),
                 target_location: temp_dir.clone(),
                 compression_algorithm: CompressionAlgorithm::Zstandard,
             },
@@ -639,7 +645,7 @@ mod tests {
             SanitizedUrlWithTrailingSlash::parse("https://aggregator/").unwrap(),
             vec![Arc::new(build_local_uploader(&uploader_path))],
             DigestSnapshotter {
-                file_archiver: Arc::new(FileArchiver::new_for_test(tmp_dir.join("verification"))),
+                file_archiver: Arc::new(file_archiver_for_test(&tmp_dir)),
                 target_location: digests_archive_dir.clone(),
                 compression_algorithm,
             },

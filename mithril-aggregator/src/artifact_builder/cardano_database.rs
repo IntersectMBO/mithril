@@ -104,6 +104,7 @@ mod tests {
     use mithril_cardano_node_internal_database::entities::AncillaryFilesManifest;
     use mithril_cardano_node_internal_database::test::DummyCardanoDbBuilder;
     use mithril_cardano_node_internal_database::{IMMUTABLE_DIR, LEDGER_DIR, immutable_trio_names};
+    use mithril_file_archiver::FileArchiver;
 
     use mithril_common::{
         CardanoNetwork,
@@ -126,7 +127,7 @@ mod tests {
         services::CompressedArchiveSnapshotter,
         services::ancillary_signer::MockAncillarySigner,
         test::TestLogger,
-        tools::{file_archiver::FileArchiver, url_sanitizer::SanitizedUrlWithTrailingSlash},
+        tools::url_sanitizer::SanitizedUrlWithTrailingSlash,
     };
 
     use super::*;
@@ -201,7 +202,10 @@ mod tests {
                 cardano_db.get_dir().to_path_buf(),
                 test_dir.join("ongoing_snapshots"),
                 CompressionAlgorithm::Zstandard,
-                Arc::new(FileArchiver::new_for_test(test_dir.join("verification"))),
+                Arc::new(FileArchiver::new_with_default_parameters(
+                    test_dir.join("verification"),
+                    TestLogger::stdout(),
+                )),
                 Arc::new(MockAncillarySigner::that_succeeds_with_signature(
                     ancillary_manifest_signature,
                 )),
@@ -271,8 +275,9 @@ mod tests {
                 SanitizedUrlWithTrailingSlash::parse("http://aggregator_uri").unwrap(),
                 vec![],
                 DigestSnapshotter {
-                    file_archiver: Arc::new(FileArchiver::new_for_test(
+                    file_archiver: Arc::new(FileArchiver::new_with_default_parameters(
                         test_dir.join("verification"),
+                        TestLogger::stdout(),
                     )),
                     target_location: test_dir.clone(),
                     compression_algorithm: CompressionAlgorithm::Zstandard,

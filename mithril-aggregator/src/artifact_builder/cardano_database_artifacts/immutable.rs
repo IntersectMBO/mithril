@@ -282,12 +282,12 @@ mod tests {
         entities::TemplateUri,
         test::{TempDir, assert_equivalent, equivalent_to},
     };
+    use mithril_file_archiver::FileArchiver;
     use semver::Version;
 
     use crate::services::ancillary_signer::MockAncillarySigner;
     use crate::services::{CompressedArchiveSnapshotter, DumbSnapshotter, MockSnapshotter};
     use crate::test::TestLogger;
-    use crate::tools::file_archiver::FileArchiver;
 
     use super::*;
 
@@ -329,6 +329,13 @@ mod tests {
         uploader
     }
 
+    fn file_archiver_for_test(work_dir: &Path) -> FileArchiver {
+        FileArchiver::new_with_default_parameters(
+            work_dir.join("verification"),
+            TestLogger::stdout(),
+        )
+    }
+
     fn create_fake_file(path: &Path, content: &str) {
         let mut file = File::create(path).unwrap();
         write!(file, "{content}").unwrap();
@@ -360,7 +367,7 @@ mod tests {
             db_directory.clone(),
             db_directory.parent().unwrap().join("snapshot_dest"),
             CompressionAlgorithm::Zstandard,
-            Arc::new(FileArchiver::new_for_test(work_dir.join("verification"))),
+            Arc::new(file_archiver_for_test(&work_dir)),
             Arc::new(MockAncillarySigner::new()),
             TestLogger::stdout(),
         )
@@ -454,7 +461,7 @@ mod tests {
                 db_directory.clone(),
                 db_directory.parent().unwrap().join("snapshot_dest"),
                 CompressionAlgorithm::Zstandard,
-                Arc::new(FileArchiver::new_for_test(work_dir.join("verification"))),
+                Arc::new(file_archiver_for_test(&work_dir)),
                 Arc::new(MockAncillarySigner::new()),
                 TestLogger::stdout(),
             )
@@ -501,7 +508,7 @@ mod tests {
                 db_directory.clone(),
                 db_directory.parent().unwrap().join("snapshot_dest"),
                 CompressionAlgorithm::Zstandard,
-                Arc::new(FileArchiver::new_for_test(work_dir.join("verification"))),
+                Arc::new(file_archiver_for_test(&work_dir)),
                 Arc::new(MockAncillarySigner::new()),
                 TestLogger::stdout(),
             )
@@ -536,7 +543,7 @@ mod tests {
                 db_directory.clone(),
                 db_directory.parent().unwrap().join("snapshot_dest"),
                 CompressionAlgorithm::Zstandard,
-                Arc::new(FileArchiver::new_for_test(work_dir.join("verification"))),
+                Arc::new(file_archiver_for_test(&work_dir)),
                 Arc::new(MockAncillarySigner::new()),
                 TestLogger::stdout(),
             )
@@ -569,7 +576,7 @@ mod tests {
                 db_directory.clone(),
                 db_directory.parent().unwrap().join("snapshot_dest"),
                 CompressionAlgorithm::Zstandard,
-                Arc::new(FileArchiver::new_for_test(work_dir.join("verification"))),
+                Arc::new(file_archiver_for_test(&work_dir)),
                 Arc::new(MockAncillarySigner::new()),
                 TestLogger::stdout(),
             )
@@ -626,7 +633,7 @@ mod tests {
                 db_directory.clone(),
                 db_directory.parent().unwrap().join("snapshot_dest"),
                 CompressionAlgorithm::Zstandard,
-                Arc::new(FileArchiver::new_for_test(work_dir.join("verification"))),
+                Arc::new(file_archiver_for_test(&work_dir)),
                 Arc::new(MockAncillarySigner::new()),
                 TestLogger::stdout(),
             )

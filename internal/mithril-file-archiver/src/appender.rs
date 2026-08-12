@@ -1,3 +1,5 @@
+//! Define how to append data to a [crate::FileArchiver]
+
 use anyhow::{Context, anyhow};
 use serde::Serialize;
 use std::fs::File;
@@ -12,10 +14,13 @@ const READ_WRITE_PERMISSION: u32 = 0o666;
 
 /// Define multiple ways to append content to a tar archive.
 pub trait TarAppender: Send {
+    /// Appends the contents of the current object to the given tar archive builder.
     fn append<T: Write>(&self, tar: &mut tar::Builder<T>) -> StdResult<()>;
 
+    /// Computes the total uncompressed size of the data that will be added to the archive.
     fn compute_uncompressed_data_size(&self) -> StdResult<u64>;
 
+    /// Chains this appender with another, combining their contents into a single archive.
     fn chain<A2: TarAppender>(self, appender_right: A2) -> ChainAppender<Self, A2>
     where
         Self: Sized,
@@ -24,19 +29,18 @@ pub trait TarAppender: Send {
     }
 }
 
-#[cfg(test)]
+/// An appender that add a directory and all of its content (recursively).
 pub struct AppenderDirAll {
     target_directory: PathBuf,
 }
-#[cfg(test)]
+
 impl AppenderDirAll {
-    // Note: Not used anymore outside of tests but useful tool to keep around if we ever need to archive a directory
+    /// [AppenderDirAll] factory
     pub fn new(target_directory: PathBuf) -> Self {
         Self { target_directory }
     }
 }
 
-#[cfg(test)]
 impl TarAppender for AppenderDirAll {
     fn append<T: Write>(&self, tar: &mut tar::Builder<T>) -> StdResult<()> {
         tar.append_dir_all(".", &self.target_directory).with_context(|| {
@@ -53,6 +57,7 @@ impl TarAppender for AppenderDirAll {
     }
 }
 
+/// An appender that add one file.
 pub struct AppenderFile {
     /// Location of the file in the archive.
     location_in_archive: PathBuf,
@@ -106,6 +111,9 @@ impl TarAppender for AppenderFile {
     }
 }
 
+/// An appender that add a list of entries, files, or directories.
+///
+/// Directory contents are not added if not specified.
 pub struct AppenderEntries {
     entries: Vec<PathBuf>,
     base_directory: PathBuf,
@@ -178,7 +186,7 @@ impl TarAppender for AppenderEntries {
     }
 }
 
-/// Append data to the archive.
+/// An appender that add either [serde::Serialize] serializable data or raw bytes.
 pub struct AppenderData {
     /// Location of the file in the archive where the data will be appended.
     location_in_archive: PathBuf,
@@ -250,6 +258,7 @@ pub struct ChainAppender<L, R> {
 }
 
 impl<L: TarAppender, R: TarAppender> ChainAppender<L, R> {
+    /// [ChainAppender] factory
     pub fn new(appender_left: L, appender_right: R) -> Self {
         Self {
             appender_left,
@@ -279,8 +288,9 @@ mod tests {
     use mithril_common::entities::CompressionAlgorithm;
     use mithril_common::{assert_dir_eq, temp_dir_create};
 
-    use crate::tools::file_archiver::test_tools::*;
-    use crate::tools::file_archiver::{ArchiveParameters, FileArchiver};
+    use crate::api::FileArchiver;
+    use crate::entities::ArchiveParameters;
+    use crate::test::{FileArchiveTestExtension, create_dir, create_file};
 
     use super::*;
 
