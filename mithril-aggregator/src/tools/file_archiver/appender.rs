@@ -114,6 +114,8 @@ pub struct AppenderEntries {
 impl AppenderEntries {
     /// Create a new instance of `AppenderEntries`.
     ///
+    /// Entries are normalized and sorted to ensure deterministic archive output.
+    ///
     /// Returns an error if the `entries` are empty.
     pub fn new(entries: Vec<PathBuf>, base_directory: PathBuf) -> StdResult<Self> {
         if entries.is_empty() {
@@ -121,9 +123,18 @@ impl AppenderEntries {
         }
 
         Ok(Self {
-            entries,
+            entries: Self::normalize_entries(entries),
             base_directory,
         })
+    }
+
+    fn normalize_entries(entries: Vec<PathBuf>) -> Vec<PathBuf> {
+        let mut normalized: Vec<PathBuf> = entries
+            .into_iter()
+            .map(|entry| entry.components().collect())
+            .collect();
+        normalized.sort();
+        normalized
     }
 }
 
@@ -132,14 +143,14 @@ impl TarAppender for AppenderEntries {
         for entry in &self.entries {
             let entry_path = self.base_directory.join(entry);
             if entry_path.is_dir() {
-                tar.append_dir(entry, entry_path.clone()).with_context(|| {
+                tar.append_dir(entry, &entry_path).with_context(|| {
                     format!(
                         "Can not add directory: '{}' to the archive",
                         entry_path.display()
                     )
                 })?;
             } else if entry_path.is_file() {
-                let mut file = File::open(entry_path.clone())?;
+                let mut file = File::open(&entry_path)?;
                 tar.append_file(entry, &mut file).with_context(|| {
                     format!(
                         "Can not add file: '{}' to the archive",
@@ -274,6 +285,36 @@ mod tests {
 
     mod appender_entries {
         use super::*;
+
+        #[test]
+        fn normalizes_directory_spelling_and_sorts_entries() {
+            let appender = AppenderEntries::new(
+                vec![
+                    PathBuf::from("foo/bar.txt"),
+                    PathBuf::from("file_2.txt"),
+                    PathBuf::from("bar/"),
+                    PathBuf::from("foo/"),
+                    PathBuf::from("foo/pika/"),
+                    PathBuf::from("foo/pika/chuu.txt"),
+                    PathBuf::from("file_1.txt"),
+                ],
+                PathBuf::from("source"),
+            )
+            .unwrap();
+
+            assert_eq!(
+                vec![
+                    PathBuf::from("bar"),
+                    PathBuf::from("file_1.txt"),
+                    PathBuf::from("file_2.txt"),
+                    PathBuf::from("foo"),
+                    PathBuf::from("foo/bar.txt"),
+                    PathBuf::from("foo/pika"),
+                    PathBuf::from("foo/pika/chuu.txt"),
+                ],
+                appender.entries
+            );
+        }
 
         #[test]
         fn create_archive_only_for_specified_directories_and_files() {
