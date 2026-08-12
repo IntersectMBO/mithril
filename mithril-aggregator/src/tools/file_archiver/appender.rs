@@ -175,6 +175,10 @@ pub struct AppenderData {
 }
 
 impl AppenderData {
+    /// Timestamp arbitrarily chosen to `2026-01-01 00:00:00 UTC`
+    /// IMPORTANT: Do NOT change it, else the `AppenderData` archives bytes would change.
+    const FIXED_MTIME_ATTRIBUTE: u64 = 1767225600;
+
     /// Create a new instance of `AppenderData` from an object that will be serialized to JSON.
     pub fn from_json<T: Serialize + Send>(
         location_in_archive: PathBuf,
@@ -204,7 +208,7 @@ impl TarAppender for AppenderData {
         let mut header = tar::Header::new_gnu();
         header.set_size(self.bytes.len() as u64);
         header.set_mode(READ_WRITE_PERMISSION);
-        header.set_mtime(chrono::Utc::now().timestamp() as u64);
+        header.set_mtime(Self::FIXED_MTIME_ATTRIBUTE);
         header.set_cksum();
 
         tar.append_data(
@@ -551,14 +555,13 @@ mod tests {
         }
 
         #[test]
-        fn appended_entry_have_read_write_permissions_and_time_metadata() {
+        fn appended_entry_have_read_write_permissions_and_fixed_time_metadata() {
             let test_dir = temp_dir_create!();
             let object = TestStruct {
                 field1: "test".to_string(),
                 field2: 42,
             };
             let location_in_archive = PathBuf::from("folder").join("test.json");
-            let start_time_stamp = chrono::Utc::now().timestamp() as u64;
 
             let data_appender =
                 AppenderData::from_json(location_in_archive.clone(), &object).unwrap();
@@ -584,11 +587,7 @@ mod tests {
                 appended_entry.header().mode().unwrap()
             );
             let mtime = appended_entry.header().mtime().unwrap();
-            assert!(
-                mtime >= start_time_stamp,
-                "entry mtime should be greater than or equal to the timestamp before the archive \
-                creation:\n {mtime} < {start_time_stamp}"
-            );
+            assert_eq!(AppenderData::FIXED_MTIME_ATTRIBUTE, mtime);
         }
 
         #[test]
