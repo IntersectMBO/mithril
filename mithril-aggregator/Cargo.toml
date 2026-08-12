@@ -54,13 +54,11 @@ slog = { workspace = true, features = ["max_level_trace", "release_max_level_deb
 slog-async = { workspace = true }
 slog-bunyan = { workspace = true }
 sqlite = { version = "0.37.0", features = ["bundled"] }
-tar = "0.4.46"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
 tokio-util = { version = "0.7.18", features = ["codec"] }
 uuid = { version = "1.23.4", features = ["v4", "fast-rng", "macro-diagnostics"] }
 warp = { workspace = true }
-zstd = { version = "0.13.3", features = ["zstdmt"] }
 
 [target.'cfg(all(not(target_os = "windows"), not(all(target_os = "linux", target_arch = "aarch64"))))'.dependencies]
 tikv-jemallocator = { version = "0.7.0" }

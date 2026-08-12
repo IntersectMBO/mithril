@@ -287,12 +287,7 @@ impl DigestArtifactBuilder {
 #[cfg(test)]
 mod tests {
     use anyhow::anyhow;
-    use std::{
-        collections::BTreeMap,
-        fs::{File, read_to_string},
-    };
-    use tar::Archive;
-    use zstd::Decoder;
+    use std::{collections::BTreeMap, fs::read_to_string};
 
     use mithril_common::{
         current_function,
@@ -300,7 +295,7 @@ mod tests {
         messages::{CardanoDatabaseDigestListItemMessage, CardanoDatabaseDigestListMessage},
         test::{TempDir, assert_equivalent, double::Dummy},
     };
-    use mithril_file_archiver::FileArchiver;
+    use mithril_file_archiver::{FileArchiver, test::unpack_archive};
 
     use crate::{
         file_uploaders::FileUploadRetryPolicy,
@@ -357,17 +352,6 @@ mod tests {
             .expect_get_immutable_file_digest_map()
             .returning(|| Ok(BTreeMap::new()));
         immutable_file_digest_mapper
-    }
-
-    fn unpack_archive(archive_path: &Path, unpack_dir: &Path) -> StdResult<()> {
-        let mut archive = {
-            let file_tar_zst = File::open(archive_path)?;
-            let file_tar_zst_decoder = Decoder::new(file_tar_zst)?;
-            Archive::new(file_tar_zst_decoder)
-        };
-
-        archive.unpack(unpack_dir)?;
-        Ok(())
     }
 
     fn file_archiver_for_test(work_dir: &Path) -> FileArchiver {

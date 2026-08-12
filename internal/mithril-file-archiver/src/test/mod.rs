@@ -8,8 +8,26 @@ pub mod double;
 mod extensions;
 
 pub use extensions::*;
+
 #[cfg(test)]
 pub(crate) use internal_tests_only::*;
+
+/// Unpack a zstandard-compressed tar archive to a specified directory.
+///
+/// Note: `unpack_dir` must exist.
+pub fn unpack_archive(
+    archive_path: &std::path::Path,
+    unpack_dir: &std::path::Path,
+) -> mithril_common::StdResult<()> {
+    let mut archive = {
+        let file_tar_zst = std::fs::File::open(archive_path)?;
+        let file_tar_zst_decoder = zstd::Decoder::new(file_tar_zst)?;
+        tar::Archive::new(file_tar_zst_decoder)
+    };
+
+    archive.unpack(unpack_dir)?;
+    Ok(())
+}
 
 #[cfg(test)]
 mod internal_tests_only {
