@@ -6,7 +6,7 @@ use std::{
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
-use tar::{Archive, Entry, EntryType};
+use tar::{Archive, Entry, EntryType, HeaderMode};
 use zstd::{Decoder, Encoder};
 
 use mithril_common::StdResult;
@@ -152,6 +152,7 @@ impl FileArchiver {
                 enc.multithread(self.zstandard_compression_parameter.number_of_workers)
                     .with_context(|| "ZstandardEncoder can not set the number of workers")?;
                 let mut tar = tar::Builder::new(enc);
+                Self::configure_tar_builder(&mut tar);
 
                 appender
                     .append(&mut tar)
@@ -271,6 +272,11 @@ impl FileArchiver {
         }
 
         Ok(())
+    }
+
+    fn configure_tar_builder<W: std::io::Write>(builder: &mut tar::Builder<W>) {
+        builder.mode(HeaderMode::Deterministic);
+        builder.follow_symlinks(false);
     }
 }
 
