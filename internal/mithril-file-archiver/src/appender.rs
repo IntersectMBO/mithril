@@ -29,34 +29,6 @@ pub trait TarAppender: Send {
     }
 }
 
-/// An appender that add a directory and all of its content (recursively).
-pub struct AppenderDirAll {
-    target_directory: PathBuf,
-}
-
-impl AppenderDirAll {
-    /// [AppenderDirAll] factory
-    pub fn new(target_directory: PathBuf) -> Self {
-        Self { target_directory }
-    }
-}
-
-impl TarAppender for AppenderDirAll {
-    fn append<T: Write>(&self, tar: &mut tar::Builder<T>) -> StdResult<()> {
-        tar.append_dir_all(".", &self.target_directory).with_context(|| {
-            format!(
-                "Create archive error:  Can not add directory: '{}' to the archive",
-                self.target_directory.display()
-            )
-        })?;
-        Ok(())
-    }
-
-    fn compute_uncompressed_data_size(&self) -> StdResult<u64> {
-        file_size::compute_size_of_path(&self.target_directory)
-    }
-}
-
 /// An appender that add one file.
 pub struct AppenderFile {
     /// Location of the file in the archive.
@@ -583,35 +555,6 @@ mod tests {
 
             let entries_size = appender_file.compute_uncompressed_data_size().unwrap();
             assert_eq!(777, entries_size);
-        }
-    }
-
-    mod appender_dir_all {
-        use super::*;
-
-        #[test]
-        fn compute_uncompressed_size() {
-            let test_dir = "appender_dir_all_compute_size";
-
-            let immutable_trio_file_size = 777;
-            let ledger_file_size = 6666;
-            let volatile_file_size = 99;
-
-            let cardano_db = DummyCardanoDbBuilder::new(test_dir)
-                .with_immutables(&[1, 2])
-                .set_immutable_trio_file_size(immutable_trio_file_size)
-                .with_legacy_ledger_snapshots(&[437, 537, 637])
-                .set_ledger_file_size(ledger_file_size)
-                .with_volatile_files(&["blocks-0.dat"])
-                .set_volatile_file_size(volatile_file_size)
-                .build();
-
-            let appender_dir_all = AppenderDirAll::new(cardano_db.get_dir().clone());
-
-            let entries_size = appender_dir_all.compute_uncompressed_data_size().unwrap();
-            let expected_total_size =
-                (immutable_trio_file_size * 2) + (3 * ledger_file_size) + volatile_file_size;
-            assert_eq!(expected_total_size, entries_size);
         }
     }
 

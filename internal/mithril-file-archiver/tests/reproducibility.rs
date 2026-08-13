@@ -121,18 +121,6 @@ mod repeated_archiving_produces_byte_identical_archives {
     }
 
     #[test]
-    fn appender_dir_all() {
-        let test_dir = temp_dir_create!();
-        let content = test_data::create_test_dir(&helpers::create_dir(&test_dir, "source"));
-
-        run_scenario(
-            test_dir,
-            AppenderDirAll::new(content.clone()),
-            AppenderDirAll::new(content),
-        );
-    }
-
-    #[test]
     fn appender_entries() {
         let test_dir = temp_dir_create!();
         let content = test_data::create_test_dir(&helpers::create_dir(&test_dir, "source"));
@@ -283,13 +271,6 @@ mod source_metadata_does_not_affect_archive_bytes {
         }
 
         #[test]
-        fn appender_dir_all() {
-            let test_dir = temp_dir_create!();
-            setup_test_dirs(&test_dir, setup_modification_time);
-            run_scenario(test_dir, AppenderDirAll::new);
-        }
-
-        #[test]
         fn appender_entries() {
             let test_dir = temp_dir_create!();
             setup_test_dirs(&test_dir, setup_modification_time);
@@ -336,14 +317,6 @@ mod source_metadata_does_not_affect_archive_bytes {
         }
 
         #[test]
-        fn appender_dir_all() {
-            let test_dir = temp_dir_create!();
-            setup_test_dirs(&test_dir, setup_permissions);
-            run_scenario(test_dir, AppenderDirAll::new);
-        }
-
-        #[cfg(unix)]
-        #[test]
         fn appender_entries() {
             let test_dir = temp_dir_create!();
             setup_test_dirs(&test_dir, setup_permissions);
@@ -377,35 +350,6 @@ mod source_base_directory_does_not_affect_archive {
             .archive(
                 helpers::archive_parameters("from_another_dir", &test_dir),
                 AppenderFile::append_at_archive_root(same_content_in_other_dir).unwrap(),
-            )
-            .unwrap();
-
-        helpers::assert_files_are_byte_identical(
-            archive.get_file_path(),
-            archive_with_same_content_but_from_another_dir.get_file_path(),
-        );
-    }
-
-    #[test]
-    fn appender_dir_all() {
-        let test_dir = temp_dir_create!();
-        let source = helpers::create_dir(&test_dir, "source");
-        let subdir_1 = helpers::create_dir(&source, "first");
-        let subdir_2 = helpers::create_dir(&source, "second");
-
-        let content = test_data::create_test_dir(&subdir_1);
-        let same_content_in_other_dir = test_data::create_test_dir(&subdir_2);
-
-        let archive = helpers::file_archiver(&test_dir)
-            .archive(
-                helpers::archive_parameters("reference", &test_dir),
-                AppenderDirAll::new(content),
-            )
-            .unwrap();
-        let archive_with_same_content_but_from_another_dir = helpers::file_archiver(&test_dir)
-            .archive(
-                helpers::archive_parameters("from_another_dir", &test_dir),
-                AppenderDirAll::new(same_content_in_other_dir),
             )
             .unwrap();
 

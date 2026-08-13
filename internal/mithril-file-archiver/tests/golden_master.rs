@@ -17,8 +17,6 @@ use extensions::*;
 // ** These hashes define TAR_ZSTD_V1. Update them only for an intentional archive-format change. **
 pub const TAR_ZSTD_V1_TEST_FILE_SHA256: &str =
     "792b60f937bd348e5cfe8e4dc9fe7257b146888b8b30c52a547bd3ae4b7b1e4f";
-pub const TAR_ZSTD_V1_TEST_DIRECTORY_APPENDER_DIR_ALL_SHA256: &str =
-    "fb55c9b984eab74e599466ea2fbd8af92f5e8fd52296439c9a29340f5f801bea";
 pub const TAR_ZSTD_V1_TEST_DIRECTORY_APPENDER_ENTRIES_SHA256: &str =
     "cf6c2755fe389e40891c5cb6e4b08e0f01e09846e58f229d4dfe138adc7d1157";
 pub const TAR_ZSTD_V1_TEST_DATA_SHA256: &str =
@@ -172,25 +170,6 @@ fn appender_file() {
 
     assert_archive_not_empty(&archive);
     assert_archive_matches_golden_sha256(&archive, TAR_ZSTD_V1_TEST_FILE_SHA256);
-}
-
-#[test]
-fn appender_dir_all() {
-    let test_dir = temp_dir_create!();
-    let content = create_golden_test_dir(&helpers::create_dir(&test_dir, "source"));
-
-    let archive = helpers::file_archiver(&test_dir)
-        .archive(
-            helpers::archive_parameters("test", &test_dir),
-            AppenderDirAll::new(content),
-        )
-        .unwrap();
-
-    assert_archive_not_empty(&archive);
-    assert_archive_matches_golden_sha256(
-        &archive,
-        TAR_ZSTD_V1_TEST_DIRECTORY_APPENDER_DIR_ALL_SHA256,
-    );
 }
 
 #[test]

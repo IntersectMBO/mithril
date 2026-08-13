@@ -289,10 +289,11 @@ impl FileArchiver {
 mod tests {
     use std::fs::File;
 
+    use mithril_common::temp_dir_create;
     use mithril_common::test::assert_equivalent;
 
-    use crate::appender::{AppenderDirAll, AppenderFile};
-    use crate::test::{FileArchiveTestExtension, create_dir, create_file, get_test_directory};
+    use crate::appender::{AppenderEntries, AppenderFile};
+    use crate::test::{FileArchiveTestExtension, create_dir, create_file, double::FailAppender};
 
     use super::*;
 
@@ -305,18 +306,17 @@ mod tests {
 
     #[test]
     fn should_create_a_valid_archive_with_zstandard_compression() {
-        let test_dir =
-            get_test_directory("should_create_a_valid_archive_with_zstandard_compression");
+        let test_dir = temp_dir_create!();
         let target_archive = test_dir.join("archive.tar.zst");
-        let archived_directory = test_dir.join(create_dir(&test_dir, "archived_directory"));
-        create_file(&archived_directory, "file_to_archive.txt");
+        let source_dir = test_dir.join(create_dir(&test_dir, "source"));
+        let archived_file = source_dir.join(create_file(&source_dir, "file_to_archive.txt"));
 
         let file_archiver = FileArchiver::new_for_test(test_dir.join("verification"));
 
         let archive = file_archiver
             .create_archive(
                 &target_archive,
-                AppenderDirAll::new(archived_directory),
+                AppenderFile::append_at_archive_root(archived_file).unwrap(),
                 CompressionAlgorithm::Zstandard,
             )
             .expect("create_archive should not fail");
@@ -327,10 +327,7 @@ mod tests {
 
     #[test]
     fn should_delete_tmp_file_in_target_directory_if_archiving_fail() {
-        let test_dir =
-            get_test_directory("should_delete_tmp_file_in_target_directory_if_archiving_fail");
-        // Note: the archived directory does not exist in order to make the archive process fail
-        let archived_directory = test_dir.join("db");
+        let test_dir = temp_dir_create!();
 
         let file_archiver = FileArchiver::new_for_test(test_dir.join("verification"));
 
@@ -343,7 +340,7 @@ mod tests {
             compression_algorithm: CompressionAlgorithm::Zstandard,
         };
         let _ = file_archiver
-            .archive(archive_params, AppenderDirAll::new(archived_directory))
+            .archive(archive_params, FailAppender)
             .expect_err("FileArchiver::archive should fail if the target path doesn't exist.");
 
         let remaining_files: Vec<String> = list_remaining_files(&test_dir);
@@ -352,11 +349,7 @@ mod tests {
 
     #[test]
     fn should_not_delete_an_already_existing_archive_with_same_name_if_archiving_fail() {
-        let test_dir = get_test_directory(
-            "should_not_delete_an_already_existing_archive_with_same_name_if_archiving_fail",
-        );
-        // Note: the archived directory does not exist in order to make the archive process fail
-        let archived_directory = test_dir.join("db");
+        let test_dir = temp_dir_create!();
 
         let file_archiver = FileArchiver::new_for_test(test_dir.join("verification"));
 
@@ -372,7 +365,7 @@ mod tests {
             compression_algorithm: CompressionAlgorithm::Zstandard,
         };
         let _ = file_archiver
-            .archive(archive_params, AppenderDirAll::new(archived_directory))
+            .archive(archive_params, FailAppender)
             .expect_err("FileArchiver::archive should fail if the db is empty.");
         let remaining_files: Vec<String> = list_remaining_files(&test_dir);
 
@@ -384,11 +377,9 @@ mod tests {
 
     #[test]
     fn overwrite_already_existing_archive_when_archiving_succeed() {
-        let test_dir =
-            get_test_directory("overwrite_already_existing_archive_when_archiving_succeed");
-        let archived_directory = test_dir.join(create_dir(&test_dir, "archived_directory"));
-
-        create_file(&archived_directory, "file_to_archive.txt");
+        let test_dir = temp_dir_create!();
+        let source = test_dir.join(create_dir(&test_dir, "source"));
+        let file_to_archive = create_file(&source, "file_to_archive.txt");
 
         let file_archiver = FileArchiver::new_for_test(test_dir.join("verification"));
 
@@ -400,15 +391,22 @@ mod tests {
         let first_archive = file_archiver
             .archive(
                 archive_params.clone(),
-                AppenderDirAll::new(archived_directory.clone()),
+                AppenderEntries::new(vec![file_to_archive.clone()], source.clone()).unwrap(),
             )
             .unwrap();
         let first_archive_size = first_archive.get_archive_size();
 
-        create_file(&archived_directory, "another_file_to_archive.txt");
+        let another_file_to_archive = create_file(&source, "another_file_to_archive.txt");
 
         let second_archive = file_archiver
-            .archive(archive_params, AppenderDirAll::new(archived_directory))
+            .archive(
+                archive_params,
+                AppenderEntries::new(
+                    vec![file_to_archive, another_file_to_archive],
+                    source.clone(),
+                )
+                .unwrap(),
+            )
             .unwrap();
         let second_archive_size = second_archive.get_archive_size();
 
@@ -420,7 +418,7 @@ mod tests {
 
     #[test]
     fn compute_size_of_uncompressed_data_and_archive() {
-        let test_dir = get_test_directory("compute_size_of_uncompressed_data_and_archive");
+        let test_dir = temp_dir_create!();
 
         let file_path = test_dir.join("file.txt");
         let file = File::create(&file_path).unwrap();
