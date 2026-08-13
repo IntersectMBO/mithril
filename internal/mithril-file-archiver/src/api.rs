@@ -279,6 +279,9 @@ impl FileArchiver {
     fn configure_tar_builder<W: std::io::Write>(builder: &mut tar::Builder<W>) {
         builder.mode(HeaderMode::Deterministic);
         builder.follow_symlinks(false);
+        // disable sparse files, as their support is not uniform across platforms and the size
+        // difference won't matter with zstandard compression
+        builder.sparse(false);
     }
 }
 

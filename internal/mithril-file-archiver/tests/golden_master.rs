@@ -18,15 +18,15 @@ use extensions::*;
 pub const TAR_ZSTD_V1_TEST_FILE_SHA256: &str =
     "792b60f937bd348e5cfe8e4dc9fe7257b146888b8b30c52a547bd3ae4b7b1e4f";
 pub const TAR_ZSTD_V1_TEST_DIRECTORY_APPENDER_DIR_ALL_SHA256: &str =
-    "647bba62029e63b0cbd329bccdfdb850ec934a07ab0811cc4d2d7682b72d3054";
+    "fb55c9b984eab74e599466ea2fbd8af92f5e8fd52296439c9a29340f5f801bea";
 pub const TAR_ZSTD_V1_TEST_DIRECTORY_APPENDER_ENTRIES_SHA256: &str =
-    "565da17762fcf8f417f1ad78fda003b19507757bf56ac09ff24a9aac179bf78c";
+    "cf6c2755fe389e40891c5cb6e4b08e0f01e09846e58f229d4dfe138adc7d1157";
 pub const TAR_ZSTD_V1_TEST_DATA_SHA256: &str =
     "fd5a178f1c717de39aef526d378e731871b74ee1ba11bdc159a4a872867d3748";
 pub const TAR_ZSTD_V1_TEST_RAW_BYTES_SHA256: &str =
     "6843b658c2c176afa156e82f7ee3d828f63cd7e9de16dc3166a5da96f0d3e15f";
 pub const TAR_ZSTD_V1_TEST_CHAIN_DIRECTORY_AND_DATA_SHA256: &str =
-    "ff5447a1b80b530b3d94cfeb2ad69fdc392a4d5175f24ffc13ad10b08a7e12ba";
+    "d2f8df8672bb6eca365d485445011bdd0adde34c978f4deded2cd548e97c24ab";
 
 /// Create a directory named `test_dir` in the given directory
 ///
