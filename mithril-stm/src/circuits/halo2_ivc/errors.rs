@@ -52,6 +52,12 @@ pub enum IvcCircuitError {
     /// Off-circuit accumulator check: the msm does not match the provided the fixed bases
     #[error("Fixed base `{name}` in the dual MSM does not match the provided map")]
     MsmFixedBasesNamesMismatch { name: String },
+
+    /// Off-circuit step transition: `SHA256(protocol_message_preimage)`, reduced into the
+    /// base field the same way the circuit's `assert_message_matches_preimage` constraint
+    /// does, does not match the message the proof would otherwise commit to.
+    #[error("IvcProverInput::prepare: message preimage does not hash to the expected message")]
+    MessagePreimageMismatch,
 }
 
 /// Subcategorization for `IvcCircuitError::InvalidEpochTransition`. Lets negative
