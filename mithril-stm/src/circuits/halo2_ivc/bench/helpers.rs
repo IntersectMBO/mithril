@@ -221,7 +221,7 @@ impl IvcBenchEnv {
             genesis_fixture.genesis_verification_key,
             &setup.certificate_verifying_key,
             &setup.ivc_verifying_key,
-        );
+        )?;
 
         Ok(Self {
             setup,
