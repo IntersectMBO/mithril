@@ -299,7 +299,7 @@ fn ivc_prover_input_preparation_and_prove<D: MembershipDigest>(
         genesis_verifying_key,
         &certificate_verifying_key,
         &ivc_verifying_key,
-    );
+    )?;
 
     let mut prover = IvcProver {
         ivc_setup: ivc_prover_setup,
