@@ -34,13 +34,7 @@ mod internal_tests_only {
     use std::fs::File;
     use std::path::{Path, PathBuf};
 
-    use mithril_common::test::TempDir;
-
     mithril_common::define_test_logger!();
-
-    pub fn get_test_directory(dir_name: &str) -> PathBuf {
-        TempDir::create("file_archiver", dir_name)
-    }
 
     /// Create a file in the root directory.
     ///
