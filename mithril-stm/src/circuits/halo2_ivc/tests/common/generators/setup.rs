@@ -22,6 +22,8 @@ use crate::circuits::halo2_ivc::{
     CERTIFICATE_FIXED_BASES_PREFIX, EmulatedCurve, IVC_FIXED_BASES_PREFIX, NativeField,
     PairingEngine, circuit::IvcCircuitData, state::Global,
 };
+use crate::circuits::test_utils::file_mutex::FileMutex;
+use crate::circuits::trusted_setup::{TrustedSetupProvider, UNSAFE_SRS_SEED};
 use crate::membership_commitment::{MerkleTree as StmMerkleTree, MerkleTreeSnarkLeaf};
 use crate::signature_scheme::{
     BaseFieldElement, SchnorrSigningKey, SchnorrVerificationKey, StandardSchnorrSignature,
@@ -173,12 +175,29 @@ pub(crate) fn build_deterministic_params(circuit_degree: u32) -> ParamsKZG<Bls12
     ParamsKZG::<Bls12>::unsafe_setup(circuit_degree, ChaCha20Rng::seed_from_u64(ASSET_SEED))
 }
 
+/// Loads the shared unsafe SRS of degree `circuit_degree` from the content-keyed test cache,
+/// generating and persisting it on a miss.
+///
+/// The cache entry is the one [`IvcSnarkProverSetup::build_for_test`] writes: both derive their SRS
+/// from the same seed, so the bytes are identical and the generation cost is paid once per degree
+/// across the whole test suite. The lock is released as soon as the parameters are loaded, so a
+/// caller can then take a second cache lock without holding two at once.
+fn load_shared_unsafe_srs(circuit_degree: u32) -> ParamsKZG<Bls12> {
+    let srs_cache = FileMutex::for_shared_cache("unsafe-srs", &[&UNSAFE_SRS_SEED.to_le_bytes()]);
+    let srs_directory = srs_cache.directory().to_path_buf();
+    let _srs_cache_lock = srs_cache.lock().expect("the shared unsafe SRS cache should lock");
+
+    TrustedSetupProvider::with_unsafe_srs(&srs_directory, circuit_degree)
+        .get_trusted_setup_parameters()
+        .expect("the shared unsafe SRS should load from the test cache")
+}
+
 /// Builds the shared verifier-side recursive setup from the deterministic SRS.
 pub(crate) fn build_shared_recursive_context(
     setup: &AssetGenerationSetup,
 ) -> SharedRecursiveContext {
     let shared_srs_degree = RECURSIVE_CIRCUIT_DEGREE.max(CERTIFICATE_CIRCUIT_DEGREE);
-    let universal_kzg_parameters = build_deterministic_params(shared_srs_degree);
+    let universal_kzg_parameters = load_shared_unsafe_srs(shared_srs_degree);
     let universal_verifier_params = universal_kzg_parameters.verifier_params();
 
     let params_for = |degree| {
