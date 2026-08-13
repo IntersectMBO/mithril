@@ -460,7 +460,7 @@ mod appender_entry_specifics {
         let content = test_data::create_test_dir(&source);
 
         let reference_entries = ["bar/", "foo/", "foo/bar.txt", "file_1.txt", "file_2.txt"];
-        let equivalent_entries = ["bar", "foo", "foo/bar.txt", "file_1.txt", "file_2.txt"];
+        let equivalent_entries = ["bar", "foo", "foo/bar.txt", "./file_1.txt", "file_2.txt"];
 
         let reference_archive = helpers::file_archiver(&test_dir)
             .archive(

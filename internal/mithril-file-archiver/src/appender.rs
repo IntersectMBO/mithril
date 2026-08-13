@@ -4,7 +4,7 @@ use anyhow::{Context, anyhow};
 use serde::Serialize;
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 
 use mithril_common::StdResult;
 
@@ -143,7 +143,10 @@ impl AppenderEntries {
     }
 
     fn normalize_entry(entry: PathBuf) -> PathBuf {
-        entry.components().collect()
+        entry
+            .components()
+            .filter(|c| !matches!(c, Component::CurDir))
+            .collect()
     }
 }
 
@@ -296,6 +299,23 @@ mod tests {
 
     mod appender_entries {
         use super::*;
+
+        #[test]
+        fn removes_leading_current_directory_component() {
+            assert_eq!(
+                PathBuf::from("foo/bar.txt"),
+                AppenderEntries::normalize_entry(PathBuf::from("./foo/bar.txt")),
+            );
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn removes_windows_leading_current_directory_component() {
+            assert_eq!(
+                PathBuf::from("foo").join("bar.txt"),
+                AppenderEntries::normalize_entry(PathBuf::from(r".\foo\bar.txt")),
+            );
+        }
 
         #[test]
         fn normalizes_directory_spelling_and_sorts_entries() {
