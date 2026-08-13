@@ -15,8 +15,8 @@ use crate::{
     },
     proof_system::ivc_halo2_snark::{
         prover_input_helpers::{
-            IvcTransitionType, build_next_accumulator, build_next_state,
-            create_snark_message_for_next_state, verify_certificate_proof,
+            IvcTransitionType, assert_message_hash_matches_preimage, build_next_accumulator,
+            build_next_state, create_snark_message_for_next_state, verify_certificate_proof,
         },
         prover_setup::IvcSnarkProverSetup,
         rolling_state::IvcRollingState,
@@ -66,15 +66,17 @@ impl IvcProverInput {
             transition_type,
         )?;
 
+        let (certificate_message_hash, certificate_merkle_tree_commitment) =
+            create_snark_message_for_next_state(aggregate_verification_key_for_snark, message)?;
+
+        assert_message_hash_matches_preimage(certificate_message_hash, protocol_message_preimage)?;
+
         let certificate_dual_msm = verify_certificate_proof(
             certificate_proof,
             message,
             aggregate_verification_key_for_snark,
             prover_setup,
         )?;
-
-        let (certificate_message_hash, certificate_merkle_tree_commitment) =
-            create_snark_message_for_next_state(aggregate_verification_key_for_snark, message)?;
 
         let next_state = build_next_state(
             transition_type,
@@ -111,6 +113,8 @@ impl IvcProverInput {
         protocol_message_preimage: &ProtocolMessagePreimage,
         global: &Global,
     ) -> StmResult<Self> {
+        assert_message_hash_matches_preimage(global.genesis_message, protocol_message_preimage)?;
+
         rolling_state.verify_genesis_signature(global)?;
 
         let new_step_counter = rolling_state.new_step_counter()?;
@@ -278,8 +282,15 @@ mod test {
             let chain_verification_key =
                 SchnorrVerificationKey::new_from_signing_key(chain_signing_key);
 
+            let preimage_bytes = [0u8; PREIMAGE_SIZE];
+            let genesis_message = MessageHash::from_field(
+                BaseFieldElement::try_from(preimage_bytes.as_slice())
+                    .expect("hashing should not fail")
+                    .0,
+            );
+
             let global = Global {
-                genesis_message: MessageHash::ZERO,
+                genesis_message,
                 genesis_verification_key: chain_verification_key,
                 certificate_circuit_verification_key_representation:
                     CertificateCircuitVerificationKeyRepresentation::from_field(
@@ -300,7 +311,7 @@ mod test {
                 )
                 .expect("sign_standard should succeed for a synthetic message");
             let rolling_state = IvcRollingState::genesis(invalid_signature, &[]);
-            let protocol_message_preimage = ProtocolMessagePreimage::new([0u8; PREIMAGE_SIZE]);
+            let protocol_message_preimage = ProtocolMessagePreimage::new(preimage_bytes);
 
             let err = IvcProverInput::prepare_genesis(
                 &rolling_state,
@@ -324,9 +335,17 @@ mod test {
             let verification_key =
                 SchnorrVerificationKey::new_from_signing_key(signing_key.clone());
 
+            let cert_epoch = EpochNumber::ZERO;
+            let mut preimage_bytes = [0u8; PREIMAGE_SIZE];
+            preimage_bytes[PREIMAGE_CURRENT_EPOCH_BYTES]
+                .copy_from_slice(&cert_epoch.as_u64().to_le_bytes());
+            preimage_bytes[PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES].copy_from_slice(&[0x11; 32]);
+            preimage_bytes[PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES].copy_from_slice(&[0x22; 32]);
+            let protocol_message_preimage = ProtocolMessagePreimage::new(preimage_bytes);
+
             let genesis_message = MessageHash::from_field(
-                BaseFieldElement::from_raw(&[0x42; 32])
-                    .expect("from_raw applies modulus reduction")
+                BaseFieldElement::try_from(preimage_bytes.as_slice())
+                    .expect("hashing should not fail")
                     .0,
             );
             let global = Global {
@@ -349,14 +368,6 @@ mod test {
                 )
                 .expect("sign_standard should succeed for the genesis message");
             let rolling_state = IvcRollingState::genesis(genesis_signature, &[]);
-
-            let cert_epoch = EpochNumber::ZERO;
-            let mut preimage_bytes = [0u8; PREIMAGE_SIZE];
-            preimage_bytes[PREIMAGE_CURRENT_EPOCH_BYTES]
-                .copy_from_slice(&cert_epoch.as_u64().to_le_bytes());
-            preimage_bytes[PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES].copy_from_slice(&[0x11; 32]);
-            preimage_bytes[PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES].copy_from_slice(&[0x22; 32]);
-            let protocol_message_preimage = ProtocolMessagePreimage::new(preimage_bytes);
 
             let input = IvcProverInput::prepare_genesis(
                 &rolling_state,
