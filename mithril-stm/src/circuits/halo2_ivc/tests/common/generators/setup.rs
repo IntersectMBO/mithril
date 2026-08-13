@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use ff::Field;
 use midnight_curves::Bls12;
@@ -20,10 +24,12 @@ use crate::circuits::halo2_ivc::keys::{RecursiveCircuitProvingKey, RecursiveCirc
 use crate::circuits::halo2_ivc::types::MessageHash;
 use crate::circuits::halo2_ivc::{
     CERTIFICATE_FIXED_BASES_PREFIX, EmulatedCurve, IVC_FIXED_BASES_PREFIX, NativeField,
-    PairingEngine, circuit::IvcCircuitData, state::Global,
+    PairingEngine, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::IvcCircuitData,
+    state::Global,
 };
 use crate::circuits::test_utils::file_mutex::FileMutex;
 use crate::circuits::trusted_setup::{TrustedSetupProvider, UNSAFE_SRS_SEED};
+use crate::codec::{TryFromBytes, TryToBytes};
 use crate::membership_commitment::{MerkleTree as StmMerkleTree, MerkleTreeSnarkLeaf};
 use crate::signature_scheme::{
     BaseFieldElement, SchnorrSigningKey, SchnorrVerificationKey, StandardSchnorrSignature,
@@ -192,9 +198,111 @@ fn load_shared_unsafe_srs(circuit_degree: u32) -> ParamsKZG<Bls12> {
         .expect("the shared unsafe SRS should load from the test cache")
 }
 
-/// Builds the shared verifier-side recursive setup from the deterministic SRS.
+/// File holding the cached recursive verifying key inside its fingerprinted cache directory.
+const RECURSIVE_VERIFYING_KEY_CACHE_FILE: &str = "recursive-verifying-key";
+
+/// Where the expensive recursive verifying key comes from.
+enum RecursiveVerifyingKeySource {
+    /// Always derived. Required wherever the result is written to a committed asset.
+    Derived,
+    /// Loaded from the content-keyed test cache, derived only on a miss.
+    Cached,
+}
+
+/// Derives the recursive verifying key for the default IVC circuit shape (about 8.9 s).
+fn derive_recursive_verifying_key(
+    recursive_commitment_parameters: &ParamsKZG<Bls12>,
+    certificate_verifying_key: &NonRecursiveCircuitVerifyingKey,
+) -> RecursiveCircuitVerifyingKey {
+    let default_ivc_circuit =
+        IvcCircuitData::unknown(certificate_verifying_key).expect("valid IvcCircuitData unknown");
+    RecursiveCircuitVerifyingKey::new(
+        keygen_vk_with_k(
+            recursive_commitment_parameters,
+            &default_ivc_circuit,
+            RECURSIVE_CIRCUIT_DEGREE,
+        )
+        .expect("recursive verifying key generation should not fail"),
+    )
+}
+
+/// Reads `cache_file`, or builds the value and publishes it there on a miss.
+///
+/// An absent file, a decode failure, or any byte difference on re-encoding counts as a miss and is
+/// rebuilt rather than reported: a corrupt test cache must never fail a test run. This is
+/// deliberately unlike [`KeyProvider`](crate::circuits::key_provider::KeyProvider), which
+/// propagates deserialization errors. The re-encode comparison is what rejects trailing or
+/// non-canonical bytes, since the verifying-key codec stops at the end of the key and ignores
+/// whatever follows it.
+fn load_or_build<T: TryToBytes + TryFromBytes>(cache_file: &Path, build: impl FnOnce() -> T) -> T {
+    if let Some(cached) = read_cache_file(cache_file) {
+        return cached;
+    }
+
+    let value = build();
+    store_cache_file(cache_file, &value);
+    value
+}
+
+/// Returns the cached value, or `None` when the entry is absent, undecodable, or not byte-identical
+/// to a re-encoding of what it decodes to.
+fn read_cache_file<T: TryToBytes + TryFromBytes>(cache_file: &Path) -> Option<T> {
+    let bytes = std::fs::read(cache_file).ok()?;
+    let value = T::try_from_bytes(&bytes).ok()?;
+    (value.to_bytes_vec().ok()? == bytes).then_some(value)
+}
+
+/// Publishes `value` at `cache_file` durably: a per-process temporary sibling is written, fsynced,
+/// then renamed, so a reader sees either no file or the whole value.
+fn store_cache_file<T: TryToBytes>(cache_file: &Path, value: &T) {
+    let bytes = value.to_bytes_vec().expect("the cached value should serialize");
+    let directory = cache_file
+        .parent()
+        .expect("the cache file should have a parent directory");
+    std::fs::create_dir_all(directory).expect("the cache directory should be created");
+
+    let temporary_file = directory.join(format!(
+        "{RECURSIVE_VERIFYING_KEY_CACHE_FILE}.{}.temp",
+        std::process::id()
+    ));
+    let mut file = std::fs::File::create(&temporary_file).expect("the temporary file should open");
+    file.write_all(&bytes).expect("the cached value should be written");
+    file.sync_all().expect("the cached value should be flushed");
+    drop(file);
+    std::fs::rename(&temporary_file, cache_file).expect("the cached value should be published");
+
+    // Makes the rename itself durable. Best effort: on platforms where a directory cannot be
+    // opened this is a no-op, and losing a test-cache entry only costs a rebuild.
+    let _ = std::fs::File::open(directory).and_then(|directory_file| directory_file.sync_all());
+}
+
+/// Builds the shared verifier-side recursive setup, **always deriving** the recursive verifying key.
+///
+/// Asset generators must use this: they write committed assets, and a stale cached key would
+/// silently produce assets derived from it. Behavior tests that only read should call
+/// [`build_shared_recursive_context_from_cache`].
 pub(crate) fn build_shared_recursive_context(
     setup: &AssetGenerationSetup,
+) -> SharedRecursiveContext {
+    build_shared_recursive_context_with(setup, RecursiveVerifyingKeySource::Derived)
+}
+
+/// Builds the shared verifier-side recursive setup, taking the recursive verifying key from the
+/// content-keyed test cache when one is present.
+///
+/// The cache address folds in the freshly derived certificate verifying key, the committed
+/// production recursive key, both circuit degrees, and the SRS seed, so a change to the certificate
+/// circuit or a regenerated production key resolves to a different entry. **Never call this from an
+/// asset generator** — see [`build_shared_recursive_context`].
+pub(crate) fn build_shared_recursive_context_from_cache(
+    setup: &AssetGenerationSetup,
+) -> SharedRecursiveContext {
+    build_shared_recursive_context_with(setup, RecursiveVerifyingKeySource::Cached)
+}
+
+fn build_shared_recursive_context_with(
+    setup: &AssetGenerationSetup,
+    recursive_verifying_key_source: RecursiveVerifyingKeySource,
 ) -> SharedRecursiveContext {
     let shared_srs_degree = RECURSIVE_CIRCUIT_DEGREE.max(CERTIFICATE_CIRCUIT_DEGREE);
     let universal_kzg_parameters = load_shared_unsafe_srs(shared_srs_degree);
@@ -213,20 +321,45 @@ pub(crate) fn build_shared_recursive_context(
         params_for(RECURSIVE_CIRCUIT_DEGREE),
     );
 
+    // Derived on every call: at about 93 ms it is not worth caching, and its bytes are what make
+    // the recursive key's cache address sensitive to the certificate circuit.
     let certificate_verifying_key = NonRecursiveCircuitVerifyingKey::new(zk_lib::setup_vk(
         &certificate_commitment_parameters,
         &setup.certificate_relation,
     ));
-    let default_ivc_circuit =
-        IvcCircuitData::unknown(&certificate_verifying_key).expect("valid IvcCircuitData unknown");
-    let recursive_verifying_key = RecursiveCircuitVerifyingKey::new(
-        keygen_vk_with_k(
+
+    let recursive_verifying_key = match recursive_verifying_key_source {
+        RecursiveVerifyingKeySource::Derived => derive_recursive_verifying_key(
             &recursive_commitment_parameters,
-            &default_ivc_circuit,
-            RECURSIVE_CIRCUIT_DEGREE,
-        )
-        .expect("recursive verifying key generation should not fail"),
-    );
+            &certificate_verifying_key,
+        ),
+        RecursiveVerifyingKeySource::Cached => {
+            let certificate_verifying_key_bytes = certificate_verifying_key
+                .to_bytes_vec()
+                .expect("the certificate verifying key should serialize");
+            let key_cache = FileMutex::for_shared_cache(
+                "ivc-recursive-verifying-key-v1",
+                &[
+                    &certificate_verifying_key_bytes,
+                    RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                    &RECURSIVE_CIRCUIT_DEGREE.to_le_bytes(),
+                    &CERTIFICATE_CIRCUIT_DEGREE.to_le_bytes(),
+                    &UNSAFE_SRS_SEED.to_le_bytes(),
+                ],
+            );
+            let cache_file = key_cache.directory().join(RECURSIVE_VERIFYING_KEY_CACHE_FILE);
+            let _key_cache_lock = key_cache
+                .lock()
+                .expect("the recursive verifying key cache should lock");
+
+            load_or_build(&cache_file, || {
+                derive_recursive_verifying_key(
+                    &recursive_commitment_parameters,
+                    &certificate_verifying_key,
+                )
+            })
+        }
+    };
 
     SharedRecursiveContext {
         universal_kzg_parameters,
@@ -365,5 +498,131 @@ pub(crate) fn build_asset_generation_setup() -> AssetGenerationSetup {
         aggregate_verification_key,
         genesis_next_merkle_tree_commitment,
         genesis_next_protocol_parameters,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::StmResult;
+
+    /// Stand-in for a cached key: cheap to build, and its encoding is exact, so the tests exercise
+    /// the cache protocol itself rather than a verifying key's cost.
+    #[derive(Debug, PartialEq, Eq)]
+    struct CachedValue(Vec<u8>);
+
+    impl TryToBytes for CachedValue {
+        fn to_bytes_vec(&self) -> StmResult<Vec<u8>> {
+            Ok(self.0.clone())
+        }
+    }
+
+    impl TryFromBytes for CachedValue {
+        fn try_from_bytes(bytes: &[u8]) -> StmResult<Self> {
+            if bytes.len() < 4 {
+                return Err(anyhow::anyhow!("a cached value is at least four bytes"));
+            }
+            // Decodes a fixed-width prefix and ignores the rest, mirroring the verifying-key codec
+            // that stops at the end of the key.
+            Ok(Self(bytes[..4].to_vec()))
+        }
+    }
+
+    /// Builder that records how many times it ran, so a cache hit is observable without inspecting
+    /// or mutating key material.
+    struct CountingBuilder {
+        calls: Cell<usize>,
+    }
+
+    impl CountingBuilder {
+        fn new() -> Self {
+            Self {
+                calls: Cell::new(0),
+            }
+        }
+
+        fn build(&self) -> CachedValue {
+            self.calls.set(self.calls.get() + 1);
+            CachedValue(vec![1, 2, 3, 4])
+        }
+    }
+
+    fn cache_file_in(directory: &TempDir) -> PathBuf {
+        directory.path().join(RECURSIVE_VERIFYING_KEY_CACHE_FILE)
+    }
+
+    #[test]
+    fn cold_cache_builds_the_value_and_publishes_it() {
+        let directory = TempDir::new().expect("temporary directory");
+        let cache_file = cache_file_in(&directory);
+        let builder = CountingBuilder::new();
+
+        let value = load_or_build(&cache_file, || builder.build());
+
+        assert_eq!(builder.calls.get(), 1, "a cold cache must build once");
+        assert_eq!(value, CachedValue(vec![1, 2, 3, 4]));
+        assert!(cache_file.exists(), "the entry must be published");
+    }
+
+    #[test]
+    fn warm_cache_returns_the_stored_value_without_building() {
+        let directory = TempDir::new().expect("temporary directory");
+        let cache_file = cache_file_in(&directory);
+        let builder = CountingBuilder::new();
+
+        let first = load_or_build(&cache_file, || builder.build());
+        let second = load_or_build(&cache_file, || builder.build());
+
+        assert_eq!(builder.calls.get(), 1, "a warm cache must not rebuild");
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn truncated_entry_is_treated_as_a_miss() {
+        let directory = TempDir::new().expect("temporary directory");
+        let cache_file = cache_file_in(&directory);
+        let builder = CountingBuilder::new();
+        load_or_build(&cache_file, || builder.build());
+
+        std::fs::write(&cache_file, [1, 2]).expect("the entry should be truncated");
+        let value = load_or_build(&cache_file, || builder.build());
+
+        assert_eq!(builder.calls.get(), 2, "a truncated entry must be rebuilt");
+        assert_eq!(value, CachedValue(vec![1, 2, 3, 4]));
+    }
+
+    #[test]
+    fn trailing_bytes_are_rejected_rather_than_ignored() {
+        let directory = TempDir::new().expect("temporary directory");
+        let cache_file = cache_file_in(&directory);
+        let builder = CountingBuilder::new();
+        load_or_build(&cache_file, || builder.build());
+
+        // The decoder itself would accept these bytes and silently ignore the tail; the re-encode
+        // comparison is what rejects them.
+        std::fs::write(&cache_file, [1, 2, 3, 4, 99]).expect("the entry should gain a tail");
+        let value = load_or_build(&cache_file, || builder.build());
+
+        assert_eq!(builder.calls.get(), 2, "trailing bytes must be rebuilt");
+        assert_eq!(value, CachedValue(vec![1, 2, 3, 4]));
+    }
+
+    #[test]
+    fn distinct_fingerprints_resolve_to_distinct_entries() {
+        let seed_bytes = UNSAFE_SRS_SEED.to_le_bytes();
+        let one =
+            FileMutex::for_shared_cache("ivc-recursive-verifying-key-v1", &[b"a", &seed_bytes]);
+        let other =
+            FileMutex::for_shared_cache("ivc-recursive-verifying-key-v1", &[b"b", &seed_bytes]);
+
+        assert_ne!(
+            one.directory(),
+            other.directory(),
+            "a fingerprint change must resolve elsewhere"
+        );
     }
 }
