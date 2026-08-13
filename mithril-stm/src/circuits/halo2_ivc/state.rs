@@ -201,3 +201,42 @@ pub(crate) struct AssignedWitness {
     // Protocol message preimage bytes
     pub(crate) message_preimage: Vec<AssignedByte<NativeField>>,
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        circuits::{
+            halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+            halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        },
+        codec::TryFromBytes,
+        signature_scheme::SchnorrSignatureError,
+    };
+
+    use super::*;
+
+    #[test]
+    fn new_rejects_invalid_genesis_verification_key() {
+        let certificate_verifying_key = NonRecursiveCircuitVerifyingKey::try_from_bytes(
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        )
+        .expect("production certificate verifying key bytes should deserialize");
+        let ivc_verifying_key = RecursiveCircuitVerifyingKey::try_from_bytes(
+            RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        )
+        .expect("production IVC verifying key bytes should deserialize");
+
+        let err = Global::new(
+            MessageHash::ZERO,
+            SchnorrVerificationKey::default(),
+            &certificate_verifying_key,
+            &ivc_verifying_key,
+        )
+        .expect_err("Global::new should reject an invalid genesis verification key");
+
+        assert!(matches!(
+            err.downcast_ref::<SchnorrSignatureError>(),
+            Some(SchnorrSignatureError::PointIsNotPrimeOrder(..))
+        ));
+    }
+}
