@@ -138,6 +138,16 @@ impl IvcRollingState {
             == self.state.current_epoch.as_field() + EpochNumber::new(1).as_field()
     }
 
+    /// Asserts that protocol_parameters and next_protocol_parameters agree.
+    pub(crate) fn assert_protocol_parameters_unchanged(&self) -> StmResult<()> {
+        if self.state.step_counter.is_not_first_step()
+            && self.state.protocol_parameters != self.state.next_protocol_parameters
+        {
+            return Err(IvcCircuitError::ProtocolParametersChanged.into());
+        }
+        Ok(())
+    }
+
     /// Asserts that the parameters in the rolling state matches the ones in
     /// the protocol message depending on the epoch transition type.
     /// This is done mainly to avoid computing a proof that will not verify.
@@ -290,7 +300,7 @@ mod tests {
     mod assert_correct_parameters {
         use crate::{
             MithrilMembershipDigest,
-            circuits::halo2_ivc::types::ProtocolParametersHash,
+            circuits::halo2_ivc::types::{MerkleTreeCommitment, ProtocolParametersHash},
             proof_system::{
                 AggregateVerificationKeyForSnark,
                 ivc_halo2_snark::prover_input_helpers::tests::{
@@ -493,6 +503,54 @@ mod tests {
             );
 
             assert!(result.is_ok());
+        }
+
+        #[test]
+        fn passes_when_protocol_parameters_match_past_first_step() {
+            let matching_parameters =
+                ProtocolParametersHash::from_field(BaseFieldElement::from(7u64).0);
+            let rolling_state = build_rolling_state(
+                StepCounter::new(2),
+                EpochNumber::new(3),
+                MerkleTreeCommitment::ZERO,
+                matching_parameters,
+                matching_parameters,
+            );
+
+            assert!(rolling_state.assert_protocol_parameters_unchanged().is_ok());
+        }
+
+        #[test]
+        fn passes_at_first_step_even_when_protocol_parameters_differ() {
+            let rolling_state = build_rolling_state(
+                StepCounter::new(1),
+                EpochNumber::ZERO,
+                MerkleTreeCommitment::ZERO,
+                ProtocolParametersHash::ZERO,
+                ProtocolParametersHash::from_field(BaseFieldElement::from(7u64).0),
+            );
+
+            assert!(rolling_state.assert_protocol_parameters_unchanged().is_ok());
+        }
+
+        #[test]
+        fn rejects_diverged_protocol_parameters_past_first_step() {
+            let rolling_state = build_rolling_state(
+                StepCounter::new(2),
+                EpochNumber::new(3),
+                MerkleTreeCommitment::ZERO,
+                ProtocolParametersHash::ZERO,
+                ProtocolParametersHash::from_field(BaseFieldElement::from(7u64).0),
+            );
+
+            let err = rolling_state.assert_protocol_parameters_unchanged().unwrap_err();
+            let circuit_error = err
+                .downcast_ref::<IvcCircuitError>()
+                .expect("error chain should carry IvcCircuitError");
+            assert!(matches!(
+                circuit_error,
+                IvcCircuitError::ProtocolParametersChanged
+            ));
         }
     }
 }
