@@ -476,3 +476,124 @@ mod appender_entry_specifics {
         }
     }
 }
+
+mod chain_specifics {
+    use super::*;
+
+    #[test]
+    fn chaining_non_overlapping_appenders_is_commutative() {
+        let test_dir = temp_dir_create!();
+        let source = helpers::create_dir(&test_dir, "source");
+        let file_content = test_data::create_test_txt(&source);
+        let data_content = test_data::TEST_BYTES;
+
+        let reference_archive = helpers::file_archiver(&test_dir)
+            .archive(
+                helpers::archive_parameters("reference", &test_dir),
+                AppenderFile::append_at_archive_root(file_content.clone())
+                    .unwrap()
+                    .chain(AppenderData::from_raw_bytes(
+                        PathBuf::from("data.bytes"),
+                        data_content.to_vec(),
+                    )),
+            )
+            .unwrap();
+
+        let archive_chained_in_reverse = helpers::file_archiver(&test_dir)
+            .archive(
+                helpers::archive_parameters("archive_chained_in_reverse", &test_dir),
+                AppenderData::from_raw_bytes(PathBuf::from("data.bytes"), data_content.to_vec())
+                    .chain(AppenderFile::append_at_archive_root(file_content.clone()).unwrap()),
+            )
+            .unwrap();
+
+        helpers::assert_files_are_byte_identical(
+            reference_archive.get_file_path(),
+            archive_chained_in_reverse.get_file_path(),
+        );
+    }
+
+    #[test]
+    // Commutativity of chaining appenders is broken if they have overlapping paths as only the path
+    // from the rightmost appender is used.
+    fn chaining_overlapping_appenders_is_not_commutative() {
+        let test_dir = temp_dir_create!();
+        let path_in_archive = PathBuf::from("data.bytes");
+        let first_data_content = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let second_data_content = [11, 12, 13, 14, 15, 16, 17, 18, 18, 19];
+
+        let reference_archive = helpers::file_archiver(&test_dir)
+            .archive(
+                helpers::archive_parameters("reference", &test_dir),
+                AppenderData::from_raw_bytes(path_in_archive.clone(), first_data_content.to_vec())
+                    .chain(AppenderData::from_raw_bytes(
+                        PathBuf::from("data.bytes"),
+                        second_data_content.to_vec(),
+                    )),
+            )
+            .unwrap();
+
+        let archive_chained_in_reverse = helpers::file_archiver(&test_dir)
+            .archive(
+                helpers::archive_parameters("archive_chained_in_reverse", &test_dir),
+                AppenderData::from_raw_bytes(path_in_archive.clone(), second_data_content.to_vec())
+                    .chain(AppenderData::from_raw_bytes(
+                        PathBuf::from("data.bytes"),
+                        first_data_content.to_vec(),
+                    )),
+            )
+            .unwrap();
+
+        helpers::assert_files_are_byte_different(
+            reference_archive.get_file_path(),
+            archive_chained_in_reverse.get_file_path(),
+        );
+    }
+
+    #[test]
+    fn chaining_non_overlapping_appenders_is_associative() {
+        let test_dir = temp_dir_create!();
+        let a_data_content = [1, 2, 3, 4, 5];
+        let b_data_content = [6, 7, 8, 9, 10];
+        let c_data_content = [11, 12, 13, 14, 15];
+
+        let left_grouped =
+            AppenderData::from_raw_bytes(PathBuf::from("c.txt"), c_data_content.to_vec())
+                .chain(AppenderData::from_raw_bytes(
+                    PathBuf::from("a.txt"),
+                    a_data_content.to_vec(),
+                ))
+                .chain(AppenderData::from_raw_bytes(
+                    PathBuf::from("b.txt"),
+                    b_data_content.to_vec(),
+                ));
+
+        let right_grouped =
+            AppenderData::from_raw_bytes(PathBuf::from("c.txt"), c_data_content.to_vec()).chain(
+                AppenderData::from_raw_bytes(PathBuf::from("a.txt"), a_data_content.to_vec())
+                    .chain(AppenderData::from_raw_bytes(
+                        PathBuf::from("b.txt"),
+                        b_data_content.to_vec(),
+                    )),
+            );
+
+        let left_archive = helpers::file_archiver(&test_dir)
+            .archive(
+                helpers::archive_parameters("left-grouped", &test_dir),
+                left_grouped,
+            )
+            .unwrap();
+
+        let right_archive = helpers::file_archiver(&test_dir)
+            .archive(
+                helpers::archive_parameters("right-grouped", &test_dir),
+                right_grouped,
+            )
+            .unwrap();
+
+        helpers::assert_files_are_byte_identical(
+            left_archive.get_file_path(),
+            right_archive.get_file_path(),
+        );
+    }
+}

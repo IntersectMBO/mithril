@@ -15,7 +15,7 @@ use mithril_common::entities::{CompressionAlgorithm, ImmutableFileNumber};
 use mithril_common::logging::LoggerExtensions;
 use mithril_file_archiver::{
     ArchiveParameters, FileArchive, FileArchiver,
-    appender::{AppenderData, AppenderEntries, TarAppender},
+    appender::{AppenderData, AppenderEntries, ArchiveEntryProvider, TarAppender},
     tools::file_size,
 };
 

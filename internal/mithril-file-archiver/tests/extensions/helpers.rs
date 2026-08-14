@@ -14,18 +14,8 @@ use mithril_file_archiver::{ArchiveParameters, FileArchiver};
 #[track_caller]
 pub fn assert_files_are_byte_identical<E: AsRef<Path>, A: AsRef<Path>>(expected: E, actual: A) {
     let (expected_path, actual_path) = (expected.as_ref(), actual.as_ref());
-    let expected_bytes = std::fs::read(expected_path).unwrap_or_else(|error| {
-        panic!(
-            "Could not read expected file '{}': {error}",
-            expected_path.display()
-        )
-    });
-    let actual_bytes = std::fs::read(actual_path).unwrap_or_else(|error| {
-        panic!(
-            "Could not read actual file '{}': {error}",
-            actual_path.display()
-        )
-    });
+    let expected_bytes = read_file_bytes(expected_path);
+    let actual_bytes = read_file_bytes(actual_path);
 
     if expected_bytes != actual_bytes {
         let expected_hash = hex::encode(Sha256::digest(&expected_bytes));
@@ -43,6 +33,36 @@ pub fn assert_files_are_byte_identical<E: AsRef<Path>, A: AsRef<Path>>(expected:
             actual_hash,
         );
     }
+}
+
+/// Assert that two files are different.
+///
+/// SHA-256 hashes and file sizes are reported when they are equal.
+#[track_caller]
+pub fn assert_files_are_byte_different<E: AsRef<Path>, A: AsRef<Path>>(expected: E, actual: A) {
+    let (expected_path, actual_path) = (expected.as_ref(), actual.as_ref());
+    let expected_bytes = read_file_bytes(expected_path);
+    let actual_bytes = read_file_bytes(actual_path);
+
+    if expected_bytes == actual_bytes {
+        let hash = hex::encode(Sha256::digest(&expected_bytes));
+
+        panic!(
+            "Files are byte-identical:\n\
+                 expected: '{}'\n\
+                 actual:   '{}'\n\
+                 bytes:    {} bytes, SHA-256: {}",
+            expected_path.display(),
+            actual_path.display(),
+            expected_bytes.len(),
+            hash,
+        );
+    }
+}
+
+fn read_file_bytes(path: &Path) -> Vec<u8> {
+    std::fs::read(path)
+        .unwrap_or_else(|error| panic!("Could not read file '{}': {error}", path.display()))
 }
 
 /// **IMPORTANT** Default zstandard compression parameters are used.
