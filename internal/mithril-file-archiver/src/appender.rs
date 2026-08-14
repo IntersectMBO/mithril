@@ -1,16 +1,23 @@
 //! Define how to append data to a [crate::FileArchiver]
 
-use anyhow::{Context, anyhow};
-use serde::Serialize;
+use std::cmp::Ordering;
+use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::Write;
-use std::path::{Component, PathBuf};
+use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
+
+use anyhow::{Context, anyhow};
+use serde::Serialize;
 
 use mithril_common::StdResult;
 
 use crate::tools::file_size;
 
 const READ_WRITE_PERMISSION: u32 = 0o666;
+/// Timestamp arbitrarily chosen to `2026-01-01 00:00:00 UTC`
+/// IMPORTANT: Do NOT change it, else the `AppenderData` archives bytes would change.
+const FIXED_MTIME_ATTRIBUTE_FOR_DATA: u64 = 1767225600;
 
 /// Define multiple ways to append content to a tar archive.
 pub trait TarAppender: Send {
@@ -29,12 +36,213 @@ pub trait TarAppender: Send {
     }
 }
 
-/// An appender that add one file.
+/// Represents an object that can provide a list of entries to append to a tar archive.
+pub trait ArchiveEntryProvider: Send {
+    /// Get the list of archive entries held by this provider.
+    fn collect_entries(&self) -> StdResult<BTreeSet<ArchiveEntry>>;
+}
+
+impl<T: ArchiveEntryProvider> TarAppender for T {
+    fn append<W: Write>(&self, tar: &mut tar::Builder<W>) -> StdResult<()> {
+        for entry in self
+            .collect_entries()
+            .with_context(|| "Failed to collect entries from appender")?
+        {
+            entry.append_to_archive(tar)?;
+        }
+        Ok(())
+    }
+
+    fn compute_uncompressed_data_size(&self) -> StdResult<u64> {
+        let mut size: u64 = 0;
+        for entry in self
+            .collect_entries()
+            .with_context(|| "Failed to collect entries from appender")?
+        {
+            size = size
+                .checked_add(entry.compute_uncompressed_data_size()?)
+                .with_context(|| "Failed to compute uncompressed data size")?;
+        }
+        Ok(size)
+    }
+}
+
+/// Represents an entry to be added to a tar archive.
+///
+/// Archive entries are identified and ordered solely by their normalized archive path.
+/// Content and source fields do not participate in equality.
+#[derive(Debug, Clone)]
+pub enum ArchiveEntry {
+    /// A file entry.
+    File {
+        /// Path of the file in the archive.
+        location_in_archive: PathBuf,
+        /// Path to the source file on disk.
+        target_file: PathBuf,
+    },
+    /// A directory entry.
+    Directory {
+        /// Path of the directory in the archive.
+        location_in_archive: PathBuf,
+        /// Path to the source directory on disk.
+        target_dir: PathBuf,
+    },
+    /// Raw data entry.
+    Data {
+        /// Path of the data in the archive.
+        location_in_archive: PathBuf,
+        /// The data bytes.
+        data: Arc<Vec<u8>>,
+    },
+}
+
+impl ArchiveEntry {
+    /// Creates a directory entry.
+    pub fn from_dir(location_in_archive: PathBuf, target_dir: PathBuf) -> Self {
+        ArchiveEntry::Directory {
+            location_in_archive: Self::normalize_entry(location_in_archive),
+            target_dir,
+        }
+    }
+
+    /// Creates a file entry.
+    pub fn from_file(location_in_archive: PathBuf, target_file: PathBuf) -> Self {
+        ArchiveEntry::File {
+            location_in_archive: Self::normalize_entry(location_in_archive),
+            target_file,
+        }
+    }
+
+    /// Creates a data entry.
+    pub fn from_data(location_in_archive: PathBuf, data: Vec<u8>) -> Self {
+        ArchiveEntry::Data {
+            location_in_archive: Self::normalize_entry(location_in_archive),
+            data: Arc::new(data),
+        }
+    }
+
+    /// Returns the location of this entry in the archive.
+    pub fn location_in_archive(&self) -> &Path {
+        match self {
+            ArchiveEntry::File {
+                location_in_archive,
+                ..
+            } => location_in_archive,
+            ArchiveEntry::Directory {
+                location_in_archive,
+                ..
+            } => location_in_archive,
+            ArchiveEntry::Data {
+                location_in_archive,
+                ..
+            } => location_in_archive,
+        }
+    }
+
+    /// Appends this entry to the given tar archive builder.
+    pub fn append_to_archive<T: Write>(&self, tar: &mut tar::Builder<T>) -> StdResult<()> {
+        match self {
+            ArchiveEntry::File {
+                location_in_archive,
+                target_file,
+            } => {
+                if !target_file.is_file() {
+                    anyhow::bail!(
+                        "File '{}' does not exist, can not add it to the archive at '{}'",
+                        target_file.display(),
+                        location_in_archive.display()
+                    );
+                }
+
+                let mut file = File::open(target_file)?;
+                tar.append_file(location_in_archive, &mut file).with_context(|| {
+                    format!(
+                        "Can not add file: '{}' to the archive",
+                        target_file.display()
+                    )
+                })?;
+            }
+            ArchiveEntry::Directory {
+                location_in_archive,
+                target_dir,
+            } => {
+                if !target_dir.is_dir() {
+                    anyhow::bail!(
+                        "Directory '{}' does not exist, can not add it to the archive at '{}'",
+                        target_dir.display(),
+                        location_in_archive.display()
+                    );
+                }
+
+                tar.append_dir(location_in_archive, target_dir).with_context(|| {
+                    format!(
+                        "Can not add directory: '{}' to the archive",
+                        location_in_archive.display()
+                    )
+                })?;
+            }
+            ArchiveEntry::Data {
+                location_in_archive,
+                data,
+            } => {
+                let mut header = tar::Header::new_gnu();
+                header.set_size(data.len() as u64);
+                header.set_mode(READ_WRITE_PERMISSION);
+                header.set_mtime(FIXED_MTIME_ATTRIBUTE_FOR_DATA);
+                header.set_cksum();
+
+                tar.append_data(&mut header, location_in_archive, data.as_slice())
+                    .with_context(|| {
+                        format!(
+                            "Can not add file: '{}' to the archive",
+                            location_in_archive.display()
+                        )
+                    })?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn compute_uncompressed_data_size(&self) -> StdResult<u64> {
+        match self {
+            ArchiveEntry::File { target_file, .. } => file_size::compute_size_of_path(target_file),
+            ArchiveEntry::Directory { .. } => Ok(0),
+            ArchiveEntry::Data { data, .. } => Ok(data.len() as u64),
+        }
+    }
+
+    fn normalize_entry(entry: PathBuf) -> PathBuf {
+        entry
+            .components()
+            .filter(|c| !matches!(c, Component::CurDir))
+            .collect()
+    }
+}
+
+impl Ord for ArchiveEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.location_in_archive().cmp(other.location_in_archive())
+    }
+}
+
+impl PartialOrd for ArchiveEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq<Self> for ArchiveEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.location_in_archive() == other.location_in_archive()
+    }
+}
+
+impl Eq for ArchiveEntry {}
+
+/// An appender that adds one file.
 pub struct AppenderFile {
-    /// Location of the file in the archive.
-    location_in_archive: PathBuf,
-    /// Path to the file to add to the archive.
-    target_file: PathBuf,
+    entry: ArchiveEntry,
 }
 
 impl AppenderFile {
@@ -58,37 +266,22 @@ impl AppenderFile {
             .to_owned();
 
         Ok(Self {
-            location_in_archive: PathBuf::from(location_in_archive),
-            target_file,
+            entry: ArchiveEntry::from_file(PathBuf::from(location_in_archive), target_file),
         })
     }
 }
 
-impl TarAppender for AppenderFile {
-    fn append<T: Write>(&self, tar: &mut tar::Builder<T>) -> StdResult<()> {
-        let mut file = File::open(&self.target_file)
-            .with_context(|| format!("Can not open file: '{}'", self.target_file.display()))?;
-        tar.append_file(&self.location_in_archive, &mut file)
-            .with_context(|| {
-                format!(
-                    "Can not add file: '{}' to the archive",
-                    self.target_file.display()
-                )
-            })?;
-        Ok(())
-    }
-
-    fn compute_uncompressed_data_size(&self) -> StdResult<u64> {
-        file_size::compute_size_of_path(&self.target_file)
+impl ArchiveEntryProvider for AppenderFile {
+    fn collect_entries(&self) -> StdResult<BTreeSet<ArchiveEntry>> {
+        Ok(BTreeSet::from([self.entry.clone()]))
     }
 }
 
-/// An appender that add a list of entries, files, or directories.
+/// An appender that adds a list of entries, files, or directories.
 ///
 /// Directory contents are not added if not specified.
 pub struct AppenderEntries {
-    entries: Vec<PathBuf>,
-    base_directory: PathBuf,
+    entries: BTreeSet<ArchiveEntry>,
 }
 
 impl AppenderEntries {
@@ -102,78 +295,37 @@ impl AppenderEntries {
             return Err(anyhow!("The entries can not be empty"));
         }
 
-        Ok(Self {
-            entries: Self::normalize_entries(entries),
-            base_directory,
-        })
-    }
+        let mut archive_entries: BTreeSet<ArchiveEntry> = BTreeSet::new();
 
-    fn normalize_entries(entries: Vec<PathBuf>) -> Vec<PathBuf> {
-        let mut normalized: Vec<PathBuf> = entries.into_iter().map(Self::normalize_entry).collect();
-        normalized.sort();
-        normalized
-    }
-
-    fn normalize_entry(entry: PathBuf) -> PathBuf {
-        entry
-            .components()
-            .filter(|c| !matches!(c, Component::CurDir))
-            .collect()
-    }
-}
-
-impl TarAppender for AppenderEntries {
-    fn append<T: Write>(&self, tar: &mut tar::Builder<T>) -> StdResult<()> {
-        for entry in &self.entries {
-            let entry_path = self.base_directory.join(entry);
+        for entry in entries {
+            let entry_path = base_directory.join(&entry);
             if entry_path.is_dir() {
-                tar.append_dir(entry, &entry_path).with_context(|| {
-                    format!(
-                        "Can not add directory: '{}' to the archive",
-                        entry_path.display()
-                    )
-                })?;
+                archive_entries.insert(ArchiveEntry::from_dir(entry, entry_path));
             } else if entry_path.is_file() {
-                let mut file = File::open(&entry_path)?;
-                tar.append_file(entry, &mut file).with_context(|| {
-                    format!(
-                        "Can not add file: '{}' to the archive",
-                        entry_path.display()
-                    )
-                })?;
+                archive_entries.insert(ArchiveEntry::from_file(entry, entry_path));
             } else {
-                return Err(anyhow!(
-                    "The entry: '{}' is not valid",
-                    entry_path.display()
-                ));
+                anyhow::bail!("The entry: '{}' is not valid", entry_path.display());
             }
         }
-        Ok(())
-    }
 
-    fn compute_uncompressed_data_size(&self) -> StdResult<u64> {
-        let full_entries_path = self
-            .entries
-            .iter()
-            .map(|entry| self.base_directory.join(entry))
-            .collect();
-        file_size::compute_size(full_entries_path)
+        Ok(Self {
+            entries: archive_entries,
+        })
     }
 }
 
-/// An appender that add either [serde::Serialize] serializable data or raw bytes.
+impl ArchiveEntryProvider for AppenderEntries {
+    fn collect_entries(&self) -> StdResult<BTreeSet<ArchiveEntry>> {
+        Ok(self.entries.clone())
+    }
+}
+
+/// An appender that adds either [serde::Serialize] serializable data or raw bytes.
 pub struct AppenderData {
-    /// Location of the file in the archive where the data will be appended.
-    location_in_archive: PathBuf,
-    /// Byte array of the data to append.
-    bytes: Vec<u8>,
+    entry: ArchiveEntry,
 }
 
 impl AppenderData {
-    /// Timestamp arbitrarily chosen to `2026-01-01 00:00:00 UTC`
-    /// IMPORTANT: Do NOT change it, else the `AppenderData` archives bytes would change.
-    const FIXED_MTIME_ATTRIBUTE: u64 = 1767225600;
-
     /// Create a new instance of `AppenderData` from an object that will be serialized to JSON.
     pub fn from_json<T: Serialize + Send>(
         location_in_archive: PathBuf,
@@ -192,37 +344,14 @@ impl AppenderData {
     /// Create a new instance of `AppenderData` from a byte array.
     pub fn from_raw_bytes(location_in_archive: PathBuf, bytes: Vec<u8>) -> Self {
         Self {
-            location_in_archive,
-            bytes,
+            entry: ArchiveEntry::from_data(location_in_archive, bytes),
         }
     }
 }
 
-impl TarAppender for AppenderData {
-    fn append<T: Write>(&self, tar: &mut tar::Builder<T>) -> StdResult<()> {
-        let mut header = tar::Header::new_gnu();
-        header.set_size(self.bytes.len() as u64);
-        header.set_mode(READ_WRITE_PERMISSION);
-        header.set_mtime(Self::FIXED_MTIME_ATTRIBUTE);
-        header.set_cksum();
-
-        tar.append_data(
-            &mut header,
-            &self.location_in_archive,
-            self.bytes.as_slice(),
-        )
-        .with_context(|| {
-            format!(
-                "Can not add file: '{}' to the archive",
-                self.location_in_archive.display()
-            )
-        })?;
-
-        Ok(())
-    }
-
-    fn compute_uncompressed_data_size(&self) -> StdResult<u64> {
-        Ok(self.bytes.len() as u64)
+impl ArchiveEntryProvider for AppenderData {
+    fn collect_entries(&self) -> StdResult<BTreeSet<ArchiveEntry>> {
+        Ok(BTreeSet::from([self.entry.clone()]))
     }
 }
 
@@ -258,8 +387,6 @@ impl<L: TarAppender, R: TarAppender> TarAppender for ChainAppender<L, R> {
 
 #[cfg(test)]
 mod tests {
-    use mithril_cardano_node_internal_database::test::DummyCardanoDbBuilder;
-    use mithril_cardano_node_internal_database::{IMMUTABLE_DIR, LEDGER_DIR, VOLATILE_DIR};
     use mithril_common::entities::CompressionAlgorithm;
     use mithril_common::{assert_dir_eq, temp_dir_create};
 
@@ -269,14 +396,31 @@ mod tests {
 
     use super::*;
 
-    mod appender_entries {
+    mod archive_entry {
         use super::*;
+
+        #[test]
+        fn removes_trailing_separator_from_directory_component() {
+            assert_eq!(
+                PathBuf::from("foo"),
+                ArchiveEntry::normalize_entry(PathBuf::from("foo/")),
+            );
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn removes_windows_trailing_separator_from_directory_component() {
+            assert_eq!(
+                PathBuf::from("foo"),
+                ArchiveEntry::normalize_entry(PathBuf::from("foo\\")),
+            );
+        }
 
         #[test]
         fn removes_leading_current_directory_component() {
             assert_eq!(
                 PathBuf::from("foo/bar.txt"),
-                AppenderEntries::normalize_entry(PathBuf::from("./foo/bar.txt")),
+                ArchiveEntry::normalize_entry(PathBuf::from("./foo/bar.txt")),
             );
         }
 
@@ -285,25 +429,31 @@ mod tests {
         fn removes_windows_leading_current_directory_component() {
             assert_eq!(
                 PathBuf::from("foo").join("bar.txt"),
-                AppenderEntries::normalize_entry(PathBuf::from(r".\foo\bar.txt")),
+                ArchiveEntry::normalize_entry(PathBuf::from(r".\foo\bar.txt")),
+            );
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn forward_and_backward_separators_have_the_same_normalized_path() {
+            assert_eq!(
+                ArchiveEntry::normalize_entry(PathBuf::from("foo/bar.txt")),
+                ArchiveEntry::normalize_entry(PathBuf::from(r"foo\bar.txt")),
             );
         }
 
         #[test]
-        fn normalizes_directory_spelling_and_sorts_entries() {
-            let appender = AppenderEntries::new(
-                vec![
-                    PathBuf::from("foo/bar.txt"),
-                    PathBuf::from("file_2.txt"),
-                    PathBuf::from("bar/"),
-                    PathBuf::from("foo/"),
-                    PathBuf::from("foo/pika/"),
-                    PathBuf::from("foo/pika/chuu.txt"),
-                    PathBuf::from("file_1.txt"),
-                ],
-                PathBuf::from("source"),
-            )
-            .unwrap();
+        fn entries_are_sorted_by_path() {
+            let mut entries = [
+                ArchiveEntry::from_file(PathBuf::from("foo/bar.txt"), PathBuf::new()),
+                ArchiveEntry::from_file(PathBuf::from("file_2.txt"), PathBuf::new()),
+                ArchiveEntry::from_dir(PathBuf::from("bar/"), PathBuf::new()),
+                ArchiveEntry::from_dir(PathBuf::from("foo/"), PathBuf::new()),
+                ArchiveEntry::from_file(PathBuf::from("foo/pika/"), PathBuf::new()),
+                ArchiveEntry::from_file(PathBuf::from("foo/pika/chuu.txt"), PathBuf::new()),
+                ArchiveEntry::from_file(PathBuf::from("file_1.txt"), PathBuf::new()),
+            ];
+            entries.sort();
 
             assert_eq!(
                 vec![
@@ -315,23 +465,23 @@ mod tests {
                     PathBuf::from("foo/pika"),
                     PathBuf::from("foo/pika/chuu.txt"),
                 ],
-                appender.entries
+                entries
+                    .into_iter()
+                    .map(|entry| entry.location_in_archive().to_path_buf())
+                    .collect::<Vec<_>>()
             );
         }
 
         #[cfg(windows)]
         #[test]
-        fn normalizes_windows_separators_and_sorts_entries() {
-            let appender = AppenderEntries::new(
-                vec![
-                    PathBuf::from(r"foo\pika\chuu.txt"),
-                    PathBuf::from(r"foo\bar.txt"),
-                    PathBuf::from(r"bar\\"),
-                    PathBuf::from(r"foo\\"),
-                ],
-                PathBuf::from("source"),
-            )
-            .unwrap();
+        fn entries_with_windows_path_are_sorted_by_path() {
+            let mut entries = [
+                ArchiveEntry::from_file(PathBuf::from(r"foo\pika\chuu.txt"), PathBuf::new()),
+                ArchiveEntry::from_file(PathBuf::from(r"foo\bar.txt"), PathBuf::new()),
+                ArchiveEntry::from_dir(PathBuf::from(r"bar\\"), PathBuf::new()),
+                ArchiveEntry::from_dir(PathBuf::from(r"foo\\"), PathBuf::new()),
+            ];
+            entries.sort();
 
             assert_eq!(
                 vec![
@@ -340,18 +490,48 @@ mod tests {
                     PathBuf::from("foo").join("bar.txt"),
                     PathBuf::from("foo").join("pika").join("chuu.txt"),
                 ],
-                appender.entries
+                entries
+                    .into_iter()
+                    .map(|entry| entry.location_in_archive().to_path_buf())
+                    .collect::<Vec<_>>()
             );
         }
 
-        #[cfg(windows)]
         #[test]
-        fn forward_and_backward_separators_have_the_same_normalized_path() {
+        fn appending_fails_if_source_file_does_not_exist() {
+            let entry =
+                ArchiveEntry::from_file(PathBuf::from("foo.txt"), PathBuf::from("not_exist.txt"));
+            let mut tar = tar::Builder::new(Vec::new());
+
+            let res = entry.append_to_archive(&mut tar);
+            assert!(res.is_err());
+        }
+
+        #[test]
+        fn appending_fails_if_source_dir_does_not_exist() {
+            let entry = ArchiveEntry::from_dir(PathBuf::from("foo/"), PathBuf::from("not_exist/"));
+            let mut tar = tar::Builder::new(Vec::new());
+
+            let res = entry.append_to_archive(&mut tar);
+            assert!(res.is_err());
+        }
+
+        #[test]
+        fn entries_with_the_same_archive_path_but_different_content_are_considered_equal() {
             assert_eq!(
-                AppenderEntries::normalize_entry(PathBuf::from("foo/bar.txt")),
-                AppenderEntries::normalize_entry(PathBuf::from(r"foo\bar.txt")),
+                ArchiveEntry::from_data(PathBuf::from("foo.txt"), vec![0, 1, 2]),
+                ArchiveEntry::from_data(PathBuf::from("foo.txt"), vec![3, 4, 5]),
+            );
+
+            assert_eq!(
+                ArchiveEntry::from_file(PathBuf::from("foo.txt"), PathBuf::from("file.txt")),
+                ArchiveEntry::from_file(PathBuf::from("foo.txt"), PathBuf::from("other.txt"))
             );
         }
+    }
+
+    mod appender_entries {
+        use super::*;
 
         #[test]
         fn create_archive_only_for_specified_directories_and_files() {
@@ -405,24 +585,14 @@ mod tests {
         }
 
         #[test]
-        fn return_error_when_appending_file_or_directory_that_does_not_exist() {
+        fn creation_fails_when_entry_does_not_exist() {
             let test_dir = temp_dir_create!();
-            let target_archive = test_dir.join("whatever.tar.zst");
-            let source = test_dir.join(create_dir(&test_dir, "source"));
+            let res = AppenderEntries::new(vec![PathBuf::from("not_exist")], test_dir);
 
-            let file_archiver = FileArchiver::new_for_test(test_dir.join("verification"));
-
-            file_archiver
-                .archive(
-                    ArchiveParameters {
-                        archive_name_without_extension: "archive".to_string(),
-                        target_directory: test_dir.clone(),
-                        compression_algorithm: CompressionAlgorithm::Zstandard,
-                    },
-                    AppenderEntries::new(vec![PathBuf::from("not_exist")], source).unwrap(),
-                )
-                .expect_err("AppenderEntries should return error when file or directory not exist");
-            assert!(!target_archive.exists());
+            assert!(
+                res.is_err(),
+                "AppenderEntries should return error when file or directory not exist"
+            );
         }
 
         #[test]
@@ -473,36 +643,33 @@ mod tests {
 
         #[test]
         fn compute_uncompressed_size_of_its_paths() {
-            let test_dir = "compute_uncompressed_size_of_its_paths";
+            fn create_file_with_len(path: &Path, len: u64) {
+                let file = File::create(path)
+                    .unwrap_or_else(|_| panic!("failed to create '{}'", path.display()));
+                file.set_len(len).unwrap();
+            }
 
-            let immutable_trio_file_size = 777;
-            let ledger_file_size = 6666;
-            let volatile_file_size = 99;
-
-            let cardano_db = DummyCardanoDbBuilder::new(test_dir)
-                .with_immutables(&[1, 2, 3])
-                .set_immutable_trio_file_size(immutable_trio_file_size)
-                .with_legacy_ledger_snapshots(&[437, 537, 637, 737])
-                .set_ledger_file_size(ledger_file_size)
-                .with_volatile_files(&["blocks-0.dat", "blocks-1.dat", "blocks-2.dat"])
-                .set_volatile_file_size(volatile_file_size)
-                .build();
+            let test_dir = temp_dir_create!();
+            let source = test_dir.join(create_dir(&test_dir, "source"));
+            let subdir = source.join(create_dir(&source, "subdir"));
+            create_file_with_len(&source.join("file_1"), 100);
+            create_file_with_len(&source.join("file_2"), 200);
+            create_file_with_len(&subdir.join("file_3"), 300);
+            create_file_with_len(&subdir.join("file_not_to_include"), 400);
 
             let appender_entries = AppenderEntries::new(
                 vec![
-                    PathBuf::from(IMMUTABLE_DIR),
-                    PathBuf::from(LEDGER_DIR).join("437"),
-                    PathBuf::from(LEDGER_DIR).join("537"),
-                    PathBuf::from(VOLATILE_DIR).join("blocks-0.dat"),
+                    PathBuf::from("file_1"),
+                    PathBuf::from("file_2"),
+                    PathBuf::from("subdir/"),
+                    PathBuf::from("subdir/file_3"),
                 ],
-                cardano_db.get_dir().clone(),
+                source,
             )
             .unwrap();
 
             let entries_size = appender_entries.compute_uncompressed_data_size().unwrap();
-            let expected_total_size =
-                (immutable_trio_file_size * 3) + (2 * ledger_file_size) + volatile_file_size;
-            assert_eq!(expected_total_size, entries_size);
+            assert_eq!(600, entries_size);
         }
     }
 
@@ -636,7 +803,7 @@ mod tests {
                 appended_entry.header().mode().unwrap()
             );
             let mtime = appended_entry.header().mtime().unwrap();
-            assert_eq!(AppenderData::FIXED_MTIME_ATTRIBUTE, mtime);
+            assert_eq!(FIXED_MTIME_ATTRIBUTE_FOR_DATA, mtime);
         }
 
         #[test]

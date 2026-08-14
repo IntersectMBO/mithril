@@ -19,7 +19,6 @@ zstd = { version = "=0.13.3", features = ["zstdmt"] } # Pinned to ensure archive
 
 [dev-dependencies]
 hex = { workspace = true }
-mithril-cardano-node-internal-database = { path = "../cardano-node/mithril-cardano-node-internal-database" }
 sha2 = "0.10.9"
 slog-async = { workspace = true }
 slog-term = { workspace = true }
