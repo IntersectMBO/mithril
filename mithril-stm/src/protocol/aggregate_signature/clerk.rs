@@ -150,6 +150,13 @@ impl<D: MembershipDigest> Clerk<D> {
                     .get_snark_clerk()
                     .ok_or_else(|| anyhow!(AggregateSignatureError::MissingSnarkClerk))?;
 
+                if let Some(prover_data) = ancillary_input.prover_data() {
+                    let rolling_state = prover_data.as_ivc_rolling_state().ok_or(anyhow!(
+                        AggregationError::MissingIvcRollingStateInAncillaryProverData
+                    ))?;
+                    rolling_state.assert_protocol_parameters_unchanged()?;
+                }
+
                 let snark_proof = SnarkProver::try_new_non_deterministic(
                     &snark_clerk.parameters,
                     MERKLE_TREE_DEPTH_FOR_SNARK,
