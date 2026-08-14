@@ -4644,7 +4644,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
- "mithril-cardano-node-internal-database",
  "mithril-common",
  "serde",
  "serde_json",
