@@ -1,4 +1,4 @@
-//! Define how to append data to a [crate::FileArchiver]
+//! Define how to append data to a [FileArchiver][crate::FileArchiver]
 
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
@@ -26,20 +26,24 @@ pub trait TarAppender: Send {
 
     /// Computes the total uncompressed size of the data that will be added to the archive.
     fn compute_uncompressed_data_size(&self) -> StdResult<u64>;
-
-    /// Chains this appender with another, combining their contents into a single archive.
-    fn chain<A2: TarAppender>(self, appender_right: A2) -> ChainAppender<Self, A2>
-    where
-        Self: Sized,
-    {
-        ChainAppender::new(self, appender_right)
-    }
 }
 
 /// Represents an object that can provide a list of entries to append to a tar archive.
 pub trait ArchiveEntryProvider: Send {
     /// Get the list of archive entries held by this provider.
     fn collect_entries(&self) -> StdResult<BTreeSet<ArchiveEntry>>;
+
+    /// Chains this provider with another, combining their contents into a single archive.
+    ///
+    /// - when paths are overlapping, the rightmost provider takes precedence.
+    /// - if there are no overlapping paths, chaining is commutative `(A | B) = (B | A)`.
+    /// - chaining is always associative: `((A | B) | C) = (A | (B | C))`, even when paths are overlapping.
+    fn chain<P2: ArchiveEntryProvider>(self, provider_right: P2) -> ChainAppender<Self, P2>
+    where
+        Self: Sized,
+    {
+        ChainAppender::new(self, provider_right)
+    }
 }
 
 impl<T: ArchiveEntryProvider> TarAppender for T {
@@ -355,33 +359,37 @@ impl ArchiveEntryProvider for AppenderData {
     }
 }
 
-/// Chain multiple `TarAppender` instances together.
+/// Combines multiple archive entry providers into one deterministic entry collection.
+///
+/// - when paths are overlapping, the rightmost provider takes precedence.
+/// - if there are no overlapping paths, chaining is commutative `(A | B) = (B | A)`.
+/// - chaining is always associative: `((A | B) | C) = (A | (B | C))`, even when paths are overlapping.
 pub struct ChainAppender<L, R> {
-    appender_left: L,
-    appender_right: R,
+    provider_left: L,
+    provider_right: R,
 }
 
-impl<L: TarAppender, R: TarAppender> ChainAppender<L, R> {
+impl<L: ArchiveEntryProvider, R: ArchiveEntryProvider> ChainAppender<L, R> {
     /// [ChainAppender] factory
-    pub fn new(appender_left: L, appender_right: R) -> Self {
+    pub fn new(provider_left: L, provider_right: R) -> Self {
         Self {
-            appender_left,
-            appender_right,
+            provider_left,
+            provider_right,
         }
     }
+
+    fn merge_entries_with_right_precedence(&self) -> StdResult<BTreeSet<ArchiveEntry>> {
+        let mut entries = self.provider_right.collect_entries()?;
+        entries.extend(self.provider_left.collect_entries()?);
+        Ok(entries)
+    }
 }
 
-impl<L: TarAppender, R: TarAppender> TarAppender for ChainAppender<L, R> {
-    fn append<T: Write>(&self, tar: &mut tar::Builder<T>) -> StdResult<()> {
-        self.appender_left.append(tar)?;
-        self.appender_right.append(tar)
-    }
-
-    fn compute_uncompressed_data_size(&self) -> StdResult<u64> {
-        // Size is aggregated even if the data is overwritten by the right appender because we
-        // can't know if there is an overlap or not
-        Ok(self.appender_left.compute_uncompressed_data_size()?
-            + self.appender_right.compute_uncompressed_data_size()?)
+impl<L: ArchiveEntryProvider, R: ArchiveEntryProvider> ArchiveEntryProvider
+    for ChainAppender<L, R>
+{
+    fn collect_entries(&self) -> StdResult<BTreeSet<ArchiveEntry>> {
+        self.merge_entries_with_right_precedence()
     }
 }
 
@@ -901,16 +909,14 @@ mod tests {
         }
 
         #[test]
-        fn compute_uncompressed_size_cant_discriminate_overlaps_and_return_aggregated_appenders_sizes()
-         {
+        fn compute_overlapping_uncompressed_size() {
             let overlapping_path = PathBuf::from("whatever.json");
             let left_appender =
                 AppenderData::from_json(overlapping_path.clone(), &"overwritten data").unwrap();
             let right_appender =
                 AppenderData::from_json(overlapping_path.clone(), &"final data").unwrap();
 
-            let expected_size = left_appender.compute_uncompressed_data_size().unwrap()
-                + right_appender.compute_uncompressed_data_size().unwrap();
+            let expected_size = right_appender.compute_uncompressed_data_size().unwrap();
 
             let chain_appender = left_appender.chain(right_appender);
             let size = chain_appender.compute_uncompressed_data_size().unwrap();
