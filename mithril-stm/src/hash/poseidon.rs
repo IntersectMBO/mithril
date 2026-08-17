@@ -55,9 +55,9 @@ impl FixedOutput for MidnightPoseidonDigest {
         // The data is padded during the call to the update function
         // so there should always be a multiple of 32 bytes in the buffer
         // We are taking chunks of 32 u8 so it should be fine to unwrap
-        let poseidon_input = self
-            .buffer
-            .chunks_exact(32)
+        let (chunks, _remainder) = self.buffer.as_chunks::<32>();
+        let poseidon_input = chunks
+            .iter()
             .map(|chunk| {
                 // The from_raw function performs a modular reduction so
                 // it will never fail even if the buffer value exceeds

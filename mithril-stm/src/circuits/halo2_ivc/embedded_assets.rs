@@ -46,7 +46,8 @@ use crate::signature_scheme::{SchnorrVerificationKey, StandardSchnorrSignature};
 pub(crate) fn jubjub_base_from_raw_le_bytes(bytes: &[u8]) -> NativeField {
     assert_eq!(bytes.len(), 32);
     let mut limbs = [0u64; 4];
-    for (limb, chunk) in limbs.iter_mut().zip(bytes.chunks_exact(8)) {
+    let (chunks, _remainder) = bytes.as_chunks::<8>();
+    for (limb, chunk) in limbs.iter_mut().zip(chunks) {
         let mut le_bytes = [0u8; 8];
         le_bytes.copy_from_slice(chunk);
         *limb = u64::from_le_bytes(le_bytes);
