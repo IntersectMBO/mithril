@@ -57,7 +57,7 @@ impl CardanoDbV2Command {
                     "--include-ancillary".to_string(),
                     "--allow-override".to_string(),
                     "--download-dir".to_string(),
-                    format!("v2"),
+                    "v2".to_string(),
                     hash.clone(),
                 ]
             }

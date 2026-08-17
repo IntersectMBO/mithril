@@ -109,7 +109,7 @@ pub async fn compute_mithril_stake_distribution_signatures(
             Ok(signatures)
         },
         timeout,
-        format!("Compute signatures for MithrilStakeDistribution signed entity"),
+        "Compute signatures for MithrilStakeDistribution signed entity".to_string(),
         format!("Computing signatures timeout after {timeout:?}")
     )
 }
@@ -184,7 +184,7 @@ pub async fn compute_immutable_files_signatures(
             Ok((beacon, signatures))
         },
         timeout,
-        format!("Compute signatures for CardanoImmutableFiles signed entity"),
+        "Compute signatures for CardanoImmutableFiles signed entity".to_string(),
         format!("Computing signatures timeout after {timeout:?}")
     )
 }
