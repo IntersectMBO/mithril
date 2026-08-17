@@ -129,7 +129,7 @@ pub async fn for_certificates(
                 .map_err(|e| anyhow!(e).context("Request first certificate failure"))
         },
         timeout,
-        format!("Waiting for certificates"),
+        "Waiting for certificates".to_string(),
         format!("Aggregator did not get a response after {timeout:?} from '{url}'")
     )
 }
@@ -153,7 +153,7 @@ pub async fn for_mithril_stake_distribution_artifacts(
             .map_err(|e| anyhow!(e).context("Request first mithril stake distribution failure"))
         },
         timeout,
-        format!("Waiting for mithril stake distribution artifacts"),
+        "Waiting for mithril stake distribution artifacts".to_string(),
         format!("Aggregator did not get a response after {timeout:?} from '{url}'")
     )
 }
@@ -174,7 +174,7 @@ pub async fn for_immutable_files_artifacts(
             .map_err(|e| anyhow!(e).context("Request first snapshot failure"))
         },
         timeout,
-        format!("Waiting for immutable files artifacts"),
+        "Waiting for immutable files artifacts".to_string(),
         format!("Aggregator did not get a response after {timeout:?} from '{url}'")
     )
 }
