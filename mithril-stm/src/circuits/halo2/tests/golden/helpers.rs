@@ -1,8 +1,6 @@
-use std::collections::HashMap;
 use std::fs::create_dir_all;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock, RwLock};
 use std::time::Instant;
 
 use anyhow::{Context, anyhow};
@@ -15,6 +13,7 @@ use midnight_zk_stdlib::MidnightCircuit;
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
+use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
 use crate::circuits::halo2::circuit::StmCertificateCircuit;
 use crate::circuits::halo2::errors::StmCircuitError;
 use crate::circuits::halo2::keys::{
@@ -25,7 +24,10 @@ use crate::circuits::halo2::witness::{
     CircuitMerkleTreeLeaf, CircuitWitnessEntry, LotteryTargetValue as CircuitLotteryTargetValue,
     MerklePath, MerkleRoot, SignedMessageWithoutPrefix,
 };
+use crate::circuits::key_provider::KeyProvider;
+use crate::circuits::test_utils::file_mutex::FileMutex;
 use crate::circuits::test_utils::setup::{generate_params, load_params};
+use crate::circuits::trusted_setup::UNSAFE_SRS_SEED;
 use crate::hash::poseidon::MidnightPoseidonDigest;
 use crate::membership_commitment::{
     MerkleTree as StmMerkleTree, MerkleTreeSnarkLeaf as StmMerkleTreeSnarkLeaf,
@@ -42,13 +44,11 @@ pub(crate) const LOTTERIES_PER_K: u32 = 10;
 /// Default message value used by golden test cases.
 const DEFAULT_TEST_MSG: u64 = 42;
 
-/// Verification/proving key pair cached per STM circuit configuration.
+/// Verification/proving key pair derived for an STM circuit configuration.
 type CircuitVerificationAndProvingKeyPair = (
     NonRecursiveCircuitVerifyingKey,
     NonRecursiveCircuitProvingKey,
 );
-/// Cache map for verification/proving keys keyed by STM circuit configuration.
-type CircuitKeysCache = HashMap<StmCircuitConfig, Arc<CircuitVerificationAndProvingKeyPair>>;
 
 fn checked_len_u32(actual: usize) -> u32 {
     u32::try_from(actual).unwrap_or(u32::MAX)
@@ -91,15 +91,6 @@ fn validate_relation_for_setup(relation: &StmCertificateCircuit) -> StmResult<()
     relation
         .validate_parameters()
         .with_context(|| "Circuit parameter validation failed before setup")
-}
-
-/// Cache key derived from the STM circuit configuration.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct StmCircuitConfig {
-    circuit_degree: u32,
-    k: u32,
-    m: u32,
-    merkle_tree_depth: u32,
 }
 
 /// Shared environment for STM circuit golden cases (SRS, relation, keys, sizing).
@@ -553,20 +544,13 @@ pub(crate) fn setup_stm_circuit_env(
         println!("{:?}", zk::cost_model(&relation, None));
     }
 
-    let config = StmCircuitConfig {
-        circuit_degree,
-        k,
-        m,
-        merkle_tree_depth: depth,
-    };
-    let key_pair = get_or_build_circuit_keys(config, &relation, &srs)?;
-    let (vk, pk) = (&key_pair.0, &key_pair.1);
+    let (vk, pk) = get_or_build_circuit_keys(&stm_params, depth, circuit_degree, &relation, &srs)?;
 
     Ok(StmCircuitEnv {
         srs,
         relation,
-        vk: vk.clone(),
-        pk: pk.clone(),
+        vk,
+        pk,
         num_signers,
         m,
     })
@@ -650,7 +634,11 @@ pub(crate) fn run_stm_circuit_case(
 fn load_or_generate_params(circuit_degree: u32) -> StmResult<ParamsKZG<Bls12>> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let assets_dir = manifest_dir.join("src").join("circuits").join("halo2").join("assets");
-    let path = assets_dir.join(format!("params_kzg_unsafe_{}", circuit_degree));
+    // The seed belongs in the name: a file identified only by degree would be reused after a seed
+    // change, pairing an old-seed SRS with keys cached under the new seed.
+    let path = assets_dir.join(format!(
+        "params_kzg_unsafe_degree_{circuit_degree}_seed_{UNSAFE_SRS_SEED}"
+    ));
 
     if path.exists() {
         return Ok(load_params(
@@ -674,48 +662,76 @@ fn load_or_generate_params(circuit_degree: u32) -> StmResult<ParamsKZG<Bls12>> {
     ))
 }
 
-/// Get cached verification/proving keys or build and insert them if missing.
+/// Content-keyed cache entry holding the certificate keys derived from these inputs.
+///
+/// Every input that changes the derived keys is a parameter, so the address is a pure function of
+/// them and a test can vary each one: the committed production verifying key as a circuit-version
+/// salt, the protocol parameters, the Merkle-tree depth, the circuit degree, and the seed pinning
+/// the unsafe SRS. Distinct configurations therefore never share a directory, which is what lets
+/// [`KeyProvider`] be built with no expected verifying key.
+fn certificate_golden_key_cache(
+    production_verifying_key: &[u8],
+    parameters: &Parameters,
+    merkle_tree_depth: u32,
+    circuit_degree: u32,
+    unsafe_srs_seed: u64,
+) -> StmResult<FileMutex> {
+    Ok(FileMutex::for_shared_cache(
+        "certificate-golden-keys",
+        &[
+            production_verifying_key,
+            &parameters.to_bytes()?,
+            &merkle_tree_depth.to_le_bytes(),
+            &circuit_degree.to_le_bytes(),
+            &unsafe_srs_seed.to_le_bytes(),
+        ],
+    ))
+}
+
+/// Loads the verification/proving key pair for this configuration from the on-disk cache, deriving
+/// and storing it on a miss.
+///
+/// The cache is shared across processes, unlike the in-process map this replaced, which amortized
+/// nothing under the nextest process-per-test model. The lock is taken before the lookup so that
+/// parallel processes racing a cold miss derive the pair once rather than once each — `KeyProvider`
+/// does not serialize its writers.
 fn get_or_build_circuit_keys(
-    config: StmCircuitConfig,
+    parameters: &Parameters,
+    merkle_tree_depth: u32,
+    circuit_degree: u32,
     relation: &StmCertificateCircuit,
     srs: &ParamsKZG<Bls12>,
-) -> StmResult<Arc<CircuitVerificationAndProvingKeyPair>> {
-    static STM_CIRCUIT_KEYS_CACHE: LazyLock<RwLock<CircuitKeysCache>> =
-        LazyLock::new(|| RwLock::new(HashMap::new()));
-    if let Some(key_pair) = STM_CIRCUIT_KEYS_CACHE
-        .read()
-        .map_err(|_| anyhow!(StmCircuitError::CircuitKeysCacheLockPoisoned { operation: "read" }))?
-        .get(&config)
-        .cloned()
-    {
-        return Ok(key_pair);
-    }
+) -> StmResult<CircuitVerificationAndProvingKeyPair> {
+    let key_cache = certificate_golden_key_cache(
+        NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        parameters,
+        merkle_tree_depth,
+        circuit_degree,
+        UNSAFE_SRS_SEED,
+    )?;
+    let key_provider = KeyProvider::new(
+        key_cache.directory().to_path_buf(),
+        "non-recursive",
+        &[],
+        relation.clone(),
+    );
+    let _key_cache_lock = key_cache.lock()?;
 
     let start = Instant::now();
-    let (vk, pk) = panic::catch_unwind(AssertUnwindSafe(|| {
-        let vk = zk::setup_vk(srs, relation);
-        let pk = zk::setup_pk(relation, &vk);
-        (vk, pk)
-    }))
-    .map_err(|panic_payload| {
-        let details = panic_payload
-            .downcast_ref::<&str>()
-            .map(|message| (*message).to_owned())
-            .or_else(|| panic_payload.downcast_ref::<String>().cloned())
-            .unwrap_or_else(|| "non-string panic payload".to_string());
-        anyhow!("Midnight setup panicked before proving: {details}")
-    })?;
-    let duration = start.elapsed();
-    println!("\nvk pk generation took: {:?}", duration);
+    // Midnight's setup panics rather than returning an error on some malformed relations; keep
+    // converting that into a test failure with the payload attached.
+    let key_pair = panic::catch_unwind(AssertUnwindSafe(|| key_provider.key_pair(srs))).map_err(
+        |panic_payload| {
+            let details = panic_payload
+                .downcast_ref::<&str>()
+                .map(|message| (*message).to_owned())
+                .or_else(|| panic_payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "non-string panic payload".to_string());
+            anyhow!("Midnight setup panicked before proving: {details}")
+        },
+    )??;
+    println!("\nvk pk load or generation took: {:?}", start.elapsed());
 
-    let key_pair = Arc::new((
-        NonRecursiveCircuitVerifyingKey::new(vk),
-        NonRecursiveCircuitProvingKey::new(pk),
-    ));
-    STM_CIRCUIT_KEYS_CACHE
-        .write()
-        .map_err(|_| anyhow!(StmCircuitError::CircuitKeysCacheLockPoisoned { operation: "write" }))?
-        .insert(config, key_pair.clone());
     Ok(key_pair)
 }
 
@@ -737,4 +753,143 @@ pub(crate) fn compute_unsafe_circuit_verification_key(
         .write(&mut buf_cvk, SerdeFormat::RawBytes)
         .unwrap();
     buf_cvk
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BASELINE_PRODUCTION_KEY: &[u8] = b"production-verifying-key";
+    const BASELINE_DEPTH: u32 = 12;
+    const BASELINE_DEGREE: u32 = 13;
+    const BASELINE_SEED: u64 = 42;
+
+    fn parameters(k: u64, m: u64, phi_f: f64) -> Parameters {
+        Parameters { k, m, phi_f }
+    }
+
+    fn baseline_parameters() -> Parameters {
+        parameters(3, 30, 0.2)
+    }
+
+    fn cache_directory(
+        production_verifying_key: &[u8],
+        parameters: &Parameters,
+        merkle_tree_depth: u32,
+        circuit_degree: u32,
+        unsafe_srs_seed: u64,
+    ) -> PathBuf {
+        certificate_golden_key_cache(
+            production_verifying_key,
+            parameters,
+            merkle_tree_depth,
+            circuit_degree,
+            unsafe_srs_seed,
+        )
+        .expect("the cache entry should resolve")
+        .directory()
+        .to_path_buf()
+    }
+
+    fn baseline_cache_directory() -> PathBuf {
+        cache_directory(
+            BASELINE_PRODUCTION_KEY,
+            &baseline_parameters(),
+            BASELINE_DEPTH,
+            BASELINE_DEGREE,
+            BASELINE_SEED,
+        )
+    }
+
+    /// Exercises the production cache address with every input varied in turn, so dropping any input
+    /// from [`certificate_golden_key_cache`] makes this fail rather than silently sharing an entry.
+    #[test]
+    fn every_input_changes_the_cache_address() {
+        let baseline = baseline_cache_directory();
+
+        let variations = [
+            (
+                "production verifying key",
+                cache_directory(
+                    b"a-different-production-verifying-key",
+                    &baseline_parameters(),
+                    BASELINE_DEPTH,
+                    BASELINE_DEGREE,
+                    BASELINE_SEED,
+                ),
+            ),
+            (
+                "quorum size",
+                cache_directory(
+                    BASELINE_PRODUCTION_KEY,
+                    &parameters(4, 30, 0.2),
+                    BASELINE_DEPTH,
+                    BASELINE_DEGREE,
+                    BASELINE_SEED,
+                ),
+            ),
+            (
+                "lottery count",
+                cache_directory(
+                    BASELINE_PRODUCTION_KEY,
+                    &parameters(3, 40, 0.2),
+                    BASELINE_DEPTH,
+                    BASELINE_DEGREE,
+                    BASELINE_SEED,
+                ),
+            ),
+            (
+                "phi_f",
+                cache_directory(
+                    BASELINE_PRODUCTION_KEY,
+                    &parameters(3, 30, 0.3),
+                    BASELINE_DEPTH,
+                    BASELINE_DEGREE,
+                    BASELINE_SEED,
+                ),
+            ),
+            (
+                "merkle tree depth",
+                cache_directory(
+                    BASELINE_PRODUCTION_KEY,
+                    &baseline_parameters(),
+                    BASELINE_DEPTH + 1,
+                    BASELINE_DEGREE,
+                    BASELINE_SEED,
+                ),
+            ),
+            (
+                "circuit degree",
+                cache_directory(
+                    BASELINE_PRODUCTION_KEY,
+                    &baseline_parameters(),
+                    BASELINE_DEPTH,
+                    BASELINE_DEGREE + 1,
+                    BASELINE_SEED,
+                ),
+            ),
+            (
+                "unsafe srs seed",
+                cache_directory(
+                    BASELINE_PRODUCTION_KEY,
+                    &baseline_parameters(),
+                    BASELINE_DEPTH,
+                    BASELINE_DEGREE,
+                    BASELINE_SEED + 1,
+                ),
+            ),
+        ];
+
+        for (label, directory) in variations {
+            assert_ne!(
+                baseline, directory,
+                "a change of {label} must resolve to a different cache entry"
+            );
+        }
+    }
+
+    #[test]
+    fn the_same_configuration_resolves_to_the_same_cache_address() {
+        assert_eq!(baseline_cache_directory(), baseline_cache_directory());
+    }
 }
