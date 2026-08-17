@@ -166,11 +166,13 @@ impl FakeAggregatorRoutesState {
     }
 }
 
-fn internal_server_error(err: StdError) -> Response {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(err.to_string())).into_response()
+fn internal_server_error(err: StdError) -> (StatusCode, Json<String>) {
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(err.to_string()))
 }
 
-async fn epoch_settings(state: State<FakeAggregatorRoutesState>) -> Result<Response, Response> {
+async fn epoch_settings(
+    state: State<FakeAggregatorRoutesState>,
+) -> Result<Response, (StatusCode, Json<String>)> {
     slog::debug!(state.logger, "/epoch-settings");
 
     if state.store.read().await.withhold_epoch_settings {
