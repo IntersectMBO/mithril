@@ -15,9 +15,10 @@ use crate::circuits::halo2_ivc::tests::common::{
         load_embedded_recursive_chain_state_asset, load_embedded_verification_context_asset,
     },
     generators::{
-        GENESIS_EPOCH, build_asset_generation_setup, build_genesis_base_case_next_state,
-        build_genesis_base_case_witness, build_genesis_protocol_message_preimage,
-        next_message_and_preimage_for_step, next_state_for_step,
+        GENESIS_EPOCH, build_asset_generation_setup, build_asset_generation_setup_from_cache,
+        build_genesis_base_case_next_state, build_genesis_base_case_witness,
+        build_genesis_protocol_message_preimage, next_message_and_preimage_for_step,
+        next_state_for_step,
     },
     helpers::{
         assert_recursive_mock_prover_accepts_with_label, build_mock_prover_public_inputs,
@@ -102,7 +103,8 @@ fn recursive_step_output_asset_proof_and_accumulator_are_valid() {
 fn genesis_benchmark_fixture_is_deterministic_and_valid() {
     // Guards the additive genesis benchmark fixture: the committed bytes must match the
     // deterministic generator output, be internally consistent, and carry a valid genesis
-    // signature. Fails loudly if the committed `.bin` drifts from `build_asset_generation_setup`.
+    // signature. Fails loudly if the committed `.bin` drifts from the deterministic generator.
+    // Builds fresh on purpose: a drift guard must not read the fixture cache it is guarding.
     let setup = build_asset_generation_setup();
     let fixture =
         load_embedded_genesis_benchmark_fixture().expect("genesis benchmark fixture should load");
@@ -151,7 +153,7 @@ mod slow {
         // `recursive_chain_state_asset_proof_and_accumulator_are_valid` and
         // `recursive_step_output_asset_proof_and_accumulator_are_valid` above — a valid
         // full proof implies all constraints held when the proof was generated.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
         let ivc_circuit_data = build_trivial_mock_prover_circuit(
@@ -173,7 +175,7 @@ mod slow {
         // committed recursive_step_output asset matches an independent recomputation
         // of the next state and folded accumulator, confirming the generator is
         // deterministic and self-consistent.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_recursive_mock_prover_setup(&setup);
         let recursive_chain_state = load_embedded_recursive_chain_state_asset()
             .expect("recursive chain state asset should load");

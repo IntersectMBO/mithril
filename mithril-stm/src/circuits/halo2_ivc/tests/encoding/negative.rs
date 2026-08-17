@@ -14,8 +14,8 @@ use crate::circuits::halo2_ivc::{
             load_embedded_next_epoch_step_output_asset, load_embedded_verification_context_asset,
         },
         generators::{
-            GENESIS_EPOCH, build_asset_generation_setup, build_genesis_base_case_next_state,
-            build_genesis_base_case_witness,
+            GENESIS_EPOCH, build_asset_generation_setup_from_cache,
+            build_genesis_base_case_next_state, build_genesis_base_case_witness,
         },
         helpers::{
             assert_recursive_mock_prover_rejects_with_label, build_mock_prover_public_inputs,
@@ -198,7 +198,7 @@ mod slow {
     fn circuit_rejects_wrong_next_merkle_tree_commitment_byte_range() {
         // MockProver constraint check: filling PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES with 0xff
         // must violate the in-circuit byte-extraction constraint for that preimage region.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
         let public_inputs = build_mock_prover_public_inputs(&mock_prover_setup, &next_state);
@@ -219,7 +219,7 @@ mod slow {
     fn circuit_rejects_wrong_next_protocol_parameters_byte_range() {
         // MockProver constraint check: filling PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES with 0xff
         // must violate the in-circuit byte-extraction constraint for that preimage region.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
         let public_inputs = build_mock_prover_public_inputs(&mock_prover_setup, &next_state);
@@ -239,7 +239,7 @@ mod slow {
     fn circuit_rejects_wrong_current_epoch_byte_range() {
         // MockProver constraint check: filling PREIMAGE_CURRENT_EPOCH_BYTES with 0xff
         // must violate the in-circuit byte-extraction constraint for that preimage region.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
         let public_inputs = build_mock_prover_public_inputs(&mock_prover_setup, &next_state);

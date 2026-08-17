@@ -7,7 +7,8 @@ use crate::circuits::halo2_ivc::{
             load_embedded_next_epoch_step_output_asset, load_embedded_recursive_chain_state_asset,
         },
         generators::{
-            build_asset_generation_setup, next_message_and_preimage_for_step, next_state_for_step,
+            build_asset_generation_setup_from_cache, next_message_and_preimage_for_step,
+            next_state_for_step,
         },
         helpers::{
             assert_recursive_mock_prover_rejects_with_label, build_mock_prover_public_inputs,
@@ -104,7 +105,7 @@ mod slow {
     fn circuit_rejects_protocol_parameters_non_advance_in_next_epoch_step() {
         // MockProver constraint check: in a next-epoch transition the circuit must advance
         // protocol_parameters to prev_state.next_protocol_parameters. Setting it to ONE violates that.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let prev_state = load_embedded_recursive_chain_state_asset()
             .expect("recursive chain state asset should load")
@@ -136,7 +137,7 @@ mod slow {
     fn circuit_rejects_merkle_tree_commitment_non_advance_in_next_epoch_step() {
         // MockProver constraint check: in a next-epoch transition the circuit must advance
         // merkle_tree_commitment to prev_state.next_merkle_tree_commitment. Setting it to ONE violates that.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let prev_state = load_embedded_recursive_chain_state_asset()
             .expect("recursive chain state asset should load")
@@ -168,7 +169,7 @@ mod slow {
     fn circuit_rejects_epoch_non_increment_in_next_epoch_step() {
         // MockProver constraint check: in a next-epoch transition the circuit must increment
         // current_epoch by exactly one. Decrementing it violates that constraint.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let prev_state = load_embedded_recursive_chain_state_asset()
             .expect("recursive chain state asset should load")

@@ -502,7 +502,7 @@ mod tests {
                     load_embedded_recursive_chain_state_asset,
                     load_embedded_verification_context_asset,
                 },
-                generators::{build_asset_generation_setup, build_recursive_global},
+                generators::{build_asset_generation_setup_from_cache, build_recursive_global},
             },
             types::{IvcProofBytes, MessageHash},
         },
@@ -529,7 +529,7 @@ mod tests {
     fn build_proof_verifier_context() -> (Global, IvcVerifierSetup) {
         let ctx = load_embedded_verification_context_asset()
             .expect("verification context asset should load");
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let global = build_recursive_global(
             &setup,
             &ctx.certificate_verifying_key,
@@ -553,7 +553,7 @@ mod tests {
         let step_output = load_embedded_next_epoch_step_output_asset()
             .expect("recursive step output asset should load");
 
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let global = build_recursive_global(
             &setup,
             &verification_context.certificate_verifying_key,
@@ -648,7 +648,7 @@ mod tests {
         let mut wrong_msg = STEP_OUTPUT_MSG;
         wrong_msg[0] ^= 0xff;
 
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let global = build_recursive_global(
             &setup,
             &verification_context.certificate_verifying_key,
@@ -845,7 +845,7 @@ mod tests {
             .expect("verification context asset should load");
         let step_output = load_embedded_next_epoch_step_output_asset()
             .expect("recursive step output asset should load");
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let global = build_recursive_global(
             &setup,
             &ctx.certificate_verifying_key,
@@ -1000,8 +1000,8 @@ mod tests {
                             load_embedded_verification_context_asset,
                         },
                         generators::{
-                            build_asset_generation_setup, build_genesis_protocol_message_preimage,
-                            build_recursive_global,
+                            build_asset_generation_setup_from_cache,
+                            build_genesis_protocol_message_preimage, build_recursive_global,
                             setup::{AssetGenerationSetup, QUORUM_SIZE, SIGNER_COUNT, TOTAL_STAKE},
                         },
                     },
@@ -1463,7 +1463,7 @@ mod tests {
 
             let verification_context = load_embedded_verification_context_asset()
                 .expect("verification context asset should load");
-            let asset_setup = build_asset_generation_setup();
+            let asset_setup = build_asset_generation_setup_from_cache();
 
             assert_eq!(
                 verification_context
