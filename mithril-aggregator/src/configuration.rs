@@ -130,6 +130,18 @@ pub trait ConfigurationSource {
         panic!("snapshot_use_cdn_domain is not implemented.");
     }
 
+    /// URL of a Kubo IPFS RPC API, setting this will enable IPFS upload for immutable snapshots
+    fn ipfs_rpc_url(&self) -> Option<String> {
+        panic!("ipfs_rpc_url is not implemented.");
+    }
+
+    /// Parsed URL of a Kubo IPFS RPC API (see [ipfs_rpc_url][ConfigurationSource::ipfs_rpc_url])
+    fn get_ipfs_rpc_url(&self) -> StdResult<Option<SanitizedUrlWithTrailingSlash>> {
+        self.ipfs_rpc_url()
+            .map(|url| SanitizedUrlWithTrailingSlash::parse(&url))
+            .transpose()
+    }
+
     /// Server listening IP
     fn server_ip(&self) -> String {
         panic!("server_ip is not implemented.");
@@ -534,6 +546,9 @@ pub struct ServeCommandConfiguration {
     /// Use CDN domain to construct snapshot urls if snapshot_uploader_type is Gcp
     pub snapshot_use_cdn_domain: bool,
 
+    /// URL of a Kubo IPFS RPC API, setting this will enable IPFS upload for immutable snapshots
+    pub ipfs_rpc_url: Option<String>,
+
     /// Server listening IP
     pub server_ip: String,
 
@@ -824,6 +839,7 @@ impl ServeCommandConfiguration {
             snapshot_uploader_type: SnapshotUploaderType::Local,
             snapshot_bucket_name: None,
             snapshot_use_cdn_domain: false,
+            ipfs_rpc_url: None,
             server_ip: "0.0.0.0".to_string(),
             server_port: 8000,
             public_server_url: None,
@@ -941,6 +957,10 @@ impl ConfigurationSource for ServeCommandConfiguration {
 
     fn snapshot_use_cdn_domain(&self) -> bool {
         self.snapshot_use_cdn_domain
+    }
+
+    fn ipfs_rpc_url(&self) -> Option<String> {
+        self.ipfs_rpc_url.clone()
     }
 
     fn server_ip(&self) -> String {
@@ -1462,6 +1482,19 @@ mod test {
         };
 
         assert!(!config.allow_http_serve_directory());
+    }
+
+    #[test]
+    fn get_ipfs_rpc_url_return_sanitized_public_url_if_it_is_set() {
+        let config = ServeCommandConfiguration {
+            ipfs_rpc_url: Some("https://example.com:8080/".to_string()),
+            ..ServeCommandConfiguration::new_sample(temp_dir!())
+        };
+
+        assert_eq!(
+            config.get_ipfs_rpc_url().unwrap().unwrap().as_str(),
+            "https://example.com:8080/"
+        );
     }
 
     #[test]
