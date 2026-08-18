@@ -441,34 +441,6 @@ mod tests {
         }
 
         #[test]
-        fn valid_proof_verifies() {
-            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-            let params = Parameters {
-                m: 200,
-                k: 3,
-                phi_f: 0.8,
-            };
-            let nparties = 10;
-            let message = [1u8; 32];
-            let (signers, clerk) = setup_signers_and_clerk(params, nparties, &mut rng);
-            let signatures = collect_signatures(&signers, &message);
-            let avk = clerk.compute_aggregate_verification_key_for_snark();
-            let mut prover = create_prover(params, [0u8; 32]);
-
-            let snark_proof = prover
-                .aggregate_signatures::<D>(&clerk, &signatures, &message)
-                .unwrap();
-            let result = snark_proof.verify(
-                message.as_slice(),
-                &avk,
-                &snark_verifier_data(&prover),
-                &prover.verifier_params(),
-            );
-
-            assert!(result.is_ok());
-        }
-
-        #[test]
         fn different_parameters_prove_and_verify_fails() {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
             let params = Parameters {
@@ -504,142 +476,6 @@ mod tests {
             );
 
             assert!(result.is_err());
-        }
-
-        #[test]
-        fn verify_fails_with_random_bytes_or_wrong_number_bytes() {
-            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-            let params = Parameters {
-                m: 200,
-                k: 3,
-                phi_f: 0.8,
-            };
-            let nparties = 10;
-            let message = [1u8; 32];
-            let (signers, clerk) = setup_signers_and_clerk(params, nparties, &mut rng);
-            let signatures = collect_signatures(&signers, &message);
-            let avk: AggregateVerificationKeyForSnark<MithrilMembershipDigest> =
-                clerk.compute_aggregate_verification_key_for_snark();
-            let mut prover = create_prover(params, [0u8; 32]);
-            let snark_proof = prover
-                .aggregate_signatures::<D>(&clerk, &signatures, &message)
-                .unwrap();
-
-            let mut random_bytes = vec![0u8; snark_proof.circuit_proof.len()];
-            rng.fill_bytes(&mut random_bytes);
-            let random_proof = SnarkProof::new(random_bytes, params, MERKLE_TREE_DEPTH_FOR_SNARK);
-            let result = random_proof.verify(
-                message.as_slice(),
-                &avk,
-                &snark_verifier_data(&prover),
-                &prover.verifier_params(),
-            );
-
-            assert!(result.is_err(), "Verification of random proof should fail");
-
-            let not_enough_bytes =
-                &snark_proof.circuit_proof[0..snark_proof.circuit_proof.len() - 1];
-            let small_proof = SnarkProof::new(
-                not_enough_bytes.to_vec(),
-                params,
-                MERKLE_TREE_DEPTH_FOR_SNARK,
-            );
-            assert!(
-                small_proof
-                    .verify(
-                        message.as_slice(),
-                        &avk,
-                        &snark_verifier_data(&prover),
-                        &prover.verifier_params(),
-                    )
-                    .is_err(),
-                "Verification of small proof should fail"
-            );
-
-            let mut too_many_bytes = snark_proof.circuit_proof.to_vec();
-            too_many_bytes.push(0u8);
-            let large_proof = SnarkProof::new(too_many_bytes, params, MERKLE_TREE_DEPTH_FOR_SNARK);
-            assert!(
-                large_proof
-                    .verify(
-                        message.as_slice(),
-                        &avk,
-                        &snark_verifier_data(&prover),
-                        &prover.verifier_params(),
-                    )
-                    .is_err(),
-                "Verification of large proof should fail"
-            );
-        }
-
-        #[test]
-        fn verify_fails_with_wrong_message() {
-            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-            let params = Parameters {
-                m: 100,
-                k: 5,
-                phi_f: 0.8,
-            };
-            let nparties = 10;
-            let message = [1u8; 32];
-            let wrong_message = [2u8; 32];
-            let (signers, clerk) = setup_signers_and_clerk(params, nparties, &mut rng);
-            let signatures = collect_signatures(&signers, &message);
-            let avk = clerk.compute_aggregate_verification_key_for_snark();
-            let mut prover = create_prover(params, [0u8; 32]);
-
-            let snark_proof = prover
-                .aggregate_signatures::<D>(&clerk, &signatures, &message)
-                .unwrap();
-            let result = snark_proof.verify(
-                wrong_message.as_slice(),
-                &avk,
-                &snark_verifier_data(&prover),
-                &prover.verifier_params(),
-            );
-
-            assert!(result.is_err());
-        }
-
-        #[test]
-        fn verify_fails_with_wrong_circuit_verification_key() {
-            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-            let params = Parameters {
-                m: 200,
-                k: 3,
-                phi_f: 0.8,
-            };
-            // Different parameters yield a different circuit and therefore a different verifying key.
-            let other_params = Parameters {
-                m: 100,
-                k: 5,
-                phi_f: 0.8,
-            };
-            let nparties = 10;
-            let message = [1u8; 32];
-            let (signers, clerk) = setup_signers_and_clerk(params, nparties, &mut rng);
-            let signatures = collect_signatures(&signers, &message);
-            let avk = clerk.compute_aggregate_verification_key_for_snark();
-            let mut prover = create_prover(params, [0u8; 32]);
-
-            let snark_proof = prover
-                .aggregate_signatures::<D>(&clerk, &signatures, &message)
-                .unwrap();
-
-            // Verifying a valid proof against a verifying key derived for other parameters must
-            // fail: the ancillary verifier data's key genuinely gates verification.
-            let wrong_prover = create_prover(other_params, [0u8; 32]);
-            let result = snark_proof.verify(
-                message.as_slice(),
-                &avk,
-                &snark_verifier_data(&wrong_prover),
-                &prover.verifier_params(),
-            );
-
-            assert!(
-                result.is_err(),
-                "verification with a wrong circuit verification key must fail"
-            );
         }
 
         #[test]
@@ -839,6 +675,11 @@ mod tests {
             use super::*;
             use crate::{
                 AggregateSignature, AggregateVerificationKey, AncillaryVerifierData, Clerk,
+                circuits::halo2::{
+                    NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                    keys::NonRecursiveCircuitVerifyingKey,
+                },
+                codec::TryFromBytes,
                 proof_system::SnarkVerifierSetup,
             };
 
@@ -928,6 +769,107 @@ mod tests {
                             &verifier_setup.verifier_params,
                         )
                         .is_ok()
+                );
+            }
+
+            #[test]
+            fn verify_fails_with_random_bytes_or_wrong_number_bytes() {
+                let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+                let (avk, message) = golden_snark_aggregate_verification_key_and_message();
+                let verifier_setup = SnarkVerifierSetup::try_new().unwrap();
+                let golden = golden_proof();
+
+                let mut random_bytes = vec![0u8; golden.circuit_proof.len()];
+                rng.fill_bytes(&mut random_bytes);
+                let random_proof =
+                    SnarkProof::new(random_bytes, golden.params, golden.merkle_tree_depth);
+                assert!(
+                    random_proof
+                        .verify(
+                            &message,
+                            &avk,
+                            &golden_snark_verifier_data(),
+                            &verifier_setup.verifier_params,
+                        )
+                        .is_err(),
+                    "Verification of random proof should fail"
+                );
+
+                let not_enough_bytes = &golden.circuit_proof[0..golden.circuit_proof.len() - 1];
+                let small_proof = SnarkProof::new(
+                    not_enough_bytes.to_vec(),
+                    golden.params,
+                    golden.merkle_tree_depth,
+                );
+                assert!(
+                    small_proof
+                        .verify(
+                            &message,
+                            &avk,
+                            &golden_snark_verifier_data(),
+                            &verifier_setup.verifier_params,
+                        )
+                        .is_err(),
+                    "Verification of small proof should fail"
+                );
+
+                let mut too_many_bytes = golden.circuit_proof.to_vec();
+                too_many_bytes.push(0u8);
+                let large_proof =
+                    SnarkProof::new(too_many_bytes, golden.params, golden.merkle_tree_depth);
+                assert!(
+                    large_proof
+                        .verify(
+                            &message,
+                            &avk,
+                            &golden_snark_verifier_data(),
+                            &verifier_setup.verifier_params,
+                        )
+                        .is_err(),
+                    "Verification of large proof should fail"
+                );
+            }
+
+            #[test]
+            fn verify_fails_with_wrong_message() {
+                let (avk, message) = golden_snark_aggregate_verification_key_and_message();
+                let wrong_message = [2u8; 32];
+                assert_ne!(message, wrong_message);
+                let verifier_setup = SnarkVerifierSetup::try_new().unwrap();
+
+                assert!(
+                    golden_proof()
+                        .verify(
+                            &wrong_message,
+                            &avk,
+                            &golden_snark_verifier_data(),
+                            &verifier_setup.verifier_params,
+                        )
+                        .is_err()
+                );
+            }
+
+            #[test]
+            fn verify_fails_with_wrong_circuit_verification_key() {
+                let (avk, message) = golden_snark_aggregate_verification_key_and_message();
+                let verifier_setup = SnarkVerifierSetup::try_new().unwrap();
+                // The production key is derived for a different circuit configuration, so it
+                // genuinely gates verification of a proof produced by the test configuration.
+                let production_verification_key = NonRecursiveCircuitVerifyingKey::try_from_bytes(
+                    NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                )
+                .expect("the embedded production verifying key should deserialize");
+
+                assert!(
+                    golden_proof()
+                        .verify(
+                            &message,
+                            &avk,
+                            &SnarkVerifierData::new(production_verification_key),
+                            &verifier_setup.verifier_params,
+                        )
+                        .is_err(),
+                    "verification with a wrong circuit verification key must fail"
                 );
             }
 
