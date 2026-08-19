@@ -1,6 +1,7 @@
 mod certificates_hash_migrator;
 mod era;
 mod genesis;
+pub mod kubo_rpc_client;
 mod protocol_configuration;
 pub mod signer_importer;
 mod single_signature_authenticator;
