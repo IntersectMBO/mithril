@@ -35,6 +35,11 @@ impl SanitizedUrlWithTrailingSlash {
         let url = Url::parse(input).with_context(|| format!("Could not parse URL `{input}`"))?;
         sanitize_url_path(&url)
     }
+
+    /// Consumes this [SanitizedUrlWithTrailingSlash] and returns the underlying [Url]
+    pub fn into_url(self) -> Url {
+        self.internal_url
+    }
 }
 
 impl PartialEq<Url> for SanitizedUrlWithTrailingSlash {
