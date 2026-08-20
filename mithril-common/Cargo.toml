@@ -46,14 +46,16 @@ blake2 = "0.10.6"
 chrono = { workspace = true }
 ciborium = { workspace = true }
 digest = { workspace = true }
-ed25519-dalek = { version = "2.2.0", features = ["rand_core", "serde"] }
+ed25519-dalek = { version = "3.0.0", features = ["rand_core", "serde"] }
 fixed = "1.31.0"
+getrandom = { version = "0.4", features = ["sys_rng"] }
 hex = { workspace = true }
 kes-summed-ed25519 = { version = "0.2.1", features = ["serde_enabled", "sk_clone_enabled"] }
 mithril-merkle-tree = { path = "../internal/mithril-merkle-tree", version = "0.1.4" }
 mithril-stm = { path = "../mithril-stm", version = "0.12.7", default-features = false }
 nom = "8.0.0"
 rand_chacha = { workspace = true }
+rand_chacha_ed25519 = { package = "rand_chacha", version = "0.10.0" }
 rand_core = { workspace = true }
 rayon = { workspace = true }
 semver = { workspace = true }
