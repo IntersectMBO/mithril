@@ -17,7 +17,8 @@ use crate::utils::{MithrilCommand, NodeVersion};
 use crate::{
     ANCILLARY_MANIFEST_SECRET_KEY, AggregateSignatureType, DEVNET_DMQ_MAGIC_ID, DEVNET_MAGIC_ID,
     DmqNodeFlavor, ERA_MARKERS_SECRET_KEY, ERA_MARKERS_VERIFICATION_KEY, FullNode,
-    GENESIS_SECRET_KEY, GENESIS_VERIFICATION_KEY, RetryableDevnetError,
+    GENESIS_SECRET_KEY, GENESIS_VERIFICATION_KEY, PROTOCOL_CONFIGURATION_MARKERS_SECRET_KEY,
+    PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY, ProtocolConfiguration, RetryableDevnetError,
 };
 
 #[derive(Debug)]
@@ -36,6 +37,9 @@ pub struct AggregatorConfig<'a> {
     pub mithril_era: &'a str,
     pub mithril_era_reader_adapter: &'a str,
     pub mithril_era_marker_address: &'a str,
+    pub protocol_configuration_reader_adapter: &'a str,
+    pub protocol_configuration_marker_address: &'a str,
+    pub startup_protocol_configuration: &'a ProtocolConfiguration,
     pub signed_entity_types: &'a [String],
     pub aggregate_signature_type: AggregateSignatureType,
     pub chain_observer_type: &'a str,
@@ -77,6 +81,16 @@ impl Aggregator {
                     r#"{{"markers": [{{"name": "{}", "epoch": 0}}]}}"#,
                     aggregator_config.mithril_era
                 )
+            };
+        let protocol_configuration_reader_adapter_config =
+            if aggregator_config.protocol_configuration_reader_adapter == "cardano-chain" {
+                format!(
+                    r#"{{"type": "cardano-chain", "address": "{}", "verification_key": "{}"}}"#,
+                    aggregator_config.protocol_configuration_marker_address,
+                    PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY
+                )
+            } else {
+                r#"{{"type": "fake"}}"#.to_string()
             };
         let ancillary_files_signer_config =
             format!(r#"{{"type": "secret-key", "secret_key": "{ANCILLARY_MANIFEST_SECRET_KEY}"}}"#);
@@ -123,22 +137,16 @@ impl Aggregator {
                 &ancillary_files_signer_config,
             ),
             ("ERA_READER_ADAPTER_PARAMS", &era_reader_adapter_params),
+            (
+                "PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG",
+                &protocol_configuration_reader_adapter_config,
+            ),
             ("SIGNED_ENTITY_TYPES", &signed_entity_types),
             ("AGGREGATE_SIGNATURE_TYPE", &aggregate_signature_type),
             ("CARDANO_NODE_VERSION", &cardano_node_version),
             ("CHAIN_OBSERVER_TYPE", aggregator_config.chain_observer_type),
-            (
-                "CARDANO_BLOCKS_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER",
-                "1",
-            ),
-            ("CARDANO_BLOCKS_TRANSACTIONS_SIGNING_CONFIG__STEP", "15"),
             ("CARDANO_TRANSACTIONS_PROVER_CACHE_POOL_SIZE", "5"),
             ("CARDANO_TRANSACTIONS_DATABASE_CONNECTION_POOL_SIZE", "5"),
-            (
-                "CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER",
-                "1",
-            ),
-            ("CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP", "15"),
             (
                 "CARDANO_TRANSACTIONS_BLOCK_STREAMER_THROTTLING_INTERVAL",
                 "30",
@@ -147,6 +155,28 @@ impl Aggregator {
             ("CUSTOM_ORIGIN_TAG_WHITE_LIST", "E2E"),
             ("SIGNATURE_PROCESSOR_WAIT_DELAY_ON_ERROR_MS", "100"),
         ]);
+
+        //TODO: populate thoses env variable from config
+        let is_reading_protocol_configuration_on_chain = true;
+        if !is_reading_protocol_configuration_on_chain {
+            if aggregator_config
+                .startup_protocol_configuration
+                .cardano_blocks_transactions_signing_config
+                .is_some()
+            {
+                env.insert(
+                    "CARDANO_BLOCKS_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER",
+                    "1",
+                );
+                env.insert("CARDANO_BLOCKS_TRANSACTIONS_SIGNING_CONFIG__STEP", "15");
+            }
+            env.insert(
+                "CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER",
+                "1",
+            );
+            env.insert("CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP", "15");
+        }
+
         if let Some(leader_aggregator_endpoint) = aggregator_config.leader_aggregator_endpoint {
             env.insert("LEADER_AGGREGATOR_ENDPOINT", leader_aggregator_endpoint);
         }
@@ -232,6 +262,10 @@ impl Aggregator {
         self.index == 0
     }
 
+    pub fn is_leader(&self) -> bool {
+        self.is_first()
+    }
+
     pub fn index(&self) -> usize {
         self.index
     }
@@ -263,6 +297,11 @@ impl Aggregator {
     /// Get the version of the mithril-aggregator binary.
     pub fn version(&self) -> &NodeVersion {
         &self.version
+    }
+
+    pub fn is_reading_protocol_configurations_on_chain(&self) -> bool {
+        //self.version().is_above_or_equal("0.9.22") & self.is_leader()
+        true
     }
 
     pub async fn serve(&self) -> StdResult<()> {
@@ -370,6 +409,45 @@ impl Aggregator {
                 None => {
                     anyhow!(
                         "`mithril-aggregator era generate-tx-datum` was terminated with a signal"
+                    )
+                }
+            })
+        }
+    }
+
+    pub async fn protocol_configuration_generate_tx_datum(
+        &self,
+        import_path: &Path,
+        target_path: &Path,
+    ) -> StdResult<()> {
+        let args = vec![
+            "protocol-configuration".to_string(),
+            "import-markers".to_string(),
+            "--import-path".to_string(),
+            import_path.to_str().unwrap().to_string(),
+            "--target-path".to_string(),
+            target_path.to_str().unwrap().to_string(),
+            "--protocol-configuration-markers-secret-key".to_string(),
+            PROTOCOL_CONFIGURATION_MARKERS_SECRET_KEY.to_string(),
+        ];
+
+        let mut command = self.command.write().await;
+        let exit_status = command.start(&args)?.wait().await.with_context(
+            || "`mithril-aggregator protocol-configuration import-markers` crashed",
+        )?;
+
+        if exit_status.success() {
+            Ok(())
+        } else {
+            Err(match exit_status.code() {
+                Some(c) => {
+                    anyhow!(
+                        "`mithril-aggregator protocol-configuration import-markers` exited with code: {c}"
+                    )
+                }
+                None => {
+                    anyhow!(
+                        "`mithril-aggregator protocol-configuration import-markers` was terminated with a signal"
                     )
                 }
             })

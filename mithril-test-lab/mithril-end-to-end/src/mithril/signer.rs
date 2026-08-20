@@ -11,7 +11,10 @@ use tokio::sync::RwLock;
 
 use crate::devnet::PoolNode;
 use crate::utils::{MithrilCommand, NodeVersion};
-use crate::{DEVNET_DMQ_MAGIC_ID, DEVNET_MAGIC_ID, DmqNodeFlavor, ERA_MARKERS_VERIFICATION_KEY};
+use crate::{
+    DEVNET_DMQ_MAGIC_ID, DEVNET_MAGIC_ID, DmqNodeFlavor, ERA_MARKERS_VERIFICATION_KEY,
+    PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY,
+};
 
 #[derive(Debug)]
 pub struct SignerConfig<'a> {
@@ -26,6 +29,8 @@ pub struct SignerConfig<'a> {
     pub mithril_era: &'a str,
     pub mithril_era_reader_adapter: &'a str,
     pub mithril_era_marker_address: &'a str,
+    pub protocol_configuration_reader_adapter: &'a str,
+    pub protocol_configuration_marker_address: &'a str,
     pub enable_certification: bool,
     pub skip_signature_delayer: bool,
     pub use_dmq: bool,
@@ -62,6 +67,16 @@ impl Signer {
                     signer_config.mithril_era
                 )
             };
+        let protocol_configuration_reader_adapter_config =
+            if signer_config.protocol_configuration_reader_adapter == "cardano-chain" {
+                format!(
+                    r#"{{"type": "cardano-chain", "address": "{}", "verification_key": "{}"}}"#,
+                    signer_config.protocol_configuration_marker_address,
+                    PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY
+                )
+            } else {
+                r#"{{"type": "fake"}}"#.to_string()
+            };
         let mithril_run_interval = format!("{}", signer_config.mithril_run_interval);
         let skip_signature_delayer = if signer_config.skip_signature_delayer {
             "true"
@@ -96,6 +111,10 @@ impl Signer {
                 signer_config.mithril_era_reader_adapter,
             ),
             ("ERA_READER_ADAPTER_PARAMS", &era_reader_adapter_params),
+            (
+                "PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG",
+                &protocol_configuration_reader_adapter_config,
+            ),
             ("TRANSACTIONS_IMPORT_BLOCK_CHUNK_SIZE", "150"),
             (
                 "CARDANO_TRANSACTIONS_BLOCK_STREAMER_THROTTLING_INTERVAL",

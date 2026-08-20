@@ -37,6 +37,9 @@ SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 # Generate the Mithril era scripts
 . ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-mithril-era.sh
 
+# Generate the protocol configuration scripts
+. ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-protocol-configuration.sh
+
 # Generate the Mithril payment scripts
 . ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-mithril-payment.sh
 
