@@ -185,10 +185,8 @@ pub(crate) fn build_deterministic_params(circuit_degree: u32) -> ParamsKZG<Bls12
 /// Loads the shared unsafe SRS of degree `circuit_degree` from the content-keyed test cache,
 /// generating and persisting it on a miss.
 ///
-/// The cache entry is the one [`IvcSnarkProverSetup::build_for_test`] writes: both derive their SRS
-/// from the same seed, so the bytes are identical and the generation cost is paid once per degree
-/// across the whole test suite. The lock is released as soon as the parameters are loaded, so a
-/// caller can then take a second cache lock without holding two at once.
+/// This is the entry [`IvcSnarkProverSetup::build_for_test`] writes: both derive from the same
+/// seed, so the generation cost is paid once per degree across the whole suite.
 fn load_shared_unsafe_srs(circuit_degree: u32) -> ParamsKZG<Bls12> {
     let srs_cache = FileMutex::for_shared_cache("unsafe-srs", &[&UNSAFE_SRS_SEED.to_le_bytes()]);
     let srs_directory = srs_cache.directory().to_path_buf();
@@ -204,13 +202,16 @@ const RECURSIVE_VERIFYING_KEY_CACHE_FILE: &str = "recursive-verifying-key";
 
 /// Where the expensive recursive verifying key comes from.
 enum RecursiveVerifyingKeySource {
-    /// Always derived. Required wherever the result is written to a committed asset.
+    /// Always derived. Required wherever the result is written to a committed asset, so today it is
+    /// reached only from the asset generators.
     Derived,
-    /// Loaded from the content-keyed test cache, derived only on a miss.
+    /// Loaded from the content-keyed test cache, derived only on a miss. The path for tests, which
+    /// read committed assets rather than write them.
     Cached,
 }
 
-/// Derives the recursive verifying key for the default IVC circuit shape (about 8.9 s).
+/// Derives the recursive verifying key for the default IVC circuit shape, on the order of ten
+/// seconds.
 fn derive_recursive_verifying_key(
     recursive_commitment_parameters: &ParamsKZG<Bls12>,
     certificate_verifying_key: &NonRecursiveCircuitVerifyingKey,
@@ -230,9 +231,7 @@ fn derive_recursive_verifying_key(
 /// Content-keyed cache entry holding the recursive verifying key derived from these inputs.
 ///
 /// Every input is a parameter, so the address is a pure function of them and a test can vary each
-/// one: the freshly derived certificate verifying key (which tracks the certificate circuit), the
-/// committed production recursive key as a circuit-version salt, both circuit degrees, and the seed
-/// pinning the unsafe SRS.
+/// one.
 fn recursive_verifying_key_cache(
     certificate_verifying_key_bytes: &[u8],
     production_recursive_verifying_key: &[u8],
@@ -253,9 +252,6 @@ fn recursive_verifying_key_cache(
 }
 
 /// Content-keyed cache entry holding the signer fixture built from these inputs.
-///
-/// Every input is a parameter for the same reason as
-/// [`recursive_verifying_key_cache`]: the address is testable input by input.
 fn signer_fixture_cache(
     signer_count: usize,
     asset_seed: u64,
@@ -277,21 +273,10 @@ fn signer_fixture_cache(
 
 /// Reads `cache_file`, or builds the value and publishes it there on a miss.
 ///
-/// Rebuilds from exactly five conditions: an absent file, an unreadable one, a decode failure, bytes
-/// that are not the canonical encoding of what they decode to (which covers truncation and trailing
-/// bytes, since the verifying-key codec stops at the end of the key and ignores whatever follows),
-/// and a rejection by `is_valid`. **It makes no wider claim: a canonically encoded value that
-/// satisfies `is_valid` is trusted.** Canonical encoding shows the bytes are self-consistent, not
-/// who wrote them, so an entry that is well-formed but semantically wrong is accepted — acceptable
-/// only because this cache is disposable, is not exposed to a hostile writer, and is never read by
-/// anything that produces committed assets.
-///
-/// Rebuilding rather than reporting is deliberate, and unlike
-/// [`KeyProvider`](crate::circuits::key_provider::KeyProvider), which propagates deserialization
-/// errors: a spoiled test cache must not fail a test run.
-///
-/// `is_valid` carries any invariant the bytes alone cannot express. Values whose encoding is
-/// self-contained pass `|_| true`.
+/// An entry that is absent, unreadable, not canonically encoded or rejected by `is_valid` is
+/// rebuilt rather than reported: a spoiled test cache must not fail a test run. Anything that does
+/// pass is trusted, which is acceptable only because this cache is disposable and is never read by
+/// anything that writes committed assets.
 fn load_or_build<T: TryToBytes + TryFromBytes>(
     cache_file: &Path,
     is_valid: impl FnOnce(&T) -> bool,
@@ -339,11 +324,10 @@ fn store_cache_file<T: TryToBytes>(cache_file: &Path, value: &T) {
     let _ = std::fs::File::open(directory).and_then(|directory_file| directory_file.sync_all());
 }
 
-/// Builds the shared verifier-side recursive setup, **always deriving** the recursive verifying key.
+/// Builds the shared verifier-side recursive setup, always deriving the recursive verifying key.
 ///
-/// Asset generators must use this: they write committed assets, and a stale cached key would
-/// silently produce assets derived from it. Behavior tests that only read should call
-/// [`build_shared_recursive_context_from_cache`].
+/// Asset generators must use this: a stale cached key would silently produce assets derived from
+/// it. Read-only behavior tests should call [`build_shared_recursive_context_from_cache`].
 pub(crate) fn build_shared_recursive_context(
     setup: &AssetGenerationSetup,
 ) -> SharedRecursiveContext {
@@ -353,10 +337,7 @@ pub(crate) fn build_shared_recursive_context(
 /// Builds the shared verifier-side recursive setup, taking the recursive verifying key from the
 /// content-keyed test cache when one is present.
 ///
-/// The cache address folds in the freshly derived certificate verifying key, the committed
-/// production recursive key, both circuit degrees, and the SRS seed, so a change to the certificate
-/// circuit or a regenerated production key resolves to a different entry. **Never call this from an
-/// asset generator** — see [`build_shared_recursive_context`].
+/// **Never call this from an asset generator** — see [`build_shared_recursive_context`].
 pub(crate) fn build_shared_recursive_context_from_cache(
     setup: &AssetGenerationSetup,
 ) -> SharedRecursiveContext {
@@ -384,8 +365,8 @@ fn build_shared_recursive_context_with(
         params_for(RECURSIVE_CIRCUIT_DEGREE),
     );
 
-    // Derived on every call: at about 93 ms it is not worth caching, and its bytes are what make
-    // the recursive key's cache address sensitive to the certificate circuit.
+    // Derived on every call: on the order of 100 milliseconds, so not worth caching, and its bytes
+    // are what make the recursive key's cache address sensitive to the certificate circuit.
     let certificate_verifying_key = NonRecursiveCircuitVerifyingKey::new(zk_lib::setup_vk(
         &certificate_commitment_parameters,
         &setup.certificate_relation,
@@ -500,12 +481,9 @@ const SIGNER_FIXTURE_CACHE_FILE: &str = "signer-fixture";
 
 /// The random-generator-derived half of [`AssetGenerationSetup`].
 ///
-/// The builder threads one seeded generator through the signer keys **and then** the genesis signing
-/// key and signature, so a cache that restored only the tree would leave the generator at a different
-/// position and silently change the genesis material — which the committed assets embed. Everything
-/// drawn from the generator is therefore cached together; every other field of
-/// [`AssetGenerationSetup`] is a pure function of these values and the module constants, and is
-/// recomputed on both paths.
+/// One seeded generator produces the signer keys **and then** the genesis key and signature, so
+/// caching only the tree would leave it at a different position and silently change the genesis
+/// material the committed assets embed. Everything drawn from the generator is cached together.
 #[derive(Serialize, Deserialize)]
 struct CachedSignerFixture {
     signing_keys: Vec<SchnorrSigningKey>,
@@ -662,11 +640,10 @@ fn assemble_asset_generation_setup(fixture: CachedSignerFixture) -> AssetGenerat
     }
 }
 
-/// Builds the deterministic asset-generation setup, **always running the generator sequence**.
+/// Builds the deterministic asset-generation setup, always running the generator sequence.
 ///
-/// Asset writers and the committed-fixture drift guard must use this: they produce or check committed
-/// bytes, and a stale cached fixture would let them do so from outdated signer data. Behavior tests
-/// that only consume the setup should call [`build_asset_generation_setup_from_cache`].
+/// Asset writers and the drift guard must use this: a stale cached fixture would let them produce
+/// or check committed bytes from outdated signer data.
 pub(crate) fn build_asset_generation_setup() -> AssetGenerationSetup {
     assemble_asset_generation_setup(build_signer_fixture())
 }

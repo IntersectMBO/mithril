@@ -664,11 +664,8 @@ fn load_or_generate_params(circuit_degree: u32) -> StmResult<ParamsKZG<Bls12>> {
 
 /// Content-keyed cache entry holding the certificate keys derived from these inputs.
 ///
-/// Every input that changes the derived keys is a parameter, so the address is a pure function of
-/// them and a test can vary each one: the committed production verifying key as a circuit-version
-/// salt, the protocol parameters, the Merkle-tree depth, the circuit degree, and the seed pinning
-/// the unsafe SRS. Distinct configurations therefore never share a directory, which is what lets
-/// [`KeyProvider`] be built with no expected verifying key.
+/// Distinct configurations never share a directory, which is what lets [`KeyProvider`] be built
+/// with no expected verifying key.
 fn certificate_golden_key_cache(
     production_verifying_key: &[u8],
     parameters: &Parameters,
@@ -691,10 +688,8 @@ fn certificate_golden_key_cache(
 /// Loads the verification/proving key pair for this configuration from the on-disk cache, deriving
 /// and storing it on a miss.
 ///
-/// The cache is shared across processes, unlike the in-process map this replaced, which amortized
-/// nothing under the nextest process-per-test model. The lock is taken before the lookup so that
-/// parallel processes racing a cold miss derive the pair once rather than once each — `KeyProvider`
-/// does not serialize its writers.
+/// The lock is taken before the lookup so parallel processes racing a cold miss derive the pair
+/// once rather than once each.
 fn get_or_build_circuit_keys(
     parameters: &Parameters,
     merkle_tree_depth: u32,
