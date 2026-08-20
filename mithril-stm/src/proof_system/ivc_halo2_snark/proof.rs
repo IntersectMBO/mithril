@@ -59,16 +59,16 @@ pub(crate) struct IvcProver<R: RngCore + CryptoRng> {
     pub(crate) rng: R,
 }
 
-/// Runs [`IvcProverInput::prepare_checks`] and discards the result. Exposed so a caller like
+/// Runs [`IvcProverInput::off_circuit_checks`] and discards the result. Exposed so a caller like
 /// `Clerk::aggregate_signatures_with_type` can reject a malformed request before generating the
 /// certificate proof, without needing access to `IvcProverInput` itself.
-pub(crate) fn prepare_checks<D: MembershipDigest>(
+pub(crate) fn off_circuit_checks<D: MembershipDigest>(
     message: &[u8],
     aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
     protocol_message_preimage: &ProtocolMessagePreimage,
     rolling_state: &IvcRollingState,
 ) -> StmResult<()> {
-    IvcProverInput::prepare_checks(
+    IvcProverInput::off_circuit_checks(
         message,
         aggregate_verification_key,
         protocol_message_preimage,
@@ -81,7 +81,7 @@ pub(crate) fn prepare_checks<D: MembershipDigest>(
 /// genesis message hashes to the supplied preimage, then verifies the genesis Schnorr
 /// signature. Exposed so a caller like `Clerk::aggregate_signatures_with_type` can reject a
 /// malformed genesis request before generating the certificate proof.
-pub(crate) fn prepare_genesis_checks(
+pub(crate) fn off_circuit_genesis_checks(
     rolling_state: &IvcRollingState,
     protocol_message_preimage: &ProtocolMessagePreimage,
     global: &Global,

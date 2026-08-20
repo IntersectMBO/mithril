@@ -37,8 +37,8 @@ pub(crate) struct IvcProverInput {
     pub(crate) transition_type: IvcTransitionType,
 }
 
-/// Bundles [`IvcProverInput::prepare_checks`]'s outputs, carried into
-/// [`IvcProverInput::finish`] once the certificate proof is available.
+/// Bundles [`IvcProverInput::off_circuit_checks`]'s outputs, carried into
+/// [`IvcProverInput::finish_preparation`] once the certificate proof is available.
 pub(crate) struct IvcProverInputChecks {
     transition_type: IvcTransitionType,
     certificate_message_hash: MessageHash,
@@ -46,10 +46,10 @@ pub(crate) struct IvcProverInputChecks {
 }
 
 impl IvcProverInput {
-    /// Runs every `prepare` check that does not need the certificate proof: classifies the
-    /// step, validates the epoch advance and protocol-parameter lookahead against the rolling
-    /// state, and checks the message hashes to the supplied preimage.
-    pub(crate) fn prepare_checks<D: MembershipDigest>(
+    /// Runs every `prepare` off circuit check that does not need the certificate proof:
+    /// classifies the step, validates the epoch advance and protocol-parameter lookahead
+    /// against the rolling state, and checks the message hashes to the supplied preimage.
+    pub(crate) fn off_circuit_checks<D: MembershipDigest>(
         message: &[u8],
         aggregate_verification_key_for_snark: &AggregateVerificationKeyForSnark<D>,
         protocol_message_preimage: &ProtocolMessagePreimage,
@@ -80,9 +80,10 @@ impl IvcProverInput {
     }
 
     /// Completes `prepare` once the certificate proof is available: verifies it, advances the
-    /// chain state, and folds the accumulator. `checks` must come from [`Self::prepare_checks`]
+    /// chain state, and folds the accumulator. `checks` must come from [`Self::off_circuit_checks`]
     /// run against the same `protocol_message_preimage` and `rolling_state`.
-    pub(crate) fn finish_prepare<D: MembershipDigest>(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finish_preparation<D: MembershipDigest>(
         checks: IvcProverInputChecks,
         certificate_proof: &SnarkProof<D>,
         message: &[u8],
@@ -134,9 +135,9 @@ impl IvcProverInput {
     /// Advances the chain state by one step and bundles the in-circuit witness, the
     /// next state, and the next folded accumulator.
     ///
-    /// Runs [`Self::prepare_checks`] then [`Self::finish_prepare`]. Callers that want to reject a
+    /// Runs [`Self::off_circuit_checks`] then [`Self::finish_preparation`]. Callers that want to reject a
     /// malformed request before the certificate proof is generated should call
-    /// [`Self::prepare_checks`] directly, ahead of time, instead of using this combined form.
+    /// [`Self::off_circuit_checks`] directly, ahead of time, instead of using this combined form.
     pub(crate) fn prepare<D: MembershipDigest>(
         certificate_proof: &SnarkProof<D>,
         message: &[u8],
@@ -146,14 +147,14 @@ impl IvcProverInput {
         rolling_state: &IvcRollingState,
         prover_setup: &IvcSnarkProverSetup,
     ) -> StmResult<Self> {
-        let checks = Self::prepare_checks(
+        let checks = Self::off_circuit_checks(
             message,
             aggregate_verification_key_for_snark,
             protocol_message_preimage,
             rolling_state,
         )?;
 
-        Self::finish_prepare(
+        Self::finish_preparation(
             checks,
             certificate_proof,
             message,
