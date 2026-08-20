@@ -9,12 +9,12 @@ use mithril_common::{
     entities::{AncillaryLocation, CardanoDbBeacon, CompressionAlgorithm},
     logging::LoggerExtensions,
 };
+use mithril_file_archiver::FileArchive;
 
 use crate::{
     DumbUploader, FileUploader,
     file_uploaders::{CloudUploader, LocalUploader},
     services::Snapshotter,
-    tools::file_archiver::FileArchive,
 };
 
 /// The [AncillaryFileUploader] trait allows identifying uploaders that return locations for ancillary archive files.

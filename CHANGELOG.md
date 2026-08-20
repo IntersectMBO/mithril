@@ -23,6 +23,8 @@ As a minor extension, we have adopted a slightly different versioning convention
 | mithril-signer      | `-`     |
 | mithril-stm         | `-`     |
 
+- Reworked the Mithril aggregator file archiver to output byte stable archives systems.
+
 - **REMOVED** support for `Gzip` compression/decompression in the Mithril aggregator and client:
   - The aggregator no longer produces or supports `Gzip` compression for snapshot-related artifacts: immutable files and ancillaries.
   - The Mithril client no longer supports `Gzip` decompression when downloading snapshot artifacts.

@@ -1,7 +1,5 @@
 mod certificates_hash_migrator;
 mod era;
-pub mod file_archiver;
-pub mod file_size;
 mod genesis;
 mod protocol_configuration;
 pub mod signer_importer;

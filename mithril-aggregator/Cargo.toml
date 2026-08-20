@@ -33,6 +33,7 @@ mithril-common = { path = "../mithril-common" }
 mithril-dmq = { path = "../internal/mithril-dmq" }
 mithril-doc = { path = "../internal/mithril-doc" }
 mithril-era = { path = "../internal/mithril-era" }
+mithril-file-archiver = { path = "../internal/mithril-file-archiver" }
 mithril-metric = { path = "../internal/mithril-metric" }
 mithril-persistence = { path = "../internal/mithril-persistence" }
 mithril-protocol-config = { path = "../internal/mithril-protocol-config" }
@@ -53,13 +54,11 @@ slog = { workspace = true, features = ["max_level_trace", "release_max_level_deb
 slog-async = { workspace = true }
 slog-bunyan = { workspace = true }
 sqlite = { version = "0.37.0", features = ["bundled"] }
-tar = "0.4.46"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
 tokio-util = { version = "0.7.18", features = ["codec"] }
 uuid = { version = "1.23.4", features = ["v4", "fast-rng", "macro-diagnostics"] }
 warp = { workspace = true }
-zstd = { version = "0.13.3", features = ["zstdmt"] }
 
 [target.'cfg(all(not(target_os = "windows"), not(all(target_os = "linux", target_arch = "aarch64"))))'.dependencies]
 tikv-jemallocator = { version = "0.7.0" }
@@ -76,11 +75,9 @@ http = "1.4.2"
 httpmock = "0.8.3"
 mithril-api-spec = { path = "../internal/tests/mithril-api-spec" }
 mithril-common = { path = "../mithril-common", features = ["allow_skip_signer_certification"] }
-mithril-test-http-server = { path = "../internal/tests/mithril-test-http-server" }
 mockall = { workspace = true }
 slog-scope = "4.4.1"
 slog-term = { workspace = true }
-tempfile = "3.27.0"
 warp = { workspace = true, features = ["test"] }
 
 [[bench]]

@@ -22,6 +22,7 @@ use mithril_common::{AggregateSignatureType, CardanoNetwork, StdResult};
 use mithril_dmq::DmqNetwork;
 use mithril_doc::{Documenter, DocumenterDefault, StructDoc};
 use mithril_era::adapters::EraReaderAdapterType;
+use mithril_file_archiver::ZstandardCompressionParameters;
 
 use crate::entities::AggregatorEpochSettings;
 use crate::http_server::SERVER_BASE_PATH;
@@ -704,25 +705,6 @@ pub enum SnapshotUploaderType {
     Gcp,
     /// Uploader to local storage.
     Local,
-}
-
-/// [Zstandard][CompressionAlgorithm::Zstandard] specific parameters
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
-pub struct ZstandardCompressionParameters {
-    /// Level of compression, default to 9.
-    pub level: i32,
-
-    /// Number of workers when compressing, 0 will disable multithreading, default to 4.
-    pub number_of_workers: u32,
-}
-
-impl Default for ZstandardCompressionParameters {
-    fn default() -> Self {
-        Self {
-            level: 9,
-            number_of_workers: 4,
-        }
-    }
 }
 
 /// Configuration to connect to the Blockfrost API.
