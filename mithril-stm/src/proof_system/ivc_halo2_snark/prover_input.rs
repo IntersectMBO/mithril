@@ -168,9 +168,9 @@ mod test {
                         load_embedded_verification_context_asset,
                     },
                     generators::{
-                        build_asset_generation_setup, build_genesis_base_case_next_state,
-                        build_genesis_base_case_witness, build_genesis_protocol_message_preimage,
-                        build_recursive_global,
+                        build_asset_generation_setup_from_cache,
+                        build_genesis_base_case_next_state, build_genesis_base_case_witness,
+                        build_genesis_protocol_message_preimage, build_recursive_global,
                         setup::{
                             AssetGenerationSetup, GENESIS_EPOCH, QUORUM_SIZE, SIGNER_COUNT,
                             TOTAL_STAKE,
@@ -203,7 +203,7 @@ mod test {
 
         fn shared_asset_setup() -> &'static AssetGenerationSetup {
             static CELL: OnceLock<AssetGenerationSetup> = OnceLock::new();
-            CELL.get_or_init(build_asset_generation_setup)
+            CELL.get_or_init(build_asset_generation_setup_from_cache)
         }
 
         fn shared_verification_context() -> &'static VerificationContextAsset {

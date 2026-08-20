@@ -32,7 +32,7 @@ use super::{
     },
     generators::{
         AssetGenerationSetup, build_recursive_fixed_bases, build_recursive_global,
-        build_shared_recursive_context, certificate_public_inputs_for_step,
+        build_shared_recursive_context_from_cache, certificate_public_inputs_for_step,
     },
 };
 
@@ -102,7 +102,7 @@ pub(crate) struct RecursiveMockProverSetup {
 pub(crate) fn build_recursive_mock_prover_setup(
     setup: &AssetGenerationSetup,
 ) -> RecursiveMockProverSetup {
-    let context = build_shared_recursive_context(setup);
+    let context = build_shared_recursive_context_from_cache(setup);
     let (certificate_fixed_bases, recursive_fixed_bases, combined_fixed_bases) =
         build_recursive_fixed_bases(
             &context.certificate_verifying_key,

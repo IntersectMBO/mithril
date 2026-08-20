@@ -5,8 +5,8 @@ use crate::circuits::halo2_ivc::{
     tests::common::{
         asset_readers::load_embedded_genesis_step_output_asset,
         generators::{
-            GENESIS_EPOCH, build_asset_generation_setup, build_genesis_base_case_next_state,
-            build_genesis_base_case_witness,
+            GENESIS_EPOCH, build_asset_generation_setup_from_cache,
+            build_genesis_base_case_next_state, build_genesis_base_case_witness,
         },
         helpers::{
             assert_recursive_mock_prover_rejects, build_mock_prover_public_inputs,
@@ -101,7 +101,7 @@ mod slow {
     /// `tamper` receives the correct genesis next state before it is passed to the
     /// public inputs, allowing each test to corrupt exactly the field it wants to verify.
     fn assert_genesis_circuit_rejects_tampered_next_state(tamper: impl FnOnce(&mut State)) {
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
 
         let witness = build_genesis_base_case_witness(&setup);

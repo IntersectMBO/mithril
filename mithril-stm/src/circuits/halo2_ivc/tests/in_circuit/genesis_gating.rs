@@ -13,8 +13,8 @@ use crate::circuits::halo2_ivc::{
     state::State,
     tests::common::{
         generators::{
-            GENESIS_EPOCH, build_asset_generation_setup, build_genesis_base_case_next_state,
-            build_genesis_base_case_witness,
+            GENESIS_EPOCH, build_asset_generation_setup_from_cache,
+            build_genesis_base_case_next_state, build_genesis_base_case_witness,
         },
         helpers::{
             assert_recursive_mock_prover_accepts_with_label, build_mock_prover_setup_from_assets,
@@ -31,7 +31,7 @@ mod slow {
         // MockProver constraint check: at genesis (step_counter = 0) the circuit gates the
         // certificate accumulator contribution to the group identity via scale_by_bit(0, acc),
         // so 64 garbage bytes in the certificate slot must not violate any constraint.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let public_inputs = [
             mock_prover_setup.global.as_public_input(),
@@ -62,7 +62,7 @@ mod slow {
         // MockProver constraint check: at genesis (step_counter = 0) the circuit gates the
         // IVC accumulator contribution to the group identity via scale_by_bit(0, acc),
         // so 64 garbage bytes in the IVC slot must not violate any constraint.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let public_inputs = [
             mock_prover_setup.global.as_public_input(),

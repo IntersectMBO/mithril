@@ -175,7 +175,8 @@ pub(crate) struct FollowingCertificateInEpochAsset {
 /// build a `Global` and run a genesis proving step: the raw genesis message bytes (the `msg`
 /// argument to `IvcProof::verify`), the genesis Schnorr verification key, the trusted genesis
 /// signature, and the genesis protocol-message preimage. It is produced deterministically from
-/// `build_asset_generation_setup()` and is additive — no existing golden asset is affected.
+/// `build_asset_generation_setup_from_scratch()` and is additive — no existing golden asset is
+/// affected.
 #[derive(Debug)]
 pub(crate) struct GenesisBenchmarkFixture {
     /// Raw 32-byte genesis message, `Sha256(genesis_protocol_message_preimage)`; the `msg`

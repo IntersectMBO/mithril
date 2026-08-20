@@ -8,9 +8,12 @@ use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 use tempfile::NamedTempFile;
 
+use crate::circuits::trusted_setup::UNSAFE_SRS_SEED;
+
 pub(crate) fn generate_params(k: u32, path: &str, format: SerdeFormat) -> ParamsKZG<Bls12> {
     let parent = std::path::Path::new(path).parent().expect("No parent directory.");
-    let params: ParamsKZG<Bls12> = ParamsKZG::unsafe_setup(k, ChaCha20Rng::seed_from_u64(42));
+    let params: ParamsKZG<Bls12> =
+        ParamsKZG::unsafe_setup(k, ChaCha20Rng::seed_from_u64(UNSAFE_SRS_SEED));
     fs::create_dir_all(parent).expect("Failed to create the directories.");
     // Uses the name of the higher level test calling the function to create a temporary file
     // storing the srs and renames the file once it is done being written

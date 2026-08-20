@@ -20,7 +20,7 @@ mod slow {
         tests::common::{
             asset_readers::load_embedded_recursive_chain_state_asset,
             generators::{
-                build_asset_generation_setup, same_epoch_message_and_preimage_for_step,
+                build_asset_generation_setup_from_cache, same_epoch_message_and_preimage_for_step,
                 same_epoch_next_state_for_step,
             },
             helpers::{
@@ -37,7 +37,7 @@ mod slow {
     fn circuit_rejects_wrong_same_epoch_next_merkle_tree_commitment() {
         // MockProver constraint check: next_merkle_tree_commitment set to ONE must violate the
         // in-circuit constraint that pins it to prev_state.next_merkle_tree_commitment.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let prev_state = load_embedded_recursive_chain_state_asset()
             .expect("recursive chain state asset should load")
@@ -70,7 +70,7 @@ mod slow {
     fn circuit_rejects_wrong_same_epoch_next_protocol_parameters() {
         // MockProver constraint check: next_protocol_parameters set to ONE must violate the
         // in-circuit constraint that pins it to prev_state.next_protocol_parameters.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let prev_state = load_embedded_recursive_chain_state_asset()
             .expect("recursive chain state asset should load")
@@ -104,7 +104,7 @@ mod slow {
         // MockProver constraint check: message set to ONE must violate the in-circuit
         // Blake2b constraint enforcing message = Blake2b(message_preimage). The same gate
         // is exercised by both same-epoch and next-epoch paths, so testing it once suffices.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let prev_state = load_embedded_recursive_chain_state_asset()
             .expect("recursive chain state asset should load")

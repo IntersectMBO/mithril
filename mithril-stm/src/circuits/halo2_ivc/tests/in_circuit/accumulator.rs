@@ -95,7 +95,9 @@ mod slow {
         circuit::IvcCircuitData,
         tests::common::{
             asset_readers::load_embedded_recursive_chain_state_asset,
-            generators::{build_asset_generation_setup, build_same_epoch_certificate_asset_data},
+            generators::{
+                build_asset_generation_setup_from_cache, build_same_epoch_certificate_asset_data,
+            },
             helpers::{
                 assert_recursive_mock_prover_rejects, build_recursive_mock_prover_setup,
                 compute_expected_next_accumulator,
@@ -108,7 +110,7 @@ mod slow {
         // MockProver check that the in-circuit accumulator update constraint holds for
         // a same-epoch step; substituting a wrong next_accumulator in the public inputs
         // causes MockProver to detect the arithmetic constraint violation.
-        let setup = build_asset_generation_setup();
+        let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_recursive_mock_prover_setup(&setup);
 
         let recursive_chain_state = load_embedded_recursive_chain_state_asset()

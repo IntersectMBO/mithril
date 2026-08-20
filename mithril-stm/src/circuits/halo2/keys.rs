@@ -76,11 +76,6 @@ mod midnight_verifying_key_serde {
 }
 
 impl NonRecursiveCircuitProvingKey {
-    /// Wraps a Midnight proving key.
-    pub(crate) fn new(midnight_pk: MidnightPK<StmCertificateCircuit>) -> Self {
-        Self(midnight_pk)
-    }
-
     /// Borrows the wrapped Midnight proving key, for proof generation.
     pub(crate) fn midnight_pk(&self) -> &MidnightPK<StmCertificateCircuit> {
         &self.0

@@ -101,10 +101,6 @@ pub enum StmCircuitError {
     #[error("Failed to create params assets directory")]
     ParamsAssetsDirCreate,
 
-    /// In-memory circuit key cache lock is poisoned.
-    #[error("Circuit keys cache lock poisoned ({operation})")]
-    CircuitKeysCacheLockPoisoned { operation: &'static str },
-
     /// Signature generation failed while preparing witness.
     #[error("Signature generation failed")]
     SignatureGenerationFailed,
