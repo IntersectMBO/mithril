@@ -10,7 +10,7 @@ use super::proofs::{
 use super::setup::{
     AssetGenerationSetup, AssetPaths, GENESIS_EPOCH, INITIAL_CHAIN_LENGTH,
     build_recursive_fixed_bases, build_recursive_global, build_recursive_proving_key,
-    build_shared_recursive_context,
+    build_shared_recursive_context_from_scratch,
 };
 use super::transitions::{
     build_genesis_base_case_next_state, build_genesis_base_case_witness,
@@ -392,7 +392,7 @@ pub(crate) fn generate_recursive_chain_state_asset(
     );
     let total_start = Instant::now();
 
-    let context = build_shared_recursive_context(setup);
+    let context = build_shared_recursive_context_from_scratch(setup);
     let (_, recursive_fixed_bases, combined_fixed_bases) = build_recursive_fixed_bases(
         &context.certificate_verifying_key,
         &context.recursive_verifying_key,
@@ -432,7 +432,7 @@ pub(crate) fn generate_verification_context_asset(
         paths.verification_context.display()
     );
     let total_start = Instant::now();
-    let context = build_shared_recursive_context(setup);
+    let context = build_shared_recursive_context_from_scratch(setup);
     println!("generate_verification_context: certificate and recursive verifying keys ready");
 
     let (_, _, combined_fixed_bases) = build_recursive_fixed_bases(
@@ -478,7 +478,7 @@ pub(crate) fn generate_recursive_step_output_asset(
     let recursive_chain_state = load_recursive_chain_state_asset(&paths.recursive_chain_state)
         .expect("failed to load recursive_chain_state asset");
 
-    let context = build_shared_recursive_context(setup);
+    let context = build_shared_recursive_context_from_scratch(setup);
     let recursive_proving_key = build_recursive_proving_key(&context);
     println!("generate_recursive_step_output: certificate and recursive keys ready");
 
@@ -523,7 +523,7 @@ pub(crate) fn generate_genesis_step_output_asset(setup: &AssetGenerationSetup, p
     );
     let total_start = Instant::now();
 
-    let context = build_shared_recursive_context(setup);
+    let context = build_shared_recursive_context_from_scratch(setup);
     let (_, _, combined_fixed_bases) = build_recursive_fixed_bases(
         &context.certificate_verifying_key,
         &context.recursive_verifying_key,
@@ -619,7 +619,7 @@ pub(crate) fn generate_same_epoch_step_output_asset(
     );
     let total_start = Instant::now();
 
-    let context = build_shared_recursive_context(setup);
+    let context = build_shared_recursive_context_from_scratch(setup);
     let (_, recursive_fixed_bases, combined_fixed_bases) = build_recursive_fixed_bases(
         &context.certificate_verifying_key,
         &context.recursive_verifying_key,
@@ -771,7 +771,7 @@ pub(crate) fn generate_first_step_cert_asset(setup: &AssetGenerationSetup, paths
         paths.first_step_cert.display()
     );
     let total_start = Instant::now();
-    let context = build_shared_recursive_context(setup);
+    let context = build_shared_recursive_context_from_scratch(setup);
     println!("generate_first_step_cert: shared recursive context ready");
 
     let mut rng = OsRng;
@@ -871,51 +871,69 @@ pub(crate) fn generate_genesis_benchmark_fixture_asset(
 #[test]
 #[ignore]
 fn generate_verification_context_only() {
-    use super::setup::{AssetPaths, build_asset_generation_setup};
-    generate_verification_context_asset(&build_asset_generation_setup(), &AssetPaths::default());
+    use super::setup::{AssetPaths, build_asset_generation_setup_from_scratch};
+    generate_verification_context_asset(
+        &build_asset_generation_setup_from_scratch(),
+        &AssetPaths::default(),
+    );
 }
 
 #[test]
 #[ignore]
 fn generate_recursive_chain_state_only() {
-    use super::setup::{AssetPaths, build_asset_generation_setup};
-    generate_recursive_chain_state_asset(&build_asset_generation_setup(), &AssetPaths::default());
+    use super::setup::{AssetPaths, build_asset_generation_setup_from_scratch};
+    generate_recursive_chain_state_asset(
+        &build_asset_generation_setup_from_scratch(),
+        &AssetPaths::default(),
+    );
 }
 
 #[test]
 #[ignore]
 fn generate_recursive_step_output_only() {
-    use super::setup::{AssetPaths, build_asset_generation_setup};
-    generate_recursive_step_output_asset(&build_asset_generation_setup(), &AssetPaths::default());
+    use super::setup::{AssetPaths, build_asset_generation_setup_from_scratch};
+    generate_recursive_step_output_asset(
+        &build_asset_generation_setup_from_scratch(),
+        &AssetPaths::default(),
+    );
 }
 
 #[test]
 #[ignore]
 fn generate_genesis_step_output_only() {
-    use super::setup::{AssetPaths, build_asset_generation_setup};
-    generate_genesis_step_output_asset(&build_asset_generation_setup(), &AssetPaths::default());
+    use super::setup::{AssetPaths, build_asset_generation_setup_from_scratch};
+    generate_genesis_step_output_asset(
+        &build_asset_generation_setup_from_scratch(),
+        &AssetPaths::default(),
+    );
 }
 
 #[test]
 #[ignore]
 fn generate_same_epoch_step_output_only() {
-    use super::setup::{AssetPaths, build_asset_generation_setup};
-    generate_same_epoch_step_output_asset(&build_asset_generation_setup(), &AssetPaths::default());
+    use super::setup::{AssetPaths, build_asset_generation_setup_from_scratch};
+    generate_same_epoch_step_output_asset(
+        &build_asset_generation_setup_from_scratch(),
+        &AssetPaths::default(),
+    );
 }
 
 #[test]
 #[ignore]
 fn generate_first_step_cert_only() {
-    use super::setup::{AssetPaths, build_asset_generation_setup};
-    generate_first_step_cert_asset(&build_asset_generation_setup(), &AssetPaths::default());
+    use super::setup::{AssetPaths, build_asset_generation_setup_from_scratch};
+    generate_first_step_cert_asset(
+        &build_asset_generation_setup_from_scratch(),
+        &AssetPaths::default(),
+    );
 }
 
 #[test]
 #[ignore]
 fn generate_genesis_benchmark_fixture_only() {
-    use super::setup::{AssetPaths, build_asset_generation_setup};
+    use super::setup::{AssetPaths, build_asset_generation_setup_from_scratch};
     generate_genesis_benchmark_fixture_asset(
-        &build_asset_generation_setup(),
+        &build_asset_generation_setup_from_scratch(),
         &AssetPaths::default(),
     );
 }

@@ -328,7 +328,7 @@ fn store_cache_file<T: TryToBytes>(cache_file: &Path, value: &T) {
 ///
 /// Asset generators must use this: a stale cached key would silently produce assets derived from
 /// it. Read-only behavior tests should call [`build_shared_recursive_context_from_cache`].
-pub(crate) fn build_shared_recursive_context(
+pub(crate) fn build_shared_recursive_context_from_scratch(
     setup: &AssetGenerationSetup,
 ) -> SharedRecursiveContext {
     build_shared_recursive_context_with(setup, RecursiveVerifyingKeySource::Derived)
@@ -337,7 +337,7 @@ pub(crate) fn build_shared_recursive_context(
 /// Builds the shared verifier-side recursive setup, taking the recursive verifying key from the
 /// content-keyed test cache when one is present.
 ///
-/// **Never call this from an asset generator** — see [`build_shared_recursive_context`].
+/// **Never call this from an asset generator** — see [`build_shared_recursive_context_from_scratch`].
 pub(crate) fn build_shared_recursive_context_from_cache(
     setup: &AssetGenerationSetup,
 ) -> SharedRecursiveContext {
@@ -644,14 +644,14 @@ fn assemble_asset_generation_setup(fixture: CachedSignerFixture) -> AssetGenerat
 ///
 /// Asset writers and the drift guard must use this: a stale cached fixture would let them produce
 /// or check committed bytes from outdated signer data.
-pub(crate) fn build_asset_generation_setup() -> AssetGenerationSetup {
+pub(crate) fn build_asset_generation_setup_from_scratch() -> AssetGenerationSetup {
     assemble_asset_generation_setup(build_signer_fixture())
 }
 
 /// Builds the deterministic asset-generation setup, taking the signer fixture from the content-keyed
 /// test cache when a valid one is present.
 ///
-/// **Never call this from an asset writer** — see [`build_asset_generation_setup`].
+/// **Never call this from an asset writer** — see [`build_asset_generation_setup_from_scratch`].
 pub(crate) fn build_asset_generation_setup_from_cache() -> AssetGenerationSetup {
     let fixture_cache = signer_fixture_cache(
         SIGNER_COUNT,

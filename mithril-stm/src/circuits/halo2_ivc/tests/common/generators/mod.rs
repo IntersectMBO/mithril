@@ -10,8 +10,8 @@ pub(crate) use proofs::{
     try_verify_prepare_poseidon_ivc, verify_prepare_blake2b_ivc, verify_prepare_poseidon_ivc,
 };
 pub(crate) use setup::{
-    AssetGenerationSetup, GENESIS_EPOCH, build_asset_generation_setup,
-    build_asset_generation_setup_from_cache, build_recursive_fixed_bases, build_recursive_global,
+    AssetGenerationSetup, GENESIS_EPOCH, build_asset_generation_setup_from_cache,
+    build_asset_generation_setup_from_scratch, build_recursive_fixed_bases, build_recursive_global,
     build_shared_recursive_context_from_cache,
 };
 pub(crate) use transitions::{

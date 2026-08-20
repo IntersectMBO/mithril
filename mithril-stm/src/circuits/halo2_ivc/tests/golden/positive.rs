@@ -15,10 +15,10 @@ use crate::circuits::halo2_ivc::tests::common::{
         load_embedded_recursive_chain_state_asset, load_embedded_verification_context_asset,
     },
     generators::{
-        GENESIS_EPOCH, build_asset_generation_setup, build_asset_generation_setup_from_cache,
-        build_genesis_base_case_next_state, build_genesis_base_case_witness,
-        build_genesis_protocol_message_preimage, next_message_and_preimage_for_step,
-        next_state_for_step,
+        GENESIS_EPOCH, build_asset_generation_setup_from_cache,
+        build_asset_generation_setup_from_scratch, build_genesis_base_case_next_state,
+        build_genesis_base_case_witness, build_genesis_protocol_message_preimage,
+        next_message_and_preimage_for_step, next_state_for_step,
     },
     helpers::{
         assert_recursive_mock_prover_accepts_with_label, build_mock_prover_public_inputs,
@@ -105,7 +105,7 @@ fn genesis_benchmark_fixture_is_deterministic_and_valid() {
     // deterministic generator output, be internally consistent, and carry a valid genesis
     // signature. Fails loudly if the committed `.bin` drifts from the deterministic generator.
     // Builds fresh on purpose: a drift guard must not read the fixture cache it is guarding.
-    let setup = build_asset_generation_setup();
+    let setup = build_asset_generation_setup_from_scratch();
     let fixture =
         load_embedded_genesis_benchmark_fixture().expect("genesis benchmark fixture should load");
 
