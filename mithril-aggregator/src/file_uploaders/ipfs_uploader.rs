@@ -10,9 +10,7 @@ use mithril_common::logging::LoggerExtensions;
 
 use crate::FileUploader;
 use crate::tools::kubo_rpc_client::KuboRpcClient;
-use crate::tools::kubo_rpc_client::query::{
-    IpfsAddQuery, IpfsFilesCpQuery, IpfsFilesMkdirQuery, IpfsFilesStatQuery,
-};
+use crate::tools::kubo_rpc_client::query::{IpfsAddQuery, IpfsFilesMkdirQuery, IpfsFilesStatQuery};
 
 /// IPFS Content Identifier (CID)
 pub type Cid = String;
@@ -69,9 +67,13 @@ impl FileUploader for IpfsUploader {
                 Ok(FileUri(cid))
             }
             None => {
-                let cid = self.rpc_client.upload_file(filepath).await.with_context(|| {
-                    format!("Failed to upload file '{}' to IPFS", filepath.display())
-                })?;
+                let cid = self
+                    .rpc_client
+                    .upload_file(filepath, &self.ipfs_dir_path)
+                    .await
+                    .with_context(|| {
+                        format!("Failed to upload file '{}' to IPFS", filepath.display())
+                    })?;
                 trace!(
                     self.logger, "File upload to IPFS finished";
                     "file_path" => %filepath.display(), "cid" => %cid
@@ -94,10 +96,7 @@ pub trait IpfsBackendUploader: Sync + Send {
     async fn get_dir_cid(&self, dir_path: &Path) -> StdResult<Cid>;
 
     /// Upload a file to IPFS and return its CID
-    async fn upload_file(&self, file_path: &Path) -> StdResult<Cid>;
-
-    /// Reference a file in a directory by its CID
-    async fn reference_file_in_dir(&self, file_cid: &Cid, dir_path: &Path) -> StdResult<()>;
+    async fn upload_file(&self, file_path: &Path, mfs_path: &Path) -> StdResult<Cid>;
 
     /// Check if a file exists and return its CID if it does
     async fn file_exists(&self, file_path: &Path) -> StdResult<Option<Cid>>;
@@ -119,17 +118,11 @@ impl IpfsBackendUploader for KuboRpcClient {
         Ok(stat.hash)
     }
 
-    async fn upload_file(&self, file_path: &Path) -> StdResult<Cid> {
-        let res = self.send(IpfsAddQuery::new(file_path)).await?;
+    async fn upload_file(&self, file_path: &Path, mfs_path: &Path) -> StdResult<Cid> {
+        let res = self
+            .send(IpfsAddQuery::new_with_mfs_reference(file_path, mfs_path))
+            .await?;
         Ok(res.hash)
-    }
-
-    async fn reference_file_in_dir(&self, file_cid: &Cid, dir_path: &Path) -> StdResult<()> {
-        self.send(IpfsFilesCpQuery::reference_file_in_mfs_dir(
-            file_cid.to_string(),
-            dir_path,
-        ))
-        .await
     }
 
     async fn file_exists(&self, file_path: &Path) -> StdResult<Option<Cid>> {
@@ -156,7 +149,7 @@ mod tests {
                     .with(eq(PathBuf::from("/test/dir")))
                     .returning(|_| Ok(()));
                 mock.expect_file_exists().returning(|_| Ok(None));
-                mock.expect_upload_file().returning(|_| Ok(String::new()));
+                mock.expect_upload_file().returning(|_, _| Ok(String::new()));
             }),
             PathBuf::from("/test/dir"),
             &TestLogger::stdout(),
@@ -195,8 +188,8 @@ mod tests {
                     .with(eq(Path::new("/a/file")))
                     .returning(|_| Ok(None));
                 mock.expect_upload_file()
-                    .with(eq(Path::new("/a/file")))
-                    .returning(|_| Ok(String::new()));
+                    .with(eq(Path::new("/a/file")), eq(Path::new("/test/dir")))
+                    .returning(|_, _| Ok("test_cid".to_string()));
             }),
             PathBuf::from("/test/dir"),
             &TestLogger::stdout(),

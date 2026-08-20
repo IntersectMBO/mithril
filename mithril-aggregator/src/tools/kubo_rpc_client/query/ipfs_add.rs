@@ -14,6 +14,7 @@ use crate::tools::kubo_rpc_client::KuboRpcQuery;
 // TODO: Enforce most add parameters to make CID deterministic.
 pub struct IpfsAddQuery {
     file_path: PathBuf,
+    to_files: Option<PathBuf>,
 }
 
 /// Response from the IPFS add operation.
@@ -31,6 +32,18 @@ impl IpfsAddQuery {
     pub fn new<P: AsRef<Path>>(file_path: P) -> Self {
         Self {
             file_path: file_path.as_ref().to_path_buf(),
+            to_files: None,
+        }
+    }
+
+    /// Create a query that will add the given file to IPFS and reference it in the MFS.
+    pub fn new_with_mfs_reference<P1: AsRef<Path>, P2: AsRef<Path>>(
+        file_path: P1,
+        mfs_path: P2,
+    ) -> Self {
+        Self {
+            file_path: file_path.as_ref().to_path_buf(),
+            to_files: Some(mfs_path.as_ref().to_path_buf()),
         }
     }
 }
@@ -48,7 +61,13 @@ impl KuboRpcQuery for IpfsAddQuery {
         request_builder: RequestBuilder,
     ) -> StdResult<RequestBuilder> {
         let form = reqwest::multipart::Form::new().file("file", &self.file_path).await?;
-        Ok(request_builder.multipart(form))
+        let mut request_builder = request_builder.multipart(form);
+
+        if let Some(mfs_path) = &self.to_files {
+            request_builder = request_builder.query(&[("to-files", mfs_path)]);
+        }
+
+        Ok(request_builder)
     }
 
     async fn handle_success(&self, response: Response) -> StdResult<Self::Response> {
