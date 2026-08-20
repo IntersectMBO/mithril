@@ -240,7 +240,7 @@ fn recursive_verifying_key_cache(
     unsafe_srs_seed: u64,
 ) -> FileMutex {
     FileMutex::for_shared_cache(
-        "ivc-recursive-verifying-key-v1",
+        "ivc-recursive-verifying-key",
         &[
             certificate_verifying_key_bytes,
             production_recursive_verifying_key,
@@ -260,7 +260,7 @@ fn signer_fixture_cache(
     genesis_next_protocol_parameters: u64,
 ) -> FileMutex {
     FileMutex::for_shared_cache(
-        "ivc-signer-fixture-v1",
+        "ivc-signer-fixture",
         &[
             &signer_count.to_le_bytes(),
             &asset_seed.to_le_bytes(),
