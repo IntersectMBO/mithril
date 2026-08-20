@@ -1,4 +1,5 @@
 mod api;
+pub mod query;
 
 pub use api::{KuboRpcClient, KuboRpcQuery};
 
