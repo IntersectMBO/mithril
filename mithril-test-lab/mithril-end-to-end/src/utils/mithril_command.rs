@@ -73,6 +73,10 @@ impl MithrilCommand {
         self.env_vars.insert(name.to_string(), value.to_string());
     }
 
+    pub fn unset_env_var(&mut self, name: &str) {
+        self.env_vars.remove(name);
+    }
+
     pub fn start(&mut self, args: &[String]) -> StdResult<Child> {
         let args = [&self.default_args, args].concat();
 

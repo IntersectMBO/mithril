@@ -37,6 +37,7 @@ format is: `- **since 'X.Y.Z' (distribution version) [to 'X.Y.Z' (distribution v
 
 - **since `0.8.34`**: addition of `--mithril-era` flag to `genesis bootstrap` command
 - **since `0.7.94` (next to 2543.1)**: only the leader aggregator must be restarted when updating protocol parameters
+- **since `0.10.0` (next to 2630.0)**: support of on cardano on-chain protocol parameters
 
 ### Mithril signer
 
