@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.8 (08-20-2026)
+
+### Changed
+
+- Extended the on-disk test cache to the recursive circuit fixtures, so the recursive verifying key, the certificate golden circuit keys and the deterministic signer fixture are derived once and shared across test processes instead of being rebuilt by each one.
+- Shared the unsafe SRS cache between the circuit test generators and the prover setup, so the SRS is generated once per degree across the whole test suite.
+
+### Removed
+
+- Removed the `StmCircuitError::CircuitKeysCacheLockPoisoned` variant, which became unreachable once the in-process circuit key cache was replaced by the on-disk cache.
+
 ## 0.12.7 (08-19-2026)
 
 ### Changed
