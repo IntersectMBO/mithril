@@ -7,13 +7,15 @@ use slog::{Logger, error};
 
 use mithril_common::{
     StdResult,
-    entities::{CompressionAlgorithm, ImmutableFileNumber, ImmutablesLocation, MultiFilesUri},
+    entities::{
+        CompressionAlgorithm, ImmutableFileNumber, ImmutablesLocation, MultiFilesUri, TemplateUri,
+    },
     logging::LoggerExtensions,
 };
 
 use crate::{
     DumbUploader, FileUploader,
-    file_uploaders::{CloudUploader, LocalUploader},
+    file_uploaders::{CloudUploader, IpfsUploader, LocalUploader},
     services::Snapshotter,
 };
 
@@ -94,6 +96,28 @@ impl ImmutableFilesUploader for LocalUploader {
 
         Ok(ImmutablesLocation::CloudStorage {
             uri: MultiFilesUri::Template(template_uri),
+            compression_algorithm,
+        })
+    }
+}
+
+#[async_trait]
+impl ImmutableFilesUploader for IpfsUploader {
+    async fn batch_upload(
+        &self,
+        filepaths: &[PathBuf],
+        compression_algorithm: Option<CompressionAlgorithm>,
+    ) -> StdResult<ImmutablesLocation> {
+        for filepath in filepaths {
+            self.upload(filepath).await?;
+        }
+
+        let directory_cid = self.get_current_directory_cid().await?;
+
+        Ok(ImmutablesLocation::CloudStorage {
+            uri: MultiFilesUri::Template(TemplateUri(format!(
+                "{directory_cid}/{{immutable_file_number}}.tar.zst"
+            ))),
             compression_algorithm,
         })
     }
