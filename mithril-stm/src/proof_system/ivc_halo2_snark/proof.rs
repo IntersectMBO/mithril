@@ -43,7 +43,10 @@ use crate::{
     proof_system::ivc_halo2_snark::{
         errors::IvcProofError,
         prover_input::IvcProverInput,
-        prover_input_helpers::IvcTransitionType,
+        prover_input_helpers::{
+            IvcTransitionType, assert_message_hash_matches_preimage,
+            create_snark_message_for_next_state,
+        },
         prover_setup::IvcSnarkProverSetup,
         rolling_state::{IvcRollingState, midnight_accumulator_serde},
         verifier_setup::IvcVerifierSetup,
@@ -59,16 +62,16 @@ pub(crate) struct IvcProver<R: RngCore + CryptoRng> {
     pub(crate) rng: R,
 }
 
-/// Runs [`IvcProverInput::prepare_checks`] and discards the result. Exposed so a caller like
+/// Runs [`IvcProverInput::off_circuit_checks`] and discards the result. Exposed so a caller like
 /// `Clerk::aggregate_signatures_with_type` can reject a malformed request before generating the
 /// certificate proof, without needing access to `IvcProverInput` itself.
-pub(crate) fn prepare_checks<D: MembershipDigest>(
+pub(crate) fn off_circuit_checks<D: MembershipDigest>(
     message: &[u8],
     aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
     protocol_message_preimage: &ProtocolMessagePreimage,
     rolling_state: &IvcRollingState,
 ) -> StmResult<()> {
-    IvcProverInput::prepare_checks(
+    IvcProverInput::off_circuit_checks(
         message,
         aggregate_verification_key,
         protocol_message_preimage,
@@ -78,16 +81,24 @@ pub(crate) fn prepare_checks<D: MembershipDigest>(
 }
 
 /// Runs [`IvcProverInput::prepare_genesis`]'s checks and discards the result: verifies the
-/// genesis message hashes to the supplied preimage, then verifies the genesis Schnorr
-/// signature. Exposed so a caller like `Clerk::aggregate_signatures_with_type` can reject a
-/// malformed genesis request before generating the certificate proof.
-pub(crate) fn prepare_genesis_checks(
+/// genesis message hashes to `genesis_protocol_message_preimage`, then verifies the genesis
+/// Schnorr signature. Additionally checks that the first real certificate's own message hashes
+/// to `protocol_message_preimage`, mirroring [`off_circuit_checks`]'s hash check for the
+/// non-genesis path. Exposed so a caller like `Clerk::aggregate_signatures_with_type` can reject
+/// a malformed genesis request before generating the certificate proof.
+pub(crate) fn off_circuit_genesis_checks<D: MembershipDigest>(
     rolling_state: &IvcRollingState,
-    protocol_message_preimage: &ProtocolMessagePreimage,
+    genesis_protocol_message_preimage: &ProtocolMessagePreimage,
     global: &Global,
+    message: &[u8],
+    aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
+    protocol_message_preimage: &ProtocolMessagePreimage,
 ) -> StmResult<()> {
-    IvcProverInput::prepare_genesis(rolling_state, protocol_message_preimage, global)?;
-    Ok(())
+    IvcProverInput::prepare_genesis(rolling_state, genesis_protocol_message_preimage, global)?;
+
+    let (certificate_message_hash, _) =
+        create_snark_message_for_next_state(aggregate_verification_key, message)?;
+    assert_message_hash_matches_preimage(certificate_message_hash, protocol_message_preimage)
 }
 
 /// Bootstrap input for the first [`IvcProver::prove`] call in an IVC chain.
@@ -338,7 +349,9 @@ where
 /// a normal step that silently ignores the certificate. Since `genesis_bootstrap` is always
 /// supplied, this is the only remaining invalid context: the previously-possible both-`Some` and
 /// both-`None` misuses are now unrepresentable.
-fn ensure_advanceable_rolling_state(rolling_state: Option<&IvcRollingState>) -> StmResult<()> {
+pub(crate) fn ensure_advanceable_rolling_state(
+    rolling_state: Option<&IvcRollingState>,
+) -> StmResult<()> {
     if rolling_state.is_some_and(|rs| rs.is_genesis()) {
         return Err(IvcProofError::InvalidProvingContext.into());
     }
@@ -523,24 +536,34 @@ mod tests {
     };
 
     use crate::{
+        AggregateVerificationKeyForSnark, MithrilMembershipDigest,
         circuits::halo2::types::CircuitBase,
         circuits::halo2_ivc::{
+            PREIMAGE_SIZE,
+            errors::IvcCircuitError,
             state::Global,
             tests::common::{
                 asset_readers::{
+                    load_embedded_first_certificate_in_epoch_asset,
                     load_embedded_following_certificate_in_epoch_asset,
                     load_embedded_next_epoch_step_output_asset,
                     load_embedded_recursive_chain_state_asset,
                     load_embedded_verification_context_asset,
                 },
-                generators::{build_asset_generation_setup_from_cache, build_recursive_global},
+                generators::{
+                    build_asset_generation_setup_from_cache,
+                    build_genesis_protocol_message_preimage, build_recursive_global,
+                    setup::TOTAL_STAKE,
+                },
             },
-            types::{IvcProofBytes, MessageHash},
+            types::{IvcProofBytes, MessageHash, ProtocolMessagePreimage},
         },
-        proof_system::ivc_halo2_snark::{errors::IvcProofError, verifier_setup::IvcVerifierSetup},
+        proof_system::ivc_halo2_snark::{
+            errors::IvcProofError, rolling_state::IvcRollingState, verifier_setup::IvcVerifierSetup,
+        },
     };
 
-    use super::IvcProof;
+    use super::{IvcProof, off_circuit_genesis_checks};
 
     const STEP_OUTPUT_MSG: [u8; 32] = [
         22, 148, 87, 37, 149, 0, 124, 10, 156, 94, 108, 6, 78, 59, 239, 80, 126, 213, 158, 211,
@@ -572,6 +595,76 @@ mod tests {
             ctx.combined_fixed_bases,
         );
         (global, verifier_setup)
+    }
+
+    /// Builds a valid genesis rolling state and preimage
+    fn build_consistent_genesis_fixture() -> (IvcRollingState, ProtocolMessagePreimage) {
+        let setup = build_asset_generation_setup_from_cache();
+        let genesis_protocol_message_preimage_bytes: [u8; PREIMAGE_SIZE] =
+            build_genesis_protocol_message_preimage(&setup)
+                .try_into()
+                .expect("genesis preimage should be exactly PREIMAGE_SIZE bytes");
+        let rolling_state = IvcRollingState::genesis(setup.genesis_signature, &[]);
+        (
+            rolling_state,
+            ProtocolMessagePreimage::new(genesis_protocol_message_preimage_bytes),
+        )
+    }
+
+    #[test]
+    fn off_circuit_genesis_checks_rejects_mismatched_certificate_preimage() {
+        let (global, _) = build_proof_verifier_context();
+        let (rolling_state, genesis_protocol_message_preimage) = build_consistent_genesis_fixture();
+
+        let avk =
+            AggregateVerificationKeyForSnark::<MithrilMembershipDigest>::from_bytes(&[0u8; 40])
+                .expect("zero AVK should decode");
+        let mismatched_preimage = ProtocolMessagePreimage::new([0u8; PREIMAGE_SIZE]);
+
+        let err = off_circuit_genesis_checks(
+            &rolling_state,
+            &genesis_protocol_message_preimage,
+            &global,
+            &[0u8; 32],
+            &avk,
+            &mismatched_preimage,
+        )
+        .expect_err("mismatched certificate preimage must be rejected");
+
+        let circuit_error = err
+            .downcast_ref::<IvcCircuitError>()
+            .expect("error chain should carry IvcCircuitError");
+        assert!(matches!(
+            circuit_error,
+            IvcCircuitError::MessagePreimageMismatch
+        ));
+    }
+
+    #[test]
+    fn off_circuit_genesis_checks_accepts_matching_certificate_preimage() {
+        let (global, _) = build_proof_verifier_context();
+        let (rolling_state, genesis_protocol_message_preimage) = build_consistent_genesis_fixture();
+
+        let first_step = load_embedded_first_certificate_in_epoch_asset()
+            .expect("first certificate asset should load");
+
+        let mut avk_bytes = [0u8; 40];
+        avk_bytes[0..32].copy_from_slice(&first_step.aggregate_verification_key_merkle_root);
+        avk_bytes[32..40].copy_from_slice(&TOTAL_STAKE.to_be_bytes());
+        let avk =
+            AggregateVerificationKeyForSnark::<MithrilMembershipDigest>::from_bytes(&avk_bytes)
+                .expect("AVK should decode from asset bytes");
+        let protocol_message_preimage = ProtocolMessagePreimage::new(first_step.message_preimage);
+
+        off_circuit_genesis_checks(
+            &rolling_state,
+            &genesis_protocol_message_preimage,
+            &global,
+            &first_step.message,
+            &avk,
+            &protocol_message_preimage,
+        )
+        .expect("matching certificate preimage should be accepted");
     }
 
     #[test]

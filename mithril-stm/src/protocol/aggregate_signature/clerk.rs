@@ -22,7 +22,7 @@ use crate::{
         halo2::keys::NonRecursiveCircuitVerifyingKey, halo2_ivc::PREIMAGE_SIZE,
         key_provider::KeyProvider, trusted_setup::TrustedSetupProvider,
     },
-    proof_system::ivc_halo2_snark::IvcSnarkProverSetup,
+    proof_system::ivc_halo2_snark::{IvcSnarkProverSetup, proof::ensure_advanceable_rolling_state},
 };
 
 #[cfg(feature = "future_snark")]
@@ -33,8 +33,8 @@ use crate::{
         MERKLE_TREE_DEPTH_FOR_SNARK, SnarkClerk, SnarkProver, SnarkVerifierData,
         ivc_halo2_snark::{
             proof::{
-                IvcGenesisBootstrapInput, IvcProof, IvcProver, prepare_checks,
-                prepare_genesis_checks,
+                IvcGenesisBootstrapInput, IvcProof, IvcProver, off_circuit_checks,
+                off_circuit_genesis_checks,
             },
             rolling_state::IvcRollingState,
             verifier_setup::IvcVerifierData,
@@ -153,7 +153,8 @@ impl<D: MembershipDigest> Clerk<D> {
                     .get_snark_clerk()
                     .ok_or_else(|| anyhow!(AggregateSignatureError::MissingSnarkClerk))?;
 
-                let prepared = prepare_ivc_snark_request(snark_clerk, &ancillary_input, msg)?;
+                let prepared =
+                    prepare_and_check_ivc_snark_request(snark_clerk, &ancillary_input, msg)?;
 
                 let (ivc_proof, next_ancillary_prover_data, ancillary_verifier_data) =
                     prove_ivc_snark(prepared, sigs, msg, snark_clerk)?;
@@ -218,7 +219,7 @@ impl<D: MembershipDigest> Clerk<D> {
     }
 }
 
-/// Bundles the outputs of [`prepare_ivc_snark_request`]: everything [`prove_ivc_snark`] needs to
+/// Bundles the outputs of [`prepare_and_check_ivc_snark_request`]: everything [`prove_ivc_snark`] needs to
 /// generate the certificate proof and complete IVC proving, once the request has passed every
 /// check that doesn't require that proof.
 #[cfg(feature = "future_snark")]
@@ -236,7 +237,7 @@ struct PreparedIvcSnarkRequest<'a> {
 /// presence, protocol parameters unchanged, and message/preimage hash matching (genesis or
 /// non-genesis, depending on whether `ancillary_input` carries a rolling state).
 #[cfg(feature = "future_snark")]
-fn prepare_ivc_snark_request<'a>(
+fn prepare_and_check_ivc_snark_request<'a>(
     snark_clerk: &SnarkClerk,
     ancillary_input: &'a AncillaryProofInput,
     msg: &[u8],
@@ -281,13 +282,13 @@ fn prepare_ivc_snark_request<'a>(
         &ivc_prover_setup.ivc_verifying_key,
     )?;
 
+    let avk = snark_clerk.compute_aggregate_verification_key_for_snark::<MithrilMembershipDigest>();
+    ensure_advanceable_rolling_state(current_rolling_state)?;
     match current_rolling_state {
         Some(rolling_state) => {
             rolling_state.assert_protocol_parameters_unchanged()?;
 
-            let avk = snark_clerk
-                .compute_aggregate_verification_key_for_snark::<MithrilMembershipDigest>();
-            prepare_checks(msg, &avk, &protocol_message_preimage, rolling_state)?;
+            off_circuit_checks(msg, &avk, &protocol_message_preimage, rolling_state)?;
         }
         None => {
             let combined_fixed_base_names: Vec<String> =
@@ -296,7 +297,14 @@ fn prepare_ivc_snark_request<'a>(
                 genesis_bootstrap.genesis_signature,
                 &combined_fixed_base_names,
             );
-            prepare_genesis_checks(&genesis_rolling_state, &protocol_message_preimage, &global)?;
+            off_circuit_genesis_checks(
+                &genesis_rolling_state,
+                &genesis_bootstrap.genesis_protocol_message_preimage,
+                &global,
+                msg,
+                &avk,
+                &protocol_message_preimage,
+            )?;
         }
     }
 
@@ -311,7 +319,7 @@ fn prepare_ivc_snark_request<'a>(
 }
 
 /// Generates the certificate proof and completes IVC proving for a request already validated by
-/// [`prepare_ivc_snark_request`].
+/// [`prepare_and_check_ivc_snark_request`].
 ///
 /// Returns `(proof, ancillary_prover_data, ancillary_verifier_data)`. `ancillary_prover_data` is `Some` when
 /// the step advances the epoch and `None` for same-epoch steps.
@@ -382,19 +390,24 @@ mod tests {
     use rand_core::SeedableRng;
 
     use crate::{
-        AncillaryGenesisData, AncillaryProofInput, Parameters, SchnorrSigningKey,
-        SchnorrVerificationKey,
-        circuits::halo2_ivc::PREIMAGE_SIZE,
+        AggregationError, AncillaryGenesisData, AncillaryProofInput, AncillaryProverData,
+        BaseFieldElement, Parameters, SchnorrSigningKey, SchnorrVerificationKey,
+        StandardSchnorrSignature, circuits::halo2_ivc::PREIMAGE_SIZE,
         protocol::aggregate_signature::tests::setup_equal_parties,
-        {AggregationError, AncillaryProverData},
     };
 
     use super::{AggregateSignatureType, Clerk};
 
-    fn valid_genesis_verification_key() -> SchnorrVerificationKey {
+    fn valid_genesis_verification_key_and_signature()
+    -> (StandardSchnorrSignature, SchnorrVerificationKey) {
         let mut rng = ChaCha20Rng::from_seed([7u8; 32]);
         let signing_key = SchnorrSigningKey::generate(&mut rng);
-        SchnorrVerificationKey::new_from_signing_key(signing_key)
+        (
+            signing_key
+                .sign_standard(&[BaseFieldElement::get_one()], &mut rng)
+                .unwrap(),
+            SchnorrVerificationKey::new_from_signing_key(signing_key),
+        )
     }
 
     #[test]
@@ -408,10 +421,15 @@ mod tests {
         let ps = setup_equal_parties(tiny_params, 1);
         let clerk = Clerk::new_clerk_from_signer(&ps[0]);
 
-        let genesis_verification_key = valid_genesis_verification_key();
+        let (schnorr_sig, genesis_verification_key) =
+            valid_genesis_verification_key_and_signature();
         let ancillary_input = AncillaryProofInput::new(
             Some(AncillaryProverData::Future),
-            AncillaryGenesisData::new(vec![0u8; 32], None, Some(genesis_verification_key)),
+            AncillaryGenesisData::new(
+                vec![0u8; PREIMAGE_SIZE],
+                Some(schnorr_sig),
+                Some(genesis_verification_key),
+            ),
             vec![0u8; PREIMAGE_SIZE],
         );
 
