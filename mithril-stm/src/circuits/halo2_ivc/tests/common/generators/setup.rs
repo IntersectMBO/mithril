@@ -375,7 +375,7 @@ fn build_shared_recursive_context_with(
         if degree == shared_srs_degree {
             universal_kzg_parameters.clone()
         } else {
-            build_deterministic_params(degree)
+            load_shared_unsafe_srs(degree)
         }
     };
 
