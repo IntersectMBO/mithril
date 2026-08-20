@@ -19,7 +19,7 @@ pub use cardano::{
     SignerRegistrationParameters, Sum6KesBytes,
 };
 pub use codec::*;
-pub use ed25519_alias::{era::*, manifest::*};
+pub use ed25519_alias::{era::*, manifest::*, protocol_configuration::*};
 pub use genesis::*;
 pub use mithril_merkle_tree::{
     Bytes, MKMap, MKMapKey, MKMapNode, MKMapProof, MKMapValue, MKProof, MKTree, MKTreeLeafIndexer,

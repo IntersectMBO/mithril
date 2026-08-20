@@ -1,6 +1,9 @@
 mod test_extensions;
 
-use std::time::Duration;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
 use mithril_aggregator::ServeCommandConfiguration;
 use mithril_common::{
@@ -10,6 +13,9 @@ use mithril_common::{
     },
     temp_dir,
     test::builder::MithrilFixtureBuilder,
+};
+use mithril_protocol_config::model::{
+    ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch,
 };
 use test_extensions::{
     ExpectedCertificate, ExpectedMetrics, RuntimeTester, utilities::get_test_dir,
@@ -23,11 +29,21 @@ async fn open_message_expiration() {
         phi_f: 0.95,
     };
     let configuration = ServeCommandConfiguration {
-        protocol_parameters: Some(protocol_parameters.clone()),
         data_stores_directory: get_test_dir("open_message_expiration"),
         signed_entity_types: Some(SignedEntityTypeDiscriminants::CardanoDatabase.to_string()),
         ..ServeCommandConfiguration::new_sample(temp_dir!())
     };
+    let protocol_configuration_markers = ConfigurationResolverFromMarkers::new(BTreeMap::from([(
+        Epoch(0),
+        ProtocolConfigurationForEpoch {
+            protocol_parameters: protocol_parameters.clone(),
+            enabled_signed_entity_types: BTreeSet::from([
+                SignedEntityTypeDiscriminants::CardanoDatabase,
+            ]),
+            cardano_blocks_transactions: None,
+            cardano_transactions: None,
+        },
+    )]));
     let mut tester = RuntimeTester::build(
         TimePoint::new(
             1,
@@ -35,6 +51,7 @@ async fn open_message_expiration() {
             ChainPoint::new(SlotNumber(10), BlockNumber(1), "block_hash-1"),
         ),
         configuration,
+        protocol_configuration_markers,
     )
     .await;
 

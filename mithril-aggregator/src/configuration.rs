@@ -4,14 +4,13 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use config::{ConfigError, Map, Source, Value, ValueKind};
+use mithril_protocol_config::builder::AdapterConfig;
 use semver::Version;
 use serde::Deserialize;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserverType;
 use mithril_cli_helper::{register_config_value, serde_deserialization};
-use mithril_common::crypto_helper::{
-    GenesisEd25519Signer, ManifestSigner, ProtocolConfigurationMarkersVerifierVerificationKey,
-};
+use mithril_common::crypto_helper::{GenesisEd25519Signer, ManifestSigner};
 use mithril_common::entities::{
     BlockNumber, BlockNumberOffset, CardanoBlocksTransactionsSigningConfig,
     CardanoTransactionsSigningConfig, CompressionAlgorithm, ConfigSecret,
@@ -198,9 +197,9 @@ pub trait ConfigurationSource {
         panic!("era_reader_adapter_params is not implemented.");
     }
 
-    /// Protocol configuration reader adapter parameters
-    fn protocol_configuration_reader_parameters(&self) -> ProtocolConfigurationReaderParameters {
-        panic!("protocol_configuration_reader_parameters is not implemented.");
+    /// Protocol configuration reader adapter configuration
+    fn protocol_configuration_reader_adapter_config(&self) -> AdapterConfig {
+        panic!("protocol_configuration_reader_adapter_config is not implemented.");
     }
 
     /// Configuration of the ancillary files signer
@@ -578,6 +577,13 @@ pub struct ServeCommandConfiguration {
     /// Era reader adapter parameters
     pub era_reader_adapter_params: Option<String>,
 
+    /// Protocol configuration reader adapter configuration
+    #[example = "\
+    - cardano-chain:<br/>`{ \"type\": \"cardano-chain\", \"address\": \"test_address\",  \"verification_key\": \"136372c3138312c3138382c3130352c3233312c3135\" }`<br/>\
+    "]
+    #[serde(deserialize_with = "serde_deserialization::string_or_struct")]
+    pub protocol_configuration_reader_adapter_config: AdapterConfig,
+
     /// Configuration of the ancillary files signer
     ///
     /// Can either be a secret key or a key stored in a Google Cloud Platform KMS account.
@@ -779,24 +785,6 @@ impl FromStr for AncillaryFilesSignerConfig {
     }
 }
 
-/// Configuration of the protocol Configuration Reader
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-pub struct ProtocolConfigurationReaderParameters {
-    /// Address
-    pub address: String,
-
-    /// Verification key
-    pub verification_key: ProtocolConfigurationMarkersVerifierVerificationKey,
-}
-
-impl FromStr for ProtocolConfigurationReaderParameters {
-    type Err = serde_json::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_str(s)
-    }
-}
-
 impl ServeCommandConfiguration {
     /// Create a sample configuration mainly for tests
     pub fn new_sample(tmp_path: PathBuf) -> Self {
@@ -816,11 +804,7 @@ impl ServeCommandConfiguration {
             network_magic: Some(42),
             dmq_network_magic: Some(3141592),
             chain_observer_type: ChainObserverType::Fake,
-            protocol_parameters: Some(ProtocolParameters {
-                k: 5,
-                m: 100,
-                phi_f: 0.95,
-            }),
+            protocol_parameters: None,
             snapshot_uploader_type: SnapshotUploaderType::Local,
             snapshot_bucket_name: None,
             snapshot_use_cdn_domain: false,
@@ -843,6 +827,7 @@ impl ServeCommandConfiguration {
             store_retention_limit: None,
             era_reader_adapter_type: EraReaderAdapterType::Bootstrap,
             era_reader_adapter_params: None,
+            protocol_configuration_reader_adapter_config: AdapterConfig::Fake,
             ancillary_files_signer_config: AncillaryFilesSignerConfig::SecretKey {
                 secret_key: ancillary_files_signer_secret_key.to_json_hex().unwrap(),
             },
@@ -856,16 +841,8 @@ impl ServeCommandConfiguration {
             cardano_blocks_transactions_database_connection_pool_size: 5,
             cardano_transactions_prover_cache_pool_size: 3,
             cardano_transactions_database_connection_pool_size: 5,
-            cardano_transactions_signing_config: Some(CardanoTransactionsSigningConfig {
-                security_parameter: BlockNumberOffset(120),
-                step: BlockNumber(15),
-            }),
-            cardano_blocks_transactions_signing_config: Some(
-                CardanoBlocksTransactionsSigningConfig {
-                    security_parameter: BlockNumberOffset(120),
-                    step: BlockNumber(15),
-                },
-            ),
+            cardano_transactions_signing_config: None,
+            cardano_blocks_transactions_signing_config: None,
             preload_security_parameter: BlockNumber(30),
             cardano_prover_max_hashes_allowed_by_request: 100,
             cardano_transactions_block_streamer_max_roll_forwards_per_poll: 1000,
@@ -993,6 +970,10 @@ impl ConfigurationSource for ServeCommandConfiguration {
 
     fn era_reader_adapter_params(&self) -> Option<String> {
         self.era_reader_adapter_params.clone()
+    }
+
+    fn protocol_configuration_reader_adapter_config(&self) -> AdapterConfig {
+        self.protocol_configuration_reader_adapter_config.clone()
     }
 
     fn ancillary_files_signer_config(&self) -> AncillaryFilesSignerConfig {

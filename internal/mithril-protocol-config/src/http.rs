@@ -8,7 +8,7 @@ use std::sync::Arc;
 use mithril_aggregator_client::AggregatorHttpClient;
 use mithril_aggregator_client::query::GetProtocolConfigurationQuery;
 use mithril_common::StdResult;
-use mithril_common::entities::{Epoch, SignedEntityConfigValidator};
+use mithril_common::entities::{Epoch, InconsistentSignedEntityConfigError};
 use mithril_common::logging::LoggerExtensions;
 
 use crate::interface::MithrilNetworkConfigurationProvider;
@@ -33,28 +33,22 @@ impl HttpMithrilNetworkConfigurationProvider {
         &self,
         epoch: Epoch,
     ) -> StdResult<Option<MithrilNetworkConfigurationForEpoch>> {
-        if let Some(mut configuration) = self
+        let configuration = self
             .aggregator_http_client
             .send(GetProtocolConfigurationQuery::epoch(epoch))
             .await?
-            .map(Into::<MithrilNetworkConfigurationForEpoch>::into)
-        {
-            if let Err(err) = SignedEntityConfigValidator::check_consistency(
-                &configuration.enabled_signed_entity_types,
-                &configuration.signed_entity_types_config.cardano_transactions,
-                &configuration.signed_entity_types_config.cardano_blocks_transactions,
-            ) {
-                warn!(
-                    self.logger, "Some allowed signed entity could not be enabled for epoch {epoch}; using only the usable subset";
-                    "error" => %err
-                );
-                configuration.enabled_signed_entity_types = err.usable_discriminants;
-            };
+            .map(MithrilNetworkConfigurationForEpoch::from)
+            .map(|configuration| {
+                configuration.ensure_consistency(|err| self.log_inconsistency_error(epoch, err))
+            });
+        Ok(configuration)
+    }
 
-            Ok(Some(configuration))
-        } else {
-            Ok(None)
-        }
+    fn log_inconsistency_error(&self, epoch: Epoch, err: &InconsistentSignedEntityConfigError) {
+        warn!(
+            &self.logger, "Some allowed signed entity could not be enabled for epoch {epoch}; using only the usable subset";
+            "error" => %err
+        );
     }
 }
 

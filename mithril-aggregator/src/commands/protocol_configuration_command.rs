@@ -29,13 +29,13 @@ use mithril_common::{
     messages::SignedEntityTypeDiscriminantsMessage::Known,
 };
 use mithril_doc::{Documenter, StructDoc};
-use mithril_protocol_config::model::{
-    ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch,
+use mithril_protocol_config::{
+    builder::AdapterConfig,
+    model::{ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch},
 };
 
 use crate::{
-    ConfigurationSource, ExecutionEnvironment,
-    configuration::ProtocolConfigurationReaderParameters, extract_all,
+    ConfigurationSource, ExecutionEnvironment, extract_all,
     tools::HumanReadableProtocolConfiguration,
 };
 use crate::{dependency_injection::DependenciesBuilder, tools::ProtocolConfigurationTools};
@@ -56,6 +56,12 @@ pub struct ProtocolConfigurationParametersConfiguration {
     #[example = "`/ipc/node.socket`"]
     pub cardano_node_socket_path: PathBuf,
 
+    /// Cardano Network Magic number
+    ///
+    /// useful for TestNet & DevNet
+    #[example = "`1097911063` or `42`"]
+    pub network_magic: Option<u64>,
+
     /// Cardano network
     #[example = "`mainnet` or `preprod` or `devnet`"]
     network: String,
@@ -63,12 +69,12 @@ pub struct ProtocolConfigurationParametersConfiguration {
     /// Cardano chain observer type
     pub chain_observer_type: ChainObserverType,
 
-    /// Protocol configuration Reader Adapter Parameters
+    /// Protocol configuration reader adapter configuration
     #[example = "\
-    `{ \"address\": \"address\", \"verification_key\": \"key\" }`\
+    - cardano-chain:<br/>`{ \"type\": \"cardano-chain\", \"address\": \"test_address\",  \"verification_key\": \"136372c3138312c3138382c3130352c3233312c3135\" }`<br/>\
     "]
     #[serde(deserialize_with = "serde_deserialization::string_or_struct")]
-    pub protocol_configuration_reader_adapter_params: ProtocolConfigurationReaderParameters,
+    pub protocol_configuration_reader_adapter_config: AdapterConfig,
 }
 
 impl ConfigurationSource for ProtocolConfigurationParametersConfiguration {
@@ -80,6 +86,10 @@ impl ConfigurationSource for ProtocolConfigurationParametersConfiguration {
         self.cardano_node_socket_path.clone()
     }
 
+    fn network_magic(&self) -> Option<u64> {
+        self.network_magic
+    }
+
     fn network(&self) -> String {
         self.network.clone()
     }
@@ -88,8 +98,8 @@ impl ConfigurationSource for ProtocolConfigurationParametersConfiguration {
         self.chain_observer_type.clone()
     }
 
-    fn protocol_configuration_reader_parameters(&self) -> ProtocolConfigurationReaderParameters {
-        self.protocol_configuration_reader_adapter_params.clone()
+    fn protocol_configuration_reader_adapter_config(&self) -> AdapterConfig {
+        self.protocol_configuration_reader_adapter_config.clone()
     }
 }
 
@@ -268,7 +278,7 @@ pub struct ImportProtocolConfigurationSubCommand {
     pub target_path: PathBuf,
 
     /// Protocol Configuration Markers Secret Key
-    #[clap(long, env = "PROTOCOL_CONFIGURATION_MARKERS_SECRET_KEY")]
+    #[clap(long, env = "PROTOCOL_CONFIGURATION_READER_SECRET_KEY")]
     protocol_configuration_markers_secret_key: HexEncodedProtocolConfigurationMarkersSecretKey,
 }
 

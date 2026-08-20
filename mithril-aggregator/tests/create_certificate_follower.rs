@@ -1,6 +1,9 @@
 mod test_extensions;
 
-use std::{collections::HashMap, ops::Range};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    ops::Range,
+};
 
 use mithril_aggregator::ServeCommandConfiguration;
 use mithril_common::{
@@ -13,6 +16,9 @@ use mithril_common::{
         TempDir,
         builder::{MithrilFixture, MithrilFixtureBuilder, StakeDistributionGenerationMethod},
     },
+};
+use mithril_protocol_config::model::{
+    ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch,
 };
 use test_extensions::{ExpectedCertificate, RuntimeTester, utilities::get_test_dir};
 
@@ -98,15 +104,29 @@ async fn create_certificate_follower() {
         },
     };
     let leader_configuration = ServeCommandConfiguration {
-        protocol_parameters: Some(protocol_parameters.clone()),
         data_stores_directory: get_test_dir("create_certificate_leader"),
         signed_entity_types: Some(
             SignedEntityTypeDiscriminants::CardanoStakeDistribution.to_string(),
         ),
         ..ServeCommandConfiguration::new_sample(temp_dir!())
     };
-    let mut leader_tester =
-        RuntimeTester::build(start_time_point.clone(), leader_configuration.clone()).await;
+    let protocol_configuration_markers = ConfigurationResolverFromMarkers::new(BTreeMap::from([(
+        Epoch(0),
+        ProtocolConfigurationForEpoch {
+            protocol_parameters: protocol_parameters.clone(),
+            enabled_signed_entity_types: BTreeSet::from([
+                SignedEntityTypeDiscriminants::CardanoStakeDistribution,
+            ]),
+            cardano_blocks_transactions: None,
+            cardano_transactions: None,
+        },
+    )]));
+    let mut leader_tester = RuntimeTester::build(
+        start_time_point.clone(),
+        leader_configuration.clone(),
+        protocol_configuration_markers,
+    )
+    .await;
     let leader_aggregator_http_server =
         leader_tester.spawn_leader_aggregator_http_server().await.unwrap();
 
@@ -117,12 +137,16 @@ async fn create_certificate_follower() {
             "create_certificate_follower",
         ),
         leader_aggregator_endpoint: Some(leader_aggregator_http_server.url().to_string()),
-        // Follower must retrieve parameters from the network configuration (today through the leader)
-        // so this parameters should not be read
-        protocol_parameters: None,
         ..leader_configuration
     };
-    let mut follower_tester = RuntimeTester::build(start_time_point, follower_configuration).await;
+    let mut follower_tester = RuntimeTester::build(
+        start_time_point,
+        follower_configuration,
+        // Follower must retrieve parameters from the network configuration (today through the leader)
+        // so this parameters should not be read
+        ConfigurationResolverFromMarkers::new(BTreeMap::new()),
+    )
+    .await;
 
     comment!(
         "Epoch 1:
