@@ -1,7 +1,14 @@
 use slog_scope::info;
 use std::time::Duration;
 
-use mithril_common::{StdResult, entities::Epoch, test::builder::MithrilFixture};
+use mithril_common::{
+    StdResult,
+    entities::{
+        BlockNumber, BlockNumberOffset, CardanoBlocksTransactionsSigningConfig,
+        CardanoTransactionsSigningConfig, Epoch,
+    },
+    test::builder::MithrilFixture,
+};
 
 use crate::{
     AggregateSignatureType, Aggregator, AggregatorConfig,
@@ -33,6 +40,8 @@ pub async fn bootstrap_aggregator(
         mithril_era: &args.mithril_era,
         mithril_era_marker_address: "",
         mithril_era_reader_adapter: "dummy",
+        protocol_configuration_marker_address: "",
+        protocol_configuration_reader_adapter: "dummy",
         signed_entity_types: &signed_entity_types,
         aggregate_signature_type: AggregateSignatureType::Concatenation,
         chain_observer_type,
@@ -56,6 +65,23 @@ pub async fn bootstrap_aggregator(
         .await;
     aggregator
         .set_protocol_parameters(&signers_fixture.protocol_parameters())
+        .await;
+
+    let cardano_transaction_signing_config = Some(CardanoTransactionsSigningConfig {
+        security_parameter: BlockNumberOffset(1),
+        step: BlockNumber(15),
+    });
+
+    let cardano_blocks_transactions_signing_config = Some(CardanoBlocksTransactionsSigningConfig {
+        security_parameter: BlockNumberOffset(1),
+        step: BlockNumber(15),
+    });
+
+    aggregator
+        .set_signing_config(
+            cardano_transaction_signing_config,
+            cardano_blocks_transactions_signing_config,
+        )
         .await;
 
     info!(

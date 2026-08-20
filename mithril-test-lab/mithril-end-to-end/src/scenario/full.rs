@@ -192,7 +192,7 @@ impl FullScenario {
 
             self.toolkit
                 .exec
-                .update_protocol_parameters(aggregator, infrastructure.aggregate_signature_type())
+                .update_protocol_parameters(aggregator, infrastructure, target_epoch + 3)
                 .await?;
         }
 

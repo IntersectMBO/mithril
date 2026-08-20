@@ -1,11 +1,17 @@
+use mithril_common::messages::SignedEntityTypeDiscriminantsMessage;
+use serde::{Deserialize, Serialize};
 use slog_scope::info;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use mithril_cardano_node_chain::chain_observer::{ChainObserver, PallasChainObserver};
-use mithril_common::entities::{Epoch, PartyId, ProtocolParameters};
+use mithril_common::entities::{
+    CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch, PartyId,
+    ProtocolParameters,
+};
 use mithril_common::{CardanoNetwork, StdResult};
 
 use crate::mithril::relay_signer::RelaySignerConfiguration;
@@ -16,6 +22,15 @@ use crate::{
 };
 
 use super::signer::SignerConfig;
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct ProtocolConfiguration {
+    pub epoch: Epoch,
+    pub protocol_parameters: ProtocolParameters,
+    pub cardano_transaction_signing_config: Option<CardanoTransactionsSigningConfig>,
+    pub cardano_blocks_transactions_signing_config: Option<CardanoBlocksTransactionsSigningConfig>,
+    pub enabled_signed_entity_types: BTreeSet<SignedEntityTypeDiscriminantsMessage>,
+}
 
 pub struct MithrilInfrastructureConfig {
     pub number_of_aggregators: u8,
@@ -30,6 +45,8 @@ pub struct MithrilInfrastructureConfig {
     pub mithril_run_interval: u32,
     pub mithril_era: String,
     pub mithril_era_reader_adapter: String,
+    pub protocol_configuration_reader_adapter: String,
+    pub startup_protocol_configuration: ProtocolConfiguration,
     pub signed_entity_types: Vec<String>,
     pub aggregate_signature_type: AggregateSignatureType,
     pub use_relays: bool,
@@ -53,6 +70,8 @@ impl MithrilInfrastructureConfig {
 
     #[cfg(test)]
     pub fn dummy() -> Self {
+        use mithril_common::test::double::Dummy;
+
         Self {
             number_of_aggregators: 1,
             number_of_signers: 1,
@@ -66,6 +85,16 @@ impl MithrilInfrastructureConfig {
             mithril_run_interval: 10,
             mithril_era: "era1".to_string(),
             mithril_era_reader_adapter: "adapter1".to_string(),
+            protocol_configuration_reader_adapter: "adapter1".to_string(),
+            startup_protocol_configuration: ProtocolConfiguration {
+                epoch: Epoch(42),
+                protocol_parameters: ProtocolParameters::new(10, 20, 0.123),
+                cardano_transaction_signing_config: Some(CardanoTransactionsSigningConfig::dummy()),
+                cardano_blocks_transactions_signing_config: Some(
+                    CardanoBlocksTransactionsSigningConfig::dummy(),
+                ),
+                enabled_signed_entity_types: SignedEntityTypeDiscriminantsMessage::all_known(),
+            },
             signed_entity_types: vec!["type1".to_string()],
             aggregate_signature_type: AggregateSignatureType::Concatenation,
             use_relays: false,
@@ -92,6 +121,7 @@ pub struct MithrilInfrastructure {
     relay_passives: Vec<RelayPassive>,
     cardano_node_version: semver::Version,
     cardano_chain_observer: Arc<dyn ChainObserver>,
+    startup_protocol_configuration: ProtocolConfiguration,
     current_era: RwLock<String>,
     era_reader_adapter: String,
     use_era_specific_work_dir: bool,
@@ -121,6 +151,14 @@ impl MithrilInfrastructure {
         let (leader_aggregator, follower_aggregators) =
             Self::prepare_aggregators(config, aggregator_cardano_nodes, chain_observer_type)
                 .await?;
+
+        Self::register_startup_protocol_configurations(
+            &toolkit,
+            &leader_aggregator,
+            config,
+            Vec::from([config.startup_protocol_configuration.clone()]),
+        )
+        .await?;
 
         Self::register_startup_era(&toolkit, &leader_aggregator, config).await?;
         toolkit
@@ -175,6 +213,7 @@ impl MithrilInfrastructure {
             relay_passives,
             cardano_chain_observer,
             cardano_node_version: config.cardano_node_version.clone(),
+            startup_protocol_configuration: config.startup_protocol_configuration.clone(),
             current_era: RwLock::new(config.mithril_era.clone()),
             era_reader_adapter: config.mithril_era_reader_adapter.clone(),
             use_era_specific_work_dir: config.use_era_specific_work_dir,
@@ -192,6 +231,26 @@ impl MithrilInfrastructure {
             toolkit
                 .exec
                 .register_era_marker(aggregator, &config.devnet, &config.mithril_era, era_epoch)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn register_startup_protocol_configurations(
+        toolkit: &ScenarioToolkit,
+        aggregator: &Aggregator,
+        config: &MithrilInfrastructureConfig,
+        protocol_configurations: Vec<ProtocolConfiguration>,
+    ) -> StdResult<()> {
+        if config.protocol_configuration_reader_adapter == "cardano-chain" {
+            toolkit
+                .exec
+                .register_protocol_configurations(
+                    aggregator,
+                    &config.devnet,
+                    protocol_configurations,
+                )
                 .await?;
         }
 
@@ -272,6 +331,10 @@ impl MithrilInfrastructure {
             mithril_era: &config.mithril_era,
             mithril_era_reader_adapter: &config.mithril_era_reader_adapter,
             mithril_era_marker_address: &config.devnet.mithril_era_marker_address()?,
+            protocol_configuration_reader_adapter: &config.protocol_configuration_reader_adapter,
+            protocol_configuration_marker_address: &config
+                .devnet
+                .protocol_configuration_marker_address()?,
             signed_entity_types: &config.signed_entity_types,
             aggregate_signature_type: config.aggregate_signature_type,
             chain_observer_type,
@@ -280,21 +343,23 @@ impl MithrilInfrastructure {
             dmq_node_flavor: &config.dmq_node_flavor,
         })?;
 
-        let protocol_parameters_new = match config.aggregate_signature_type {
-            AggregateSignatureType::Concatenation => ProtocolParameters {
-                k: 274,
-                m: 420,
-                phi_f: 0.77,
-            },
-            AggregateSignatureType::Snark | AggregateSignatureType::IvcSnark => {
-                ProtocolParameters {
-                    k: 5,
-                    m: 9,
-                    phi_f: 0.95,
-                }
-            }
-        };
-        aggregator.set_protocol_parameters(&protocol_parameters_new).await;
+        if !aggregator.is_reading_protocol_configurations_on_chain() {
+            aggregator
+                .set_protocol_parameters(&config.startup_protocol_configuration.protocol_parameters)
+                .await;
+            aggregator
+                .set_signing_config(
+                    config
+                        .startup_protocol_configuration
+                        .cardano_transaction_signing_config
+                        .clone(),
+                    config
+                        .startup_protocol_configuration
+                        .cardano_blocks_transactions_signing_config
+                        .clone(),
+                )
+                .await;
+        }
 
         Ok(aggregator)
     }
@@ -422,6 +487,11 @@ impl MithrilInfrastructure {
                 mithril_era: &config.mithril_era,
                 mithril_era_reader_adapter: &config.mithril_era_reader_adapter,
                 mithril_era_marker_address: &config.devnet.mithril_era_marker_address()?,
+                protocol_configuration_reader_adapter: &config
+                    .protocol_configuration_reader_adapter,
+                protocol_configuration_marker_address: &config
+                    .devnet
+                    .protocol_configuration_marker_address()?,
                 enable_certification,
                 skip_signature_delayer: config.skip_signature_delayer,
                 use_dmq: config.use_dmq,
@@ -501,6 +571,10 @@ impl MithrilInfrastructure {
 
     pub fn chain_observer(&self) -> Arc<dyn ChainObserver> {
         self.cardano_chain_observer.clone()
+    }
+
+    pub fn startup_protocol_configuration(&self) -> &ProtocolConfiguration {
+        &self.startup_protocol_configuration
     }
 
     pub fn cardano_node_version(&self) -> &semver::Version {
