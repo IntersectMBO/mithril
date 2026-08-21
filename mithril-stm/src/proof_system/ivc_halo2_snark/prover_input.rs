@@ -39,10 +39,12 @@ pub(crate) struct IvcProverInput {
 
 /// Bundles [`IvcProverInput::off_circuit_checks`]'s outputs, carried into
 /// [`IvcProverInput::finish_preparation`] once the certificate proof is available.
-pub(crate) struct IvcProverInputChecks {
+pub(crate) struct IvcProverInputChecks<D: MembershipDigest> {
     transition_type: IvcTransitionType,
     certificate_message_hash: MessageHash,
     certificate_merkle_tree_commitment: MerkleTreeCommitment,
+    message: Vec<u8>,
+    aggregate_verification_key_for_snark: AggregateVerificationKeyForSnark<D>,
 }
 
 impl IvcProverInput {
@@ -54,7 +56,7 @@ impl IvcProverInput {
         aggregate_verification_key_for_snark: &AggregateVerificationKeyForSnark<D>,
         protocol_message_preimage: &ProtocolMessagePreimage,
         rolling_state: &IvcRollingState,
-    ) -> StmResult<IvcProverInputChecks> {
+    ) -> StmResult<IvcProverInputChecks<D>> {
         let transition_type = IvcTransitionType::try_compute_transition_type(
             rolling_state,
             protocol_message_preimage,
@@ -76,18 +78,17 @@ impl IvcProverInput {
             transition_type,
             certificate_message_hash,
             certificate_merkle_tree_commitment,
+            message: message.to_vec(),
+            aggregate_verification_key_for_snark: aggregate_verification_key_for_snark.clone(),
         })
     }
 
     /// Completes `prepare` once the certificate proof is available: verifies it, advances the
     /// chain state, and folds the accumulator. `checks` must come from [`Self::off_circuit_checks`]
     /// run against the same `protocol_message_preimage` and `rolling_state`.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn finish_preparation<D: MembershipDigest>(
-        checks: IvcProverInputChecks,
+        checks: IvcProverInputChecks<D>,
         certificate_proof: &SnarkProof<D>,
-        message: &[u8],
-        aggregate_verification_key_for_snark: &AggregateVerificationKeyForSnark<D>,
         global: &Global,
         protocol_message_preimage: &ProtocolMessagePreimage,
         rolling_state: &IvcRollingState,
@@ -97,12 +98,14 @@ impl IvcProverInput {
             transition_type,
             certificate_message_hash,
             certificate_merkle_tree_commitment,
+            message,
+            aggregate_verification_key_for_snark,
         } = checks;
 
         let certificate_dual_msm = verify_certificate_proof(
             certificate_proof,
-            message,
-            aggregate_verification_key_for_snark,
+            message.as_slice(),
+            &aggregate_verification_key_for_snark,
             prover_setup,
         )?;
 
@@ -157,8 +160,6 @@ impl IvcProverInput {
         Self::finish_preparation(
             checks,
             certificate_proof,
-            message,
-            aggregate_verification_key_for_snark,
             global,
             protocol_message_preimage,
             rolling_state,

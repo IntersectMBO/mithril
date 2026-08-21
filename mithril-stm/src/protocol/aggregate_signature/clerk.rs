@@ -282,12 +282,12 @@ fn prepare_and_check_ivc_snark_request<'a>(
         &ivc_prover_setup.ivc_verifying_key,
     )?;
 
+    let avk = snark_clerk.compute_aggregate_verification_key_for_snark::<MithrilMembershipDigest>();
+
     match current_rolling_state {
         Some(rolling_state) => {
             rolling_state.assert_protocol_parameters_unchanged()?;
 
-            let avk = snark_clerk
-                .compute_aggregate_verification_key_for_snark::<MithrilMembershipDigest>();
             off_circuit_checks(msg, &avk, &protocol_message_preimage, rolling_state)?;
         }
         None => {
@@ -301,6 +301,9 @@ fn prepare_and_check_ivc_snark_request<'a>(
                 &genesis_rolling_state,
                 &genesis_bootstrap.genesis_protocol_message_preimage,
                 &global,
+                msg,
+                &avk,
+                &protocol_message_preimage,
             )?;
         }
     }
