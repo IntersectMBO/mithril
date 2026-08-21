@@ -265,9 +265,8 @@ impl ImmutableArtifactBuilder {
                 }
                 Err(e) => {
                     error!(
-                        self.logger,
-                        "Failed to upload immutable archive";
-                        "error" => e.to_string()
+                        self.logger, "Failed to upload immutable archive";
+                        "error" => ?e
                     );
                 }
             }
