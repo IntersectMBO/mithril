@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -9,8 +9,8 @@ use mithril_common::entities::FileUri;
 use mithril_common::logging::LoggerExtensions;
 
 use crate::FileUploader;
-use crate::tools::kubo_rpc_client::KuboRpcClient;
 use crate::tools::kubo_rpc_client::query::{IpfsAddQuery, IpfsFilesMkdirQuery, IpfsFilesStatQuery};
+use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcClient};
 
 /// IPFS Content Identifier (CID)
 pub type Cid = String;
@@ -18,7 +18,7 @@ pub type Cid = String;
 /// File uploader that stores files to IPFS
 pub struct IpfsUploader {
     rpc_client: Arc<dyn IpfsBackendUploader>,
-    ipfs_dir_path: PathBuf,
+    ipfs_dir_path: IpfsMfsDirPath,
     logger: Logger,
 }
 
@@ -26,7 +26,7 @@ impl IpfsUploader {
     /// Create a new IPFS uploader
     pub fn new(
         rpc_client: Arc<dyn IpfsBackendUploader>,
-        ipfs_dir_path: PathBuf,
+        ipfs_dir_path: IpfsMfsDirPath,
         logger: &Logger,
     ) -> Self {
         Self {
@@ -52,7 +52,7 @@ impl FileUploader for IpfsUploader {
             .with_context(|| {
                 format!(
                     "Failed to create directory '{}' in IPFS",
-                    self.ipfs_dir_path.display()
+                    self.ipfs_dir_path
                 )
             })?;
 
@@ -90,13 +90,13 @@ impl FileUploader for IpfsUploader {
 #[async_trait::async_trait]
 pub trait IpfsBackendUploader: Sync + Send {
     /// Create a directory in IPFS
-    async fn create_dir(&self, dir_path: &Path) -> StdResult<()>;
+    async fn create_dir(&self, dir_path: &IpfsMfsDirPath) -> StdResult<()>;
 
     /// Get the CID of a directory
-    async fn get_dir_cid(&self, dir_path: &Path) -> StdResult<Cid>;
+    async fn get_dir_cid(&self, dir_path: &IpfsMfsDirPath) -> StdResult<Cid>;
 
     /// Upload a file to IPFS and return its CID
-    async fn upload_file(&self, file_path: &Path, mfs_path: &Path) -> StdResult<Cid>;
+    async fn upload_file(&self, file_path: &Path, mfs_path: &IpfsMfsDirPath) -> StdResult<Cid>;
 
     /// Check if a file exists and return its CID if it does
     async fn file_exists(&self, file_path: &Path) -> StdResult<Option<Cid>>;
@@ -104,21 +104,19 @@ pub trait IpfsBackendUploader: Sync + Send {
 
 #[async_trait::async_trait]
 impl IpfsBackendUploader for KuboRpcClient {
-    async fn create_dir(&self, dir_path: &Path) -> StdResult<()> {
+    async fn create_dir(&self, dir_path: &IpfsMfsDirPath) -> StdResult<()> {
         self.send(IpfsFilesMkdirQuery::create_mfs_directory(dir_path)).await
     }
 
-    async fn get_dir_cid(&self, dir_path: &Path) -> StdResult<Cid> {
-        let stat = self.send(IpfsFilesStatQuery::new(dir_path)).await?.with_context(|| {
-            format!(
-                "Directory {} does not exist in IPFS node",
-                dir_path.display()
-            )
-        })?;
+    async fn get_dir_cid(&self, dir_path: &IpfsMfsDirPath) -> StdResult<Cid> {
+        let stat = self
+            .send(IpfsFilesStatQuery::new(dir_path.as_ref()))
+            .await?
+            .with_context(|| format!("Directory {dir_path} does not exist in IPFS node",))?;
         Ok(stat.hash)
     }
 
-    async fn upload_file(&self, file_path: &Path, mfs_path: &Path) -> StdResult<Cid> {
+    async fn upload_file(&self, file_path: &Path, mfs_path: &IpfsMfsDirPath) -> StdResult<Cid> {
         let res = self
             .send(IpfsAddQuery::new_with_mfs_reference(file_path, mfs_path))
             .await?;
@@ -146,12 +144,12 @@ mod tests {
         let uploader = IpfsUploader::new(
             MockBuilder::configure(|mock: &mut MockIpfsBackendUploader| {
                 mock.expect_create_dir()
-                    .with(eq(PathBuf::from("/test/dir")))
+                    .with(eq(IpfsMfsDirPath::from("/test/dir")))
                     .returning(|_| Ok(()));
                 mock.expect_file_exists().returning(|_| Ok(None));
                 mock.expect_upload_file().returning(|_, _| Ok(String::new()));
             }),
-            PathBuf::from("/test/dir"),
+            IpfsMfsDirPath::from("/test/dir"),
             &TestLogger::stdout(),
         );
 
@@ -168,7 +166,7 @@ mod tests {
                     .returning(|_| Ok(Some("existing".to_string())));
                 mock.expect_upload_file().never();
             }),
-            PathBuf::from("/test/dir"),
+            IpfsMfsDirPath::from("/test/dir"),
             &TestLogger::stdout(),
         );
 
@@ -182,16 +180,19 @@ mod tests {
         let uploader = IpfsUploader::new(
             MockBuilder::configure(|mock: &mut MockIpfsBackendUploader| {
                 mock.expect_create_dir()
-                    .with(eq(PathBuf::from("/test/dir")))
+                    .with(eq(IpfsMfsDirPath::from("/test/dir")))
                     .returning(|_| Ok(()));
                 mock.expect_file_exists()
                     .with(eq(Path::new("/a/file")))
                     .returning(|_| Ok(None));
                 mock.expect_upload_file()
-                    .with(eq(Path::new("/a/file")), eq(Path::new("/test/dir")))
+                    .with(
+                        eq(Path::new("/a/file")),
+                        eq(IpfsMfsDirPath::from("/test/dir")),
+                    )
                     .returning(|_, _| Ok("test_cid".to_string()));
             }),
-            PathBuf::from("/test/dir"),
+            IpfsMfsDirPath::from("/test/dir"),
             &TestLogger::stdout(),
         );
 

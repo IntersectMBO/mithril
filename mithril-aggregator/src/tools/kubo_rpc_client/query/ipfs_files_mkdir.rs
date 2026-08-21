@@ -1,10 +1,8 @@
-use std::path::{Path, PathBuf};
-
 use reqwest::{RequestBuilder, Response};
 
 use mithril_common::StdResult;
 
-use crate::tools::kubo_rpc_client::KuboRpcQuery;
+use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcQuery};
 
 /// Query to make an MFS (Mutable File System) directory in IPFS via the Kubo RPC API.
 ///
@@ -14,14 +12,14 @@ use crate::tools::kubo_rpc_client::KuboRpcQuery;
 ///
 /// see: https://docs.ipfs.tech/reference/kubo/rpc/#api-v0-files-mkdir
 pub struct IpfsFilesMkdirQuery {
-    ipfs_absolute_path: PathBuf,
+    ipfs_absolute_path: IpfsMfsDirPath,
 }
 
 impl IpfsFilesMkdirQuery {
     /// Create a query that will create the given IPFS absolute path as an MFS directory.
-    pub fn create_mfs_directory<P: AsRef<Path>>(ipfs_absolute_path: P) -> Self {
+    pub fn create_mfs_directory(ipfs_absolute_path: &IpfsMfsDirPath) -> Self {
         Self {
-            ipfs_absolute_path: ipfs_absolute_path.as_ref().to_path_buf(),
+            ipfs_absolute_path: ipfs_absolute_path.clone(),
         }
     }
 }
@@ -62,13 +60,15 @@ mod tests {
         server.mock(|when, then| {
             when.method(POST)
                 .path("/api/v0/files/mkdir")
-                .query_param("arg", "/test")
+                .query_param("arg", "/test/")
                 .query_param("parents", "true");
             then.status(200);
         });
 
         client
-            .send(IpfsFilesMkdirQuery::create_mfs_directory("/test"))
+            .send(IpfsFilesMkdirQuery::create_mfs_directory(
+                &IpfsMfsDirPath::from("/test"),
+            ))
             .await
             .unwrap();
     }
@@ -77,14 +77,16 @@ mod tests {
     async fn return_error_if_request_fails_with_other_message() {
         let (server, client) = setup_server_and_client();
         server.mock(|when, then| {
-            when.method(POST).path("/api/v0/files/mkdir").query_param("arg", "/test");
+            when.method(POST).path("/api/v0/files/mkdir");
             then.status(500).json_body(
                 serde_json::json!({"Message":"paths must start with a leading slash","Code":0,"Type":"error"}),
             );
         });
 
         let err = client
-            .send(IpfsFilesMkdirQuery::create_mfs_directory("/test"))
+            .send(IpfsFilesMkdirQuery::create_mfs_directory(
+                &IpfsMfsDirPath::from("/test"),
+            ))
             .await
             .unwrap_err();
         assert!(err.to_string().contains("paths must start with a leading slash"));

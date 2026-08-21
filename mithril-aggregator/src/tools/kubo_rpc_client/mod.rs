@@ -1,7 +1,9 @@
 mod api;
+mod path;
 pub mod query;
 
 pub use api::{KuboRpcClient, KuboRpcQuery};
+pub use path::IpfsMfsDirPath;
 
 #[cfg(test)]
 mod test_tools {

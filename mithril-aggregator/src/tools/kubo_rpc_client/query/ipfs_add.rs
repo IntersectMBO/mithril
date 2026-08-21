@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use mithril_common::StdResult;
 
-use crate::tools::kubo_rpc_client::KuboRpcQuery;
+use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcQuery};
 
 /// Query to add a file to IPFS via the Kubo RPC API.
 ///
@@ -14,7 +14,7 @@ use crate::tools::kubo_rpc_client::KuboRpcQuery;
 // TODO: Enforce most add parameters to make CID deterministic.
 pub struct IpfsAddQuery {
     file_path: PathBuf,
-    to_files: Option<PathBuf>,
+    to_files: Option<IpfsMfsDirPath>,
 }
 
 /// Response from the IPFS add operation.
@@ -29,6 +29,7 @@ pub struct IpfsAddResponse {
 
 impl IpfsAddQuery {
     /// Create a query that will add the given file to IPFS.
+    #[cfg(test)]
     pub fn new<P: AsRef<Path>>(file_path: P) -> Self {
         Self {
             file_path: file_path.as_ref().to_path_buf(),
@@ -37,13 +38,13 @@ impl IpfsAddQuery {
     }
 
     /// Create a query that will add the given file to IPFS and reference it in the MFS.
-    pub fn new_with_mfs_reference<P1: AsRef<Path>, P2: AsRef<Path>>(
+    pub fn new_with_mfs_reference<P1: AsRef<Path>>(
         file_path: P1,
-        mfs_path: P2,
+        mfs_path: &IpfsMfsDirPath,
     ) -> Self {
         Self {
             file_path: file_path.as_ref().to_path_buf(),
-            to_files: Some(mfs_path.as_ref().to_path_buf()),
+            to_files: Some(mfs_path.clone()),
         }
     }
 }
