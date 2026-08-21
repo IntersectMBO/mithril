@@ -15,8 +15,8 @@ use crate::{
     },
     proof_system::ivc_halo2_snark::{
         prover_input_helpers::{
-            IvcTransitionType, build_next_accumulator, build_next_state,
-            create_snark_message_for_next_state, verify_certificate_proof,
+            IvcTransitionType, assert_message_hash_matches_preimage, build_next_accumulator,
+            build_next_state, create_snark_message_for_next_state, verify_certificate_proof,
         },
         prover_setup::IvcSnarkProverSetup,
         rolling_state::IvcRollingState,
@@ -37,23 +37,26 @@ pub(crate) struct IvcProverInput {
     pub(crate) transition_type: IvcTransitionType,
 }
 
+/// Bundles [`IvcProverInput::off_circuit_checks`]'s outputs, carried into
+/// [`IvcProverInput::finish_preparation`] once the certificate proof is available.
+pub(crate) struct IvcProverInputChecks<D: MembershipDigest> {
+    transition_type: IvcTransitionType,
+    certificate_message_hash: MessageHash,
+    certificate_merkle_tree_commitment: MerkleTreeCommitment,
+    message: Vec<u8>,
+    aggregate_verification_key_for_snark: AggregateVerificationKeyForSnark<D>,
+}
+
 impl IvcProverInput {
-    /// Advances the chain state by one step and bundles the in-circuit witness, the
-    /// next state, and the next folded accumulator.
-    ///
-    /// First classifies the requested step via [`IvcTransitionType::try_compute_transition_type`], then
-    /// validates the epoch advance against the rolling chain state.
-    /// The certificate proof is verifier-prepared, then the certificate and previous IVC accumulators are
-    /// folded into the chain's accumulator.
-    pub(crate) fn prepare<D: MembershipDigest>(
-        certificate_proof: &SnarkProof<D>,
+    /// Runs every `prepare` off circuit check that does not need the certificate proof:
+    /// classifies the step, validates the epoch advance and protocol-parameter lookahead
+    /// against the rolling state, and checks the message hashes to the supplied preimage.
+    pub(crate) fn off_circuit_checks<D: MembershipDigest>(
         message: &[u8],
         aggregate_verification_key_for_snark: &AggregateVerificationKeyForSnark<D>,
-        global: &Global,
         protocol_message_preimage: &ProtocolMessagePreimage,
         rolling_state: &IvcRollingState,
-        prover_setup: &IvcSnarkProverSetup,
-    ) -> StmResult<Self> {
+    ) -> StmResult<IvcProverInputChecks<D>> {
         let transition_type = IvcTransitionType::try_compute_transition_type(
             rolling_state,
             protocol_message_preimage,
@@ -66,15 +69,45 @@ impl IvcProverInput {
             transition_type,
         )?;
 
-        let certificate_dual_msm = verify_certificate_proof(
-            certificate_proof,
-            message,
-            aggregate_verification_key_for_snark,
-            prover_setup,
-        )?;
-
         let (certificate_message_hash, certificate_merkle_tree_commitment) =
             create_snark_message_for_next_state(aggregate_verification_key_for_snark, message)?;
+
+        assert_message_hash_matches_preimage(certificate_message_hash, protocol_message_preimage)?;
+
+        Ok(IvcProverInputChecks {
+            transition_type,
+            certificate_message_hash,
+            certificate_merkle_tree_commitment,
+            message: message.to_vec(),
+            aggregate_verification_key_for_snark: aggregate_verification_key_for_snark.clone(),
+        })
+    }
+
+    /// Completes `prepare` once the certificate proof is available: verifies it, advances the
+    /// chain state, and folds the accumulator. `checks` must come from [`Self::off_circuit_checks`]
+    /// run against the same `protocol_message_preimage` and `rolling_state`.
+    pub(crate) fn finish_preparation<D: MembershipDigest>(
+        checks: IvcProverInputChecks<D>,
+        certificate_proof: &SnarkProof<D>,
+        global: &Global,
+        protocol_message_preimage: &ProtocolMessagePreimage,
+        rolling_state: &IvcRollingState,
+        prover_setup: &IvcSnarkProverSetup,
+    ) -> StmResult<Self> {
+        let IvcProverInputChecks {
+            transition_type,
+            certificate_message_hash,
+            certificate_merkle_tree_commitment,
+            message,
+            aggregate_verification_key_for_snark,
+        } = checks;
+
+        let certificate_dual_msm = verify_certificate_proof(
+            certificate_proof,
+            message.as_slice(),
+            &aggregate_verification_key_for_snark,
+            prover_setup,
+        )?;
 
         let next_state = build_next_state(
             transition_type,
@@ -102,6 +135,38 @@ impl IvcProverInput {
         })
     }
 
+    /// Advances the chain state by one step and bundles the in-circuit witness, the
+    /// next state, and the next folded accumulator.
+    ///
+    /// Runs [`Self::off_circuit_checks`] then [`Self::finish_preparation`]. Callers that want to reject a
+    /// malformed request before the certificate proof is generated should call
+    /// [`Self::off_circuit_checks`] directly, ahead of time, instead of using this combined form.
+    pub(crate) fn prepare<D: MembershipDigest>(
+        certificate_proof: &SnarkProof<D>,
+        message: &[u8],
+        aggregate_verification_key_for_snark: &AggregateVerificationKeyForSnark<D>,
+        global: &Global,
+        protocol_message_preimage: &ProtocolMessagePreimage,
+        rolling_state: &IvcRollingState,
+        prover_setup: &IvcSnarkProverSetup,
+    ) -> StmResult<Self> {
+        let checks = Self::off_circuit_checks(
+            message,
+            aggregate_verification_key_for_snark,
+            protocol_message_preimage,
+            rolling_state,
+        )?;
+
+        Self::finish_preparation(
+            checks,
+            certificate_proof,
+            global,
+            protocol_message_preimage,
+            rolling_state,
+            prover_setup,
+        )
+    }
+
     /// Builds the genesis-step `IvcProverInput`. Verifies the chain's genesis signature,
     /// constructs the base-case state and witness with all certificate-derived fields set
     /// to ZERO and the chain message set to `global.genesis_message`, and passes the
@@ -111,6 +176,8 @@ impl IvcProverInput {
         protocol_message_preimage: &ProtocolMessagePreimage,
         global: &Global,
     ) -> StmResult<Self> {
+        assert_message_hash_matches_preimage(global.genesis_message, protocol_message_preimage)?;
+
         rolling_state.verify_genesis_signature(global)?;
 
         let new_step_counter = rolling_state.new_step_counter()?;
@@ -278,8 +345,15 @@ mod test {
             let chain_verification_key =
                 SchnorrVerificationKey::new_from_signing_key(chain_signing_key);
 
+            let preimage_bytes = [0u8; PREIMAGE_SIZE];
+            let genesis_message = MessageHash::from_field(
+                BaseFieldElement::try_from(preimage_bytes.as_slice())
+                    .expect("hashing should not fail")
+                    .0,
+            );
+
             let global = Global {
-                genesis_message: MessageHash::ZERO,
+                genesis_message,
                 genesis_verification_key: chain_verification_key,
                 certificate_circuit_verification_key_representation:
                     CertificateCircuitVerificationKeyRepresentation::from_field(
@@ -300,7 +374,7 @@ mod test {
                 )
                 .expect("sign_standard should succeed for a synthetic message");
             let rolling_state = IvcRollingState::genesis(invalid_signature, &[]);
-            let protocol_message_preimage = ProtocolMessagePreimage::new([0u8; PREIMAGE_SIZE]);
+            let protocol_message_preimage = ProtocolMessagePreimage::new(preimage_bytes);
 
             let err = IvcProverInput::prepare_genesis(
                 &rolling_state,
@@ -324,9 +398,17 @@ mod test {
             let verification_key =
                 SchnorrVerificationKey::new_from_signing_key(signing_key.clone());
 
+            let cert_epoch = EpochNumber::ZERO;
+            let mut preimage_bytes = [0u8; PREIMAGE_SIZE];
+            preimage_bytes[PREIMAGE_CURRENT_EPOCH_BYTES]
+                .copy_from_slice(&cert_epoch.as_u64().to_le_bytes());
+            preimage_bytes[PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES].copy_from_slice(&[0x11; 32]);
+            preimage_bytes[PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES].copy_from_slice(&[0x22; 32]);
+            let protocol_message_preimage = ProtocolMessagePreimage::new(preimage_bytes);
+
             let genesis_message = MessageHash::from_field(
-                BaseFieldElement::from_raw(&[0x42; 32])
-                    .expect("from_raw applies modulus reduction")
+                BaseFieldElement::try_from(preimage_bytes.as_slice())
+                    .expect("hashing should not fail")
                     .0,
             );
             let global = Global {
@@ -349,14 +431,6 @@ mod test {
                 )
                 .expect("sign_standard should succeed for the genesis message");
             let rolling_state = IvcRollingState::genesis(genesis_signature, &[]);
-
-            let cert_epoch = EpochNumber::ZERO;
-            let mut preimage_bytes = [0u8; PREIMAGE_SIZE];
-            preimage_bytes[PREIMAGE_CURRENT_EPOCH_BYTES]
-                .copy_from_slice(&cert_epoch.as_u64().to_le_bytes());
-            preimage_bytes[PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES].copy_from_slice(&[0x11; 32]);
-            preimage_bytes[PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES].copy_from_slice(&[0x22; 32]);
-            let protocol_message_preimage = ProtocolMessagePreimage::new(preimage_bytes);
 
             let input = IvcProverInput::prepare_genesis(
                 &rolling_state,

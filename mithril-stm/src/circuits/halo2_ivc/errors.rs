@@ -52,6 +52,17 @@ pub enum IvcCircuitError {
     /// Off-circuit accumulator check: the msm does not match the provided the fixed bases
     #[error("Fixed base `{name}` in the dual MSM does not match the provided map")]
     MsmFixedBasesNamesMismatch { name: String },
+
+    /// Off-circuit step transition: `SHA256(protocol_message_preimage)`, reduced into the
+    /// base field, does not match the message the proof would otherwise commit to.
+    #[error("IvcProverInput::prepare: message preimage does not hash to the expected message")]
+    MessagePreimageMismatch,
+
+    /// Off-circuit rolling-state check: the chain's carried `protocol_parameters` and its
+    /// declared `next_protocol_parameters` have diverged past the genesis-to-first-step
+    /// transition.
+    #[error("IvcRollingState: protocol_parameters and next_protocol_parameters have diverged")]
+    ProtocolParametersChanged,
 }
 
 /// Subcategorization for `IvcCircuitError::InvalidEpochTransition`. Lets negative
