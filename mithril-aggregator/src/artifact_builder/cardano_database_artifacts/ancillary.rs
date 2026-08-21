@@ -177,9 +177,8 @@ impl AncillaryArtifactBuilder {
                 }
                 Err(e) => {
                     error!(
-                        self.logger,
-                        "Failed to upload ancillary archive";
-                        "error" => e.to_string()
+                        self.logger, "Failed to upload ancillary archive";
+                        "error" => ?e
                     );
                 }
             }
