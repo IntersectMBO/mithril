@@ -16,6 +16,7 @@ use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcQuery};
 pub struct IpfsAddQuery {
     file_path: PathBuf,
     to_files: Option<IpfsMfsDirPath>,
+    enable_no_copy: bool,
 }
 
 /// Response from the IPFS add operation.
@@ -35,6 +36,7 @@ impl IpfsAddQuery {
         Self {
             file_path: file_path.as_ref().to_path_buf(),
             to_files: None,
+            enable_no_copy: false,
         }
     }
 
@@ -46,7 +48,19 @@ impl IpfsAddQuery {
         Self {
             file_path: file_path.as_ref().to_path_buf(),
             to_files: Some(mfs_path.clone()),
+            enable_no_copy: false,
         }
+    }
+
+    /// Tells IPFS to not copy the file to its internal storage, but instead to reference it directly.
+    ///
+    /// **Test only** until we properly implement this feature (we must symlink the file into the
+    /// IPFS root directory and set the `abspath` multipart header to the symlinked path, else the
+    /// request will be rejected).
+    #[cfg(test)]
+    pub fn no_copy(mut self) -> Self {
+        self.enable_no_copy = true;
+        self
     }
 }
 
@@ -60,14 +74,39 @@ impl KuboRpcQuery for IpfsAddQuery {
 
     async fn configure_request(
         &self,
-        request_builder: RequestBuilder,
+        mut request_builder: RequestBuilder,
     ) -> StdResult<RequestBuilder> {
-        let form = reqwest::multipart::Form::new().file("file", &self.file_path).await?;
-        let mut request_builder = request_builder.multipart(form);
+        let mut part = reqwest::multipart::Part::file(&self.file_path).await?;
 
         if let Some(mfs_path) = &self.to_files {
             request_builder = request_builder.query(&[("to-files", mfs_path)]);
         }
+
+        if self.enable_no_copy {
+            request_builder = request_builder.query(&[("nocopy", true)]);
+
+            // Add the "abspath" header to the file part
+            // It sets the absolute path of the file being added to IPFS and MUST point to a path
+            // inside the IPFS root directory.
+            //
+            // It may be different from the file path provided, e.g.: file_path could point to the
+            // real location of the file to be added while `abspath` points to the symlinked path of
+            // the same file but inside the IPFS root directory.
+            let mut part_headers = reqwest::header::HeaderMap::new();
+            let abspath = std::path::absolute(&self.file_path)
+                .with_context(|| "Failed to get absolute path of file")?;
+            part_headers.insert(
+                "abspath",
+                abspath
+                    .to_str()
+                    .with_context(|| "Failed to convert absolute file path to string")?
+                    .try_into()?,
+            );
+            part = part.headers(part_headers);
+        }
+
+        let request_builder =
+            request_builder.multipart(reqwest::multipart::Form::new().part("file", part));
 
         Ok(request_builder)
     }
@@ -131,5 +170,26 @@ mod tests {
             err.to_string().contains("paths must start with a leading slash"),
             "unexpected error: {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn no_copy_adds_query_parameter_and_abspath_multipart_header() {
+        let test_dir = temp_dir_create!();
+        let file = test_dir.join("test.txt");
+        std::fs::File::create(&file).unwrap();
+
+        let abs_filepath = file.canonicalize().unwrap().to_string_lossy().to_string();
+
+        let (server, client) = setup_server_and_client();
+        server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/v0/add")
+                .query_param("nocopy", "true")
+                .body_includes(format!("abspath: {abs_filepath}"));
+            then.status(200)
+                .json_body(serde_json::json!({"Name":"test.txt","Hash":"whatever"}));
+        });
+
+        client.send(IpfsAddQuery::new(file).no_copy()).await.unwrap();
     }
 }
