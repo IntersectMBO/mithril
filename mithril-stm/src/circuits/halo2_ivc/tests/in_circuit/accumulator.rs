@@ -87,29 +87,40 @@ fn next_epoch_step_rejects_tampered_next_accumulator() {
 }
 
 mod slow {
-    use ff::Field;
+    use std::collections::BTreeMap;
+
     use midnight_circuits::types::Instantiable;
 
     use crate::circuits::halo2_ivc::{
-        AssignedAccumulator, NativeField,
+        AssignedAccumulator,
         circuit::IvcCircuitData,
         tests::common::{
             asset_readers::load_embedded_recursive_chain_state_asset,
+            failure_signature::{
+                assert_recursive_mock_prover_rejects_public_input_rows, mutate_public_input,
+            },
             generators::{
                 build_asset_generation_setup_from_cache, build_same_epoch_certificate_asset_data,
             },
             helpers::{
-                assert_recursive_mock_prover_rejects, build_recursive_mock_prover_setup,
+                assert_recursive_mock_prover_accepts_with_label, build_recursive_mock_prover_setup,
                 compute_expected_next_accumulator,
             },
+            public_input_layout::accumulator_row,
         },
     };
 
     #[test]
-    fn circuit_rejects_with_wrong_next_accumulator_in_same_epoch_step() {
-        // MockProver check that the in-circuit accumulator update constraint holds for
-        // a same-epoch step; substituting a wrong next_accumulator in the public inputs
-        // causes MockProver to detect the arithmetic constraint violation.
+    fn circuit_rejects_tampered_same_epoch_accumulator_public_inputs() {
+        // The accumulator the circuit folds for a same-epoch step is bound to the public statement,
+        // so moving every element of its encoding must implicate exactly the accumulator section's
+        // public rows and no other public row. The encoding is heterogeneous — both MSM sides, curve
+        // coordinates, variable-base and fixed-base scalars — so covering the whole section rather
+        // than one element exercises each binding path at no extra synthesis.
+        //
+        // The certificate proof is proved here rather than read from an asset: this is the only
+        // place the circuit verifies a certificate proof it has not seen before, and certificate
+        // proofs are randomized, so a stored one would fix the blinding for every run.
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_recursive_mock_prover_setup(&setup);
 
@@ -144,16 +155,35 @@ mod slow {
         )
         .expect("valid IvcCircuitData construction");
 
-        let mut accumulator_encoding = AssignedAccumulator::as_public_input(&next_accumulator);
-        accumulator_encoding[0] = NativeField::ONE;
-
         let public_inputs = [
             mock_prover_setup.global.as_public_input(),
             next_state.as_public_input(),
-            accumulator_encoding,
+            AssignedAccumulator::as_public_input(&next_accumulator),
         ]
         .concat();
 
-        assert_recursive_mock_prover_rejects(ivc_circuit_data, public_inputs);
+        // Establishes that this fixture is satisfiable before anything is tampered, so the exact
+        // signature below cannot be satisfied by a rejection that was already present. The circuit
+        // data is cloned so the certificate is proved once.
+        assert_recursive_mock_prover_accepts_with_label(
+            ivc_circuit_data.clone(),
+            public_inputs.clone(),
+            "same-epoch step with a freshly proved certificate",
+        );
+
+        let mut tampered_public_inputs = public_inputs;
+        let expected_rows: BTreeMap<usize, &str> = (accumulator_row(0)
+            ..tampered_public_inputs.len())
+            .map(|row| (row, "next_accumulator"))
+            .collect();
+        for row in expected_rows.keys() {
+            mutate_public_input(&mut tampered_public_inputs, *row);
+        }
+
+        assert_recursive_mock_prover_rejects_public_input_rows(
+            ivc_circuit_data,
+            tampered_public_inputs,
+            &expected_rows,
+        );
     }
 }

@@ -17,7 +17,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ff::Field;
 use midnight_proofs::{
     dev::{FailureLocation, MockProver, VerifyFailure},
     plonk::{Any, Circuit},
@@ -32,13 +31,17 @@ use crate::circuits::halo2_ivc::{NativeField, circuit::IvcCircuitData};
 /// the committed column from being mistaken for a public-statement failure.
 pub(crate) const PUBLIC_STATEMENT_INSTANCE_COLUMN: usize = 1;
 
-/// Mutates the public input at `row` by a guaranteed nonzero delta.
+/// Mutates the public input at `row` by a nonzero, row-dependent delta.
 ///
-/// Adding one rather than assigning a fixed value keeps the mutation effective whatever the
-/// original held: assigning `ONE` is a no-op wherever the honest value already is one, as the
-/// genesis step counter is.
+/// Adding rather than assigning keeps the mutation effective whatever the original held: assigning
+/// `ONE` is a no-op wherever the honest value already is one, as the genesis step counter is.
+///
+/// The delta varies with the row because a permutation class is checked as a cycle. Two tampered
+/// cells in one class that started equal would stay equal under a shared delta, leaving the mapping
+/// free to report neither, so a whole-section mutation could hide a bound row. Distinct deltas keep
+/// that from happening for the known-satisfiable baselines this helper is used with.
 pub(crate) fn mutate_public_input(public_inputs: &mut [NativeField], row: usize) {
-    public_inputs[row] += NativeField::ONE;
+    public_inputs[row] += NativeField::from(row as u64 + 1);
 }
 
 /// True when `failure` is a permutation failure on the public-statement column.
@@ -238,6 +241,26 @@ mod tests {
                 NativeField::from(777u64),
             ],
         ]
+    }
+
+    #[test]
+    fn mutation_gives_equal_valued_rows_distinct_nonzero_deltas() {
+        // Equal-valued rows in one permutation class mask each other under a shared delta.
+        const SHARED: u64 = 7;
+        let mut public_inputs = vec![NativeField::from(SHARED); 4];
+        for row in 0..public_inputs.len() {
+            mutate_public_input(&mut public_inputs, row);
+        }
+
+        assert!(
+            public_inputs.iter().all(|value| *value != NativeField::from(SHARED)),
+            "every mutation must change its row"
+        );
+        assert_eq!(
+            public_inputs.iter().copied().collect::<BTreeSet<_>>().len(),
+            public_inputs.len(),
+            "rows that started equal must end distinct"
+        );
     }
 
     #[test]

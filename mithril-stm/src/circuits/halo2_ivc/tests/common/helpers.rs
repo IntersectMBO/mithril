@@ -128,18 +128,6 @@ pub(crate) fn build_recursive_mock_prover_setup(
     }
 }
 
-/// Runs `MockProver` on the recursive circuit and asserts that at least one constraint fails.
-pub(crate) fn assert_recursive_mock_prover_rejects(
-    ivc_circuit_data: IvcCircuitData,
-    public_inputs: Vec<NativeField>,
-) {
-    let prover = MockProver::run(&ivc_circuit_data, vec![vec![], public_inputs])
-        .expect("recursive MockProver setup should succeed");
-    prover
-        .verify()
-        .expect_err("recursive MockProver should reject the provided circuit and public inputs");
-}
-
 /// Runs `MockProver` and asserts all constraints hold, printing `label` on failure so
 /// the failing case is identifiable when multiple scenarios share one `#[test]` function.
 pub(crate) fn assert_recursive_mock_prover_accepts_with_label(
