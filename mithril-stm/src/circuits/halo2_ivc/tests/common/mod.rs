@@ -12,6 +12,8 @@ pub(crate) const CERTIFICATE_CIRCUIT_DEGREE: u32 = 13;
 const _: () = assert!(ASSET_SEED == crate::circuits::trusted_setup::UNSAFE_SRS_SEED);
 
 pub(crate) mod asset_readers;
+pub(crate) mod failure_signature;
 pub(crate) mod field_encoding;
 pub(crate) mod generators;
 pub(crate) mod helpers;
+pub(crate) mod public_input_layout;
