@@ -33,7 +33,7 @@ flowchart LR
 
 ## What the proof attests
 
-Given the aggregate verification key for SNARK (`AVK`), the root of a [Merkle tree](../../../glossary.md#merkle-tree) committing to the stake and verification key of every registered signer, and the message being certified, the proof attests that the prover knows `k` winning lottery entries such that, for each one:
+Given the aggregate verification key for SNARK (`AVK`), the root of a [Merkle tree](../../../../glossary.md#merkle-tree) committing to the stake and verification key of every registered signer, and the message being certified, the proof attests that the prover knows `k` winning lottery entries such that, for each one:
 
 - the signer's stake and verification key form a leaf of the Merkle tree with root `AVK`, attesting it is properly registered
 - the signer's signature over the message is valid under that verification key

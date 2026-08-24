@@ -54,6 +54,12 @@ For each [beacon](#beacon), the [Mithril signers](#mithril-signer) will compute 
 
 > More information is available on the [protocol page](./mithril/advanced/mithril-protocol/protocol.md).
 
+## Merkle tree
+
+A Merkle tree is a data structure whose leaves hold hashes of data items, and whose other nodes hold the hash of their children. It lets anyone prove an item belongs to the set with a short path of sibling hashes up to the root, called a Merkle path, without revealing the rest of the set.
+
+In Mithril, a Merkle tree commits to the stake and verification key of every registered signer: its root is the basis of the aggregate verification key (AVK).
+
 ## Mithril aggregator
 
 The Mithril aggregator is a trustless node of the [Mithril network](#mithril-network) that orchestrates the work of the [Mithril signer](#mithril-signer) nodes and gathers their [individual signatures](#individual-signature) to produce [Mithril multi-signatures](#multi-signature) and their associated [certificates](#certificate).
