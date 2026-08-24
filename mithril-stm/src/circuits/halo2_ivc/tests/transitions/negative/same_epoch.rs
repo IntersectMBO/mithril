@@ -94,9 +94,7 @@ mod slow {
 
     #[test]
     fn circuit_rejects_tampered_same_epoch_state_public_inputs() {
-        // Every next-state element is bound to the value the circuit derives for a same-epoch step, so
-        // tampering all of them must implicate exactly those public rows and no others. The fixture is the
-        // committed step, which is accepted untampered.
+        // The fixture is the committed same-epoch step, which is accepted untampered.
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let mut fixture = build_asset_backed_same_epoch_fixture(&mock_prover_setup);

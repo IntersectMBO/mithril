@@ -1,12 +1,8 @@
 //! Row indices of the recursive circuit's public statement.
 //!
-//! The circuit lays out its statement through a single shared offset counter: the global
-//! root-of-trust first, then the next state, then the accumulator. Tests build the same vector as
-//! `[global, state, accumulator].concat()`, so a row index here is an index into that vector and
-//! into the public-statement instance column alike.
-//!
-//! Keeping the mapping in one place is what lets a failure-signature assertion name the field that
-//! broke instead of a bare integer, and it keeps row literals out of the test bodies.
+//! The circuit constrains its statement through one shared offset counter: the global root of trust
+//! first, then the next state, then the accumulator. Tests build the same vector, so a row index
+//! here indexes both it and the public-statement instance column.
 
 use std::collections::BTreeMap;
 

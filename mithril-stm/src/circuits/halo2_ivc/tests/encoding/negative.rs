@@ -200,15 +200,15 @@ mod slow {
 
     use super::*;
 
-    /// Preimage byte mutated to break the message equality without moving any extracted field.
+    /// Preimage byte mutated to break the message equality without moving a decoded field.
     ///
-    /// It falls inside the dynamic-parts digest, which the circuit hashes but never decodes.
+    /// Falls inside the dynamic-parts digest, which the circuit hashes but never decodes.
     const MESSAGE_EQUALITY_TAMPER_OFFSET: usize = 6;
 
     /// Flips the byte at `offset` in the genesis witness preimage and returns the resulting circuit.
     ///
-    /// The mutation is an exclusive-or so it cannot land on the value already there, and it touches
-    /// a single byte, so at most the one decoded field that byte feeds can move.
+    /// An exclusive-or cannot land on the value already there, and one byte moves at most the one
+    /// decoded field it feeds.
     fn build_genesis_circuit_with_flipped_preimage_byte(
         setup: &AssetGenerationSetup,
         mock_prover_setup: &MockProverSetup,
@@ -219,12 +219,10 @@ mod slow {
         build_genesis_mock_prover_circuit(mock_prover_setup, State::genesis(), witness)
     }
 
-    /// Asserts that flipping the first byte of `range` breaks exactly the message equality and
-    /// `field`'s public-input binding.
+    /// Asserts that flipping the first byte of `range` implicates the message row and `field`'s row.
     ///
-    /// Any change to the preimage invalidates the whole-preimage hash. In the current layout that
-    /// inconsistent equality class reports the message row, and `field` is the one decoded value the
-    /// byte window feeds.
+    /// Any preimage change invalidates the whole-preimage hash, which reports the message row;
+    /// `field` is the decoded value this window feeds.
     fn assert_flipped_range_breaks_message_and_field(range: Range<usize>, field: StateField) {
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
@@ -249,9 +247,7 @@ mod slow {
 
     #[test]
     fn circuit_rejects_wrong_next_merkle_tree_commitment_byte_range() {
-        // Flipping a byte here invalidates the whole-preimage hash and changes exactly the next
-        // Merkle-tree commitment. A different decoded row moving would mean the circuit reads the
-        // wrong window.
+        // A different decoded row moving would mean the circuit reads the wrong window.
         assert_flipped_range_breaks_message_and_field(
             PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
             StateField::NextMerkleTreeCommitment,
@@ -278,9 +274,8 @@ mod slow {
 
     #[test]
     fn circuit_rejects_preimage_inconsistent_with_the_message() {
-        // Isolates the message equality. The byte is outside every decoded range, so no decoded
-        // state field changes and the public values are left untouched; the message row is reported
-        // because, in the current layout, that equality class contains the cell bound to it.
+        // Isolates the message equality: the byte is outside every decoded range, so no decoded
+        // field moves and the message row is the only one implicated.
         for range in [
             PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
             PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES,

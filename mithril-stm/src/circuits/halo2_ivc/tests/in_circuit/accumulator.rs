@@ -112,15 +112,11 @@ mod slow {
 
     #[test]
     fn circuit_rejects_tampered_same_epoch_accumulator_public_inputs() {
-        // The accumulator the circuit folds for a same-epoch step is bound to the public statement,
-        // so moving every element of its encoding must implicate exactly the accumulator section's
-        // public rows and no other public row. The encoding is heterogeneous — both MSM sides, curve
-        // coordinates, variable-base and fixed-base scalars — so covering the whole section rather
-        // than one element exercises each binding path at no extra synthesis.
+        // The encoding is heterogeneous — both MSM sides, curve coordinates, variable-base and
+        // fixed-base scalars — so the whole section is covered rather than one element.
         //
         // The certificate proof is proved here rather than read from an asset: this is the only
-        // place the circuit verifies a certificate proof it has not seen before, and certificate
-        // proofs are randomized, so a stored one would fix the blinding for every run.
+        // place the circuit verifies a certificate proof it has not seen, and they are randomized.
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_recursive_mock_prover_setup(&setup);
 
@@ -162,9 +158,8 @@ mod slow {
         ]
         .concat();
 
-        // Establishes that this fixture is satisfiable before anything is tampered, so the exact
-        // signature below cannot be satisfied by a rejection that was already present. The circuit
-        // data is cloned so the certificate is proved once.
+        // The signature below must not be satisfiable by a rejection that was already present.
+        // Cloning keeps the certificate proved once.
         assert_recursive_mock_prover_accepts_with_label(
             ivc_circuit_data.clone(),
             public_inputs.clone(),

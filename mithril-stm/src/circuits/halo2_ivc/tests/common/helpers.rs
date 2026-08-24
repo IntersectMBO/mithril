@@ -247,12 +247,11 @@ pub(crate) fn prepare_stored_step_certificate_accumulator(
     certificate_accumulator
 }
 
-/// A non-genesis MockProver stimulus assembled entirely from committed step assets.
+/// A non-genesis MockProver stimulus assembled from committed step assets.
 ///
-/// Unlike [`build_genesis_mock_prover_circuit`], this carries the stored certificate proof, the
-/// stored previous recursive proof and the stored previous accumulator, so the accumulator the
-/// circuit computes is the stored next accumulator. That is what makes it satisfiable at a
-/// non-genesis step, where the accumulator contributions are no longer gated to the group identity.
+/// Carries the stored certificate proof, previous recursive proof and previous accumulator, so the
+/// accumulator the circuit computes is the stored next one. Outside genesis the accumulator
+/// contributions are no longer gated away, so a trivial accumulator would not match.
 pub(crate) struct AssetBackedStepFixture {
     /// Circuit data for the step.
     pub(crate) ivc_circuit_data: IvcCircuitData,
@@ -262,10 +261,8 @@ pub(crate) struct AssetBackedStepFixture {
 
 /// The stored half of one recursive step, plus the commitment its certificate was produced against.
 ///
-/// That commitment is not read from the step-output asset but chosen by transition type: a
-/// same-epoch certificate is produced against the checkpoint's current Merkle-tree commitment, a
-/// next-epoch one against its next commitment. The stored final recursive proof is deliberately
-/// absent — MockProver checks the step's constraints and never verifies the step's own output.
+/// The commitment is chosen by transition type rather than read from the asset. The step's own
+/// output proof is absent: MockProver checks constraints and never verifies it.
 struct StepFixtureData {
     certificate_merkle_tree_commitment: MerkleTreeCommitment,
     certificate_proof: CertificateProofBytes,
@@ -288,8 +285,7 @@ fn build_asset_backed_step_fixture(
         genesis_signature,
     } = recursive_chain_state;
 
-    // Turns a future drift between the reconstructed global and the stored one into a direct
-    // coherence error instead of an opaque constraint failure.
+    // Reports cross-asset drift directly rather than as an opaque constraint failure.
     assert_eq!(
         mock_prover_setup.global.as_public_input(),
         global_field_elements,
@@ -363,12 +359,11 @@ pub(crate) fn build_asset_backed_next_epoch_fixture(
 }
 
 /// Builds an `IvcCircuitData` with empty proof slots and a trivial accumulator, for MockProver
-/// constraint checks at the genesis step only.
+/// checks at the genesis step only.
 ///
-/// Empty proof slots work here because genesis gating scales both accumulator contributions to the
-/// group identity, so the trivial input accumulator is also the expected output. At any later step
-/// the contributions are live and the circuit derives an output accumulator no trivial instance can
-/// match — see [`build_asset_backed_same_epoch_fixture`] for the non-genesis stimulus.
+/// Genesis gating scales both accumulator contributions to the group identity, so the trivial input
+/// accumulator is also the expected output. See [`build_asset_backed_same_epoch_fixture`] for the
+/// non-genesis stimulus.
 pub(crate) fn build_genesis_mock_prover_circuit(
     setup: &MockProverSetup,
     prev_state: State,
@@ -394,8 +389,7 @@ pub(crate) fn build_genesis_mock_prover_circuit(
 
 /// Builds the public-input vector for a genesis MockProver stimulus.
 ///
-/// The accumulator section carries the trivial accumulator, which is the expected output only while
-/// genesis gating scales both contributions to the group identity.
+/// The accumulator section carries the trivial accumulator, correct only at genesis.
 pub(crate) fn build_genesis_mock_prover_public_inputs(
     setup: &MockProverSetup,
     next_state: &State,

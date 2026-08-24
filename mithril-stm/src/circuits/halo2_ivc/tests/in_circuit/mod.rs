@@ -3,9 +3,8 @@
 //! These tests validate what the circuit enforces internally: proof verification wiring, genesis
 //! gating bypass, and the binding of the accumulator it folds.
 //!
-//! The chain-link rules are not covered negatively here or in Layer B. Every negative case in the
-//! module mutates the public statement, which establishes bindings rather than the transition
-//! constraints that produce the bound values.
+//! The negative cases mutate the public statement, so they establish bindings rather than the
+//! transition constraints producing the bound values. Those have no negative coverage.
 //!
 //! `public_inputs`      — tampered global fields and accumulator in public inputs.
 //! `genesis_gating`     — garbage proof bytes are accepted at genesis (step 0).

@@ -1,8 +1,8 @@
 //! Positive transition tests.
 //!
 //! Fast tests verify the stored output proof of each transition context against the full verifier.
-//! The slow `MockProver` checks in `slow` synthesize the current circuit over the stored inputs and
-//! assert it accepts the stored expected output, which the stored proof alone cannot establish.
+//! The slow checks synthesize the current circuit over the stored inputs and assert it accepts the
+//! stored expected output, which the stored proof alone cannot establish.
 
 use midnight_circuits::types::Instantiable;
 
@@ -94,9 +94,7 @@ mod slow {
 
     #[test]
     fn same_epoch_step_circuit_is_accepted() {
-        // Satisfiable canary for the same-epoch context: outside genesis the accumulator
-        // contributions are no longer gated away, so only a stored step whose accumulator the
-        // circuit can reproduce is accepted.
+        // Satisfiable baseline for the same-epoch negative case.
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let fixture = build_asset_backed_same_epoch_fixture(&mock_prover_setup);
@@ -110,7 +108,7 @@ mod slow {
 
     #[test]
     fn next_epoch_step_circuit_is_accepted() {
-        // Satisfiable canary for the next-epoch context.
+        // Satisfiable baseline for the next-epoch negative case.
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let fixture = build_asset_backed_next_epoch_fixture(&mock_prover_setup);

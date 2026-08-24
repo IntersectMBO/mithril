@@ -105,9 +105,7 @@ mod slow {
 
     #[test]
     fn circuit_rejects_tampered_genesis_global_and_state_public_inputs() {
-        // Every global and next-state element is bound to the value the circuit derives, so
-        // tampering all of them must implicate exactly those public rows and no others. One synthesis covers
-        // every element because MockProver reports all failures, not only the first.
+        // One synthesis covers every element, since MockProver reports all failures, not the first.
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
