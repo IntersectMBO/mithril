@@ -310,7 +310,7 @@ const config = {
             title: "Community",
             items: [
               {
-                label: "Discord (#ask-mithril)",
+                label: "Discord (#general-mithril)",
                 href: "https://discord.gg/5kaErDKDRq",
               },
               {
