@@ -7,21 +7,24 @@ use midnight_circuits::types::Instantiable;
 use crate::circuits::halo2_ivc::{
     AssignedAccumulator, NativeField, PREIMAGE_CURRENT_EPOCH_BYTES,
     PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES, PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES,
+    circuit::IvcCircuitData,
     protocol_message::{DynamicProtocolMessagePartKey, ProtocolMessage},
     state::State,
     tests::common::{
         asset_readers::{
             load_embedded_next_epoch_step_output_asset, load_embedded_verification_context_asset,
         },
+        failure_signature::assert_recursive_mock_prover_rejects_public_input_rows,
         generators::{
-            GENESIS_EPOCH, build_asset_generation_setup_from_cache,
+            AssetGenerationSetup, GENESIS_EPOCH, build_asset_generation_setup_from_cache,
             build_genesis_base_case_next_state, build_genesis_base_case_witness,
         },
+        helpers::MockProverSetup,
         helpers::{
-            assert_recursive_mock_prover_rejects_with_label, build_genesis_mock_prover_circuit,
-            build_genesis_mock_prover_public_inputs, build_mock_prover_setup_from_assets,
-            verify_prepare_blake2b_recursive_proof,
+            build_genesis_mock_prover_circuit, build_genesis_mock_prover_public_inputs,
+            build_mock_prover_setup_from_assets, verify_prepare_blake2b_recursive_proof,
         },
+        public_input_layout::StateField,
     },
     types::{EpochNumber, MerkleTreeCommitment, ProtocolParametersHash},
 };
@@ -192,69 +195,118 @@ fn current_epoch_tampered_public_input_is_rejected() {
 }
 
 mod slow {
+    use std::collections::BTreeMap;
+    use std::ops::Range;
+
     use super::*;
 
-    #[test]
-    fn circuit_rejects_wrong_next_merkle_tree_commitment_byte_range() {
-        // MockProver constraint check: filling PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES with 0xff
-        // must violate the in-circuit byte-extraction constraint for that preimage region.
+    /// Preimage byte mutated to break the message equality without moving any extracted field.
+    ///
+    /// It falls inside the dynamic-parts digest, which the circuit hashes but never decodes.
+    const MESSAGE_EQUALITY_TAMPER_OFFSET: usize = 6;
+
+    /// Flips the byte at `offset` in the genesis witness preimage and returns the resulting circuit.
+    ///
+    /// The mutation is an exclusive-or so it cannot land on the value already there, and it touches
+    /// a single byte, so at most the one decoded field that byte feeds can move.
+    fn build_genesis_circuit_with_flipped_preimage_byte(
+        setup: &AssetGenerationSetup,
+        mock_prover_setup: &MockProverSetup,
+        offset: usize,
+    ) -> IvcCircuitData {
+        let mut witness = build_genesis_base_case_witness(setup);
+        witness.message_preimage.as_mut_bytes()[offset] ^= 0xff;
+        build_genesis_mock_prover_circuit(mock_prover_setup, State::genesis(), witness)
+    }
+
+    /// Asserts that flipping the first byte of `range` breaks exactly the message equality and
+    /// `field`'s public-input binding.
+    ///
+    /// Any change to the preimage invalidates the whole-preimage hash. In the current layout that
+    /// inconsistent equality class reports the message row, and `field` is the one decoded value the
+    /// byte window feeds.
+    fn assert_flipped_range_breaks_message_and_field(range: Range<usize>, field: StateField) {
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
         let public_inputs =
             build_genesis_mock_prover_public_inputs(&mock_prover_setup, &next_state);
+        let ivc_circuit_data = build_genesis_circuit_with_flipped_preimage_byte(
+            &setup,
+            &mock_prover_setup,
+            range.start,
+        );
 
-        let mut witness = build_genesis_base_case_witness(&setup);
-        witness.message_preimage.as_mut_bytes()[PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES]
-            .fill(0xff);
-        let ivc_circuit_data =
-            build_genesis_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
-        assert_recursive_mock_prover_rejects_with_label(
+        assert_recursive_mock_prover_rejects_public_input_rows(
             ivc_circuit_data,
             public_inputs,
-            "message_preimage[PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES] filled with 0xff",
+            &BTreeMap::from([
+                (StateField::Message.row(), StateField::Message.name()),
+                (field.row(), field.name()),
+            ]),
+        );
+    }
+
+    #[test]
+    fn circuit_rejects_wrong_next_merkle_tree_commitment_byte_range() {
+        // Flipping a byte here invalidates the whole-preimage hash and changes exactly the next
+        // Merkle-tree commitment. A different decoded row moving would mean the circuit reads the
+        // wrong window.
+        assert_flipped_range_breaks_message_and_field(
+            PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
+            StateField::NextMerkleTreeCommitment,
         );
     }
 
     #[test]
     fn circuit_rejects_wrong_next_protocol_parameters_byte_range() {
-        // MockProver constraint check: filling PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES with 0xff
-        // must violate the in-circuit byte-extraction constraint for that preimage region.
-        let setup = build_asset_generation_setup_from_cache();
-        let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
-        let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
-        let public_inputs =
-            build_genesis_mock_prover_public_inputs(&mock_prover_setup, &next_state);
-
-        let mut witness = build_genesis_base_case_witness(&setup);
-        witness.message_preimage.as_mut_bytes()[PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES].fill(0xff);
-        let ivc_circuit_data =
-            build_genesis_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
-        assert_recursive_mock_prover_rejects_with_label(
-            ivc_circuit_data,
-            public_inputs,
-            "message_preimage[PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES] filled with 0xff",
+        // Same for the next protocol parameters.
+        assert_flipped_range_breaks_message_and_field(
+            PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES,
+            StateField::NextProtocolParameters,
         );
     }
 
     #[test]
     fn circuit_rejects_wrong_current_epoch_byte_range() {
-        // MockProver constraint check: filling PREIMAGE_CURRENT_EPOCH_BYTES with 0xff
-        // must violate the in-circuit byte-extraction constraint for that preimage region.
+        // Same for the current epoch.
+        assert_flipped_range_breaks_message_and_field(
+            PREIMAGE_CURRENT_EPOCH_BYTES,
+            StateField::CurrentEpoch,
+        );
+    }
+
+    #[test]
+    fn circuit_rejects_preimage_inconsistent_with_the_message() {
+        // Isolates the message equality. The byte is outside every decoded range, so no decoded
+        // state field changes and the public values are left untouched; the message row is reported
+        // because, in the current layout, that equality class contains the cell bound to it.
+        for range in [
+            PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
+            PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES,
+            PREIMAGE_CURRENT_EPOCH_BYTES,
+        ] {
+            assert!(
+                !range.contains(&MESSAGE_EQUALITY_TAMPER_OFFSET),
+                "the tampered byte must sit outside every decoded range"
+            );
+        }
+
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
         let public_inputs =
             build_genesis_mock_prover_public_inputs(&mock_prover_setup, &next_state);
+        let ivc_circuit_data = build_genesis_circuit_with_flipped_preimage_byte(
+            &setup,
+            &mock_prover_setup,
+            MESSAGE_EQUALITY_TAMPER_OFFSET,
+        );
 
-        let mut witness = build_genesis_base_case_witness(&setup);
-        witness.message_preimage.as_mut_bytes()[PREIMAGE_CURRENT_EPOCH_BYTES].fill(0xff);
-        let ivc_circuit_data =
-            build_genesis_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
-        assert_recursive_mock_prover_rejects_with_label(
+        assert_recursive_mock_prover_rejects_public_input_rows(
             ivc_circuit_data,
             public_inputs,
-            "message_preimage[PREIMAGE_CURRENT_EPOCH_BYTES] filled with 0xff",
+            &BTreeMap::from([(StateField::Message.row(), StateField::Message.name())]),
         );
     }
 }

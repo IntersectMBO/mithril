@@ -7,10 +7,13 @@
 //! into "these public inputs, and only these, stopped being satisfiable".
 //!
 //! The contract is deliberately two-sided: an **exact** public-statement row signature, plus a
-//! **permitted failure class** for everything else. The advice-side halves of a broken copy
-//! constraint, and the message-preimage equality, are also permutation failures, but the columns
-//! and regions they name belong to the gadget layer and carry no stability guarantee — so they are
-//! constrained by class and not enumerated.
+//! **permitted failure class** for everything else. Advice-side members of a broken permutation
+//! class are constrained by class and never enumerated, because the columns and regions they name
+//! belong to the gadget layer and carry no stability guarantee.
+//!
+//! An internal copy constraint can still implicate a named public row, when its equality class also
+//! contains an instance-bound cell. The state message and its preimage hash are joined that way, so
+//! corrupting only the witness preimage legitimately yields an exact public-row signature.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -77,7 +80,7 @@ pub(crate) fn assert_circuit_rejects_public_input_rows<C: Circuit<NativeField>>(
     let prover = MockProver::run(circuit, instances).expect("MockProver setup should succeed");
     let failures = prover
         .verify()
-        .expect_err("the circuit should reject the tampered public inputs");
+        .expect_err("the circuit should reject the provided circuit and instances");
 
     let unexpected_classes: Vec<String> = failures
         .iter()
@@ -269,8 +272,8 @@ mod tests {
 
     #[test]
     fn helper_accepts_rejection_with_an_empty_expected_signature() {
-        // A rejection caused by the message-preimage equality implicates no public-statement row.
-        // Tampering only the committed column reproduces that shape here.
+        // A break confined to the committed column implicates no public-statement row, so the
+        // helper must report an empty signature rather than treating rejection alone as a match.
         let mut instances = honest_minimal_instances();
         mutate_public_input(&mut instances[0], 0);
 

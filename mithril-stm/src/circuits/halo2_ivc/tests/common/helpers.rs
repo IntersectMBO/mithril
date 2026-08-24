@@ -157,21 +157,6 @@ pub(crate) fn assert_recursive_mock_prover_accepts_with_label(
     });
 }
 
-/// Runs `MockProver` and asserts at least one constraint fails, printing `label` on failure
-/// so the scenario that unexpectedly passed is identifiable when multiple scenarios share one `#[test]` function.
-pub(crate) fn assert_recursive_mock_prover_rejects_with_label(
-    ivc_circuit_data: IvcCircuitData,
-    public_inputs: Vec<NativeField>,
-    label: &str,
-) {
-    let prover = MockProver::run(&ivc_circuit_data, vec![vec![], public_inputs])
-        .expect("recursive MockProver setup should succeed");
-    assert!(
-        prover.verify().is_err(),
-        "MockProver should reject the circuit and public inputs — case: {label}"
-    );
-}
-
 /// Prepares the stored previous recursive proof and returns its accumulator contribution.
 ///
 /// This mirrors the first half of the normal recursive-step asset generation:
