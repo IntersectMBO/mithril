@@ -2,7 +2,8 @@ import React, { type ReactNode } from "react";
 import clsx from "clsx";
 import Link from "@docusaurus/Link";
 import useBaseUrl from "@docusaurus/useBaseUrl";
-
+import isInternalUrl from "@docusaurus/isInternalUrl";
+import IconExternalLink from "@theme/Icon/ExternalLink";
 import type { Props } from "@theme/Footer/LinkItem";
 
 export default function FooterLinkItem({ item }: Props): ReactNode {
@@ -23,6 +24,7 @@ export default function FooterLinkItem({ item }: Props): ReactNode {
       {...props}
     >
       {label}
+      {href && !isInternalUrl(href) && <IconExternalLink />}
     </Link>
   );
 }

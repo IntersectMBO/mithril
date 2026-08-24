@@ -15,7 +15,7 @@ function LogoImage({ logo }: Props) {
   };
   return (
     <ThemedImage
-      className={clsx(logo.className)}
+      className={clsx("footer__logo", logo.className)}
       alt={logo.alt}
       sources={sources}
       width={logo.width}
@@ -35,9 +35,6 @@ export default function FooterLogo({ logo }: Props): ReactNode {
       <LogoImage logo={logo} />
     </Link>
   ) : (
-    <div className="flex gap-1">
-      <LogoImage logo={logo} />
-      <h4 className="footer-logo-text">Mithril</h4>
-    </div>
+    <LogoImage logo={logo} />
   );
 }
