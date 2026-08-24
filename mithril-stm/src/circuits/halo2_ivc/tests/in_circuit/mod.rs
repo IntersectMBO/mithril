@@ -1,8 +1,11 @@
 //! Layer C1: in-circuit verification mechanics tests for the recursive Halo2 IVC circuit.
 //!
-//! These tests validate what the circuit enforces internally — proof verification
-//! wiring, genesis gating bypass, and accumulator update constraints — as opposed
-//! to the off-circuit state transition rules covered by Layer B.
+//! These tests validate what the circuit enforces internally: proof verification wiring, genesis
+//! gating bypass, and the binding of the accumulator it folds.
+//!
+//! The chain-link rules are not covered negatively here or in Layer B. Every negative case in the
+//! module mutates the public statement, which establishes bindings rather than the transition
+//! constraints that produce the bound values.
 //!
 //! `public_inputs`      — tampered global fields and accumulator in public inputs.
 //! `genesis_gating`     — garbage proof bytes are accepted at genesis (step 0).

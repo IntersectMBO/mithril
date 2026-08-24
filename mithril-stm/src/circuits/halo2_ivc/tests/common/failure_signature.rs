@@ -72,7 +72,13 @@ fn public_statement_row(failure: &VerifyFailure) -> Option<usize> {
 ///
 /// `expected_rows` maps each expected row to the field name reported in diagnostics; rows that fail
 /// unexpectedly are reported by index, since a generic circuit has no field names to resolve them
-/// against. Every returned failure must be a permutation failure, and every permutation failure on
+/// against.
+///
+/// What an exact row set does **not** establish: that each row carries the field the caller named.
+/// Dropping one public-input assignment shifts every later binding down a row, and every expected
+/// row still fails; two fields whose honest values are equal can also swap invisibly. The layout
+/// guards beside this helper pin section lengths and the state serialization order, which is not the
+/// same as proving the field-to-row mapping. Mutating several rows at once inherits that boundary. Every returned failure must be a permutation failure, and every permutation failure on
 /// the public-statement column must carry an absolute row — anything else means the circuit rejected
 /// in a way this helper cannot account for, and is surfaced rather than dropped.
 pub(crate) fn assert_circuit_rejects_public_input_rows<C: Circuit<NativeField>>(

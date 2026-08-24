@@ -1,6 +1,9 @@
 //! Negative public-input tests: tampered global fields and accumulator, checked against the stored
-//! proof by the verifier. In-circuit binding of the same elements is covered by
-//! `transitions::negative::genesis::slow`.
+//! proof by the verifier.
+//!
+//! In-circuit binding of the same elements lives elsewhere, split by responsibility: the global
+//! fields with the genesis negative transition case, the accumulator with the negative accumulator
+//! case.
 
 use ff::Field;
 use midnight_circuits::types::Instantiable;
