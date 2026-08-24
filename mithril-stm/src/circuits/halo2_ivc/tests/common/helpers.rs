@@ -8,12 +8,12 @@ use midnight_proofs::{
 };
 
 use crate::circuits::halo2_ivc::{
-    Accumulator, AssignedAccumulator, EmulatedCurve, NativeField, PairingEngine,
+    Accumulator, AssignedAccumulator, EmulatedCurve, NativeField, PREIMAGE_SIZE, PairingEngine,
     RecursiveEmulation,
     accumulator::trivial_accumulator,
     circuit::IvcCircuitData,
     state::{Global, State, Witness},
-    types::{CertificateProofBytes, IvcProofBytes},
+    types::{CertificateProofBytes, IvcProofBytes, MerkleTreeCommitment, ProtocolMessagePreimage},
 };
 use crate::circuits::halo2_ivc::{IVC_FIXED_BASES_PREFIX, keys::RecursiveCircuitVerifyingKey};
 use crate::circuits::{
@@ -27,8 +27,9 @@ pub(crate) use super::generators::{
 };
 use super::{
     asset_readers::{
-        RecursiveChainStateAsset, load_embedded_next_epoch_step_output_asset,
-        load_embedded_recursive_chain_state_asset, load_embedded_verification_context_asset,
+        RecursiveChainStateAsset, load_embedded_following_certificate_in_epoch_asset,
+        load_embedded_next_epoch_step_output_asset, load_embedded_recursive_chain_state_asset,
+        load_embedded_verification_context_asset,
     },
     generators::{
         AssetGenerationSetup, build_recursive_fixed_bases, build_recursive_global,
@@ -271,6 +272,121 @@ pub(crate) fn prepare_stored_step_certificate_accumulator(
     );
     certificate_accumulator.collapse();
     certificate_accumulator
+}
+
+/// A non-genesis MockProver stimulus assembled entirely from committed step assets.
+///
+/// Unlike [`build_trivial_mock_prover_circuit`], this carries the stored certificate proof, the
+/// stored previous recursive proof and the stored previous accumulator, so the accumulator the
+/// circuit computes is the stored next accumulator. That is what makes it satisfiable at a
+/// non-genesis step, where the accumulator contributions are no longer gated to the group identity.
+pub(crate) struct AssetBackedStepFixture {
+    /// Circuit data for the step.
+    pub(crate) ivc_circuit_data: IvcCircuitData,
+    /// Public statement the step is expected to satisfy.
+    pub(crate) public_inputs: Vec<NativeField>,
+}
+
+/// The stored half of one recursive step, plus the commitment its certificate was produced against.
+///
+/// That commitment is not read from the step-output asset but chosen by transition type: a
+/// same-epoch certificate is produced against the checkpoint's current Merkle-tree commitment, a
+/// next-epoch one against its next commitment. The stored final recursive proof is deliberately
+/// absent — MockProver checks the step's constraints and never verifies the step's own output.
+struct StepFixtureData {
+    certificate_merkle_tree_commitment: MerkleTreeCommitment,
+    certificate_proof: CertificateProofBytes,
+    message_preimage: [u8; PREIMAGE_SIZE],
+    next_state: State,
+    next_accumulator: Accumulator<RecursiveEmulation>,
+}
+
+/// Assembles a non-genesis fixture from a stored chain checkpoint and a stored step output.
+fn build_asset_backed_step_fixture(
+    mock_prover_setup: &MockProverSetup,
+    recursive_chain_state: RecursiveChainStateAsset,
+    stored: StepFixtureData,
+) -> AssetBackedStepFixture {
+    let RecursiveChainStateAsset {
+        global_field_elements,
+        state,
+        ivc_proof,
+        accumulator,
+        genesis_signature,
+    } = recursive_chain_state;
+
+    // Turns a future drift between the reconstructed global and the stored one into a direct
+    // coherence error instead of an opaque constraint failure.
+    assert_eq!(
+        mock_prover_setup.global.as_public_input(),
+        global_field_elements,
+        "the reconstructed global should match the one the stored checkpoint was proved against"
+    );
+
+    let witness = Witness::new(
+        genesis_signature,
+        stored.next_state.message,
+        stored.certificate_merkle_tree_commitment,
+        ProtocolMessagePreimage::new(stored.message_preimage),
+    );
+    let public_inputs = [
+        mock_prover_setup.global.as_public_input(),
+        stored.next_state.as_public_input(),
+        AssignedAccumulator::as_public_input(&stored.next_accumulator),
+    ]
+    .concat();
+    let ivc_circuit_data = IvcCircuitData::try_new(
+        mock_prover_setup.global.clone(),
+        state,
+        witness,
+        stored.certificate_proof,
+        ivc_proof,
+        accumulator,
+        &mock_prover_setup.certificate_verifying_key,
+        &mock_prover_setup.recursive_verifying_key,
+    )
+    .expect("valid IvcCircuitData construction");
+
+    AssetBackedStepFixture {
+        ivc_circuit_data,
+        public_inputs,
+    }
+}
+
+/// Builds the satisfiable same-epoch fixture from the committed assets.
+pub(crate) fn build_asset_backed_same_epoch_fixture(
+    mock_prover_setup: &MockProverSetup,
+) -> AssetBackedStepFixture {
+    let recursive_chain_state = load_embedded_recursive_chain_state_asset()
+        .expect("recursive chain state asset should load");
+    let step_output = load_embedded_following_certificate_in_epoch_asset()
+        .expect("following certificate in epoch asset should load");
+    let stored = StepFixtureData {
+        certificate_merkle_tree_commitment: recursive_chain_state.state.merkle_tree_commitment,
+        certificate_proof: step_output.certificate_proof,
+        message_preimage: step_output.message_preimage,
+        next_state: step_output.next_state,
+        next_accumulator: step_output.next_accumulator,
+    };
+    build_asset_backed_step_fixture(mock_prover_setup, recursive_chain_state, stored)
+}
+
+/// Builds the satisfiable next-epoch fixture from the committed assets.
+pub(crate) fn build_asset_backed_next_epoch_fixture(
+    mock_prover_setup: &MockProverSetup,
+) -> AssetBackedStepFixture {
+    let recursive_chain_state = load_embedded_recursive_chain_state_asset()
+        .expect("recursive chain state asset should load");
+    let step_output = load_embedded_next_epoch_step_output_asset()
+        .expect("recursive step output asset should load");
+    let stored = StepFixtureData {
+        certificate_merkle_tree_commitment: recursive_chain_state.state.next_merkle_tree_commitment,
+        certificate_proof: step_output.certificate_proof,
+        message_preimage: step_output.message_preimage,
+        next_state: step_output.next_state,
+        next_accumulator: step_output.next_accumulator,
+    };
+    build_asset_backed_step_fixture(mock_prover_setup, recursive_chain_state, stored)
 }
 
 /// Builds an `IvcCircuitData` with empty proof slots and a trivial accumulator for

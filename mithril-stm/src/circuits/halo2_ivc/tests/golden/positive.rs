@@ -1,10 +1,9 @@
 //! Positive golden tests for the recursive Halo2 IVC flow.
 //!
-//! Fast tests verify stored proof artifacts against the full verifier. The slow
-//! `MockProver` check covers the genesis base case in-circuit (the unique code path
-//! that has no stored proof to verify against). Same-epoch and next-epoch positive
-//! constraint coverage is provided by the stored-asset verification tests above,
-//! which use the full prover output: a valid proof implies all constraints hold.
+//! Fast tests verify stored proof artifacts against the full verifier, and the slow `MockProver`
+//! check covers the genesis base case in-circuit — the unique code path with no stored proof to
+//! verify against. In-circuit positive coverage of the same-epoch and next-epoch contexts lives in
+//! `transitions::positive::slow`.
 
 use midnight_circuits::types::Instantiable;
 use sha2::{Digest, Sha256};
@@ -147,12 +146,8 @@ mod slow {
 
     #[test]
     fn genesis_base_case_circuit_is_accepted() {
-        // MockProver constraint check for the genesis base case: no previous proof,
-        // trivial accumulator, all accumulator contributions gated to the group identity.
-        // Same-epoch and next-epoch positive constraint coverage is provided by
-        // `recursive_chain_state_asset_proof_and_accumulator_are_valid` and
-        // `recursive_step_output_asset_proof_and_accumulator_are_valid` above — a valid
-        // full proof implies all constraints held when the proof was generated.
+        // MockProver constraint check for the genesis base case: no previous proof, trivial
+        // accumulator, all accumulator contributions gated to the group identity.
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
