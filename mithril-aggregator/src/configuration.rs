@@ -130,16 +130,9 @@ pub trait ConfigurationSource {
         panic!("snapshot_use_cdn_domain is not implemented.");
     }
 
-    /// URL of a Kubo IPFS RPC API, setting this will enable IPFS upload for immutable snapshots
-    fn ipfs_rpc_url(&self) -> Option<String> {
-        panic!("ipfs_rpc_url is not implemented.");
-    }
-
-    /// Parsed URL of a Kubo IPFS RPC API (see [ipfs_rpc_url][ConfigurationSource::ipfs_rpc_url])
-    fn get_ipfs_rpc_url(&self) -> StdResult<Option<SanitizedUrlWithTrailingSlash>> {
-        self.ipfs_rpc_url()
-            .map(|url| SanitizedUrlWithTrailingSlash::parse(&url))
-            .transpose()
+    /// Configuration parameters to connect to a Kubo IPFS RPC API, setting this will enable IPFS upload for immutable snapshots
+    fn ipfs_rpc_server_config(&self) -> Option<IpfsRpcServerConfig> {
+        panic!("ipfs_rpc_server_config is not implemented.");
     }
 
     /// Server listening IP
@@ -547,7 +540,18 @@ pub struct ServeCommandConfiguration {
     pub snapshot_use_cdn_domain: bool,
 
     /// URL of a Kubo IPFS RPC API, setting this will enable IPFS upload for immutable snapshots
-    pub ipfs_rpc_url: Option<String>,
+    ///
+    /// `mfs_folder_name` (optional) allows overriding the name of the folder in the IPFS MFS (Mutable File System)
+    /// where the snapshots will be stored. Defaults to "mithril" if not specified.
+    #[example = "\
+    `{ \"url\": \"http://localhost:5001/\" }`\
+    or `{ \"url\": \"http://localhost:5001/\", \"mfs_folder_name\": \"custom-folder\" }`\
+    "]
+    #[serde(
+        default,
+        deserialize_with = "serde_deserialization::string_or_struct_optional"
+    )]
+    pub ipfs_rpc_server_config: Option<IpfsRpcServerConfig>,
 
     /// Server listening IP
     pub server_ip: String,
@@ -731,6 +735,44 @@ pub enum SnapshotUploaderType {
     Local,
 }
 
+/// Configuration for connecting to a Kubo IPFS RPC server.
+///
+/// This struct holds the connection details and settings for uploading
+/// immutable snapshots to IPFS via the Kubo RPC API.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct IpfsRpcServerConfig {
+    /// URL of the Kubo IPFS RPC API endpoint.
+    ///
+    /// Example: `http://localhost:5001/`
+    pub url: String,
+
+    /// Name of the folder in the MFS (Mutable File System) where snapshots will be stored.
+    ///
+    /// Defaults to "mithril" if not specified.
+    #[serde(default = "default_mfs_folder_name")]
+    pub mfs_folder_name: String,
+}
+
+impl IpfsRpcServerConfig {
+    /// Parsed URL of a Kubo IPFS RPC API
+    pub fn sanitized_url(&self) -> StdResult<SanitizedUrlWithTrailingSlash> {
+        SanitizedUrlWithTrailingSlash::parse(&self.url)
+            .with_context(|| "Invalid IPFS RPC server URL")
+    }
+}
+
+fn default_mfs_folder_name() -> String {
+    "mithril".to_string()
+}
+
+impl FromStr for IpfsRpcServerConfig {
+    type Err = serde_json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_str(s)
+    }
+}
+
 /// Configuration to connect to the Blockfrost API.
 ///
 /// Currently only used to fetch the ticker and name for registered pools.
@@ -808,7 +850,7 @@ impl ServeCommandConfiguration {
             snapshot_uploader_type: SnapshotUploaderType::Local,
             snapshot_bucket_name: None,
             snapshot_use_cdn_domain: false,
-            ipfs_rpc_url: None,
+            ipfs_rpc_server_config: None,
             server_ip: "0.0.0.0".to_string(),
             server_port: 8000,
             public_server_url: None,
@@ -927,8 +969,8 @@ impl ConfigurationSource for ServeCommandConfiguration {
         self.snapshot_use_cdn_domain
     }
 
-    fn ipfs_rpc_url(&self) -> Option<String> {
-        self.ipfs_rpc_url.clone()
+    fn ipfs_rpc_server_config(&self) -> Option<IpfsRpcServerConfig> {
+        self.ipfs_rpc_server_config.clone()
     }
 
     fn server_ip(&self) -> String {
@@ -1457,19 +1499,6 @@ mod test {
     }
 
     #[test]
-    fn get_ipfs_rpc_url_return_sanitized_public_url_if_it_is_set() {
-        let config = ServeCommandConfiguration {
-            ipfs_rpc_url: Some("https://example.com:8080/".to_string()),
-            ..ServeCommandConfiguration::new_sample(temp_dir!())
-        };
-
-        assert_eq!(
-            config.get_ipfs_rpc_url().unwrap().unwrap().as_str(),
-            "https://example.com:8080/"
-        );
-    }
-
-    #[test]
     fn get_server_url_return_local_url_with_server_base_path_if_public_url_is_not_set() {
         let config = ServeCommandConfiguration {
             server_ip: "1.2.3.4".to_string(),
@@ -1550,6 +1579,31 @@ mod test {
         };
 
         assert!(!config.is_follower_aggregator());
+    }
+
+    #[test]
+    fn deserializing_ipfs_rpc_server_parameters() {
+        let deserialized_without_mfs_dir: IpfsRpcServerConfig =
+            serde_json::from_str(r#"{ "url": "http://localhost:5001/" }"#).unwrap();
+        assert_eq!(
+            deserialized_without_mfs_dir,
+            IpfsRpcServerConfig {
+                url: "http://localhost:5001/".to_string(),
+                mfs_folder_name: default_mfs_folder_name(),
+            }
+        );
+
+        let deserialized_with_mfs_dir: IpfsRpcServerConfig = serde_json::from_str(
+            r#"{ "url": "http://localhost:5001/", "mfs_folder_name": "altered" }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            deserialized_with_mfs_dir,
+            IpfsRpcServerConfig {
+                url: "http://localhost:5001/".to_string(),
+                mfs_folder_name: "altered".to_string(),
+            }
+        );
     }
 
     #[test]
