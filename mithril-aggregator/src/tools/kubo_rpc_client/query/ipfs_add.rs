@@ -12,6 +12,7 @@ use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcQuery};
 ///
 /// see: https://docs.ipfs.tech/reference/kubo/rpc/#api-v0-add
 // TODO: Enforce most add parameters to make CID deterministic.
+#[derive(Debug)]
 pub struct IpfsAddQuery {
     file_path: PathBuf,
     to_files: Option<IpfsMfsDirPath>,

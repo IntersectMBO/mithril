@@ -56,12 +56,16 @@ impl FileUploader for IpfsUploader {
                 )
             })?;
 
-        match self.rpc_client.file_exists(filepath).await.with_context(|| {
-            format!(
-                "Failed to check if file '{}' exists in IPFS",
-                filepath.display()
-            )
-        })? {
+        match self
+            .rpc_client
+            .file_exists(&self.ipfs_dir_path, filepath)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to check if file '{}' exists in IPFS",
+                    filepath.display()
+                )
+            })? {
             Some(cid) => {
                 trace!(self.logger, "File already exists in IPFS"; "cid" => %cid);
                 Ok(FileUri(cid))
@@ -98,8 +102,12 @@ pub trait IpfsBackendUploader: Sync + Send {
     /// Upload a file to IPFS and return its CID
     async fn upload_file(&self, file_path: &Path, mfs_path: &IpfsMfsDirPath) -> StdResult<Cid>;
 
-    /// Check if a file exists and return its CID if it does
-    async fn file_exists(&self, file_path: &Path) -> StdResult<Option<Cid>>;
+    /// Check if a file exists in a given MFS directory and return its CID if it does
+    async fn file_exists(
+        &self,
+        mfs_dir_path: &IpfsMfsDirPath,
+        file_path: &Path,
+    ) -> StdResult<Option<Cid>>;
 }
 
 #[async_trait::async_trait]
@@ -123,8 +131,17 @@ impl IpfsBackendUploader for KuboRpcClient {
         Ok(res.hash)
     }
 
-    async fn file_exists(&self, file_path: &Path) -> StdResult<Option<Cid>> {
-        let stat = self.send(IpfsFilesStatQuery::new(file_path)).await?;
+    async fn file_exists(
+        &self,
+        mfs_dir_path: &IpfsMfsDirPath,
+        file_path: &Path,
+    ) -> StdResult<Option<Cid>> {
+        let stat = self
+            .send(IpfsFilesStatQuery::for_file_in_dir(
+                mfs_dir_path,
+                file_path,
+            )?)
+            .await?;
         Ok(stat.map(|stat| stat.hash))
     }
 }
@@ -146,7 +163,7 @@ mod tests {
                 mock.expect_create_dir()
                     .with(eq(IpfsMfsDirPath::from("/test/dir")))
                     .returning(|_| Ok(()));
-                mock.expect_file_exists().returning(|_| Ok(None));
+                mock.expect_file_exists().returning(|_, _| Ok(None));
                 mock.expect_upload_file().returning(|_, _| Ok(String::new()));
             }),
             IpfsMfsDirPath::from("/test/dir"),
@@ -162,15 +179,21 @@ mod tests {
             MockBuilder::configure(|mock: &mut MockIpfsBackendUploader| {
                 mock.expect_create_dir().returning(|_| Ok(()));
                 mock.expect_file_exists()
-                    .with(eq(Path::new("/a/file")))
-                    .returning(|_| Ok(Some("existing".to_string())));
+                    .with(
+                        eq(IpfsMfsDirPath::from("/test/dir")),
+                        eq(Path::new("/a/dummy-file.txt")),
+                    )
+                    .returning(|_, _| Ok(Some("existing".to_string())));
                 mock.expect_upload_file().never();
             }),
             IpfsMfsDirPath::from("/test/dir"),
             &TestLogger::stdout(),
         );
 
-        let result = uploader.upload_without_retry(Path::new("/a/file")).await.unwrap();
+        let result = uploader
+            .upload_without_retry(Path::new("/a/dummy-file.txt"))
+            .await
+            .unwrap();
 
         assert_eq!(FileUri("existing".to_string()), result);
     }
@@ -183,11 +206,14 @@ mod tests {
                     .with(eq(IpfsMfsDirPath::from("/test/dir")))
                     .returning(|_| Ok(()));
                 mock.expect_file_exists()
-                    .with(eq(Path::new("/a/file")))
-                    .returning(|_| Ok(None));
+                    .with(
+                        eq(IpfsMfsDirPath::from("/test/dir")),
+                        eq(Path::new("/a/dummy-file.txt")),
+                    )
+                    .returning(|_, _| Ok(None));
                 mock.expect_upload_file()
                     .with(
-                        eq(Path::new("/a/file")),
+                        eq(Path::new("/a/dummy-file.txt")),
                         eq(IpfsMfsDirPath::from("/test/dir")),
                     )
                     .returning(|_, _| Ok("test_cid".to_string()));
@@ -196,6 +222,9 @@ mod tests {
             &TestLogger::stdout(),
         );
 
-        uploader.upload_without_retry(Path::new("/a/file")).await.unwrap();
+        uploader
+            .upload_without_retry(Path::new("/a/dummy-file.txt"))
+            .await
+            .unwrap();
     }
 }

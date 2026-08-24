@@ -11,6 +11,7 @@ use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcQuery};
 /// - the command will succeed even if the directory already exists.
 ///
 /// see: https://docs.ipfs.tech/reference/kubo/rpc/#api-v0-files-mkdir
+#[derive(Debug)]
 pub struct IpfsFilesMkdirQuery {
     ipfs_absolute_path: IpfsMfsDirPath,
 }
