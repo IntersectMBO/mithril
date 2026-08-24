@@ -132,7 +132,6 @@ pub(crate) fn assert_circuit_rejects_public_input_rows<C: Circuit<NativeField>>(
 /// Recursive-circuit wrapper over [`assert_circuit_rejects_public_input_rows`].
 ///
 /// The empty first column is the committed-instance column the circuit declares and never uses.
-#[allow(dead_code)]
 pub(crate) fn assert_recursive_mock_prover_rejects_public_input_rows(
     ivc_circuit_data: IvcCircuitData,
     public_inputs: Vec<NativeField>,

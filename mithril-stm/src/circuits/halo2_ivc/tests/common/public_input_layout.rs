@@ -8,6 +8,8 @@
 //! Keeping the mapping in one place is what lets a failure-signature assertion name the field that
 //! broke instead of a bare integer, and it keeps row literals out of the test bodies.
 
+use std::collections::BTreeMap;
+
 /// Rows occupied by the global root-of-trust section.
 pub(crate) const GLOBAL_SECTION_ROWS: usize = 5;
 
@@ -101,6 +103,22 @@ impl StateField {
 /// Row of the accumulator encoding element at `offset`, after the global and state sections.
 pub(crate) fn accumulator_row(offset: usize) -> usize {
     GLOBAL_SECTION_ROWS + STATE_SECTION_ROWS + offset
+}
+
+/// Row-to-name map for every global field, for use as an expected failure signature.
+pub(crate) fn all_global_rows() -> BTreeMap<usize, &'static str> {
+    GlobalField::ALL
+        .iter()
+        .map(|field| (field.row(), field.name()))
+        .collect()
+}
+
+/// Row-to-name map for every state field, for use as an expected failure signature.
+pub(crate) fn all_state_rows() -> BTreeMap<usize, &'static str> {
+    StateField::ALL
+        .iter()
+        .map(|field| (field.row(), field.name()))
+        .collect()
 }
 
 #[cfg(test)]

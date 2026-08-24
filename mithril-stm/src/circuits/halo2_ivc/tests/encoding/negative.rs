@@ -18,8 +18,8 @@ use crate::circuits::halo2_ivc::{
             build_genesis_base_case_next_state, build_genesis_base_case_witness,
         },
         helpers::{
-            assert_recursive_mock_prover_rejects_with_label, build_mock_prover_public_inputs,
-            build_mock_prover_setup_from_assets, build_trivial_mock_prover_circuit,
+            assert_recursive_mock_prover_rejects_with_label, build_genesis_mock_prover_circuit,
+            build_genesis_mock_prover_public_inputs, build_mock_prover_setup_from_assets,
             verify_prepare_blake2b_recursive_proof,
         },
     },
@@ -201,13 +201,14 @@ mod slow {
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
-        let public_inputs = build_mock_prover_public_inputs(&mock_prover_setup, &next_state);
+        let public_inputs =
+            build_genesis_mock_prover_public_inputs(&mock_prover_setup, &next_state);
 
         let mut witness = build_genesis_base_case_witness(&setup);
         witness.message_preimage.as_mut_bytes()[PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES]
             .fill(0xff);
         let ivc_circuit_data =
-            build_trivial_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
+            build_genesis_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
         assert_recursive_mock_prover_rejects_with_label(
             ivc_circuit_data,
             public_inputs,
@@ -222,12 +223,13 @@ mod slow {
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
-        let public_inputs = build_mock_prover_public_inputs(&mock_prover_setup, &next_state);
+        let public_inputs =
+            build_genesis_mock_prover_public_inputs(&mock_prover_setup, &next_state);
 
         let mut witness = build_genesis_base_case_witness(&setup);
         witness.message_preimage.as_mut_bytes()[PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES].fill(0xff);
         let ivc_circuit_data =
-            build_trivial_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
+            build_genesis_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
         assert_recursive_mock_prover_rejects_with_label(
             ivc_circuit_data,
             public_inputs,
@@ -242,12 +244,13 @@ mod slow {
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
-        let public_inputs = build_mock_prover_public_inputs(&mock_prover_setup, &next_state);
+        let public_inputs =
+            build_genesis_mock_prover_public_inputs(&mock_prover_setup, &next_state);
 
         let mut witness = build_genesis_base_case_witness(&setup);
         witness.message_preimage.as_mut_bytes()[PREIMAGE_CURRENT_EPOCH_BYTES].fill(0xff);
         let ivc_circuit_data =
-            build_trivial_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
+            build_genesis_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
         assert_recursive_mock_prover_rejects_with_label(
             ivc_circuit_data,
             public_inputs,

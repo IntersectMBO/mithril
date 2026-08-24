@@ -9,11 +9,9 @@
 //! `certificate_proof`  — tampered certificate proof is rejected in non-genesis steps.
 //! `previous_ivc_proof` — tampered previous IVC proof is rejected in non-genesis steps.
 //! `accumulator`        — tampered next_accumulator output is rejected.
-//! `state_transition`   — next_merkle_tree_commitment, next_protocol_parameters consistency and message hash constraint.
 
 mod accumulator;
 mod certificate_proof;
 mod genesis_gating;
 mod previous_ivc_proof;
 mod public_inputs;
-mod state_transition;

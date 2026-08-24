@@ -276,7 +276,7 @@ pub(crate) fn prepare_stored_step_certificate_accumulator(
 
 /// A non-genesis MockProver stimulus assembled entirely from committed step assets.
 ///
-/// Unlike [`build_trivial_mock_prover_circuit`], this carries the stored certificate proof, the
+/// Unlike [`build_genesis_mock_prover_circuit`], this carries the stored certificate proof, the
 /// stored previous recursive proof and the stored previous accumulator, so the accumulator the
 /// circuit computes is the stored next accumulator. That is what makes it satisfiable at a
 /// non-genesis step, where the accumulator contributions are no longer gated to the group identity.
@@ -389,16 +389,23 @@ pub(crate) fn build_asset_backed_next_epoch_fixture(
     build_asset_backed_step_fixture(mock_prover_setup, recursive_chain_state, stored)
 }
 
-/// Builds an `IvcCircuitData` with empty proof slots and a trivial accumulator for
-/// MockProver-based constraint checks.
+/// Builds an `IvcCircuitData` with empty proof slots and a trivial accumulator, for MockProver
+/// constraint checks at the genesis step only.
 ///
-/// MockProver evaluates algebraic constraints directly without running the
-/// KZG prover, so embedded proof bytes are irrelevant and can be left empty.
-pub(crate) fn build_trivial_mock_prover_circuit(
+/// Empty proof slots work here because genesis gating scales both accumulator contributions to the
+/// group identity, so the trivial input accumulator is also the expected output. At any later step
+/// the contributions are live and the circuit derives an output accumulator no trivial instance can
+/// match — see [`build_asset_backed_same_epoch_fixture`] for the non-genesis stimulus.
+pub(crate) fn build_genesis_mock_prover_circuit(
     setup: &MockProverSetup,
     prev_state: State,
     witness: Witness,
 ) -> IvcCircuitData {
+    assert_eq!(
+        prev_state.step_counter.as_u64(),
+        0,
+        "the trivial-accumulator stimulus is satisfiable only at genesis"
+    );
     IvcCircuitData::try_new(
         setup.global.clone(),
         prev_state,
@@ -412,8 +419,11 @@ pub(crate) fn build_trivial_mock_prover_circuit(
     .expect("valid IvcCircuitData construction")
 }
 
-/// Builds the public-input vector for a MockProver-based negative test.
-pub(crate) fn build_mock_prover_public_inputs(
+/// Builds the public-input vector for a genesis MockProver stimulus.
+///
+/// The accumulator section carries the trivial accumulator, which is the expected output only while
+/// genesis gating scales both contributions to the group identity.
+pub(crate) fn build_genesis_mock_prover_public_inputs(
     setup: &MockProverSetup,
     next_state: &State,
 ) -> Vec<NativeField> {
