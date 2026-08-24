@@ -17,11 +17,9 @@
     "Backend": "V2InMemory",
     "QueryBatchSize": 100000,
     "Snapshots": {
-      "MaxDelay": 600,
-      "MinDelay": 300,
       "NumOfDiskSnapshots": 2,
-      "RateLimit": 600,
-      "SnapshotInterval": 864
+      "SlotOffset": 0,
+      "SnapshotInterval": 17280
     }
   },
   "MinNodeVersion": "11.1.0",
