@@ -124,6 +124,15 @@ pub enum ImmutablesLocation {
         #[serde(skip_serializing_if = "Option::is_none")]
         compression_algorithm: Option<CompressionAlgorithm>,
     },
+    /// IPFS location.
+    Ipfs {
+        /// URI of the IPFS location.
+        uri: MultiFilesUri,
+
+        /// Compression algorithm of the Cardano database artifacts.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        compression_algorithm: Option<CompressionAlgorithm>,
+    },
     /// Catchall for unknown location variants.
     #[serde(other)]
     Unknown,
@@ -322,7 +331,8 @@ mod tests {
     }
 
     #[test]
-    fn should_not_display_compression_algorithm_in_json_immutable_location_when_none() {
+    fn should_not_display_compression_algorithm_in_json_immutable_cloud_storage_location_when_none()
+    {
         let json = serde_json::json!(ImmutablesLocation::CloudStorage {
             uri: MultiFilesUri::Template(TemplateUri("https://example.com".to_string())),
             compression_algorithm: None,
@@ -330,6 +340,18 @@ mod tests {
         assert_eq!(
             json.to_string(),
             r#"{"type":"cloud_storage","uri":{"Template":"https://example.com"}}"#
+        );
+    }
+
+    #[test]
+    fn should_not_display_compression_algorithm_in_json_immutable_ipfs_location_when_none() {
+        let json = serde_json::json!(ImmutablesLocation::Ipfs {
+            uri: MultiFilesUri::Template(TemplateUri("https://example.com".to_string())),
+            compression_algorithm: None,
+        });
+        assert_eq!(
+            json.to_string(),
+            r#"{"type":"ipfs","uri":{"Template":"https://example.com"}}"#
         );
     }
 }

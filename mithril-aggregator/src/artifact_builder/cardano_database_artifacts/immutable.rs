@@ -114,7 +114,7 @@ impl ImmutableFilesUploader for IpfsUploader {
 
         let directory_cid = self.get_current_directory_cid().await?;
 
-        Ok(ImmutablesLocation::CloudStorage {
+        Ok(ImmutablesLocation::Ipfs {
             uri: MultiFilesUri::Template(TemplateUri(format!(
                 "{directory_cid}/{{immutable_file_number}}.tar.zst"
             ))),

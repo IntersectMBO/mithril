@@ -173,7 +173,8 @@ impl InternalArtifactDownloader {
                     }
                 }
                 // Note: unknown locations should have been filtered out by `sanitized_locations`
-                ImmutablesLocation::Unknown => unreachable!(),
+                // IPFS locations are excluded as we do not have a downloader for them yet
+                ImmutablesLocation::Ipfs { .. } | ImmutablesLocation::Unknown => unreachable!(),
             };
 
             locations_to_try.push(location_to_try);
