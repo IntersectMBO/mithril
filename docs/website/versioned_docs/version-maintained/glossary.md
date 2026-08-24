@@ -92,6 +92,10 @@ The Mithril multi-signature is an aggregate of [individual signatures](#individu
 
 > More information is available on the [protocol page](./mithril/advanced/mithril-protocol/protocol.md).
 
+## SNARK
+
+A SNARK (**S**uccinct **N**on-interactive **AR**gument of **K**nowledge) is a proof that a prover knows a witness `w` such that a relation `R(x,w) = 1` given a public input `x`. The relation is a statement connecting the two inputs and is represented in the form of a circuit of constraints. The prover builds a proof from this circuit and the inputs `(x,w)`. The proof verifies only if the relation `R(x,w)=1`, i.e. if the inputs satisfy the constraints.
+
 ## Stake distribution
 
 The Cardano stake distribution is the list of all the [stake pool operators'](#stake-pool-operator-spo) pool Id addresses and their associated share of the total stake of the [Cardano network](#cardano-network).
