@@ -3,11 +3,14 @@ ARG CARDANO_IMAGE_REGISTRY
 FROM $CARDANO_IMAGE_REGISTRY:$CARDANO_IMAGE_ID
 
 # Fix env file rights
-# In order to be able to interact with the Cardano node trough its 'node.socket'
+# In order to be able to interact with the Cardano node through its 'node.socket'
 # The node must be run with 'curry' unprivileged user
 # The following modifications allow the node to run with such a user
-RUN touch /usr/local/bin/env
-RUN chmod a+w /usr/local/bin/env
+# Since Cardano node '11.1.0', the env file is a symlink to a runtime directory
+# created by the entrypoint under '/tmp' and needs no rights fix
+RUN if [ ! -L /usr/local/bin/env ]; then \
+        touch /usr/local/bin/env && chmod a+w /usr/local/bin/env; \
+    fi
 
 # If the Cardano node has already been launched with root user,
 # you migt have to run manually this command as 'root' user to update ownership of some folders
