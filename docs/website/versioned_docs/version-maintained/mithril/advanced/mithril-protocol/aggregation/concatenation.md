@@ -5,7 +5,7 @@ sidebar_label: Concatenation
 
 # Concatenation
 
-The concatenation method for aggregating the signatures is the most straighforward one. It uses BLS signatures for its batching capability in order to have faster verification. The prover checks the validity of the signatures received and that they correctly won the lottery with their indices. It then verifies that the leaf does belong to the merkle tree using the merkle root and the merkle path. Finally, the prover selects enough valid signatures to reach the threshold of `k` valid indices, and packs them together in one structure to create the proof.
+The concatenation method for aggregating the signatures is the most straighforward one. It uses BLS signatures for its batching capability in order to have faster verification. The prover checks the validity of the signatures received and that they correctly won the lottery with their indices. It then verifies that the leaf does belong to the [Merkle tree](../../../../glossary.md#merkle-tree) using the Merkle root and the Merkle path. Finally, the prover selects enough valid signatures to reach the threshold of `k` valid indices, and packs them together in one structure to create the proof.
 
 ```mermaid
 flowchart LR
