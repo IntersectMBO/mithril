@@ -11,7 +11,6 @@ use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcQuery};
 /// Query to add a file to IPFS via the Kubo RPC API.
 ///
 /// see: https://docs.ipfs.tech/reference/kubo/rpc/#api-v0-add
-// TODO: Enforce most add parameters to make CID deterministic.
 #[derive(Debug)]
 pub struct IpfsAddQuery {
     file_path: PathBuf,
@@ -105,8 +104,20 @@ impl KuboRpcQuery for IpfsAddQuery {
             part = part.headers(part_headers);
         }
 
-        let request_builder =
-            request_builder.multipart(reqwest::multipart::Form::new().part("file", part));
+        let request_builder = request_builder
+            .multipart(reqwest::multipart::Form::new().part("file", part))
+            .query(&[("pin", true)])
+            // Parameters below ensure deterministic CID.
+            .query(&[
+                ("inline", false),
+                ("preserve-mode", false),
+                ("preserve-mtime", false),
+                ("raw-leaves", true),
+                ("trickle", false),
+                ("wrap-with-directory", false),
+            ])
+            .query(&[("cid-version", 1)])
+            .query(&[("hash", "sha2-256"), ("chunker", "size-262144")]);
 
         Ok(request_builder)
     }
@@ -137,7 +148,7 @@ mod tests {
 
         let (server, client) = setup_server_and_client();
         server.mock(|when, then| {
-            when.method(POST).path("/api/v0/add");
+            when.method(POST).path("/api/v0/add").query_param("pin", "true");
             then.status(200).json_body(serde_json::json!({"Name":"test.txt","Hash":"QmYi7wrRFKVCcTB56A6Pep2j31Q5mHfmmu21RzHXu25RVR","Size":"23"}));
         });
 
@@ -170,6 +181,30 @@ mod tests {
             err.to_string().contains("paths must start with a leading slash"),
             "unexpected error: {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn make_produced_cid_more_deterministic_by_enforcing_parameters_that_may_affect_cid() {
+        let test_dir = temp_dir_create!();
+        let file = test_dir.join("test.txt");
+        std::fs::File::create(&file).unwrap();
+
+        let (server, client) = setup_server_and_client();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/v0/add")
+                .query_param("cid-version", "1")
+                .query_param("hash", "sha2-256")
+                .query_param("raw-leaves", "true")
+                .query_param("chunker", "size-262144")
+                .query_param("inline", "false")
+                .query_param("trickle", "false")
+                .query_param("preserve-mode", "false")
+                .query_param("preserve-mtime", "false")
+                .query_param("wrap-with-directory", "false");
+            then.status(200).json_body(serde_json::json!({"Name":"test.txt","Hash":"QmYi7wrRFKVCcTB56A6Pep2j31Q5mHfmmu21RzHXu25RVR","Size":"23"}));
+        });
+
+        client.send(IpfsAddQuery::new(file)).await.unwrap();
     }
 
     #[tokio::test]
