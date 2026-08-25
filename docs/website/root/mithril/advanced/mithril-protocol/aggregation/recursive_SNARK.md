@@ -72,8 +72,6 @@ To verify a proof, a verifier needs:
 
 - the recursive proof
 - the verification key of the recursive circuit
+- the verification key of the non-recursive circuit
+- the genesis verification key
 - the chain state the proof attests to: the current epoch, its `AVK`, the message being certified, and the protocol parameters
-
-The recursive circuit's verification key is a fixed piece of data, derived from the recursive circuit, a one-time trusted setup and the [non recursive SNARK](./non_recursive_SNARK.md)'s own verification key, since each step checks a certificate proof against it. It is fixed for a given circuit and publicly available. The chain state can be recomputed by any party that has followed the chain from genesis, the same way a verifier following `CHAIN_VERIFY` today would.
-
-Because the recursive circuit is built to verify proofs against one specific non-recursive SNARK verification key, changing that key (for example when modifying the non-recursive SNARK circuit) means starting a new chain from a new genesis certificate rather than continuing the existing one. Since the non-recursive SNARK circuit and verification key depend on the protocol parameters (`k`, `m`, `phi_f`), the same applies to changing those parameters.
