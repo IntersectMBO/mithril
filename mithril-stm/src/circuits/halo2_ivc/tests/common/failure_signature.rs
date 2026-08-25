@@ -51,37 +51,39 @@ fn public_statement_row(failure: &VerifyFailure) -> Option<usize> {
     }
 }
 
-/// Runs `MockProver` on any circuit, requires rejection, and asserts that the public-statement rows
-/// implicated are exactly the keys of `expected_rows`.
+/// Runs `MockProver` on any circuit and compares the resulting failure signature against
+/// `expected_rows`, returning the diagnostic when they disagree.
 ///
-/// `expected_rows` maps each row to the field name used in diagnostics. Every returned failure must
-/// be a permutation failure, and every public-statement failure must carry an absolute row.
+/// `expected_rows` maps each row to the field name used in diagnostics. The circuit must reject,
+/// every returned failure must be a permutation failure, and every public-statement failure must
+/// carry an absolute row.
 ///
 /// An exact row set does not prove each row carries the field named for it: dropping one
 /// public-input assignment shifts every later binding while all expected rows still fail, and two
 /// fields with equal honest values can swap invisibly.
-pub(crate) fn assert_circuit_rejects_public_input_rows<C: Circuit<NativeField>>(
+fn check_public_input_row_signature<C: Circuit<NativeField>>(
     circuit: &C,
     instances: Vec<Vec<NativeField>>,
     expected_rows: &BTreeMap<usize, &str>,
-) {
+) -> Result<(), String> {
     let prover = MockProver::run(circuit, instances).expect("MockProver setup should succeed");
-    let failures = prover
-        .verify()
-        .expect_err("the circuit should reject the provided circuit and instances");
+    let Err(failures) = prover.verify() else {
+        return Err("the circuit should reject the provided circuit and instances".to_string());
+    };
 
     let unexpected_classes: Vec<String> = failures
         .iter()
         .filter(|failure| !matches!(failure, VerifyFailure::Permutation { .. }))
         .map(|failure| format!("{failure:?}"))
         .collect();
-    assert!(
-        unexpected_classes.is_empty(),
-        "every failure should be a permutation failure, since the public statement is bound by \
-         copy constraints; got {} of another class:\n{}",
-        unexpected_classes.len(),
-        unexpected_classes.join("\n")
-    );
+    if !unexpected_classes.is_empty() {
+        return Err(format!(
+            "every failure should be a permutation failure, since the public statement is bound by \
+             copy constraints; got {} of another class:\n{}",
+            unexpected_classes.len(),
+            unexpected_classes.join("\n")
+        ));
+    }
 
     // A row-less public-statement failure would otherwise be dropped, letting an empty expected
     // signature pass on a circuit that had broken a binding.
@@ -92,15 +94,19 @@ pub(crate) fn assert_circuit_rejects_public_input_rows<C: Circuit<NativeField>>(
         })
         .map(|failure| format!("{failure:?}"))
         .collect();
-    assert!(
-        unlocatable.is_empty(),
-        "every public-statement failure should carry an absolute row; got {} that did not:\n{}",
-        unlocatable.len(),
-        unlocatable.join("\n")
-    );
+    if !unlocatable.is_empty() {
+        return Err(format!(
+            "every public-statement failure should carry an absolute row; got {} that did not:\n{}",
+            unlocatable.len(),
+            unlocatable.join("\n")
+        ));
+    }
 
     let observed: BTreeSet<usize> = failures.iter().filter_map(public_statement_row).collect();
     let expected: BTreeSet<usize> = expected_rows.keys().copied().collect();
+    if observed == expected {
+        return Ok(());
+    }
     let describe = |rows: &BTreeSet<usize>| {
         rows.iter()
             .map(|row| match expected_rows.get(row) {
@@ -110,13 +116,22 @@ pub(crate) fn assert_circuit_rejects_public_input_rows<C: Circuit<NativeField>>(
             .collect::<Vec<_>>()
             .join(", ")
     };
-    assert_eq!(
-        observed,
-        expected,
+    Err(format!(
         "public-input failure signature mismatch\n  failed:   [{}]\n  expected: [{}]",
         describe(&observed),
         describe(&expected)
-    );
+    ))
+}
+
+/// Asserts the failure signature matches, panicking with the diagnostic when it does not.
+pub(crate) fn assert_circuit_rejects_public_input_rows<C: Circuit<NativeField>>(
+    circuit: &C,
+    instances: Vec<Vec<NativeField>>,
+    expected_rows: &BTreeMap<usize, &str>,
+) {
+    if let Err(diagnostic) = check_public_input_row_signature(circuit, instances, expected_rows) {
+        panic!("{diagnostic}");
+    }
 }
 
 /// Recursive-circuit wrapper over [`assert_circuit_rejects_public_input_rows`].
@@ -136,7 +151,8 @@ pub(crate) fn assert_recursive_mock_prover_rejects_public_input_rows(
 mod tests {
     use midnight_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
-        plonk::{Advice, Column, ConstraintSystem, Error, Instance},
+        plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Instance, Selector},
+        poly::Rotation,
     };
 
     use super::*;
@@ -146,6 +162,9 @@ mod tests {
 
     /// Public-statement row left deliberately unbound by the minimal circuit.
     const UNBOUND_PUBLIC_STATEMENT_ROW: usize = 2;
+
+    /// Value assigned by the gate-failure circuit, which its gate requires to be zero.
+    const GATE_FAILURE_VALUE: u64 = 5;
 
     #[derive(Clone)]
     struct MinimalConfig {
@@ -207,6 +226,67 @@ mod tests {
             layouter.constrain_instance(cells[0].cell(), config.public_statement_instance, 0)?;
             layouter.constrain_instance(cells[1].cell(), config.public_statement_instance, 1)?;
             layouter.constrain_instance(cells[2].cell(), config.committed_instance, 0)
+        }
+    }
+
+    #[derive(Clone)]
+    struct GateFailureConfig {
+        advice: Column<Advice>,
+        selector: Selector,
+        public_statement_instance: Column<Instance>,
+    }
+
+    /// Circuit whose only fault is an unsatisfied gate, with its public statement left consistent.
+    ///
+    /// The helper permits permutation failures alone, so this is what proves that rule is enforced.
+    struct GateFailureCircuit;
+
+    impl Circuit<NativeField> for GateFailureCircuit {
+        type Config = GateFailureConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
+
+        fn without_witnesses(&self) -> Self {
+            Self
+        }
+
+        fn configure(meta: &mut ConstraintSystem<NativeField>) -> Self::Config {
+            let advice = meta.advice_column();
+            let selector = meta.selector();
+            // Declared first so the public statement lands in column one, as the recursive circuit does.
+            let _committed_instance = meta.instance_column();
+            let public_statement_instance = meta.instance_column();
+            meta.enable_equality(advice);
+            meta.enable_equality(public_statement_instance);
+            meta.create_gate("the assigned value must be zero", |meta| {
+                let value = meta.query_advice(advice, Rotation::cur());
+                Constraints::with_selector(selector, vec![value])
+            });
+            GateFailureConfig {
+                advice,
+                selector,
+                public_statement_instance,
+            }
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<NativeField>,
+        ) -> Result<(), Error> {
+            let cell = layouter.assign_region(
+                || "value",
+                |mut region| {
+                    config.selector.enable(&mut region, 0)?;
+                    region.assign_advice(
+                        || "value",
+                        config.advice,
+                        0,
+                        || Value::known(NativeField::from(GATE_FAILURE_VALUE)),
+                    )
+                },
+            )?;
+            layouter.constrain_instance(cell.cell(), config.public_statement_instance, 0)
         }
     }
 
@@ -282,27 +362,55 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "public-input failure signature mismatch")]
+    fn helper_rejects_a_non_permutation_failure() {
+        // The public statement matches, so the unsatisfied gate is the only fault and the helper
+        // must surface it rather than report an empty row set.
+        let diagnostic = check_public_input_row_signature(
+            &GateFailureCircuit,
+            vec![vec![], vec![NativeField::from(GATE_FAILURE_VALUE)]],
+            &BTreeMap::new(),
+        )
+        .expect_err("a gate failure is not a permitted failure class");
+
+        assert!(
+            diagnostic.contains("every failure should be a permutation failure"),
+            "{diagnostic}"
+        );
+    }
+
+    #[test]
     fn helper_rejects_an_incomplete_expected_signature() {
         // Two rows fail, so expecting one must not pass.
         let mut instances = honest_minimal_instances();
         mutate_public_input(&mut instances[PUBLIC_STATEMENT_INSTANCE_COLUMN], 0);
         mutate_public_input(&mut instances[PUBLIC_STATEMENT_INSTANCE_COLUMN], 1);
 
-        assert_circuit_rejects_public_input_rows(
+        let diagnostic = check_public_input_row_signature(
             &MinimalCircuit,
             instances,
             &BTreeMap::from([(0, "first bound input")]),
+        )
+        .expect_err("a row that failed unexpectedly should be reported");
+
+        assert!(
+            diagnostic.contains("public-input failure signature mismatch"),
+            "{diagnostic}"
         );
     }
 
     #[test]
-    #[should_panic(expected = "public-input failure signature mismatch")]
     fn helper_rejects_an_empty_signature_when_a_row_did_fail() {
         // An empty expectation must not absorb a real public-statement failure.
         let mut instances = honest_minimal_instances();
         mutate_public_input(&mut instances[PUBLIC_STATEMENT_INSTANCE_COLUMN], 0);
 
-        assert_circuit_rejects_public_input_rows(&MinimalCircuit, instances, &BTreeMap::new());
+        let diagnostic =
+            check_public_input_row_signature(&MinimalCircuit, instances, &BTreeMap::new())
+                .expect_err("a bound row that failed should be reported");
+
+        assert!(
+            diagnostic.contains("public-input failure signature mismatch"),
+            "{diagnostic}"
+        );
     }
 }
