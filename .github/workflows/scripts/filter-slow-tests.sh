@@ -94,7 +94,6 @@ readonly -a SLOW_MITHRIL_STM_TESTS=(
   "mithril-stm/src/membership_commitment/merkle_tree#membership_commitment::merkle_tree::"
   "mithril-stm/src/proof_system/halo2_snark#proof_system::halo2_snark::"
   "mithril-stm/src/proof_system/ivc_halo2_snark/proof.rs#proof_system::ivc_halo2_snark::proof::"
-  "mithril-stm/src/proof_system/ivc_halo2_snark/prover_input.rs#proof_system::ivc_halo2_snark::prover_input::"
   "mithril-stm/src/proof_system/ivc_halo2_snark/prover_input.rs#proof_system::ivc_halo2_snark::proof::"
   "mithril-stm/src/proof_system/ivc_halo2_snark/prover_input_helpers.rs#proof_system::ivc_halo2_snark::prover_input_helpers::"
   "mithril-stm/src/proof_system/ivc_halo2_snark/prover_input_helpers.rs#proof_system::ivc_halo2_snark::proof::"

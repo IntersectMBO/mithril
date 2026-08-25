@@ -145,473 +145,455 @@ impl IvcProverInput {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+    use midnight_proofs::utils::SerdeFormat;
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
+
+    use crate::{
+        BaseFieldElement, MithrilMembershipDigest, Parameters, SchnorrSigningKey,
+        SchnorrVerificationKey,
+        circuits::halo2_ivc::{
+            PREIMAGE_CURRENT_EPOCH_BYTES, PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
+            PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, PREIMAGE_SIZE,
+            errors::{EpochTransitionErrorKind, IvcCircuitError},
+            io::Write as IvcWrite,
+            tests::common::{
+                asset_readers::{
+                    load_embedded_following_certificate_in_epoch_asset,
+                    load_embedded_genesis_benchmark_fixture,
+                    load_embedded_next_epoch_step_output_asset,
+                    load_embedded_recursive_chain_state_asset,
+                    load_embedded_verification_context_asset,
+                },
+                generators::setup::{QUORUM_SIZE, SIGNER_COUNT, TOTAL_STAKE},
+            },
+            types::{
+                CertificateCircuitVerificationKeyRepresentation, EpochNumber,
+                IvcCircuitVerificationKeyRepresentation, StepCounter,
+            },
+        },
+        proof_system::ivc_halo2_snark::prover_setup::IvcProverInputVerificationContext,
+        signature_scheme::{SchnorrSignatureError, StandardSchnorrSignature},
+    };
+
     use super::*;
 
-    mod slow {
-        use midnight_proofs::utils::SerdeFormat;
-        use rand_chacha::ChaCha20Rng;
-        use rand_core::SeedableRng;
+    /// Builds the chain's global public inputs and the verification-side context `prepare` reads,
+    /// both from committed assets: no SRS, no key generation and no cache.
+    fn build_preparation_context() -> (Global, IvcProverInputVerificationContext) {
+        let asset = load_embedded_verification_context_asset()
+            .expect("verification context asset should load");
+        let genesis_fixture = load_embedded_genesis_benchmark_fixture()
+            .expect("genesis benchmark fixture should load");
 
-        use crate::{
-            BaseFieldElement, MithrilMembershipDigest, Parameters, SchnorrSigningKey,
-            SchnorrVerificationKey,
-            circuits::halo2_ivc::{
-                PREIMAGE_CURRENT_EPOCH_BYTES, PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
-                PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, PREIMAGE_SIZE,
-                errors::{EpochTransitionErrorKind, IvcCircuitError},
-                io::Write as IvcWrite,
-                tests::common::{
-                    asset_readers::{
-                        load_embedded_following_certificate_in_epoch_asset,
-                        load_embedded_genesis_benchmark_fixture,
-                        load_embedded_next_epoch_step_output_asset,
-                        load_embedded_recursive_chain_state_asset,
-                        load_embedded_verification_context_asset,
-                    },
-                    generators::setup::{QUORUM_SIZE, SIGNER_COUNT, TOTAL_STAKE},
-                },
-                types::{
-                    CertificateCircuitVerificationKeyRepresentation, EpochNumber,
-                    IvcCircuitVerificationKeyRepresentation, StepCounter,
-                },
-            },
-            proof_system::ivc_halo2_snark::prover_setup::IvcProverInputVerificationContext,
-            signature_scheme::{SchnorrSignatureError, StandardSchnorrSignature},
+        let global = Global::new(
+            genesis_fixture.genesis_message_hash(),
+            genesis_fixture.genesis_verification_key,
+            &asset.certificate_verifying_key,
+            &asset.recursive_verifying_key,
+        );
+        let verification_context = IvcProverInputVerificationContext::from_verifying_keys(
+            asset.verifier_params,
+            &asset.certificate_verifying_key,
+            &asset.recursive_verifying_key,
+        );
+
+        (global, verification_context)
+    }
+
+    fn wrap_snark_proof(certificate_proof_bytes: Vec<u8>) -> SnarkProof<MithrilMembershipDigest> {
+        let parameters = Parameters {
+            k: QUORUM_SIZE as u64,
+            m: (QUORUM_SIZE * 10) as u64,
+            phi_f: 0.2,
+        };
+        let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
+        SnarkProof::new(certificate_proof_bytes, parameters, merkle_tree_depth)
+    }
+
+    fn wrap_avk(
+        aggregate_verification_key_merkle_root: &[u8; 32],
+    ) -> AggregateVerificationKeyForSnark<MithrilMembershipDigest> {
+        let mut avk_bytes = [0u8; 40];
+        avk_bytes[0..32].copy_from_slice(aggregate_verification_key_merkle_root);
+        avk_bytes[32..40].copy_from_slice(&TOTAL_STAKE.to_be_bytes());
+        AggregateVerificationKeyForSnark::<MithrilMembershipDigest>::from_bytes(&avk_bytes)
+            .expect("AVK should decode from asset bytes")
+    }
+
+    fn wrap_protocol_message_preimage(preimage: &[u8]) -> ProtocolMessagePreimage {
+        use crate::circuits::halo2_ivc::PREIMAGE_SIZE;
+        let preimage_array: [u8; PREIMAGE_SIZE] = preimage
+            .try_into()
+            .expect("preimage should be exactly PREIMAGE_SIZE bytes");
+        ProtocolMessagePreimage::new(preimage_array)
+    }
+
+    fn accumulator_bytes(accumulator: &Accumulator<BlstrsEmulation>) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        accumulator
+            .write(&mut bytes, SerdeFormat::RawBytesUnchecked)
+            .expect("accumulator serialization should succeed");
+        bytes
+    }
+
+    fn build_rolling_state(
+        state: State,
+        ivc_proof: crate::circuits::halo2_ivc::types::IvcProofBytes,
+        accumulator: midnight_circuits::verifier::Accumulator<BlstrsEmulation>,
+        genesis_signature: StandardSchnorrSignature,
+    ) -> IvcRollingState {
+        IvcRollingState::new(state, ivc_proof, accumulator, genesis_signature)
+    }
+
+    #[test]
+    fn prepare_genesis_rejects_invalid_signature() {
+        let mut chain_rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let chain_signing_key = SchnorrSigningKey::generate(&mut chain_rng);
+        let chain_verification_key =
+            SchnorrVerificationKey::new_from_signing_key(chain_signing_key);
+
+        let global = Global {
+            genesis_message: MessageHash::ZERO,
+            genesis_verification_key: chain_verification_key,
+            certificate_circuit_verification_key_representation:
+                CertificateCircuitVerificationKeyRepresentation::from_field(
+                    BaseFieldElement::from(0u64).0,
+                ),
+            ivc_circuit_verification_key_representation:
+                IvcCircuitVerificationKeyRepresentation::from_field(BaseFieldElement::from(0u64).0),
         };
 
-        use super::*;
-
-        /// Builds the chain's global public inputs and the verification-side context `prepare` reads,
-        /// both from committed assets: no SRS, no key generation and no cache.
-        fn build_preparation_context() -> (Global, IvcProverInputVerificationContext) {
-            let asset = load_embedded_verification_context_asset()
-                .expect("verification context asset should load");
-            let genesis_fixture = load_embedded_genesis_benchmark_fixture()
-                .expect("genesis benchmark fixture should load");
-
-            let global = Global::new(
-                genesis_fixture.genesis_message_hash(),
-                genesis_fixture.genesis_verification_key,
-                &asset.certificate_verifying_key,
-                &asset.recursive_verifying_key,
-            );
-            let verification_context = IvcProverInputVerificationContext::from_verifying_keys(
-                asset.verifier_params,
-                &asset.certificate_verifying_key,
-                &asset.recursive_verifying_key,
-            );
-
-            (global, verification_context)
-        }
-
-        fn wrap_snark_proof(
-            certificate_proof_bytes: Vec<u8>,
-        ) -> SnarkProof<MithrilMembershipDigest> {
-            let parameters = Parameters {
-                k: QUORUM_SIZE as u64,
-                m: (QUORUM_SIZE * 10) as u64,
-                phi_f: 0.2,
-            };
-            let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
-            SnarkProof::new(certificate_proof_bytes, parameters, merkle_tree_depth)
-        }
-
-        fn wrap_avk(
-            aggregate_verification_key_merkle_root: &[u8; 32],
-        ) -> AggregateVerificationKeyForSnark<MithrilMembershipDigest> {
-            let mut avk_bytes = [0u8; 40];
-            avk_bytes[0..32].copy_from_slice(aggregate_verification_key_merkle_root);
-            avk_bytes[32..40].copy_from_slice(&TOTAL_STAKE.to_be_bytes());
-            AggregateVerificationKeyForSnark::<MithrilMembershipDigest>::from_bytes(&avk_bytes)
-                .expect("AVK should decode from asset bytes")
-        }
-
-        fn wrap_protocol_message_preimage(preimage: &[u8]) -> ProtocolMessagePreimage {
-            use crate::circuits::halo2_ivc::PREIMAGE_SIZE;
-            let preimage_array: [u8; PREIMAGE_SIZE] = preimage
-                .try_into()
-                .expect("preimage should be exactly PREIMAGE_SIZE bytes");
-            ProtocolMessagePreimage::new(preimage_array)
-        }
-
-        fn accumulator_bytes(accumulator: &Accumulator<BlstrsEmulation>) -> Vec<u8> {
-            let mut bytes = Vec::new();
-            accumulator
-                .write(&mut bytes, SerdeFormat::RawBytesUnchecked)
-                .expect("accumulator serialization should succeed");
-            bytes
-        }
-
-        fn build_rolling_state(
-            state: State,
-            ivc_proof: crate::circuits::halo2_ivc::types::IvcProofBytes,
-            accumulator: midnight_circuits::verifier::Accumulator<BlstrsEmulation>,
-            genesis_signature: StandardSchnorrSignature,
-        ) -> IvcRollingState {
-            IvcRollingState::new(state, ivc_proof, accumulator, genesis_signature)
-        }
-
-        #[test]
-        fn prepare_genesis_rejects_invalid_signature() {
-            let mut chain_rng = ChaCha20Rng::from_seed([0u8; 32]);
-            let chain_signing_key = SchnorrSigningKey::generate(&mut chain_rng);
-            let chain_verification_key =
-                SchnorrVerificationKey::new_from_signing_key(chain_signing_key);
-
-            let global = Global {
-                genesis_message: MessageHash::ZERO,
-                genesis_verification_key: chain_verification_key,
-                certificate_circuit_verification_key_representation:
-                    CertificateCircuitVerificationKeyRepresentation::from_field(
-                        BaseFieldElement::from(0u64).0,
-                    ),
-                ivc_circuit_verification_key_representation:
-                    IvcCircuitVerificationKeyRepresentation::from_field(
-                        BaseFieldElement::from(0u64).0,
-                    ),
-            };
-
-            let mut wrong_rng = ChaCha20Rng::from_seed([1u8; 32]);
-            let wrong_signing_key = SchnorrSigningKey::generate(&mut wrong_rng);
-            let invalid_signature = wrong_signing_key
-                .sign_standard(
-                    &[BaseFieldElement::from(global.genesis_message.as_field())],
-                    &mut wrong_rng,
-                )
-                .expect("sign_standard should succeed for a synthetic message");
-            let rolling_state = IvcRollingState::genesis(invalid_signature, &[]);
-            let protocol_message_preimage = ProtocolMessagePreimage::new([0u8; PREIMAGE_SIZE]);
-
-            let err = IvcProverInput::prepare_genesis(
-                &rolling_state,
-                &protocol_message_preimage,
-                &global,
+        let mut wrong_rng = ChaCha20Rng::from_seed([1u8; 32]);
+        let wrong_signing_key = SchnorrSigningKey::generate(&mut wrong_rng);
+        let invalid_signature = wrong_signing_key
+            .sign_standard(
+                &[BaseFieldElement::from(global.genesis_message.as_field())],
+                &mut wrong_rng,
             )
-            .expect_err("prepare_genesis should reject a signature that does not verify");
-            let schnorr_error = err
-                .downcast::<SchnorrSignatureError>()
-                .expect("error chain should carry SchnorrSignatureError");
-            assert!(matches!(
-                schnorr_error,
-                SchnorrSignatureError::StandardSignatureInvalid(_)
-            ));
-        }
+            .expect("sign_standard should succeed for a synthetic message");
+        let rolling_state = IvcRollingState::genesis(invalid_signature, &[]);
+        let protocol_message_preimage = ProtocolMessagePreimage::new([0u8; PREIMAGE_SIZE]);
 
-        #[test]
-        fn prepare_genesis_produces_expected_state_and_witness() {
-            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-            let signing_key = SchnorrSigningKey::generate(&mut rng);
-            let verification_key =
-                SchnorrVerificationKey::new_from_signing_key(signing_key.clone());
+        let err =
+            IvcProverInput::prepare_genesis(&rolling_state, &protocol_message_preimage, &global)
+                .expect_err("prepare_genesis should reject a signature that does not verify");
+        let schnorr_error = err
+            .downcast::<SchnorrSignatureError>()
+            .expect("error chain should carry SchnorrSignatureError");
+        assert!(matches!(
+            schnorr_error,
+            SchnorrSignatureError::StandardSignatureInvalid(_)
+        ));
+    }
 
-            let genesis_message = MessageHash::from_field(
-                BaseFieldElement::from_raw(&[0x42; 32])
-                    .expect("from_raw applies modulus reduction")
-                    .0,
-            );
-            let global = Global {
-                genesis_message,
-                genesis_verification_key: verification_key,
-                certificate_circuit_verification_key_representation:
-                    CertificateCircuitVerificationKeyRepresentation::from_field(
-                        BaseFieldElement::from(0u64).0,
-                    ),
-                ivc_circuit_verification_key_representation:
-                    IvcCircuitVerificationKeyRepresentation::from_field(
-                        BaseFieldElement::from(0u64).0,
-                    ),
-            };
+    #[test]
+    fn prepare_genesis_produces_expected_state_and_witness() {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let signing_key = SchnorrSigningKey::generate(&mut rng);
+        let verification_key = SchnorrVerificationKey::new_from_signing_key(signing_key.clone());
 
-            let genesis_signature = signing_key
-                .sign_standard(
-                    &[BaseFieldElement::from(global.genesis_message.as_field())],
-                    &mut rng,
-                )
-                .expect("sign_standard should succeed for the genesis message");
-            // Keep the complete fixed-base label set so replacing it with an empty trivial
-            // accumulator is observable.
-            let combined_fixed_base_names: Vec<String> = load_embedded_verification_context_asset()
-                .expect("verification context asset should load")
-                .combined_fixed_bases
-                .keys()
-                .cloned()
-                .collect();
-            let rolling_state =
-                IvcRollingState::genesis(genesis_signature, &combined_fixed_base_names);
-            assert!(
-                !rolling_state.accumulator().rhs().fixed_base_scalars().is_empty(),
-                "the pass-through fixture must carry fixed-base labels"
-            );
-
-            let cert_epoch = EpochNumber::ZERO;
-            let mut preimage_bytes = [0u8; PREIMAGE_SIZE];
-            preimage_bytes[PREIMAGE_CURRENT_EPOCH_BYTES]
-                .copy_from_slice(&cert_epoch.as_u64().to_le_bytes());
-            preimage_bytes[PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES].copy_from_slice(&[0x11; 32]);
-            preimage_bytes[PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES].copy_from_slice(&[0x22; 32]);
-            let protocol_message_preimage = ProtocolMessagePreimage::new(preimage_bytes);
-
-            let input = IvcProverInput::prepare_genesis(
-                &rolling_state,
-                &protocol_message_preimage,
-                &global,
-            )
-            .expect("prepare_genesis should succeed for a valid genesis signature");
-
-            let expected_next_state = State::new(
-                StepCounter::new(1),
-                global.genesis_message,
-                MerkleTreeCommitment::ZERO,
-                protocol_message_preimage.next_merkle_tree_commitment(),
-                ProtocolParametersHash::ZERO,
-                protocol_message_preimage.next_protocol_parameters(),
-                protocol_message_preimage.current_epoch(),
-            );
-            assert_eq!(input.next_state, expected_next_state);
-
-            let expected_witness = Witness::new(
-                genesis_signature,
-                MessageHash::ZERO,
-                MerkleTreeCommitment::ZERO,
-                protocol_message_preimage.clone(),
-            );
-            assert_eq!(input.witness, expected_witness);
-
-            assert_eq!(input.transition_type, IvcTransitionType::Genesis);
-            assert_eq!(
-                accumulator_bytes(&input.next_accumulator),
-                accumulator_bytes(rolling_state.accumulator()),
-                "the genesis step must pass the trivial accumulator through unchanged"
-            );
-        }
-
-        #[test]
-        fn prepare_at_same_epoch_advances_state_correctly() {
-            let chain_state = load_embedded_recursive_chain_state_asset()
-                .expect("recursive chain state asset should load");
-            let step = load_embedded_following_certificate_in_epoch_asset()
-                .expect("same-epoch step output asset should load");
-
-            let (global, verification_context) = build_preparation_context();
-            let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
-            let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
-            let chain_genesis_signature = chain_state.genesis_signature;
-            let rolling_state = build_rolling_state(
-                chain_state.state,
-                chain_state.ivc_proof,
-                chain_state.accumulator,
-                chain_state.genesis_signature,
-            );
-
-            let input = IvcProverInput::prepare(
-                &snark_proof,
-                &step.message,
-                &avk,
-                &global,
-                &protocol_message_preimage,
-                &rolling_state,
-                &verification_context,
-            )
-            .expect("prepare should succeed at same-epoch step");
-
-            assert_eq!(input.next_state, step.next_state);
-            assert_eq!(
-                accumulator_bytes(&input.next_accumulator),
-                accumulator_bytes(&step.next_accumulator),
-            );
-            assert_eq!(input.witness.genesis_signature, chain_genesis_signature);
-            assert_eq!(input.witness.message_preimage, protocol_message_preimage);
-            assert_eq!(
-                input.witness.certificate_merkle_tree_commitment,
-                step.next_state.merkle_tree_commitment,
-            );
-            assert_eq!(input.witness.certificate_message, step.next_state.message);
-        }
-
-        #[test]
-        fn prepare_at_next_epoch_carries_lookahead_protocol_parameters() {
-            let chain_state = load_embedded_recursive_chain_state_asset()
-                .expect("recursive chain state asset should load");
-            let step = load_embedded_next_epoch_step_output_asset()
-                .expect("recursive step output asset should load");
-
-            let (global, verification_context) = build_preparation_context();
-            let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
-            let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
-            let chain_genesis_signature = chain_state.genesis_signature;
-            let rolling_state = build_rolling_state(
-                chain_state.state,
-                chain_state.ivc_proof,
-                chain_state.accumulator,
-                chain_state.genesis_signature,
-            );
-
-            let input = IvcProverInput::prepare(
-                &snark_proof,
-                &step.message,
-                &avk,
-                &global,
-                &protocol_message_preimage,
-                &rolling_state,
-                &verification_context,
-            )
-            .expect("prepare should succeed at next-epoch step");
-
-            assert_eq!(input.next_state, step.next_state);
-            assert_eq!(
-                accumulator_bytes(&input.next_accumulator),
-                accumulator_bytes(&step.next_accumulator),
-            );
-            assert_eq!(input.witness.genesis_signature, chain_genesis_signature);
-            assert_eq!(input.witness.message_preimage, protocol_message_preimage);
-            assert_eq!(
-                input.witness.certificate_merkle_tree_commitment,
-                step.next_state.merkle_tree_commitment,
-            );
-            assert_eq!(input.witness.certificate_message, step.next_state.message);
-        }
-
-        #[test]
-        fn prepare_rejects_invalid_snark_proof() {
-            let chain_state = load_embedded_recursive_chain_state_asset()
-                .expect("recursive chain state asset should load");
-            let step = load_embedded_following_certificate_in_epoch_asset()
-                .expect("same-epoch step output asset should load");
-
-            let (global, verification_context) = build_preparation_context();
-            let mut corrupted = step.certificate_proof.clone().into_vec();
-            corrupted[0] ^= 0xFF;
-
-            let snark_proof = wrap_snark_proof(corrupted);
-            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
-            let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
-            let rolling_state = build_rolling_state(
-                chain_state.state,
-                chain_state.ivc_proof,
-                chain_state.accumulator,
-                chain_state.genesis_signature,
-            );
-
-            let result = IvcProverInput::prepare(
-                &snark_proof,
-                &step.message,
-                &avk,
-                &global,
-                &protocol_message_preimage,
-                &rolling_state,
-                &verification_context,
-            );
-
-            let err = result
-                .expect_err("prepare should reject a corrupted certificate proof")
-                .downcast::<IvcCircuitError>()
-                .expect("error should downcast to IvcCircuitError");
-            assert!(matches!(err, IvcCircuitError::CertificateProofRejected(..)));
-        }
-
-        #[test]
-        fn prepare_rejects_invalid_epoch_transition() {
-            let chain_state = load_embedded_recursive_chain_state_asset()
-                .expect("recursive chain state asset should load");
-            let step = load_embedded_following_certificate_in_epoch_asset()
-                .expect("same-epoch step output asset should load");
-
-            let modified_state = State::new(
-                chain_state.state.step_counter,
-                chain_state.state.message,
-                chain_state.state.merkle_tree_commitment,
-                chain_state.state.next_merkle_tree_commitment,
-                chain_state.state.protocol_parameters,
-                chain_state.state.next_protocol_parameters,
-                EpochNumber::new(u64::MAX - 100),
-            );
-            let rolling_state = build_rolling_state(
-                modified_state,
-                chain_state.ivc_proof,
-                chain_state.accumulator,
-                chain_state.genesis_signature,
-            );
-
-            let (global, verification_context) = build_preparation_context();
-            let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
-            let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
-
-            let result = IvcProverInput::prepare(
-                &snark_proof,
-                &step.message,
-                &avk,
-                &global,
-                &protocol_message_preimage,
-                &rolling_state,
-                &verification_context,
-            );
-
-            let err = result
-                .expect_err("prepare should reject a bad epoch transition")
-                .downcast::<IvcCircuitError>()
-                .expect("error should downcast to IvcCircuitError");
-            assert!(
-                matches!(
-                    err,
-                    IvcCircuitError::InvalidEpochTransition {
-                        kind: EpochTransitionErrorKind::EpochGap { .. },
-                        ..
-                    }
+        let genesis_message = MessageHash::from_field(
+            BaseFieldElement::from_raw(&[0x42; 32])
+                .expect("from_raw applies modulus reduction")
+                .0,
+        );
+        let global = Global {
+            genesis_message,
+            genesis_verification_key: verification_key,
+            certificate_circuit_verification_key_representation:
+                CertificateCircuitVerificationKeyRepresentation::from_field(
+                    BaseFieldElement::from(0u64).0,
                 ),
-                "expected InvalidEpochTransition with OutOfRange kind, got {err:?}"
-            );
-        }
+            ivc_circuit_verification_key_representation:
+                IvcCircuitVerificationKeyRepresentation::from_field(BaseFieldElement::from(0u64).0),
+        };
 
-        #[test]
-        fn prepare_rejects_step_counter_overflow() {
-            let chain_state = load_embedded_recursive_chain_state_asset()
-                .expect("recursive chain state asset should load");
-            let step = load_embedded_following_certificate_in_epoch_asset()
-                .expect("same-epoch step output asset should load");
+        let genesis_signature = signing_key
+            .sign_standard(
+                &[BaseFieldElement::from(global.genesis_message.as_field())],
+                &mut rng,
+            )
+            .expect("sign_standard should succeed for the genesis message");
+        // Keep the complete fixed-base label set so replacing it with an empty trivial
+        // accumulator is observable.
+        let combined_fixed_base_names: Vec<String> = load_embedded_verification_context_asset()
+            .expect("verification context asset should load")
+            .combined_fixed_bases
+            .keys()
+            .cloned()
+            .collect();
+        let rolling_state = IvcRollingState::genesis(genesis_signature, &combined_fixed_base_names);
+        assert!(
+            !rolling_state.accumulator().rhs().fixed_base_scalars().is_empty(),
+            "the pass-through fixture must carry fixed-base labels"
+        );
 
-            let modified_state = State::new(
-                StepCounter::new(u64::MAX),
-                chain_state.state.message,
-                chain_state.state.merkle_tree_commitment,
-                chain_state.state.next_merkle_tree_commitment,
-                chain_state.state.protocol_parameters,
-                chain_state.state.next_protocol_parameters,
-                chain_state.state.current_epoch,
-            );
-            let rolling_state = build_rolling_state(
-                modified_state,
-                chain_state.ivc_proof,
-                chain_state.accumulator,
-                chain_state.genesis_signature,
-            );
+        let cert_epoch = EpochNumber::ZERO;
+        let mut preimage_bytes = [0u8; PREIMAGE_SIZE];
+        preimage_bytes[PREIMAGE_CURRENT_EPOCH_BYTES]
+            .copy_from_slice(&cert_epoch.as_u64().to_le_bytes());
+        preimage_bytes[PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES].copy_from_slice(&[0x11; 32]);
+        preimage_bytes[PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES].copy_from_slice(&[0x22; 32]);
+        let protocol_message_preimage = ProtocolMessagePreimage::new(preimage_bytes);
 
-            let (global, verification_context) = build_preparation_context();
-            let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
-            let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
+        let input =
+            IvcProverInput::prepare_genesis(&rolling_state, &protocol_message_preimage, &global)
+                .expect("prepare_genesis should succeed for a valid genesis signature");
 
-            let result = IvcProverInput::prepare(
-                &snark_proof,
-                &step.message,
-                &avk,
-                &global,
-                &protocol_message_preimage,
-                &rolling_state,
-                &verification_context,
-            );
+        let expected_next_state = State::new(
+            StepCounter::new(1),
+            global.genesis_message,
+            MerkleTreeCommitment::ZERO,
+            protocol_message_preimage.next_merkle_tree_commitment(),
+            ProtocolParametersHash::ZERO,
+            protocol_message_preimage.next_protocol_parameters(),
+            protocol_message_preimage.current_epoch(),
+        );
+        assert_eq!(input.next_state, expected_next_state);
 
-            let err = result
-                .expect_err("prepare should reject step counter overflow")
-                .downcast::<IvcCircuitError>()
-                .expect("error should downcast to IvcCircuitError");
-            assert!(
-                matches!(err, IvcCircuitError::StepCounterOverflow { .. }),
-                "expected StepCounterOverflow, got {err:?}"
-            );
-        }
+        let expected_witness = Witness::new(
+            genesis_signature,
+            MessageHash::ZERO,
+            MerkleTreeCommitment::ZERO,
+            protocol_message_preimage.clone(),
+        );
+        assert_eq!(input.witness, expected_witness);
+
+        assert_eq!(input.transition_type, IvcTransitionType::Genesis);
+        assert_eq!(
+            accumulator_bytes(&input.next_accumulator),
+            accumulator_bytes(rolling_state.accumulator()),
+            "the genesis step must pass the trivial accumulator through unchanged"
+        );
+    }
+
+    #[test]
+    fn prepare_at_same_epoch_advances_state_correctly() {
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let step = load_embedded_following_certificate_in_epoch_asset()
+            .expect("same-epoch step output asset should load");
+
+        let (global, verification_context) = build_preparation_context();
+        let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
+        let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+        let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
+        let chain_genesis_signature = chain_state.genesis_signature;
+        let rolling_state = build_rolling_state(
+            chain_state.state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+
+        let input = IvcProverInput::prepare(
+            &snark_proof,
+            &step.message,
+            &avk,
+            &global,
+            &protocol_message_preimage,
+            &rolling_state,
+            &verification_context,
+        )
+        .expect("prepare should succeed at same-epoch step");
+
+        assert_eq!(input.next_state, step.next_state);
+        assert_eq!(
+            accumulator_bytes(&input.next_accumulator),
+            accumulator_bytes(&step.next_accumulator),
+        );
+        assert_eq!(input.witness.genesis_signature, chain_genesis_signature);
+        assert_eq!(input.witness.message_preimage, protocol_message_preimage);
+        assert_eq!(
+            input.witness.certificate_merkle_tree_commitment,
+            step.next_state.merkle_tree_commitment,
+        );
+        assert_eq!(input.witness.certificate_message, step.next_state.message);
+    }
+
+    #[test]
+    fn prepare_at_next_epoch_carries_lookahead_protocol_parameters() {
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let step = load_embedded_next_epoch_step_output_asset()
+            .expect("recursive step output asset should load");
+
+        let (global, verification_context) = build_preparation_context();
+        let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
+        let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+        let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
+        let chain_genesis_signature = chain_state.genesis_signature;
+        let rolling_state = build_rolling_state(
+            chain_state.state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+
+        let input = IvcProverInput::prepare(
+            &snark_proof,
+            &step.message,
+            &avk,
+            &global,
+            &protocol_message_preimage,
+            &rolling_state,
+            &verification_context,
+        )
+        .expect("prepare should succeed at next-epoch step");
+
+        assert_eq!(input.next_state, step.next_state);
+        assert_eq!(
+            accumulator_bytes(&input.next_accumulator),
+            accumulator_bytes(&step.next_accumulator),
+        );
+        assert_eq!(input.witness.genesis_signature, chain_genesis_signature);
+        assert_eq!(input.witness.message_preimage, protocol_message_preimage);
+        assert_eq!(
+            input.witness.certificate_merkle_tree_commitment,
+            step.next_state.merkle_tree_commitment,
+        );
+        assert_eq!(input.witness.certificate_message, step.next_state.message);
+    }
+
+    #[test]
+    fn prepare_rejects_invalid_snark_proof() {
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let step = load_embedded_following_certificate_in_epoch_asset()
+            .expect("same-epoch step output asset should load");
+
+        let (global, verification_context) = build_preparation_context();
+        let mut corrupted = step.certificate_proof.clone().into_vec();
+        corrupted[0] ^= 0xFF;
+
+        let snark_proof = wrap_snark_proof(corrupted);
+        let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+        let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
+        let rolling_state = build_rolling_state(
+            chain_state.state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+
+        let result = IvcProverInput::prepare(
+            &snark_proof,
+            &step.message,
+            &avk,
+            &global,
+            &protocol_message_preimage,
+            &rolling_state,
+            &verification_context,
+        );
+
+        let err = result
+            .expect_err("prepare should reject a corrupted certificate proof")
+            .downcast::<IvcCircuitError>()
+            .expect("error should downcast to IvcCircuitError");
+        assert!(matches!(err, IvcCircuitError::CertificateProofRejected(..)));
+    }
+
+    #[test]
+    fn prepare_rejects_invalid_epoch_transition() {
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let step = load_embedded_following_certificate_in_epoch_asset()
+            .expect("same-epoch step output asset should load");
+
+        let modified_state = State::new(
+            chain_state.state.step_counter,
+            chain_state.state.message,
+            chain_state.state.merkle_tree_commitment,
+            chain_state.state.next_merkle_tree_commitment,
+            chain_state.state.protocol_parameters,
+            chain_state.state.next_protocol_parameters,
+            EpochNumber::new(u64::MAX - 100),
+        );
+        let rolling_state = build_rolling_state(
+            modified_state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+
+        let (global, verification_context) = build_preparation_context();
+        let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
+        let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+        let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
+
+        let result = IvcProverInput::prepare(
+            &snark_proof,
+            &step.message,
+            &avk,
+            &global,
+            &protocol_message_preimage,
+            &rolling_state,
+            &verification_context,
+        );
+
+        let err = result
+            .expect_err("prepare should reject a bad epoch transition")
+            .downcast::<IvcCircuitError>()
+            .expect("error should downcast to IvcCircuitError");
+        assert!(
+            matches!(
+                err,
+                IvcCircuitError::InvalidEpochTransition {
+                    kind: EpochTransitionErrorKind::EpochGap { .. },
+                    ..
+                }
+            ),
+            "expected InvalidEpochTransition with OutOfRange kind, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn prepare_rejects_step_counter_overflow() {
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let step = load_embedded_following_certificate_in_epoch_asset()
+            .expect("same-epoch step output asset should load");
+
+        let modified_state = State::new(
+            StepCounter::new(u64::MAX),
+            chain_state.state.message,
+            chain_state.state.merkle_tree_commitment,
+            chain_state.state.next_merkle_tree_commitment,
+            chain_state.state.protocol_parameters,
+            chain_state.state.next_protocol_parameters,
+            chain_state.state.current_epoch,
+        );
+        let rolling_state = build_rolling_state(
+            modified_state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+
+        let (global, verification_context) = build_preparation_context();
+        let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
+        let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+        let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
+
+        let result = IvcProverInput::prepare(
+            &snark_proof,
+            &step.message,
+            &avk,
+            &global,
+            &protocol_message_preimage,
+            &rolling_state,
+            &verification_context,
+        );
+
+        let err = result
+            .expect_err("prepare should reject step counter overflow")
+            .downcast::<IvcCircuitError>()
+            .expect("error should downcast to IvcCircuitError");
+        assert!(
+            matches!(err, IvcCircuitError::StepCounterOverflow { .. }),
+            "expected StepCounterOverflow, got {err:?}"
+        );
     }
 }
