@@ -108,7 +108,7 @@
   --ifm-color-primary-lightest: #f77254;
   --ifm-code-font-size: 95%;
 
-  --ifm-navbar-height: 60px;
+  --ifm-navbar-height: 70px;
 
   font-family: "Inter";
 }
@@ -123,8 +123,9 @@
 Styling overrides to Infima after upgrading to Tailwind V4 
 */
 .navbar {
-  background: var(--color-white-ish);
+  background: transparent;
   font-family: "Lexend";
+  box-shadow: none;
 }
 
 .hero-title {

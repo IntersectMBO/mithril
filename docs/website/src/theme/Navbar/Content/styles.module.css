@@ -7,10 +7,17 @@ Hide color mode toggle in small viewports
   }
 }
 
+
+
 /*
-Restore some Infima style that broke with CSS Cascade Layers
-See https://github.com/facebook/docusaurus/pull/11142
+Floating menu styling. I don't F%&^$#%^ know why can't use global CSS. Will adress later.
  */
-:global(.navbar__items--right) > :last-child {
-  padding-right: 0;
+.menu {
+  gap: 0.2rem;
+  padding: 0.5rem;
+  border-radius: 999px;
+  background: var(--color-white);
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 8px 24px rgba(16, 24, 40, 0.08);
 }

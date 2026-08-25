@@ -66,6 +66,7 @@ function NavbarContentLayout({
         className={clsx(
           ThemeClassNames.layout.navbar.containerRight,
           "navbar__items navbar__items--right",
+          styles.menu,
         )}
       >
         {right}
@@ -79,13 +80,10 @@ export default function NavbarContent(): ReactNode {
 
   const items = useNavbarItems();
   const [leftItems, rightItems] = splitNavbarItems(items);
-
-  const searchBarItem = items.find((item) => item.type === "search");
-
+  
   return (
     <NavbarContentLayout
       left={
-        // TODO stop hardcoding items?
         <>
           {!mobileSidebar.disabled && <NavbarMobileSidebarToggle />}
           <NavbarLogo />
@@ -93,16 +91,8 @@ export default function NavbarContent(): ReactNode {
         </>
       }
       right={
-        // TODO stop hardcoding items?
-        // Ask the user to add the respective navbar items => more flexible
         <>
           <NavbarItems items={rightItems} />
-          <NavbarColorModeToggle className={styles.colorModeToggle} />
-          {!searchBarItem && (
-            <NavbarSearch>
-              <SearchBar />
-            </NavbarSearch>
-          )}
         </>
       }
     />
