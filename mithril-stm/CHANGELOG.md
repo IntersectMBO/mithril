@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.10 (08-26-2026)
+
+### Added
+
+- Added more off-circuit checks: validation of the protocol message hash, check of the validity of the genesis verification key, check that the protocol parameters do not evolve from one epoch to the next, ensuring the new accumulator is correctly created.
+- Placed off-circuit checks before proof creation when possible to avoid unnecessary heavy computations.
+
 ## 0.12.9 (08-26-2026)
 
 ### Changed
