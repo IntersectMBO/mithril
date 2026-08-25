@@ -277,6 +277,11 @@ impl FileArchiver {
     }
 
     fn configure_tar_builder<W: std::io::Write>(builder: &mut tar::Builder<W>) {
+        // Important note: Windows has no Unix owner-execute bit, so the tar library assigns
+        // mode `0644` to all regular files.
+        // On Linux, regular files are assigned `0644` or `0755` depending on whether the
+        // owner-execute bit is set.
+        // Consequently, deterministic archives containing executable files may differ between Windows and Linux.
         builder.mode(HeaderMode::Deterministic);
         builder.follow_symlinks(false);
         // disable sparse files, as their support is not uniform across platforms and the size

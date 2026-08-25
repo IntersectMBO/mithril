@@ -11,6 +11,9 @@
 //! * TAR header generation and metadata normalization
 //! * JSON serialization output when using `AppenderData::from_json`
 //!
+//! One exception: owner-executable files, because Windows cannot represent the Unix owner-execute
+//! bit, archives containing such files may differ between Windows and Unix.
+//!
 
 mod api;
 pub mod appender;
