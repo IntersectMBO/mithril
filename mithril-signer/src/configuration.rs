@@ -123,8 +123,11 @@ pub struct Configuration {
     #[example = "\
     - cardano-chain:<br/>`{ \"type\": \"cardano-chain\", \"address\": \"test_address\",  \"verification_key\": \"136372c3138312c3138382c3130352c3233312c3135\" }`<br/>\
     "]
-    #[serde(deserialize_with = "serde_deserialization::string_or_struct")]
-    pub protocol_configuration_reader_adapter_config: AdapterConfig,
+    #[serde(
+        default,
+        deserialize_with = "serde_deserialization::string_or_struct_optional"
+    )]
+    pub protocol_configuration_reader_adapter_config: Option<AdapterConfig>,
 
     /// Enable metrics server (Prometheus endpoint on /metrics).
     pub enable_metrics_server: bool,
@@ -197,13 +200,13 @@ impl Configuration {
             reset_digests_cache: false,
             era_reader_adapter_type: EraReaderAdapterType::Bootstrap,
             era_reader_adapter_params: None,
-            protocol_configuration_reader_adapter_config: AdapterConfig::CardanoChain {
+            protocol_configuration_reader_adapter_config: Some(AdapterConfig::CardanoChain {
                 address: "address".to_string(),
                 verification_key: Box::new(
                     ProtocolConfigurationMarkersSigner::create_deterministic_signer()
                         .verification_key(),
                 ),
-            },
+            }),
             enable_metrics_server: true,
             metrics_server_ip: "0.0.0.0".to_string(),
             metrics_server_port: 9090,

@@ -47,7 +47,8 @@ use mithril_persistence::sqlite::{
 };
 
 use mithril_protocol_config::{
-    builder::build_protocol_configuration_adapter,
+    builder::build_protocol_configuration_adapter, http::HttpMithrilNetworkConfigurationProvider,
+    interface::MithrilNetworkConfigurationProvider,
     markers::MarkersMithrilNetworkConfigurationProvider,
 };
 
@@ -188,6 +189,27 @@ impl<'a> DependenciesBuilder<'a> {
         .await?;
 
         Ok(Some(Arc::new(cache_provider)))
+    }
+
+    /// Build a MithrilNetworkConfigurationProvider
+    pub async fn build_mithril_network_configuration_provider(
+        &self,
+        chain_observer: Arc<dyn ChainObserver>,
+        aggregator_client: Arc<AggregatorHttpClient>,
+    ) -> Arc<dyn MithrilNetworkConfigurationProvider> {
+        if let Some(config) = self.config.protocol_configuration_reader_adapter_config.clone() {
+            let protocol_configuration_adapter =
+                build_protocol_configuration_adapter(config, chain_observer);
+            Arc::new(MarkersMithrilNetworkConfigurationProvider::new(
+                self.root_logger(),
+                protocol_configuration_adapter,
+            ))
+        } else {
+            Arc::new(HttpMithrilNetworkConfigurationProvider::new(
+                aggregator_client,
+                self.root_logger(),
+            ))
+        }
     }
 
     /// Build an SQLite connection for the main database.
@@ -424,15 +446,12 @@ impl<'a> DependenciesBuilder<'a> {
         ));
         let metrics_service = Arc::new(MetricsService::new(self.root_logger())?);
 
-        let protocol_configuration_adapter = build_protocol_configuration_adapter(
-            self.config.protocol_configuration_reader_adapter_config.clone(),
-            chain_observer.clone(),
-        );
-        let network_configuration_service =
-            Arc::new(MarkersMithrilNetworkConfigurationProvider::new(
-                self.root_logger(),
-                protocol_configuration_adapter,
-            ));
+        let network_configuration_service = self
+            .build_mithril_network_configuration_provider(
+                chain_observer.clone(),
+                aggregator_client.clone(),
+            )
+            .await;
 
         let preloader_activation = CardanoTransactionsPreloaderActivationSigner::new(
             network_configuration_service.clone(),
