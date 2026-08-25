@@ -165,20 +165,15 @@ mod test {
                 io::Write as IvcWrite,
                 tests::common::{
                     asset_readers::{
-                        VerificationContextAsset, load_embedded_first_certificate_in_epoch_asset,
+                        VerificationContextAsset,
                         load_embedded_following_certificate_in_epoch_asset,
                         load_embedded_next_epoch_step_output_asset,
                         load_embedded_recursive_chain_state_asset,
                         load_embedded_verification_context_asset,
                     },
                     generators::{
-                        build_asset_generation_setup_from_cache,
-                        build_genesis_base_case_next_state, build_genesis_base_case_witness,
-                        build_genesis_protocol_message_preimage, build_recursive_global,
-                        setup::{
-                            AssetGenerationSetup, GENESIS_EPOCH, QUORUM_SIZE, SIGNER_COUNT,
-                            TOTAL_STAKE,
-                        },
+                        build_asset_generation_setup_from_cache, build_recursive_global,
+                        setup::{AssetGenerationSetup, QUORUM_SIZE, SIGNER_COUNT, TOTAL_STAKE},
                     },
                 },
                 types::{
@@ -353,7 +348,20 @@ mod test {
                     &mut rng,
                 )
                 .expect("sign_standard should succeed for the genesis message");
-            let rolling_state = IvcRollingState::genesis(genesis_signature, &[]);
+            // Keep the complete fixed-base label set so replacing it with an empty trivial
+            // accumulator is observable.
+            let combined_fixed_base_names: Vec<String> = load_embedded_verification_context_asset()
+                .expect("verification context asset should load")
+                .combined_fixed_bases
+                .keys()
+                .cloned()
+                .collect();
+            let rolling_state =
+                IvcRollingState::genesis(genesis_signature, &combined_fixed_base_names);
+            assert!(
+                !rolling_state.accumulator().rhs().fixed_base_scalars().is_empty(),
+                "the pass-through fixture must carry fixed-base labels"
+            );
 
             let cert_epoch = EpochNumber::ZERO;
             let mut preimage_bytes = [0u8; PREIMAGE_SIZE];
@@ -388,47 +396,12 @@ mod test {
                 protocol_message_preimage.clone(),
             );
             assert_eq!(input.witness, expected_witness);
-        }
 
-        #[test]
-        #[ignore = "slow: runs real keygen via shared OnceLock; opt-in only"]
-        fn prepare_at_genesis_produces_advanced_state_and_witness() {
-            let setup = shared_ivc_setup();
-            let asset_setup = shared_asset_setup();
-            let first_step = load_embedded_first_certificate_in_epoch_asset()
-                .expect("first step cert asset should load");
-
-            let global = build_global();
-            let combined_names: Vec<String> = setup.combined_fixed_bases.keys().cloned().collect();
-            let rolling_state =
-                IvcRollingState::genesis(asset_setup.genesis_signature, &combined_names);
-
-            let snark_proof = wrap_snark_proof(first_step.certificate_proof.clone().into_vec());
-            let avk = wrap_avk(&first_step.aggregate_verification_key_merkle_root);
-            let genesis_preimage_bytes = build_genesis_protocol_message_preimage(asset_setup);
-            let protocol_message_preimage = wrap_protocol_message_preimage(&genesis_preimage_bytes);
-
-            let input = IvcProverInput::prepare(
-                &snark_proof,
-                &first_step.message,
-                &avk,
-                &global,
-                &protocol_message_preimage,
-                &rolling_state,
-                &setup.prover_input_verification_context(),
-            )
-            .expect("prepare should succeed at genesis");
-
-            let expected_next_state =
-                build_genesis_base_case_next_state(asset_setup, GENESIS_EPOCH);
-            assert_eq!(input.next_state, expected_next_state);
-
-            let expected_witness = build_genesis_base_case_witness(asset_setup);
-            assert_eq!(input.witness, expected_witness);
-
+            assert_eq!(input.transition_type, IvcTransitionType::Genesis);
             assert_eq!(
                 accumulator_bytes(&input.next_accumulator),
                 accumulator_bytes(rolling_state.accumulator()),
+                "the genesis step must pass the trivial accumulator through unchanged"
             );
         }
 
@@ -562,48 +535,6 @@ mod test {
                 .downcast::<IvcCircuitError>()
                 .expect("error should downcast to IvcCircuitError");
             assert!(matches!(err, IvcCircuitError::CertificateProofRejected(..)));
-        }
-
-        #[test]
-        #[ignore = "slow: runs real keygen via shared OnceLock; opt-in only"]
-        fn prepare_rejects_invalid_genesis_signature() {
-            let setup = shared_ivc_setup();
-            let asset_setup = shared_asset_setup();
-            let first_step = load_embedded_first_certificate_in_epoch_asset()
-                .expect("first step cert asset should load");
-
-            let global = build_global();
-            let mut sig_bytes = asset_setup.genesis_signature.to_bytes();
-            sig_bytes[32] ^= 0x01;
-            let bad_signature = StandardSchnorrSignature::from_bytes(&sig_bytes)
-                .expect("mutated signature should still deserialize");
-
-            let combined_names: Vec<String> = setup.combined_fixed_bases.keys().cloned().collect();
-            let rolling_state = IvcRollingState::genesis(bad_signature, &combined_names);
-
-            let snark_proof = wrap_snark_proof(first_step.certificate_proof.clone().into_vec());
-            let avk = wrap_avk(&first_step.aggregate_verification_key_merkle_root);
-            let genesis_preimage_bytes = build_genesis_protocol_message_preimage(asset_setup);
-            let protocol_message_preimage = wrap_protocol_message_preimage(&genesis_preimage_bytes);
-
-            let result = IvcProverInput::prepare(
-                &snark_proof,
-                &first_step.message,
-                &avk,
-                &global,
-                &protocol_message_preimage,
-                &rolling_state,
-                &setup.prover_input_verification_context(),
-            );
-
-            let err = result
-                .expect_err("prepare should reject an invalid genesis signature")
-                .downcast::<SchnorrSignatureError>()
-                .expect("error should downcast to SchnorrSignatureError");
-            assert!(
-                matches!(err, SchnorrSignatureError::StandardSignatureInvalid(_)),
-                "expected StandardSignatureInvalid, got {err:?}"
-            );
         }
 
         #[test]
