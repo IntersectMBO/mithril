@@ -131,13 +131,19 @@ pub(crate) fn all_state_rows() -> BTreeMap<usize, &'static str> {
 
 #[cfg(test)]
 mod tests {
+    use midnight_circuits::types::Instantiable;
+
     use super::*;
     use crate::circuits::halo2_ivc::{
-        NativeField,
-        state::State,
-        tests::common::asset_readers::load_embedded_verification_context_asset,
+        AssignedNativePoint, CircuitCurve, NativeField,
+        state::{Global, State},
+        tests::common::asset_readers::{
+            load_embedded_genesis_benchmark_fixture, load_embedded_verification_context_asset,
+        },
         types::{
-            EpochNumber, MerkleTreeCommitment, MessageHash, ProtocolParametersHash, StepCounter,
+            CertificateCircuitVerificationKeyRepresentation, EpochNumber,
+            IvcCircuitVerificationKeyRepresentation, MerkleTreeCommitment, MessageHash,
+            ProtocolParametersHash, StepCounter,
         },
     };
 
@@ -155,14 +161,6 @@ mod tests {
             STATE_SECTION_ROWS,
             "state section length changed; every expected public-input row shifts with it"
         );
-        for (offset, field) in GlobalField::ALL.iter().enumerate() {
-            assert_eq!(
-                field.row(),
-                offset,
-                "{} is not at global row {offset}",
-                field.name()
-            );
-        }
         for (offset, field) in StateField::ALL.iter().enumerate() {
             assert_eq!(
                 field.row(),
@@ -176,6 +174,62 @@ mod tests {
             accumulator_row(0),
             GLOBAL_SECTION_ROWS + STATE_SECTION_ROWS,
             "the accumulator section follows the global and state sections"
+        );
+    }
+
+    #[test]
+    fn global_public_input_order_matches_the_layout() {
+        // Distinct sentinels per settable field, so a reordering of `Global::as_public_input` or a
+        // name mapped to the wrong row fails here rather than producing a misleading signature.
+        const SENTINELS: [(GlobalField, u64); 3] = [
+            (GlobalField::GenesisMessage, 11),
+            (
+                GlobalField::CertificateCircuitVerificationKeyRepresentation,
+                33,
+            ),
+            (GlobalField::IvcCircuitVerificationKeyRepresentation, 44),
+        ];
+
+        let fixture = load_embedded_genesis_benchmark_fixture()
+            .expect("genesis benchmark fixture should load");
+        let genesis_verification_key = fixture.genesis_verification_key;
+        let global = Global {
+            genesis_message: MessageHash::from_field(NativeField::from(11u64)),
+            genesis_verification_key,
+            certificate_circuit_verification_key_representation:
+                CertificateCircuitVerificationKeyRepresentation::from_field(NativeField::from(
+                    33u64,
+                )),
+            ivc_circuit_verification_key_representation:
+                IvcCircuitVerificationKeyRepresentation::from_field(NativeField::from(44u64)),
+        };
+        let public_input = global.as_public_input();
+
+        for (field, sentinel) in SENTINELS {
+            assert_eq!(
+                public_input[field.row()],
+                NativeField::from(sentinel),
+                "{} is not at global row {}",
+                field.name(),
+                field.row()
+            );
+        }
+
+        // The remaining two rows carry the key coordinates, in that order.
+        let key_coordinates = AssignedNativePoint::<CircuitCurve>::as_public_input(
+            genesis_verification_key.as_jubjub_subgroup(),
+        );
+        assert_eq!(
+            public_input[GlobalField::GenesisVerificationKeyX.row()],
+            key_coordinates[0],
+            "{} is not at its global row",
+            GlobalField::GenesisVerificationKeyX.name()
+        );
+        assert_eq!(
+            public_input[GlobalField::GenesisVerificationKeyY.row()],
+            key_coordinates[1],
+            "{} is not at its global row",
+            GlobalField::GenesisVerificationKeyY.name()
         );
     }
 
