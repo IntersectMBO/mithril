@@ -149,8 +149,6 @@ mod test {
     use super::*;
 
     mod slow {
-        use std::sync::OnceLock;
-
         use midnight_proofs::utils::SerdeFormat;
         use rand_chacha::ChaCha20Rng;
         use rand_core::SeedableRng;
@@ -165,63 +163,46 @@ mod test {
                 io::Write as IvcWrite,
                 tests::common::{
                     asset_readers::{
-                        VerificationContextAsset,
                         load_embedded_following_certificate_in_epoch_asset,
+                        load_embedded_genesis_benchmark_fixture,
                         load_embedded_next_epoch_step_output_asset,
                         load_embedded_recursive_chain_state_asset,
                         load_embedded_verification_context_asset,
                     },
-                    generators::{
-                        build_asset_generation_setup_from_cache, build_recursive_global,
-                        setup::{AssetGenerationSetup, QUORUM_SIZE, SIGNER_COUNT, TOTAL_STAKE},
-                    },
+                    generators::setup::{QUORUM_SIZE, SIGNER_COUNT, TOTAL_STAKE},
                 },
                 types::{
                     CertificateCircuitVerificationKeyRepresentation, EpochNumber,
                     IvcCircuitVerificationKeyRepresentation, StepCounter,
                 },
             },
-            proof_system::ivc_halo2_snark::prover_setup::IvcSnarkProverSetup,
+            proof_system::ivc_halo2_snark::prover_setup::IvcProverInputVerificationContext,
             signature_scheme::{SchnorrSignatureError, StandardSchnorrSignature},
         };
 
         use super::*;
 
-        fn shared_ivc_setup() -> &'static IvcSnarkProverSetup {
-            static CELL: OnceLock<IvcSnarkProverSetup> = OnceLock::new();
-            CELL.get_or_init(|| {
-                let parameters = Parameters {
-                    k: QUORUM_SIZE as u64,
-                    m: (QUORUM_SIZE * 10) as u64,
-                    phi_f: 0.2,
-                };
-                let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
-                IvcSnarkProverSetup::build_for_test(&parameters, merkle_tree_depth)
-                    .expect("IvcSnarkProverSetup::load should succeed under the unsafe SRS")
-            })
-        }
+        /// Builds the chain's global public inputs and the verification-side context `prepare` reads,
+        /// both from committed assets: no SRS, no key generation and no cache.
+        fn build_preparation_context() -> (Global, IvcProverInputVerificationContext) {
+            let asset = load_embedded_verification_context_asset()
+                .expect("verification context asset should load");
+            let genesis_fixture = load_embedded_genesis_benchmark_fixture()
+                .expect("genesis benchmark fixture should load");
 
-        fn shared_asset_setup() -> &'static AssetGenerationSetup {
-            static CELL: OnceLock<AssetGenerationSetup> = OnceLock::new();
-            CELL.get_or_init(build_asset_generation_setup_from_cache)
-        }
+            let global = Global::new(
+                genesis_fixture.genesis_message_hash(),
+                genesis_fixture.genesis_verification_key,
+                &asset.certificate_verifying_key,
+                &asset.recursive_verifying_key,
+            );
+            let verification_context = IvcProverInputVerificationContext::from_verifying_keys(
+                asset.verifier_params,
+                &asset.certificate_verifying_key,
+                &asset.recursive_verifying_key,
+            );
 
-        fn shared_verification_context() -> &'static VerificationContextAsset {
-            static CELL: OnceLock<VerificationContextAsset> = OnceLock::new();
-            CELL.get_or_init(|| {
-                load_embedded_verification_context_asset()
-                    .expect("verification context asset should load")
-            })
-        }
-
-        fn build_global() -> Global {
-            let asset_setup = shared_asset_setup();
-            let ctx = shared_verification_context();
-            build_recursive_global(
-                asset_setup,
-                &ctx.certificate_verifying_key,
-                &ctx.recursive_verifying_key,
-            )
+            (global, verification_context)
         }
 
         fn wrap_snark_proof(
@@ -406,15 +387,13 @@ mod test {
         }
 
         #[test]
-        #[ignore = "slow: runs real keygen via shared OnceLock; opt-in only"]
         fn prepare_at_same_epoch_advances_state_correctly() {
-            let setup = shared_ivc_setup();
             let chain_state = load_embedded_recursive_chain_state_asset()
                 .expect("recursive chain state asset should load");
             let step = load_embedded_following_certificate_in_epoch_asset()
                 .expect("same-epoch step output asset should load");
 
-            let global = build_global();
+            let (global, verification_context) = build_preparation_context();
             let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
             let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
             let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
@@ -433,7 +412,7 @@ mod test {
                 &global,
                 &protocol_message_preimage,
                 &rolling_state,
-                &setup.prover_input_verification_context(),
+                &verification_context,
             )
             .expect("prepare should succeed at same-epoch step");
 
@@ -452,15 +431,13 @@ mod test {
         }
 
         #[test]
-        #[ignore = "slow: runs real keygen via shared OnceLock; opt-in only"]
         fn prepare_at_next_epoch_carries_lookahead_protocol_parameters() {
-            let setup = shared_ivc_setup();
             let chain_state = load_embedded_recursive_chain_state_asset()
                 .expect("recursive chain state asset should load");
             let step = load_embedded_next_epoch_step_output_asset()
                 .expect("recursive step output asset should load");
 
-            let global = build_global();
+            let (global, verification_context) = build_preparation_context();
             let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
             let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
             let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
@@ -479,7 +456,7 @@ mod test {
                 &global,
                 &protocol_message_preimage,
                 &rolling_state,
-                &setup.prover_input_verification_context(),
+                &verification_context,
             )
             .expect("prepare should succeed at next-epoch step");
 
@@ -498,15 +475,13 @@ mod test {
         }
 
         #[test]
-        #[ignore = "slow: runs real keygen via shared OnceLock; opt-in only"]
         fn prepare_rejects_invalid_snark_proof() {
-            let setup = shared_ivc_setup();
             let chain_state = load_embedded_recursive_chain_state_asset()
                 .expect("recursive chain state asset should load");
             let step = load_embedded_following_certificate_in_epoch_asset()
                 .expect("same-epoch step output asset should load");
 
-            let global = build_global();
+            let (global, verification_context) = build_preparation_context();
             let mut corrupted = step.certificate_proof.clone().into_vec();
             corrupted[0] ^= 0xFF;
 
@@ -527,7 +502,7 @@ mod test {
                 &global,
                 &protocol_message_preimage,
                 &rolling_state,
-                &setup.prover_input_verification_context(),
+                &verification_context,
             );
 
             let err = result
@@ -538,9 +513,7 @@ mod test {
         }
 
         #[test]
-        #[ignore = "slow: runs real keygen via shared OnceLock; opt-in only"]
         fn prepare_rejects_invalid_epoch_transition() {
-            let setup = shared_ivc_setup();
             let chain_state = load_embedded_recursive_chain_state_asset()
                 .expect("recursive chain state asset should load");
             let step = load_embedded_following_certificate_in_epoch_asset()
@@ -562,7 +535,7 @@ mod test {
                 chain_state.genesis_signature,
             );
 
-            let global = build_global();
+            let (global, verification_context) = build_preparation_context();
             let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
             let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
             let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
@@ -574,7 +547,7 @@ mod test {
                 &global,
                 &protocol_message_preimage,
                 &rolling_state,
-                &setup.prover_input_verification_context(),
+                &verification_context,
             );
 
             let err = result
@@ -594,9 +567,7 @@ mod test {
         }
 
         #[test]
-        #[ignore = "slow: runs real keygen via shared OnceLock; opt-in only"]
         fn prepare_rejects_step_counter_overflow() {
-            let setup = shared_ivc_setup();
             let chain_state = load_embedded_recursive_chain_state_asset()
                 .expect("recursive chain state asset should load");
             let step = load_embedded_following_certificate_in_epoch_asset()
@@ -618,7 +589,7 @@ mod test {
                 chain_state.genesis_signature,
             );
 
-            let global = build_global();
+            let (global, verification_context) = build_preparation_context();
             let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
             let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
             let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
@@ -630,7 +601,7 @@ mod test {
                 &global,
                 &protocol_message_preimage,
                 &rolling_state,
-                &setup.prover_input_verification_context(),
+                &verification_context,
             );
 
             let err = result
