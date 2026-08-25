@@ -57,6 +57,7 @@ pub struct MithrilInfrastructureConfig {
     pub use_dmq: bool,
     pub dmq_node_flavor: Option<DmqNodeFlavor>,
     pub use_era_specific_work_dir: bool,
+    pub signers_read_on_chain_protocol_configurations: bool,
 }
 
 impl MithrilInfrastructureConfig {
@@ -105,6 +106,7 @@ impl MithrilInfrastructureConfig {
             use_dmq: false,
             dmq_node_flavor: Some(DmqNodeFlavor::Fake),
             use_era_specific_work_dir: false,
+            signers_read_on_chain_protocol_configurations: false,
         }
     }
 }
@@ -498,6 +500,8 @@ impl MithrilInfrastructure {
                 skip_signature_delayer: config.skip_signature_delayer,
                 use_dmq: config.use_dmq,
                 dmq_node_flavor: &config.dmq_node_flavor,
+                read_on_chain_protocol_configurations: config
+                    .signers_read_on_chain_protocol_configurations,
             })?;
             signer.start().await?;
 

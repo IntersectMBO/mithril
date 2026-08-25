@@ -35,6 +35,7 @@ pub struct SignerConfig<'a> {
     pub skip_signature_delayer: bool,
     pub use_dmq: bool,
     pub dmq_node_flavor: &'a Option<DmqNodeFlavor>,
+    pub read_on_chain_protocol_configurations: bool,
 }
 
 #[derive(Debug)]
@@ -111,10 +112,6 @@ impl Signer {
                 signer_config.mithril_era_reader_adapter,
             ),
             ("ERA_READER_ADAPTER_PARAMS", &era_reader_adapter_params),
-            (
-                "PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG",
-                &protocol_configuration_reader_adapter_config,
-            ),
             ("TRANSACTIONS_IMPORT_BLOCK_CHUNK_SIZE", "150"),
             (
                 "CARDANO_TRANSACTIONS_BLOCK_STREAMER_THROTTLING_INTERVAL",
@@ -126,6 +123,14 @@ impl Signer {
             ("SIGNATURE_PUBLISHER_SKIP_DELAYER", skip_signature_delayer),
             ("PARTY_ID", &party_id),
         ]);
+        if Self::can_read_protocol_configurations_on_chain(&version)
+            && signer_config.read_on_chain_protocol_configurations
+        {
+            env.insert(
+                "PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG",
+                &protocol_configuration_reader_adapter_config,
+            );
+        }
         if signer_config.enable_certification {
             env.insert(
                 "KES_SECRET_KEY_PATH",
@@ -186,6 +191,10 @@ impl Signer {
     /// Get the version of the mithril-signer binary.
     pub fn version(&self) -> &NodeVersion {
         &self.version
+    }
+
+    pub fn can_read_protocol_configurations_on_chain(version: &NodeVersion) -> bool {
+        version.is_above_or_equal("1.2.0")
     }
 
     pub async fn start(&self) -> StdResult<()> {

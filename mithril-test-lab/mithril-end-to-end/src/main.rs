@@ -215,6 +215,10 @@ struct MithrilArgs {
     #[clap(long, default_value = "cardano-chain")]
     protocol_configuration_reader_adapter: String,
 
+    /// Signers read on-chain protocol configurations
+    #[clap(long, default_value_t = false)]
+    signers_read_on_chain_protocol_configurations: bool,
+
     /// Aggregate signature type used to create the certificates
     #[clap(long, value_enum, default_value = "Concatenation")]
     aggregate_signature_type: AggregateSignatureType,
@@ -541,6 +545,9 @@ impl App {
                     skip_signature_delayer: args.mithril.skip_signature_delayer,
                     use_p2p_passive_relays,
                     use_era_specific_work_dir: args.mithril.mithril_next_era.is_some(),
+                    signers_read_on_chain_protocol_configurations: args
+                        .mithril
+                        .signers_read_on_chain_protocol_configurations,
                 },
             )
             .await?,

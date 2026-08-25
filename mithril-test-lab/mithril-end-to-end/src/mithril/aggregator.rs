@@ -277,7 +277,7 @@ impl Aggregator {
     }
 
     pub fn is_reading_protocol_configurations_on_chain(&self) -> bool {
-        self.version().is_above_or_equal("0.10.0") && self.is_leader()
+        self.version().is_above_or_equal("0.10.0")
     }
 
     pub async fn serve(&self) -> StdResult<()> {

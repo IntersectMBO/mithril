@@ -190,6 +190,7 @@ impl FullScenario {
                 .is_creating_certificate_with_min_epoch(aggregator, current_epoch)
                 .await?;
 
+            // Write new protocol parameters 3 epoch in the future to let time to nodes to properly switch to the new configuration
             self.toolkit
                 .exec
                 .update_protocol_parameters(aggregator, infrastructure, target_epoch + 3)
