@@ -31,7 +31,7 @@ pub trait KuboRpcQuery: Sync {
     }
 
     /// Timeout for the RPC request.
-    fn timeout() -> Duration {
+    fn timeout(&self) -> Duration {
         Duration::from_secs(1)
     }
 
@@ -86,7 +86,7 @@ impl KuboRpcClient {
             .with_context(|| {
                 format!("Failed to configure request for Kubo RPC endpoint: '{route}'")
             })?
-            .timeout(Q::timeout());
+            .timeout(query.timeout());
 
         let response = request_builder
             .send()
@@ -226,7 +226,7 @@ mod tests {
                 "will_timeout".to_string()
             }
 
-            fn timeout() -> Duration {
+            fn timeout(&self) -> Duration {
                 Duration::from_millis(10)
             }
 

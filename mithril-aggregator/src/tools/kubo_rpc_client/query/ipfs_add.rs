@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::Context;
 use reqwest::{RequestBuilder, Response};
@@ -29,6 +30,9 @@ pub struct IpfsAddResponse {
 }
 
 impl IpfsAddQuery {
+    const BASE_TIMEOUT_SECS: u64 = 10;
+    const MAX_TIMEOUT_SECS: u64 = 3 * 60;
+
     /// Create a query that will add the given file to IPFS.
     #[cfg(test)]
     pub fn new<P: AsRef<Path>>(file_path: P) -> Self {
@@ -60,6 +64,29 @@ impl IpfsAddQuery {
     pub fn no_copy(mut self) -> Self {
         self.enable_no_copy = true;
         self
+    }
+
+    /// Calculates the request timeout from the file size.
+    ///
+    /// The timeout starts at 10 seconds and increases by one second for every started MiB, up to
+    /// a maximum of three minutes.
+    /// If the file size cannot be determined, the maximum timeout is used.
+    ///
+    /// Note: expected file size in production for immutables archive is 1-100 MiB (mostly 2-20 Mib).
+    fn timeout_duration(file_size_in_bytes: Option<u64>) -> Duration {
+        const BYTES_PER_MIB: u64 = 1024 * 1024;
+
+        match file_size_in_bytes {
+            None => Duration::from_secs(Self::MAX_TIMEOUT_SECS),
+            Some(size_in_bytes) => {
+                let file_size_mib = size_in_bytes.div_ceil(BYTES_PER_MIB);
+                let timeout_secs = Self::BASE_TIMEOUT_SECS
+                    .saturating_add(file_size_mib)
+                    .min(Self::MAX_TIMEOUT_SECS);
+
+                Duration::from_secs(timeout_secs)
+            }
+        }
     }
 }
 
@@ -120,6 +147,11 @@ impl KuboRpcQuery for IpfsAddQuery {
             .query(&[("hash", "sha2-256"), ("chunker", "size-262144")]);
 
         Ok(request_builder)
+    }
+
+    fn timeout(&self) -> Duration {
+        let file_size_in_bytes = self.file_path.metadata().map(|m| m.len()).ok();
+        Self::timeout_duration(file_size_in_bytes)
     }
 
     async fn handle_success(&self, response: Response) -> StdResult<Self::Response> {
@@ -226,5 +258,68 @@ mod tests {
         });
 
         client.send(IpfsAddQuery::new(file).no_copy()).await.unwrap();
+    }
+
+    mod timeout {
+        use super::*;
+
+        const MIB: u64 = 1024 * 1024;
+
+        #[test]
+        fn timeout_duration_returns_maximum_when_file_size_is_unknown() {
+            assert_eq!(
+                Duration::from_secs(180),
+                IpfsAddQuery::timeout_duration(None)
+            );
+        }
+
+        #[test]
+        fn timeout_duration_adds_one_second_for_each_started_mib() {
+            let cases = [
+                (0, IpfsAddQuery::BASE_TIMEOUT_SECS),
+                (1, 11),
+                (MIB, 11),
+                (MIB + 1, 12),
+                (50 * MIB, 60),
+                (100 * MIB, 110),
+            ];
+
+            for (file_size, expected_timeout_secs) in cases {
+                assert_eq!(
+                    Duration::from_secs(expected_timeout_secs),
+                    IpfsAddQuery::timeout_duration(Some(file_size)),
+                    "unexpected timeout for file size {file_size}"
+                );
+            }
+        }
+
+        #[test]
+        fn timeout_duration_is_capped_at_three_minutes() {
+            let cases = [
+                (169 * MIB, 179),
+                (169 * MIB + 1, IpfsAddQuery::MAX_TIMEOUT_SECS),
+                (170 * MIB, IpfsAddQuery::MAX_TIMEOUT_SECS),
+                (171 * MIB, IpfsAddQuery::MAX_TIMEOUT_SECS),
+                (u64::MAX, IpfsAddQuery::MAX_TIMEOUT_SECS),
+            ];
+
+            for (file_size, expected_timeout_secs) in cases {
+                assert_eq!(
+                    Duration::from_secs(expected_timeout_secs),
+                    IpfsAddQuery::timeout_duration(Some(file_size)),
+                    "unexpected timeout for file size {file_size}"
+                );
+            }
+        }
+
+        #[test]
+        fn timeout_is_based_on_the_uploaded_file_size() {
+            let test_dir = temp_dir_create!();
+            let file_path = test_dir.join("43-mib-file.bin");
+            std::fs::File::create(&file_path).unwrap().set_len(43 * MIB).unwrap();
+
+            let query = IpfsAddQuery::new(file_path);
+            assert_eq!(Duration::from_secs(53), query.timeout());
+        }
     }
 }
