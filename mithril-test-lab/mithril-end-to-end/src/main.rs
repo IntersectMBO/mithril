@@ -18,14 +18,24 @@ use tokio::{
     task::JoinSet,
 };
 
-use mithril_common::{StdResult, entities::SignedEntityTypeDiscriminants};
+use mithril_common::{
+    StdResult,
+    entities::{
+        BlockNumber, BlockNumberOffset, CardanoBlocksTransactionsSigningConfig,
+        CardanoTransactionsSigningConfig, Epoch, ProtocolParameters, SignedEntityTypeDiscriminants,
+    },
+    messages::SignedEntityTypeDiscriminantsMessage,
+};
 use mithril_doc::GenerateDocCommands;
-use mithril_end_to_end::scenario::{FullScenario, MinimalScenario, RunOnlyScenario};
 use mithril_end_to_end::toolkit::{ScenarioToolkit, ScenarioToolkitContext};
 use mithril_end_to_end::{
     AggregateSignatureType, Aggregator, Client, CompatibilityChecker, CompatibilityCheckerError,
     Devnet, DevnetBootstrapArgs, DmqNodeFlavor, MithrilInfrastructure, MithrilInfrastructureConfig,
     NodeVersion, RelaySigner, RetryableDevnetError, Signer,
+};
+use mithril_end_to_end::{
+    ProtocolConfiguration,
+    scenario::{FullScenario, MinimalScenario, RunOnlyScenario},
 };
 
 /// Default signed entity types used by scenarios that support multiple entities, such as Full and RunOnly.
@@ -200,6 +210,14 @@ struct MithrilArgs {
     /// Mithril era reader adapter
     #[clap(long, default_value = "cardano-chain")]
     mithril_era_reader_adapter: String,
+
+    /// Protocol configuration reader adapter
+    #[clap(long, default_value = "cardano-chain")]
+    protocol_configuration_reader_adapter: String,
+
+    /// Signers read on-chain protocol configurations
+    #[clap(long, default_value_t = false)]
+    signers_read_on_chain_protocol_configurations: bool,
 
     /// Aggregate signature type used to create the certificates
     #[clap(long, value_enum, default_value = "Concatenation")]
@@ -494,6 +512,9 @@ impl App {
         .await?;
         *self.devnet.lock().await = Some(devnet.clone());
 
+        let startup_protocol_configuration =
+            Self::build_startup_protocol_configuration(&args.mithril.aggregate_signature_type);
+
         let infrastructure = Arc::new(
             MithrilInfrastructure::start(
                 toolkit.clone(),
@@ -510,6 +531,10 @@ impl App {
                     mithril_run_interval: args.mithril.mithril_run_interval,
                     mithril_era: args.mithril.mithril_era,
                     mithril_era_reader_adapter: args.mithril.mithril_era_reader_adapter,
+                    protocol_configuration_reader_adapter: args
+                        .mithril
+                        .protocol_configuration_reader_adapter,
+                    startup_protocol_configuration,
                     signed_entity_types: scenario.signed_entity_types(),
                     aggregate_signature_type: args.mithril.aggregate_signature_type,
                     use_dmq,
@@ -520,6 +545,9 @@ impl App {
                     skip_signature_delayer: args.mithril.skip_signature_delayer,
                     use_p2p_passive_relays,
                     use_era_specific_work_dir: args.mithril.mithril_next_era.is_some(),
+                    signers_read_on_chain_protocol_configurations: args
+                        .mithril
+                        .signers_read_on_chain_protocol_configurations,
                 },
             )
             .await?,
@@ -571,6 +599,40 @@ impl App {
                 self.last_error_in_logs().await;
                 Err(error)
             }
+        }
+    }
+
+    fn build_startup_protocol_configuration(
+        aggregate_signature_type: &AggregateSignatureType,
+    ) -> ProtocolConfiguration {
+        let protocol_parameters = match aggregate_signature_type {
+            AggregateSignatureType::Concatenation => ProtocolParameters {
+                k: 274,
+                m: 420,
+                phi_f: 0.77,
+            },
+            AggregateSignatureType::Snark | AggregateSignatureType::IvcSnark => {
+                ProtocolParameters {
+                    k: 5,
+                    m: 9,
+                    phi_f: 0.95,
+                }
+            }
+        };
+        ProtocolConfiguration {
+            epoch: Epoch(0),
+            protocol_parameters,
+            cardano_transaction_signing_config: Some(CardanoTransactionsSigningConfig {
+                security_parameter: BlockNumberOffset(1),
+                step: BlockNumber(15),
+            }),
+            cardano_blocks_transactions_signing_config: Some(
+                CardanoBlocksTransactionsSigningConfig {
+                    security_parameter: BlockNumberOffset(1),
+                    step: BlockNumber(15),
+                },
+            ),
+            enabled_signed_entity_types: SignedEntityTypeDiscriminantsMessage::all_known(),
         }
     }
 }

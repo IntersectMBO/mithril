@@ -32,11 +32,13 @@ format is: `- **since 'X.Y.Z' (distribution version) [to 'X.Y.Z' (distribution v
 - **since `0.12.11` (2524.0)**: removal of `cardano-db-v2` replaced with `cardano-db [command] --backend [v1,v2]`
 - **since `0.11.14` (2517.0)**: addition of `--include-ancillary` flag to `cardano-db download`
 - **since `0.11.13` (2517.0)**: addition of global `--origin-tag` parameter
+- **since `1.2.0` (next to 2630.0)**: support of on cardano on-chain protocol parameters
 
 ### Mithril aggregator
 
 - **since `0.8.34`**: addition of `--mithril-era` flag to `genesis bootstrap` command
 - **since `0.7.94` (next to 2543.1)**: only the leader aggregator must be restarted when updating protocol parameters
+- **since `0.10.0` (next to 2630.0)**: support of on cardano on-chain protocol parameters
 
 ### Mithril signer
 

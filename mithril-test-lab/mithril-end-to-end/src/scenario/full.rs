@@ -175,7 +175,7 @@ impl FullScenario {
             )
             .await?;
 
-        if aggregator.is_first() || aggregator.version().is_below("0.7.94") {
+        if aggregator.is_leader() || aggregator.version().is_below("0.7.94") {
             // Ensure the current epoch is certified
             // Given the time needed to restart the aggregator, a restart crossing an epoch
             // boundary before the current epoch is certified would create an unrecoverable
@@ -190,9 +190,10 @@ impl FullScenario {
                 .is_creating_certificate_with_min_epoch(aggregator, current_epoch)
                 .await?;
 
+            // Write new protocol parameters 3 epoch in the future to let time to nodes to properly switch to the new configuration
             self.toolkit
                 .exec
-                .update_protocol_parameters(aggregator, infrastructure.aggregate_signature_type())
+                .update_protocol_parameters(aggregator, infrastructure, target_epoch + 3)
                 .await?;
         }
 
@@ -213,7 +214,7 @@ impl FullScenario {
         // Verify that artifacts are produced and signed correctly after era switch
         if let Some(next_era) = &self.next_era {
             // Switch to next era
-            if aggregator.is_first() {
+            if aggregator.is_leader() {
                 infrastructure.register_switch_to_next_era(next_era).await?;
             }
             target_epoch += 5;

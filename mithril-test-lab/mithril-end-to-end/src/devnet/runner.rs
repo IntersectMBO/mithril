@@ -199,6 +199,20 @@ impl Devnet {
             .with_context(|| "Failed to read mithril era marker address file")
     }
 
+    pub fn protocol_configuration_marker_address_path(&self) -> PathBuf {
+        self.artifacts_dir.join("addresses").join("protocol-config.addr")
+    }
+
+    pub fn protocol_configuration_marker_address(&self) -> StdResult<String> {
+        let mut marker_address_file =
+            File::open(self.protocol_configuration_marker_address_path())?;
+        let mut marker_address_buffer = Vec::new();
+        marker_address_file.read_to_end(&mut marker_address_buffer)?;
+
+        String::from_utf8(marker_address_buffer)
+            .with_context(|| "Failed to read protocol configuration marker address file")
+    }
+
     pub fn mithril_payments_transaction_hashes_path(&self) -> PathBuf {
         self.artifacts_dir.join("transaction-hashes.txt")
     }
@@ -368,6 +382,31 @@ impl Devnet {
                 "Write era marker on chain exited with status code: {code}"
             )))),
             None => Err(anyhow!("Write era marker on chain terminated by signal")),
+        }
+    }
+
+    pub async fn write_protocol_configuration_markers(&self, target_path: &Path) -> StdResult<()> {
+        let run_script = "protocol-configuration.sh";
+        let run_script_path = self.artifacts_dir.join(run_script);
+        let mut run_command = self.build_command(&run_script_path)?;
+        run_command.env("PROTOCOL_CONFIG_DATUM_FILE", target_path.to_str().unwrap());
+
+        info!("Writing protocol configuration markers on chain"; "script" => &run_script_path.display());
+
+        let status = run_command
+            .spawn()
+            .with_context(|| "Failed to write protocol configuration markers on chain")?
+            .wait_forwarding_output_to_slog_scope(run_script)
+            .await
+            .with_context(|| "Error while writing protocol configuration markers on chain")?;
+        match status.code() {
+            Some(0) => Ok(()),
+            Some(code) => Err(anyhow!(RetryableDevnetError(format!(
+                "Write protocol configuration markers on chain exited with status code: {code}"
+            )))),
+            None => Err(anyhow!(
+                "Write protocol configuration markers on chain terminated by signal"
+            )),
         }
     }
 
