@@ -5,7 +5,7 @@ sidebar_label: Concatenation
 
 # Concatenation
 
-The concatenation method for aggregating the signatures is the most straighforward one. It uses BLS signatures for its batching capability in order to have faster verification. The prover checks the validity of the signatures received and that they correctly won the lottery with their indices. It then verifies that the leaf does belong to the [Merkle tree](../../../../glossary.md#merkle-tree) using the Merkle root and the Merkle path. Finally, the prover selects enough valid signatures to reach the threshold of `k` valid indices, and packs them together in one structure to create the proof.
+The concatenation method for aggregating the signatures is the most straightforward one. It uses BLS signatures for its batching capability in order to have faster verification. The prover checks the validity of the signatures received and that they correctly won the lottery with their indices. It then verifies that the signer's leaf does belong to the [Merkle tree](../../../../glossary.md#merkle-tree) using the aggregate verification key `AVK` (the Merkle root of the tree) and the Merkle path. Finally, the prover selects enough valid signatures to reach the threshold of `k` valid indices, and packs them together in one structure to create the proof.
 
 ```mermaid
 flowchart LR
@@ -13,7 +13,7 @@ flowchart LR
 
     subgraph Loop["Prover: Per signature received"]
         direction LR
-        L["Check lottery won<br/>for the claimed index"]
+        L["Check lottery won<br/>for the claimed indices"]
         M["Check Merkle path<br/>membership under AVK"]
     end
 
@@ -23,7 +23,7 @@ flowchart LR
 
 ## How the proof is verified
 
-To verify the proof, a verifier does the same checks as the prover: that each of signatures won its lottery for the claimed indices, and that each corresponding leaf belongs to the Merkle tree under the aggregate verification key. Since the signatures are BLS signatures, all the signatures can be combined into a single aggregate signature and verified together in one check, rather than individually.
+To verify the proof, a verifier does the same checks as the prover: that each of the signatures won its lottery for the claimed indices, and that each corresponding leaf belongs to the Merkle tree under `AVK`. Since the signatures are BLS signatures, all the signatures can be combined into a single aggregate signature and verified together in one check, rather than individually.
 
 ```mermaid
 flowchart LR
