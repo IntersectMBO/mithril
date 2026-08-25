@@ -5,7 +5,11 @@ sidebar_label: Recursive SNARK
 
 # Recursive SNARK
 
-## Introduction
+:::danger
+
+This aggregation flavor is still unstable.
+
+:::
 
 A recursive SNARK is a SNARK whose circuit performs the verification of other SNARK proofs, including itself. Using such a SNARK, it is possible to build a circuit that will perform the verification of both the non-recursive SNARK proof and the recursive SNARK proof. The recursive SNARK uses an IVC (incrementally verifiable computation) to build a proof step by step. From there, one can create a chain of proofs such that each step verifies that the chain is valid and that the newly added proof is valid.
 
