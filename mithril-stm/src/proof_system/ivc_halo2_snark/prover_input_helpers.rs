@@ -11,7 +11,10 @@ use crate::{
     },
     proof_system::{
         halo2_snark::build_snark_message,
-        ivc_halo2_snark::{prover_setup::IvcSnarkProverSetup, rolling_state::IvcRollingState},
+        ivc_halo2_snark::{
+            errors::IvcProofError, prover_setup::IvcSnarkProverSetup,
+            rolling_state::IvcRollingState,
+        },
     },
 };
 
@@ -146,7 +149,8 @@ pub(crate) fn build_next_state(
 }
 
 /// Folds the certificate proof's accumulator and the previous IVC proof's accumulator
-/// into the rolling state's accumulator, then collapses the result.
+/// into the rolling state's accumulator, then collapses the result. Check that the
+/// result verifies before returning it.
 ///
 /// The returned accumulator is the off-circuit twin of the one the in-circuit IVC
 /// verifier gadget computes from the same inputs; the new IVC proof commits to it.
@@ -168,6 +172,9 @@ pub(crate) fn build_next_accumulator(
         previous_ivc_proof_collapsed_accumulator,
     ]);
     next_accumulator.collapse();
+    if !next_accumulator.check(&setup.srs.verifier_params(), &setup.combined_fixed_bases) {
+        return Err(IvcProofError::InvalidNextAccumulator.into());
+    }
     Ok(next_accumulator)
 }
 

@@ -34,4 +34,10 @@ pub(crate) enum IvcProofError {
         "IVC proof rejected: the message used to create the proof is different from the input message"
     )]
     InvalidMessage,
+
+    /// New accumulator created from the previous ivc proof and new certificate proof does not verify
+    #[error(
+        "IVC proof rejected: New accumulator created from the previous ivc proof and new certificate proof does not verify"
+    )]
+    InvalidNextAccumulator,
 }

@@ -138,9 +138,10 @@ impl IvcRollingState {
             == self.state.current_epoch.as_field() + EpochNumber::new(1).as_field()
     }
 
-    /// Asserts that protocol_parameters and next_protocol_parameters agree.
+    /// Asserts that protocol_parameters and next_protocol_parameters agree for
+    /// every step except genesis.
     pub(crate) fn assert_protocol_parameters_unchanged(&self) -> StmResult<()> {
-        if self.state.step_counter.is_not_first_step()
+        if !self.is_genesis()
             && self.state.protocol_parameters != self.state.next_protocol_parameters
         {
             return Err(IvcCircuitError::ProtocolParametersChanged.into());
@@ -521,7 +522,7 @@ mod tests {
         }
 
         #[test]
-        fn passes_at_first_step_even_when_protocol_parameters_differ() {
+        fn rejects_at_first_step_when_protocol_parameters_differ() {
             let rolling_state = build_rolling_state(
                 StepCounter::new(1),
                 EpochNumber::ZERO,
@@ -530,7 +531,14 @@ mod tests {
                 ProtocolParametersHash::from_field(BaseFieldElement::from(7u64).0),
             );
 
-            assert!(rolling_state.assert_protocol_parameters_unchanged().is_ok());
+            let err = rolling_state.assert_protocol_parameters_unchanged().unwrap_err();
+            let circuit_error = err
+                .downcast_ref::<IvcCircuitError>()
+                .expect("error chain should carry IvcCircuitError");
+            assert!(matches!(
+                circuit_error,
+                IvcCircuitError::ProtocolParametersChanged
+            ));
         }
 
         #[test]
