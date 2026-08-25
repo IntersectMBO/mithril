@@ -34,7 +34,7 @@ pub const TAR_ZSTD_V1_TEST_CHAIN_DIRECTORY_AND_DATA_SHA256: &str =
 /// ├── bar/
 /// ├── foo/
 /// │   └── bar.txt
-/// ├── empty_file.txt
+/// ├── empty.txt
 /// ├── file_1.txt
 /// ├── file_2.txt
 /// └── file_with_a_very_very_long_name_a_name_longer_than_100_caracters_so_tar_switch_to_the_GNU_longname_extension.txt

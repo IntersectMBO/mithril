@@ -61,8 +61,6 @@ pub fn test_dir_entries() -> Vec<PathBuf> {
 /// │   └── bar.txt
 /// ├── file_1.txt
 /// ├── file_2.txt
-/// ├── empty_file.txt
-/// └── file_with_a_name_longer_than_100_caracters_so_tar_switch_to_the_GNU_longname_extension.txt
 /// ```
 pub fn create_test_dir(root_dir: &Path) -> PathBuf {
     let test_dir = helpers::create_dir(root_dir, "test_dir");
