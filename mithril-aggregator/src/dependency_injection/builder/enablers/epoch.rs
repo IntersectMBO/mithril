@@ -2,8 +2,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use mithril_protocol_config::{
-    builder::build_protocol_configuration_adapter, http::HttpMithrilNetworkConfigurationProvider,
-    interface::MithrilNetworkConfigurationProvider, interface::ProtocolConfigurationMarkersReader,
+    builder::build_protocol_configuration_adapter, interface::MithrilNetworkConfigurationProvider,
+    interface::ProtocolConfigurationMarkersReader,
     markers::MarkersMithrilNetworkConfigurationProvider,
     test::double::FakeProtocolConfigurationMarkersReader,
 };
@@ -47,22 +47,10 @@ impl DependenciesBuilder {
     async fn build_mithril_network_configuration_provider(
         &mut self,
     ) -> Result<Arc<dyn MithrilNetworkConfigurationProvider>> {
-        let network_configuration_provider: Arc<dyn MithrilNetworkConfigurationProvider> =
-            if self.configuration.is_follower_aggregator() {
-                Arc::new(HttpMithrilNetworkConfigurationProvider::new(
-                    self.get_leader_aggregator_client().await?,
-                    self.root_logger(),
-                ))
-            } else {
-                let protocol_configuration_adapter =
-                    self.get_protocol_configuration_reader().await?;
-                Arc::new(MarkersMithrilNetworkConfigurationProvider::new(
-                    self.root_logger(),
-                    protocol_configuration_adapter,
-                ))
-            };
-
-        Ok(network_configuration_provider)
+        Ok(Arc::new(MarkersMithrilNetworkConfigurationProvider::new(
+            self.root_logger(),
+            self.get_protocol_configuration_reader().await?,
+        )))
     }
 
     /// [MithrilNetworkConfigurationProvider][mithril_protocol_config::interface::MithrilNetworkConfigurationProvider] service

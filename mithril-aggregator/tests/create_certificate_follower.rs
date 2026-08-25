@@ -124,7 +124,7 @@ async fn create_certificate_follower() {
     let mut leader_tester = RuntimeTester::build(
         start_time_point.clone(),
         leader_configuration.clone(),
-        protocol_configuration_markers,
+        protocol_configuration_markers.clone(),
     )
     .await;
     let leader_aggregator_http_server =
@@ -142,9 +142,7 @@ async fn create_certificate_follower() {
     let mut follower_tester = RuntimeTester::build(
         start_time_point,
         follower_configuration,
-        // Follower must retrieve parameters from the network configuration (today through the leader)
-        // so this parameters should not be read
-        ConfigurationResolverFromMarkers::new(BTreeMap::new()),
+        protocol_configuration_markers,
     )
     .await;
 

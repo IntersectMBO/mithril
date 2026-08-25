@@ -72,9 +72,7 @@ async fn follower_can_cycle_to_ready_to_signing_with_unknown_and_discontinued_si
     let mut follower_tester = RuntimeTester::build(
         start_time_point,
         follower_configuration,
-        // Follower must retrieve parameters from the network configuration (today through the leader)
-        // so this parameters should not be read
-        ConfigurationResolverFromMarkers::new(BTreeMap::new()),
+        protocol_configuration_markers,
     )
     .await;
 
