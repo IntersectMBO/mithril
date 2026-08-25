@@ -18,7 +18,7 @@ use crate::{
             IvcTransitionType, build_next_accumulator, build_next_state,
             create_snark_message_for_next_state, verify_certificate_proof,
         },
-        prover_setup::IvcSnarkProverSetup,
+        prover_setup::IvcProverInputVerificationContext,
         rolling_state::IvcRollingState,
     },
 };
@@ -52,7 +52,7 @@ impl IvcProverInput {
         global: &Global,
         protocol_message_preimage: &ProtocolMessagePreimage,
         rolling_state: &IvcRollingState,
-        prover_setup: &IvcSnarkProverSetup,
+        verification_context: &IvcProverInputVerificationContext,
     ) -> StmResult<Self> {
         let transition_type = IvcTransitionType::try_compute_transition_type(
             rolling_state,
@@ -70,7 +70,7 @@ impl IvcProverInput {
             certificate_proof,
             message,
             aggregate_verification_key_for_snark,
-            prover_setup,
+            verification_context,
         )?;
 
         let (certificate_message_hash, certificate_merkle_tree_commitment) =
@@ -84,8 +84,12 @@ impl IvcProverInput {
             protocol_message_preimage,
         )?;
 
-        let next_accumulator =
-            build_next_accumulator(certificate_dual_msm, rolling_state, prover_setup, global)?;
+        let next_accumulator = build_next_accumulator(
+            certificate_dual_msm,
+            rolling_state,
+            verification_context,
+            global,
+        )?;
 
         let witness = Witness::new(
             rolling_state.genesis_signature(),
@@ -182,6 +186,7 @@ mod test {
                     IvcCircuitVerificationKeyRepresentation, StepCounter,
                 },
             },
+            proof_system::ivc_halo2_snark::prover_setup::IvcSnarkProverSetup,
             signature_scheme::{SchnorrSignatureError, StandardSchnorrSignature},
         };
 
@@ -410,7 +415,7 @@ mod test {
                 &global,
                 &protocol_message_preimage,
                 &rolling_state,
-                setup,
+                &setup.prover_input_verification_context(),
             )
             .expect("prepare should succeed at genesis");
 
@@ -455,7 +460,7 @@ mod test {
                 &global,
                 &protocol_message_preimage,
                 &rolling_state,
-                setup,
+                &setup.prover_input_verification_context(),
             )
             .expect("prepare should succeed at same-epoch step");
 
@@ -501,7 +506,7 @@ mod test {
                 &global,
                 &protocol_message_preimage,
                 &rolling_state,
-                setup,
+                &setup.prover_input_verification_context(),
             )
             .expect("prepare should succeed at next-epoch step");
 
@@ -549,7 +554,7 @@ mod test {
                 &global,
                 &protocol_message_preimage,
                 &rolling_state,
-                setup,
+                &setup.prover_input_verification_context(),
             );
 
             let err = result
@@ -588,7 +593,7 @@ mod test {
                 &global,
                 &protocol_message_preimage,
                 &rolling_state,
-                setup,
+                &setup.prover_input_verification_context(),
             );
 
             let err = result
@@ -638,7 +643,7 @@ mod test {
                 &global,
                 &protocol_message_preimage,
                 &rolling_state,
-                setup,
+                &setup.prover_input_verification_context(),
             );
 
             let err = result
@@ -694,7 +699,7 @@ mod test {
                 &global,
                 &protocol_message_preimage,
                 &rolling_state,
-                setup,
+                &setup.prover_input_verification_context(),
             );
 
             let err = result

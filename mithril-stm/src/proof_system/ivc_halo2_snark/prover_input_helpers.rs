@@ -11,7 +11,9 @@ use crate::{
     },
     proof_system::{
         halo2_snark::build_snark_message,
-        ivc_halo2_snark::{prover_setup::IvcSnarkProverSetup, rolling_state::IvcRollingState},
+        ivc_halo2_snark::{
+            prover_setup::IvcProverInputVerificationContext, rolling_state::IvcRollingState,
+        },
     },
 };
 
@@ -69,20 +71,20 @@ impl IvcTransitionType {
 
 /// Runs the off-circuit verifier on the certificate proof and returns the prepared `DualMSM`.
 ///
-/// The certificate verifying key is taken from `setup.certificate_verifying_key` — the single
-/// source shared with the in-circuit IVC verifier gadget — so the off-circuit accumulator built by
-/// `prepare_and_check` agrees with the one the gadget produces on the same proof.
+/// The certificate verifying key comes from the verification context — the single source shared with the
+/// in-circuit IVC verifier gadget — so the off-circuit accumulator built by `prepare_and_check` agrees with
+/// the one the gadget produces on the same proof.
 pub(crate) fn verify_certificate_proof<D: MembershipDigest>(
     certificate_proof: &SnarkProof<D>,
     certificate_message_bytes: &[u8],
     aggregate_verification_key_for_snark: &AggregateVerificationKeyForSnark<D>,
-    setup: &IvcSnarkProverSetup,
+    verification_context: &IvcProverInputVerificationContext,
 ) -> StmResult<DualMSM<Bls12>> {
     certificate_proof.prepare_and_check(
         certificate_message_bytes,
         aggregate_verification_key_for_snark,
-        &setup.certificate_verifying_key,
-        &setup.srs.verifier_params(),
+        verification_context.certificate_verifying_key(),
+        verification_context.verifier_params(),
     )
 }
 
@@ -140,15 +142,16 @@ pub(crate) fn build_next_state(
 pub(crate) fn build_next_accumulator(
     certificate_dual_msm: DualMSM<Bls12>,
     rolling_state: &IvcRollingState,
-    setup: &IvcSnarkProverSetup,
+    verification_context: &IvcProverInputVerificationContext,
     global: &Global,
 ) -> StmResult<Accumulator<BlstrsEmulation>> {
     let certificate_collapsed_accumulator =
-        setup.certificate_collapsed_accumulator(certificate_dual_msm)?;
-    let previous_ivc_proof_collapsed_accumulator = setup.previous_ivc_proof_collapsed_accumulator(
-        rolling_state.ivc_proof().as_bytes(),
-        &rolling_state.previous_ivc_proof_public_inputs(global),
-    )?;
+        verification_context.certificate_collapsed_accumulator(certificate_dual_msm)?;
+    let previous_ivc_proof_collapsed_accumulator = verification_context
+        .previous_ivc_proof_collapsed_accumulator(
+            rolling_state.ivc_proof().as_bytes(),
+            &rolling_state.previous_ivc_proof_public_inputs(global),
+        )?;
     let mut next_accumulator = Accumulator::accumulate(&[
         rolling_state.accumulator().clone(),
         certificate_collapsed_accumulator,
