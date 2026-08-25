@@ -15,10 +15,15 @@ pub(crate) const STATE_SECTION_ROWS: usize = 7;
 /// A field of the global root-of-trust section, in the order the circuit constrains it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GlobalField {
+    /// Message the genesis signature was produced over.
     GenesisMessage,
+    /// X coordinate of the genesis verification key.
     GenesisVerificationKeyX,
+    /// Y coordinate of the genesis verification key.
     GenesisVerificationKeyY,
+    /// Transcript representation of the certificate circuit verifying key.
     CertificateCircuitVerificationKeyRepresentation,
+    /// Transcript representation of the recursive circuit verifying key.
     IvcCircuitVerificationKeyRepresentation,
 }
 
@@ -56,12 +61,19 @@ impl GlobalField {
 /// A field of the next-state section, in the order the circuit constrains it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum StateField {
+    /// Number of recursive steps taken.
     StepCounter,
+    /// Message hash the step aggregates.
     Message,
+    /// Merkle-tree commitment the aggregated certificate was verified against.
     MerkleTreeCommitment,
+    /// Merkle-tree commitment decoded from the message preimage.
     NextMerkleTreeCommitment,
+    /// Protocol parameters in force for this step.
     ProtocolParameters,
+    /// Protocol parameters decoded from the message preimage.
     NextProtocolParameters,
+    /// Epoch decoded from the message preimage.
     CurrentEpoch,
 }
 
