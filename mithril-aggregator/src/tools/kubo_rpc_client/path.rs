@@ -7,28 +7,6 @@ use std::fmt::Display;
 #[serde(transparent)]
 pub struct IpfsMfsDirPath(String);
 
-impl IpfsMfsDirPath {
-    /// Creates a new instance of `IpfsMfsDirPath` from the given path-like input.
-    ///
-    /// This function takes an input that can be represented as a string and ensures
-    /// the following:
-    /// - The resulting path always starts with a '/' if it does not already.
-    /// - The resulting path always ends with a '/' if it does not already.
-    pub fn from<P: AsRef<str>>(path: P) -> Self {
-        let mut path = path.as_ref().to_string();
-
-        if !path.starts_with('/') {
-            path.insert(0, '/');
-        }
-
-        if !path.ends_with('/') {
-            path.push('/');
-        }
-
-        Self(path)
-    }
-}
-
 impl Display for IpfsMfsDirPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
@@ -41,13 +19,44 @@ impl<'de> serde::Deserialize<'de> for IpfsMfsDirPath {
         D: serde::Deserializer<'de>,
     {
         let path = String::deserialize(deserializer)?;
-        Ok(Self::from(&path))
+        Ok(Self::from(path))
     }
 }
 
 impl AsRef<str> for IpfsMfsDirPath {
     fn as_ref(&self) -> &str {
         &self.0
+    }
+}
+
+impl From<String> for IpfsMfsDirPath {
+    /// Converts a [String] into an `IpfsMfsDirPath`.
+    ///
+    /// It ensures the following:
+    /// - The resulting path always starts with a '/' if it does not already.
+    /// - The resulting path always ends with a '/' if it does not already.
+    fn from(path: String) -> Self {
+        let mut path = path;
+        if !path.starts_with('/') {
+            path.insert(0, '/');
+        }
+
+        if !path.ends_with('/') {
+            path.push('/');
+        }
+
+        Self(path)
+    }
+}
+
+impl From<&str> for IpfsMfsDirPath {
+    /// Converts a [str] into an `IpfsMfsDirPath`.
+    ///
+    /// It ensures the following:
+    /// - The resulting path always starts with a '/' if it does not already.
+    /// - The resulting path always ends with a '/' if it does not already.
+    fn from(value: &str) -> Self {
+        value.to_string().into()
     }
 }
 
