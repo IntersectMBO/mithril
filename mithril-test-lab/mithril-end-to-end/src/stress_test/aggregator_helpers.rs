@@ -67,6 +67,12 @@ pub async fn bootstrap_aggregator(
         .set_protocol_parameters(&signers_fixture.protocol_parameters())
         .await;
 
+    aggregator
+        .set_fake_protocol_configuration_reader_adapter_config(
+            &signers_fixture.protocol_parameters(),
+        )
+        .await;
+
     let cardano_transaction_signing_config = Some(CardanoTransactionsSigningConfig {
         security_parameter: BlockNumberOffset(1),
         step: BlockNumber(15),

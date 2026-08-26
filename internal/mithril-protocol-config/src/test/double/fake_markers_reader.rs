@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Dummy reader is intended to be used in a test environment (end to end test)
-/// to simulate retreiving protocol configurations
+/// to simulate retrieving protocol configurations
 pub struct FakeProtocolConfigurationMarkersReader {
     markers: RwLock<ConfigurationResolverFromMarkers>,
 }
@@ -36,6 +36,35 @@ impl FakeProtocolConfigurationMarkersReader {
     pub fn set_markers(&self, markers: ConfigurationResolverFromMarkers) {
         let mut my_markers = self.markers.write().unwrap();
         *my_markers = markers;
+    }
+
+    /// Instantiate a default ProtocolConfigurationMarkersReader with given ProtocolParameters and default values
+    pub fn default_with_protocol_parameters(protocol_parameters: ProtocolParameters) -> Self {
+        let markers = BTreeMap::from([(
+            Epoch(0),
+            ProtocolConfigurationForEpoch {
+                protocol_parameters,
+                enabled_signed_entity_types: BTreeSet::from([
+                    SignedEntityTypeDiscriminants::MithrilStakeDistribution,
+                    SignedEntityTypeDiscriminants::CardanoStakeDistribution,
+                    SignedEntityTypeDiscriminants::CardanoDatabase,
+                    SignedEntityTypeDiscriminants::CardanoTransactions,
+                    SignedEntityTypeDiscriminants::CardanoBlocksTransactions,
+                ]),
+                cardano_transactions: Some(CardanoTransactionsSigningConfig {
+                    security_parameter: BlockNumberOffset(120),
+                    step: BlockNumber(15),
+                }),
+                cardano_blocks_transactions: Some(CardanoBlocksTransactionsSigningConfig {
+                    security_parameter: BlockNumberOffset(120),
+                    step: BlockNumber(15),
+                }),
+            },
+        )]);
+
+        FakeProtocolConfigurationMarkersReader {
+            markers: RwLock::new(ConfigurationResolverFromMarkers::new(markers)),
+        }
     }
 }
 

@@ -5,7 +5,10 @@ use std::{str::FromStr, sync::Arc};
 use serde::Deserialize;
 
 use mithril_cardano_node_chain::{chain_observer::ChainObserver, entities::ChainAddress};
-use mithril_common::crypto_helper::ProtocolConfigurationMarkersVerifierVerificationKey;
+use mithril_common::{
+    crypto_helper::ProtocolConfigurationMarkersVerifierVerificationKey,
+    entities::ProtocolParameters,
+};
 
 use crate::{
     cardano_chain::protocol_configuration_reader::CardanoChainProtocolConfigurationMarkersReader,
@@ -26,8 +29,11 @@ pub enum AdapterConfig {
         verification_key: Box<ProtocolConfigurationMarkersVerifierVerificationKey>,
     },
 
-    /// Fake protocol configuration adapter with default value at epoch 0 (for test usage)
-    Fake,
+    /// Fake protocol configuration adapter with given protocol parameters and default value, at epoch 0 (for test usage)
+    Fake {
+        /// Protocol parameters
+        protocol_parameters: ProtocolParameters,
+    },
 }
 
 impl FromStr for AdapterConfig {
@@ -52,7 +58,13 @@ pub fn build_protocol_configuration_adapter(
             chain_observer,
             *verification_key,
         )),
-        AdapterConfig::Fake => Arc::new(FakeProtocolConfigurationMarkersReader::default()),
+        AdapterConfig::Fake {
+            protocol_parameters,
+        } => Arc::new(
+            FakeProtocolConfigurationMarkersReader::default_with_protocol_parameters(
+                protocol_parameters,
+            ),
+        ),
     }
 }
 
@@ -64,7 +76,7 @@ mod test {
     static VERIFICATION_KEY: &str = "5b35352c3232382c3134342c38372c3133382c3133362c34382c382c31342c3138372c38352c3134382c39372c3233322c3235352c3232392c33382c3234342c3234372c3230342c3139382c31332c33312c3232322c32352c3136342c35322c3130322c39312c3132302c3230382c3134375d";
 
     #[test]
-    fn deserialize_adapter_config_from_json() {
+    fn deserialize_cardano_chain_adapter_config_from_json() {
         let serialized_json = serde_json::json!({
             "type": "cardano-chain",
             "address": "my_address",
@@ -79,6 +91,32 @@ mod test {
             AdapterConfig::CardanoChain {
                 address: "my_address".to_string(),
                 verification_key: Box::new(VERIFICATION_KEY.try_into().expect("should not fail"))
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_fake_adapter_config_from_json() {
+        let serialized_json = serde_json::json!({
+            "type": "fake",
+            "protocol_parameters": {
+                "k": 1944,
+                "m": 16948,
+                "phi_f": 0.2
+            },
+        });
+
+        let payload = serde_json::to_string(&serialized_json).unwrap();
+        let deserialized: AdapterConfig = serde_json::from_str(&payload).unwrap();
+
+        assert_eq!(
+            deserialized,
+            AdapterConfig::Fake {
+                protocol_parameters: ProtocolParameters {
+                    k: 1944,
+                    m: 16948,
+                    phi_f: 0.2
+                }
             }
         );
     }

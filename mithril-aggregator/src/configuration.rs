@@ -809,7 +809,13 @@ impl ServeCommandConfiguration {
             store_retention_limit: None,
             era_reader_adapter_type: EraReaderAdapterType::Bootstrap,
             era_reader_adapter_params: None,
-            protocol_configuration_reader_adapter_config: AdapterConfig::Fake,
+            protocol_configuration_reader_adapter_config: AdapterConfig::Fake {
+                protocol_parameters: ProtocolParameters {
+                    k: 5,
+                    m: 100,
+                    phi_f: 0.95,
+                },
+            },
             ancillary_files_signer_config: AncillaryFilesSignerConfig::SecretKey {
                 secret_key: ancillary_files_signer_secret_key.to_json_hex().unwrap(),
             },

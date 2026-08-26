@@ -92,7 +92,7 @@ impl Aggregator {
                     PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY
                 )
             } else {
-                r#"{{"type": "fake"}}"#.to_string()
+                r#"{"type":"fake","protocol_parameters":{"k":5,"m":100,"phi_f":0.95}}"#.to_string()
             };
         let ancillary_files_signer_config =
             format!(r#"{{"type": "secret-key", "secret_key": "{ANCILLARY_MANIFEST_SECRET_KEY}"}}"#);
@@ -453,6 +453,18 @@ impl Aggregator {
             "PROTOCOL_PARAMETERS__PHI_F",
             &format!("{}", protocol_parameters.phi_f),
         );
+    }
+
+    pub async fn set_fake_protocol_configuration_reader_adapter_config(
+        &self,
+        protocol_parameters: &entities::ProtocolParameters,
+    ) {
+        let mut command = self.command.write().await;
+        let fake_config = format!(
+            r#"{{"type": "fake", "protocol_parameters":{{"k":{},"m":{},"phi_f":{}}}}}"#,
+            protocol_parameters.k, protocol_parameters.m, protocol_parameters.phi_f
+        );
+        command.set_env_var("PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG", &fake_config);
     }
 
     pub async fn set_signing_config(
