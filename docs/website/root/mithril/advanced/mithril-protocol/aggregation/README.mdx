@@ -8,12 +8,6 @@ This section details the different ways the Mithril protocol can aggregate the s
 
 Here is a summary of the differences between the aggregation flavors with regards to the proof size:
 
-| Method              | Proof size for the chain                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Concatenation       | Grows with the number of signatures in the proofs, and the certificate chain still has to be walked back to genesis |
-| Non-recursive SNARK | ~4KB per proof, one proof per step between target and genesis, independent of `k`                                   |
-| Recursive SNARK     | ~13KB for one proof, independent of `k` and of chain length                                                         |
-
 | Method              | Proof size for the chain                                                                                            | Proving time | Verification time |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------- |
 | Concatenation       | Grows with the number of signatures in the proofs, and the certificate chain still has to be walked back to genesis |              |                   |
