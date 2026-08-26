@@ -46,6 +46,7 @@ pub struct MithrilInfrastructureConfig {
     pub mithril_era: String,
     pub mithril_era_reader_adapter: String,
     pub protocol_configuration_reader_adapter: String,
+    pub signer_protocol_configuration_reader_adapter: String,
     pub startup_protocol_configuration: ProtocolConfiguration,
     pub signed_entity_types: Vec<String>,
     pub aggregate_signature_type: AggregateSignatureType,
@@ -57,7 +58,6 @@ pub struct MithrilInfrastructureConfig {
     pub use_dmq: bool,
     pub dmq_node_flavor: Option<DmqNodeFlavor>,
     pub use_era_specific_work_dir: bool,
-    pub signers_read_on_chain_protocol_configurations: bool,
 }
 
 impl MithrilInfrastructureConfig {
@@ -87,6 +87,7 @@ impl MithrilInfrastructureConfig {
             mithril_era: "era1".to_string(),
             mithril_era_reader_adapter: "adapter1".to_string(),
             protocol_configuration_reader_adapter: "adapter1".to_string(),
+            signer_protocol_configuration_reader_adapter: "adapter1".to_string(),
             startup_protocol_configuration: ProtocolConfiguration {
                 epoch: Epoch(42),
                 protocol_parameters: ProtocolParameters::new(10, 20, 0.123),
@@ -106,7 +107,6 @@ impl MithrilInfrastructureConfig {
             use_dmq: false,
             dmq_node_flavor: Some(DmqNodeFlavor::Fake),
             use_era_specific_work_dir: false,
-            signers_read_on_chain_protocol_configurations: false,
         }
     }
 }
@@ -194,6 +194,7 @@ impl MithrilInfrastructure {
             leader_aggregator.endpoint(),
             signer_cardano_nodes,
             &relay_signers,
+            leader_aggregator.is_reading_protocol_configurations_on_chain(),
         )
         .await?;
 
@@ -465,6 +466,7 @@ impl MithrilInfrastructure {
         leader_aggregator_endpoint: String,
         pool_nodes: &[PoolNode],
         relay_signers: &[RelaySigner],
+        protocol_configurations_written_on_chain: bool,
     ) -> StdResult<Vec<Signer>> {
         let mut signers: Vec<Signer> = vec![];
 
@@ -479,6 +481,13 @@ impl MithrilInfrastructure {
                 leader_aggregator_endpoint.clone()
             };
 
+            let protocol_configuration_reader_adapter = if protocol_configurations_written_on_chain
+            {
+                &config.signer_protocol_configuration_reader_adapter
+            } else {
+                "http"
+            };
+
             let signer = Signer::new(&SignerConfig {
                 signer_number: index + 1,
                 aggregator_endpoint,
@@ -491,8 +500,7 @@ impl MithrilInfrastructure {
                 mithril_era: &config.mithril_era,
                 mithril_era_reader_adapter: &config.mithril_era_reader_adapter,
                 mithril_era_marker_address: &config.devnet.mithril_era_marker_address()?,
-                protocol_configuration_reader_adapter: &config
-                    .protocol_configuration_reader_adapter,
+                protocol_configuration_reader_adapter,
                 protocol_configuration_marker_address: &config
                     .devnet
                     .protocol_configuration_marker_address()?,
@@ -500,8 +508,6 @@ impl MithrilInfrastructure {
                 skip_signature_delayer: config.skip_signature_delayer,
                 use_dmq: config.use_dmq,
                 dmq_node_flavor: &config.dmq_node_flavor,
-                read_on_chain_protocol_configurations: config
-                    .signers_read_on_chain_protocol_configurations,
             })?;
             signer.start().await?;
 
