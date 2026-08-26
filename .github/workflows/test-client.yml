@@ -81,7 +81,7 @@ on:
 env:
   NETWORK: ${{ inputs.network }}
   AGGREGATOR_ENDPOINT: ${{ inputs.aggregator_endpoint }}
-  LSM_MINIMUM_CARDANO_NODE_VERSION: "11.1"
+  LSM_MINIMUM_CARDANO_NODE_VERSION: "11.1.0"
 
 jobs:
   prepare:
@@ -365,11 +365,12 @@ jobs:
         run: |
           LEDGER_BACKEND="${{ steps.ledger_backend.outputs.name }}"
           CARDANO_VERSION="${{ steps.last_snapshot.outputs.cardano_node_version }}"
-          if [[ ${LEDGER_BACKEND,,} == "lmdb" ]]; then
-            UTXO_HD_FLAVOR="LMDB"
-          elif [[ ${LEDGER_BACKEND,,} == "lsm" ]]; then
-            UTXO_HD_FLAVOR="LSM"
-          fi
+          case ${LEDGER_BACKEND,,} in
+            lmdb) UTXO_HD_FLAVOR="LMDB" ;;
+            lsm) UTXO_HD_FLAVOR="LSM" ;;
+            legacy) UTXO_HD_FLAVOR="Legacy" ;;
+            *) echo "Unsupported ledger backend: $LEDGER_BACKEND" >&2; exit 1 ;;
+          esac
 
           ./mithril-client ${{ needs.prepare.outputs.debug_level }} tools utxo-hd snapshot-converter --db-directory ${{ matrix.backend }}/db \
                           --cardano-node-version $CARDANO_VERSION --utxo-hd-flavor $UTXO_HD_FLAVOR --commit --json \
@@ -572,7 +573,8 @@ jobs:
         run: |
           mkdir -p $PWD/data
           chmod -R a+w $PWD/data
-          echo "mithril_client=docker run --rm -e NETWORK=$NETWORK -e GENESIS_VERIFICATION_KEY=$GENESIS_VERIFICATION_KEY -e ANCILLARY_VERIFICATION_KEY=$ANCILLARY_VERIFICATION_KEY -e AGGREGATOR_ENDPOINT=$AGGREGATOR_ENDPOINT -e GITHUB_TOKEN=$GITHUB_TOKEN --name='mithril-client' -v $PWD/data:/app/data ghcr.io/intersectmbo/mithril-client:$MITHRIL_IMAGE_ID"  >> $GITHUB_OUTPUT
+          # The LSM ledger conversion uses io_uring syscalls, which are blocked by the default Docker seccomp profile
+          echo "mithril_client=docker run --rm -e NETWORK=$NETWORK -e GENESIS_VERIFICATION_KEY=$GENESIS_VERIFICATION_KEY -e ANCILLARY_VERIFICATION_KEY=$ANCILLARY_VERIFICATION_KEY -e AGGREGATOR_ENDPOINT=$AGGREGATOR_ENDPOINT -e GITHUB_TOKEN=$GITHUB_TOKEN --name='mithril-client' --security-opt seccomp=unconfined -v $PWD/data:/app/data ghcr.io/intersectmbo/mithril-client:$MITHRIL_IMAGE_ID"  >> $GITHUB_OUTPUT
 
       - name: fetch latest snapshot hash
         id: last_snapshot
