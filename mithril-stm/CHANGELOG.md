@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.9 (08-26-2026)
+
+### Changed
+
+- Consolidated the recursive circuit `MockProver` negative tests into one case per transition context, so that the public-statement bindings of a context are covered by a single circuit synthesis instead of one per tampered field.
+- Replaced the rejection-only assertions of the recursive circuit negative tests with exact failure signatures, so that each case now requires the circuit to reject through the expected failure class and to implicate exactly the expected public-statement rows.
+- Rebuilt the non-genesis `MockProver` fixtures from the committed assets, which makes the same-epoch and next-epoch cases satisfiable when untampered and gives each of them an untampered canary.
+
 ## 0.12.8 (08-20-2026)
 
 ### Changed

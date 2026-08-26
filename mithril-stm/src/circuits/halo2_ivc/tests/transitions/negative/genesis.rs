@@ -1,18 +1,7 @@
 use super::*;
 
 use crate::circuits::halo2_ivc::{
-    state::State,
-    tests::common::{
-        asset_readers::load_embedded_genesis_step_output_asset,
-        generators::{
-            GENESIS_EPOCH, build_asset_generation_setup_from_cache,
-            build_genesis_base_case_next_state, build_genesis_base_case_witness,
-        },
-        helpers::{
-            assert_recursive_mock_prover_rejects, build_mock_prover_public_inputs,
-            build_mock_prover_setup_from_assets, build_trivial_mock_prover_circuit,
-        },
-    },
+    tests::common::asset_readers::load_embedded_genesis_step_output_asset,
     types::{EpochNumber, MerkleTreeCommitment, MessageHash, ProtocolParametersHash, StepCounter},
 };
 
@@ -94,34 +83,50 @@ fn msg_tampered_is_rejected() {
 }
 
 mod slow {
-    use super::*;
+    use std::collections::BTreeMap;
 
-    /// Builds a genesis circuit with a tampered next state and asserts the MockProver rejects it.
-    ///
-    /// `tamper` receives the correct genesis next state before it is passed to the
-    /// public inputs, allowing each test to corrupt exactly the field it wants to verify.
-    fn assert_genesis_circuit_rejects_tampered_next_state(tamper: impl FnOnce(&mut State)) {
-        let setup = build_asset_generation_setup_from_cache();
-        let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
-
-        let witness = build_genesis_base_case_witness(&setup);
-
-        let mut tampered_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
-        tamper(&mut tampered_state);
-
-        let ivc_circuit_data =
-            build_trivial_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
-        let public_inputs = build_mock_prover_public_inputs(&mock_prover_setup, &tampered_state);
-
-        assert_recursive_mock_prover_rejects(ivc_circuit_data, public_inputs);
-    }
+    use crate::circuits::halo2_ivc::{
+        state::State,
+        tests::common::{
+            failure_signature::{
+                assert_recursive_mock_prover_rejects_public_input_rows, mutate_public_input,
+            },
+            generators::{
+                GENESIS_EPOCH, build_asset_generation_setup_from_cache,
+                build_genesis_base_case_next_state, build_genesis_base_case_witness,
+            },
+            helpers::{
+                build_genesis_mock_prover_circuit, build_genesis_mock_prover_public_inputs,
+                build_mock_prover_setup_from_assets,
+            },
+            public_input_layout::{all_global_rows, all_state_rows},
+        },
+    };
 
     #[test]
-    fn circuit_rejects_msg_inconsistent_with_preimage() {
-        // MockProver check that the in-circuit Blake2b hash constraint between
-        // message_preimage bytes and the resulting message field is wired correctly.
-        assert_genesis_circuit_rejects_tampered_next_state(|s| {
-            s.message = MessageHash::from_field(NativeField::ONE)
-        });
+    fn circuit_rejects_tampered_genesis_global_and_state_public_inputs() {
+        // One synthesis covers every element, since MockProver reports all failures, not the first.
+        let setup = build_asset_generation_setup_from_cache();
+        let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
+        let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
+        let ivc_circuit_data = build_genesis_mock_prover_circuit(
+            &mock_prover_setup,
+            State::genesis(),
+            build_genesis_base_case_witness(&setup),
+        );
+
+        let mut public_inputs =
+            build_genesis_mock_prover_public_inputs(&mock_prover_setup, &next_state);
+        let expected_rows: BTreeMap<usize, &str> =
+            all_global_rows().into_iter().chain(all_state_rows()).collect();
+        for row in expected_rows.keys() {
+            mutate_public_input(&mut public_inputs, *row);
+        }
+
+        assert_recursive_mock_prover_rejects_public_input_rows(
+            ivc_circuit_data,
+            public_inputs,
+            &expected_rows,
+        );
     }
 }

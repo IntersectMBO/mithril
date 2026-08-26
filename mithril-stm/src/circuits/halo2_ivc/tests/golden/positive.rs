@@ -1,10 +1,9 @@
 //! Positive golden tests for the recursive Halo2 IVC flow.
 //!
-//! Fast tests verify stored proof artifacts against the full verifier. The slow
-//! `MockProver` check covers the genesis base case in-circuit (the unique code path
-//! that has no stored proof to verify against). Same-epoch and next-epoch positive
-//! constraint coverage is provided by the stored-asset verification tests above,
-//! which use the full prover output: a valid proof implies all constraints hold.
+//! Fast tests verify stored proof artifacts against the full verifier, and the slow `MockProver`
+//! check covers the genesis base case in-circuit — the unique code path with no stored proof to
+//! verify against. In-circuit positive coverage of the same-epoch and next-epoch contexts lives with
+//! the positive transition tests.
 
 use midnight_circuits::types::Instantiable;
 use sha2::{Digest, Sha256};
@@ -21,9 +20,9 @@ use crate::circuits::halo2_ivc::tests::common::{
         next_message_and_preimage_for_step, next_state_for_step,
     },
     helpers::{
-        assert_recursive_mock_prover_accepts_with_label, build_mock_prover_public_inputs,
-        build_mock_prover_setup_from_assets, build_recursive_mock_prover_setup,
-        build_trivial_mock_prover_circuit, compute_exact_next_accumulator_from_assets,
+        assert_recursive_mock_prover_accepts_with_label, build_genesis_mock_prover_circuit,
+        build_genesis_mock_prover_public_inputs, build_mock_prover_setup_from_assets,
+        build_recursive_mock_prover_setup, compute_exact_next_accumulator_from_assets,
         verify_prepare_blake2b_recursive_proof, verify_prepare_poseidon_recursive_proof,
     },
 };
@@ -147,21 +146,18 @@ mod slow {
 
     #[test]
     fn genesis_base_case_circuit_is_accepted() {
-        // MockProver constraint check for the genesis base case: no previous proof,
-        // trivial accumulator, all accumulator contributions gated to the group identity.
-        // Same-epoch and next-epoch positive constraint coverage is provided by
-        // `recursive_chain_state_asset_proof_and_accumulator_are_valid` and
-        // `recursive_step_output_asset_proof_and_accumulator_are_valid` above — a valid
-        // full proof implies all constraints held when the proof was generated.
+        // MockProver constraint check for the genesis base case: no previous proof, trivial
+        // accumulator, all accumulator contributions gated to the group identity.
         let setup = build_asset_generation_setup_from_cache();
         let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
         let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
-        let ivc_circuit_data = build_trivial_mock_prover_circuit(
+        let ivc_circuit_data = build_genesis_mock_prover_circuit(
             &mock_prover_setup,
             State::genesis(),
             build_genesis_base_case_witness(&setup),
         );
-        let public_inputs = build_mock_prover_public_inputs(&mock_prover_setup, &next_state);
+        let public_inputs =
+            build_genesis_mock_prover_public_inputs(&mock_prover_setup, &next_state);
         assert_recursive_mock_prover_accepts_with_label(
             ivc_circuit_data,
             public_inputs,

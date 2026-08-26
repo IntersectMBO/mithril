@@ -1,4 +1,8 @@
-//! Positive transition tests: stored proofs verified against correct public inputs.
+//! Positive transition tests.
+//!
+//! Fast tests verify the stored output proof of each transition context against the full verifier.
+//! The slow checks synthesize the current circuit over the stored inputs and assert it accepts the
+//! stored expected output, which the stored proof alone cannot establish.
 
 use midnight_circuits::types::Instantiable;
 
@@ -77,4 +81,42 @@ fn next_epoch_step_proof_verifies() {
         "recursive step output",
         "next-epoch step proof should verify against the correct public inputs",
     );
+}
+
+mod slow {
+    use crate::circuits::halo2_ivc::tests::common::{
+        generators::build_asset_generation_setup_from_cache,
+        helpers::{
+            assert_recursive_mock_prover_accepts_with_label, build_asset_backed_next_epoch_fixture,
+            build_asset_backed_same_epoch_fixture, build_mock_prover_setup_from_assets,
+        },
+    };
+
+    #[test]
+    fn same_epoch_step_circuit_is_accepted() {
+        // Satisfiable baseline for the same-epoch negative case.
+        let setup = build_asset_generation_setup_from_cache();
+        let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
+        let fixture = build_asset_backed_same_epoch_fixture(&mock_prover_setup);
+
+        assert_recursive_mock_prover_accepts_with_label(
+            fixture.ivc_circuit_data,
+            fixture.public_inputs,
+            "same-epoch step from committed assets",
+        );
+    }
+
+    #[test]
+    fn next_epoch_step_circuit_is_accepted() {
+        // Satisfiable baseline for the next-epoch negative case.
+        let setup = build_asset_generation_setup_from_cache();
+        let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
+        let fixture = build_asset_backed_next_epoch_fixture(&mock_prover_setup);
+
+        assert_recursive_mock_prover_accepts_with_label(
+            fixture.ivc_circuit_data,
+            fixture.public_inputs,
+            "next-epoch step from committed assets",
+        );
+    }
 }

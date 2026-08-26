@@ -1,24 +1,19 @@
-//! Negative public-input tests: tampered global fields and accumulator (fast CI)
-//! and MockProver constraint checks (in `mod slow`).
+//! Negative public-input tests: tampered global fields and accumulator, checked against the stored
+//! proof by the verifier.
+//!
+//! In-circuit binding of the global fields lives with the genesis negative transition case, and of
+//! the accumulator with the negative accumulator case.
 
 use ff::Field;
 use midnight_circuits::types::Instantiable;
 
 use crate::circuits::halo2_ivc::{
     AssignedAccumulator, NativeField,
-    state::State,
     tests::common::{
         asset_readers::{
             load_embedded_genesis_step_output_asset, load_embedded_verification_context_asset,
         },
-        generators::{
-            GENESIS_EPOCH, build_asset_generation_setup_from_cache,
-            build_genesis_base_case_next_state, build_genesis_base_case_witness,
-        },
-        helpers::{
-            assert_recursive_mock_prover_rejects_with_label, build_mock_prover_setup_from_assets,
-            build_trivial_mock_prover_circuit, verify_prepare_blake2b_recursive_proof,
-        },
+        helpers::verify_prepare_blake2b_recursive_proof,
     },
 };
 
@@ -117,74 +112,4 @@ fn next_accumulator_tampered_public_input_is_rejected() {
         |_, _, accumulator_encoding| accumulator_encoding[0] = NativeField::ONE,
         "proof with tampered next_accumulator should be rejected by the verifier",
     );
-}
-
-mod slow {
-    use super::*;
-
-    #[test]
-    fn circuit_rejects_wrong_genesis_message_global_field() {
-        // MockProver constraint check: global[0] (genesis_message) set to ONE must violate
-        // the in-circuit constraint that pins the genesis message to the global public input.
-        let setup = build_asset_generation_setup_from_cache();
-        let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
-        let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
-        let witness = build_genesis_base_case_witness(&setup);
-        let ivc_circuit_data =
-            build_trivial_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
-        let mut global = mock_prover_setup.global.as_public_input();
-        let state = next_state.as_public_input();
-        let accumulator_encoding =
-            AssignedAccumulator::as_public_input(&mock_prover_setup.trivial_accumulator);
-        global[0] = NativeField::ONE;
-        assert_recursive_mock_prover_rejects_with_label(
-            ivc_circuit_data,
-            [global, state, accumulator_encoding].concat(),
-            "global[0] (genesis_message) set to ONE",
-        );
-    }
-
-    #[test]
-    fn circuit_rejects_wrong_certificate_circuit_verification_key_representation_global_field() {
-        // MockProver constraint check: global[3] (certificate_circuit_verification_key_representation) set to ONE
-        // must violate the in-circuit constraint that pins the certificate circuit verification key representation.
-        let setup = build_asset_generation_setup_from_cache();
-        let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
-        let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
-        let witness = build_genesis_base_case_witness(&setup);
-        let ivc_circuit_data =
-            build_trivial_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
-        let mut global = mock_prover_setup.global.as_public_input();
-        let state = next_state.as_public_input();
-        let accumulator_encoding =
-            AssignedAccumulator::as_public_input(&mock_prover_setup.trivial_accumulator);
-        global[3] = NativeField::ONE;
-        assert_recursive_mock_prover_rejects_with_label(
-            ivc_circuit_data,
-            [global, state, accumulator_encoding].concat(),
-            "global[3] (certificate_circuit_verification_key_representation) set to ONE",
-        );
-    }
-
-    #[test]
-    fn circuit_rejects_wrong_ivc_circuit_verification_key_representation_global_field() {
-        // MockProver constraint check: global[4] (ivc_circuit_verification_key_representation) set to ONE
-        // must violate the in-circuit constraint that pins the IVC circuit verification key representation.
-        let setup = build_asset_generation_setup_from_cache();
-        let mock_prover_setup = build_mock_prover_setup_from_assets(&setup);
-        let next_state = build_genesis_base_case_next_state(&setup, GENESIS_EPOCH);
-        let witness = build_genesis_base_case_witness(&setup);
-        let ivc_circuit_data =
-            build_trivial_mock_prover_circuit(&mock_prover_setup, State::genesis(), witness);
-        let mut global = mock_prover_setup.global.as_public_input();
-        let state = next_state.as_public_input();
-        let accumulator_encoding =
-            AssignedAccumulator::as_public_input(&mock_prover_setup.trivial_accumulator);
-        global[4] = NativeField::ONE;
-        assert_recursive_mock_prover_rejects_with_label(
-            ivc_circuit_data,
-            [global, state, accumulator_encoding].concat(),
-            "global[4] (ivc_circuit_verification_key_representation) set to ONE",
-        );
-    }
 }
