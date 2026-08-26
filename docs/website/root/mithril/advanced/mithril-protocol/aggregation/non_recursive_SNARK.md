@@ -68,4 +68,4 @@ The aggregate signature is verified using the verification algorithm. It needs:
 The circuit's verification key is a fixed piece of data, derived from the circuit and a one-time trusted setup, that matches the protocol parameters (`k`, `m`, `phi_f`) used to produce the proof.
 It is used only for verifying the SNARK proof, fixed for a given circuit and publicly available.
 The `AVK` is the root of a Merkle tree that can be recomputed by any party with access to the list of signers.
-The message is what is signed by the signers, and which represents for example a Cardano database, a stake distribution, or a set of blocks or transactions.
+The message is what is signed by the signers, representing for example a Cardano database, a stake distribution, or a set of blocks or transactions.
