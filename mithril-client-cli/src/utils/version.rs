@@ -26,6 +26,21 @@ pub fn is_version_equal_or_upper(version_to_check: &str, version_reference: Vers
     })
 }
 
+/// Returns `true` when the Cardano node version is `10.6.2` or newer.
+pub fn is_version_at_least_10_6_2_or_latest(version: &str) -> bool {
+    is_version_equal_or_upper(version, CARDANO_NODE_V10_6_2)
+}
+
+/// Returns `true` when the Cardano node version is `10.7.0` or newer.
+pub fn is_version_at_least_10_7_0_or_latest(version: &str) -> bool {
+    is_version_equal_or_upper(version, CARDANO_NODE_V10_7_0)
+}
+
+/// Returns `true` when the Cardano node version is `11.1.0` or newer.
+pub fn is_version_at_least_11_1_0_or_latest(version: &str) -> bool {
+    is_version_equal_or_upper(version, CARDANO_NODE_V11_1_0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,5 +79,20 @@ mod tests {
             "11.0.0-integration",
             VERSION_11_1_0
         ));
+    }
+
+    #[test]
+    fn cardano_node_version_predicates_match_their_reference_version() {
+        assert!(!is_version_at_least_10_6_2_or_latest("10.6.1"));
+        assert!(is_version_at_least_10_6_2_or_latest("10.6.2"));
+        assert!(is_version_at_least_10_6_2_or_latest("latest"));
+
+        assert!(!is_version_at_least_10_7_0_or_latest("10.6.9"));
+        assert!(is_version_at_least_10_7_0_or_latest("10.7.0"));
+        assert!(is_version_at_least_10_7_0_or_latest("latest"));
+
+        assert!(!is_version_at_least_11_1_0_or_latest("11.0.9"));
+        assert!(is_version_at_least_11_1_0_or_latest("11.1.0"));
+        assert!(is_version_at_least_11_1_0_or_latest("latest"));
     }
 }
