@@ -22,7 +22,7 @@ use crate::{
         halo2::keys::NonRecursiveCircuitVerifyingKey, halo2_ivc::PREIMAGE_SIZE,
         key_provider::KeyProvider, trusted_setup::TrustedSetupProvider,
     },
-    proof_system::ivc_halo2_snark::{IvcSnarkProverSetup, proof::ensure_advanceable_rolling_state},
+    proof_system::ivc_halo2_snark::IvcSnarkProverSetup,
 };
 
 #[cfg(feature = "future_snark")]
@@ -255,6 +255,7 @@ fn prepare_and_check_ivc_snark_request<'a>(
             ))
         })
         .transpose()?;
+    IvcRollingState::ensure_advanceable_rolling_state(current_rolling_state)?;
 
     let protocol_message_preimage_bytes: [u8; PREIMAGE_SIZE] =
         ancillary_input.message_preimage().try_into()?;
@@ -281,7 +282,6 @@ fn prepare_and_check_ivc_snark_request<'a>(
 
     let avk = snark_clerk.compute_aggregate_verification_key_for_snark::<MithrilMembershipDigest>();
 
-    ensure_advanceable_rolling_state(current_rolling_state)?;
     match current_rolling_state {
         Some(rolling_state) => {
             rolling_state.assert_protocol_parameters_unchanged()?;
