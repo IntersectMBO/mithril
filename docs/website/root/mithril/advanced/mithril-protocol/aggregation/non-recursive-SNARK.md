@@ -7,7 +7,7 @@ sidebar_label: Non-recursive SNARK
 
 :::danger
 
-This aggregation flavor is still unstable.
+This aggregation flavor is **unstable**.
 
 :::
 
@@ -47,10 +47,10 @@ flowchart LR
 
 Given the aggregate verification key for SNARK, the root of a [Merkle tree](../../../../glossary.md#merkle-tree) committing to the stake and verification key of every registered signer, and the message being certified, the proof attests that the prover knows `k` winning lottery entries such that, for each one:
 
-- the signer's stake and verification key form a leaf of the Merkle tree with root `AVK`, attesting it is properly registered
-- the signer's signature over the message is valid under that verification key
-- the signer won its lottery for the claimed index
-- all `k` claimed indices are distinct and within bounds, so no lottery win is counted twice.
+- The signer's stake and verification key form a leaf of the Merkle tree with root `AVK`, attesting it is properly registered
+- The signer's signature over the message is valid under that verification key
+- The signer won its lottery for the claimed index
+- All `k` claimed indices are distinct and within bounds, so no lottery win is counted twice.
 
 These conditions are encoded in a circuit that generates the SNARK proof, and verifying this proof ensures all the conditions were met.
 If any condition fails, verification fails.
@@ -60,10 +60,10 @@ The circuit is publicly available, so anyone can check exactly which conditions 
 
 The aggregate signature is verified using the verification algorithm. It needs:
 
-- the proof
-- the verification key of the circuit used to create the proof
-- the `AVK`
-- the message
+- The proof
+- The verification key of the circuit used to create the proof
+- The `AVK`
+- The message
 
 The circuit's verification key is a fixed piece of data, derived from the circuit and a one-time trusted setup, that matches the protocol parameters (`k`, `m`, `phi_f`) used to produce the proof.
 It is used only for verifying the SNARK proof, fixed for a given circuit and publicly available.

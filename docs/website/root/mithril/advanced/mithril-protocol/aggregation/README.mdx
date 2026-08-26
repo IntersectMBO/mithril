@@ -10,23 +10,17 @@ It consists in verifying the signatures received by the aggregator and packing t
 
 Here is a summary of the differences between the aggregation flavors with regards to the proof size:
 
-|                                 | Concatenation                                                                                                             | Non-recursive SNARK                                                               | Recursive SNARK                                  |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------ |
-| Certificate size                | Grows with the number of signatures in the aggregate signatures, certificate chain still has to be walked back to genesis | ~4KB per proof, one proof per step between target and genesis, independent of `k` | One proof of ~13KB for all steps                 |
-| Signing type                    | BLS signature                                                                                                             | Schnorr signature                                                                 | Schnorr signature                                |
-| Hash function                   | Blake2b                                                                                                                   | Poseidon                                                                          | Poseidon                                         |
-| Aggregator work                 | Cheap                                                                                                                     | Expensive (computation of the non-recursive SNARK proof)                          | Expensive (computation of both SNARK proofs)     |
-| Verification work               | Fast                                                                                                                      | Fast                                                                              | Fast                                             |
-| Fresh-client chain verification | Downloads and verifies every certificate                                                                                  | Downloads and verifies every certificate                                          | Verifies only the latest IVC certificate         |
-| Statefulness                    | Certificates can be produced independently                                                                                | Certificates can be produced independently                                        | Certificates need to follow                      |
-| Implementation maturity         | Running in production                                                                                                     | Running in test network                                                           | Running in test network (to verify)              |
-| Main advantage                  | Simplicity and maturity                                                                                                   | Per-certificate compression                                                       | Constant-cost verification of the entire history |
-| Main disadvantage               | Certificate and bootstrap growth                                                                                          | Proving cost                                                                      | Proving cost                                     |
-
-The concatenation flavor is the mature and operationally simple baseline.
-The non-recursive SNARK flavor greatly reduces the size of the aggregate signatures but retains the linear certificate-chain verification.
-The recursive SNARK flavor's main value is not its aggregate signature size but that the latest certificate authenticates the complete history of the chain.
-The intended SPO-side cost of the SNARK flavors is essentially the same and remains within today’s lightweight signer footprint.
-The only cost that increases is the proving cost of those last flavors which also require a better aggregator infrastructure.
+|                                         | Concatenation                              | Non-recursive SNARK                                      | Recursive SNARK                                                 |
+| --------------------------------------- | ------------------------------------------ | -------------------------------------------------------- | --------------------------------------------------------------- |
+| Size                                    | ~150KB                                     | ~4KB                                                     | ~13KB                                                           |
+| Signature scheme                        | BLS                                        | Schnorr                                                  | Schnorr                                                         |
+| Hash function                           | Blake2b                                    | Poseidon                                                 | Poseidon                                                        |
+| Aggregation                             | Cheap                                      | Expensive (computation of the non-recursive SNARK proof) | Expensive (computation of both SNARK proofs)                    |
+| Verification                            | Fast                                       | Fast                                                     | Fast                                                            |
+| One certificate verifies the full chain | No                                         | No                                                       | Yes                                                             |
+| Statefulness                            | Certificates can be produced independently | Certificates can be produced independently               | Certificates need to follow                                     |
+| Implementation maturity                 | Stable                                     | Unstable                                                 | Unstable                                                        |
+| Pros                                    | Maturity and proving costs                 | Small size                                               | Small size and constant-cost verification of the entire history |
+| Cons                                    | Size and linear growth with epochs         | Proving cost and linear growth with epochs               | Proving cost                                                    |
 
 <DocCardList />

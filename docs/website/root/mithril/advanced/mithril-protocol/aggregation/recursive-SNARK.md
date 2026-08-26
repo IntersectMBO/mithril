@@ -7,7 +7,7 @@ sidebar_label: Recursive SNARK
 
 :::danger
 
-This aggregation flavor is still unstable.
+This aggregation flavor is **unstable**.
 
 :::
 
@@ -49,10 +49,10 @@ flowchart LR
 
 Given the chain's current state (the current epoch, its `AVK`, and the protocol parameters) and the previous step's recursive aggregate signature, the new aggregate signature attests that the prover knows a new certificate's SNARK aggregate signature such that:
 
-- the new certificate's SNARK aggregate signature is valid, and the `AVK` it certifies matches what the previous epoch had already committed to
-- the protocol parameters used by the new certificate match the ones fixed for the chain
-- the previous step's recursive aggregate signature is valid, so this step vouches for the whole chain before it, not just the certificate being added
-- at the very first step, a signature over the genesis message is valid under the well-known genesis key, anchoring the chain the same way the genesis certificate does today.
+- The new certificate's SNARK aggregate signature is valid, and the `AVK` it certifies matches what the previous epoch had already committed to
+- The protocol parameters used by the new certificate match the ones fixed for the chain
+- The previous step's recursive aggregate signature is valid, so this step vouches for the whole chain before it, not just the certificate being added
+- At the very first step, a signature over the genesis message is valid under the well-known genesis key, anchoring the chain the same way the genesis certificate does today.
 
 These conditions are encoded in a circuit that generates the aggregate signature, and verifying the aggregate signature ensures all the conditions, from the current step back to genesis, were met.
 The circuit is publicly available, so anyone can check exactly which conditions it asserts.
@@ -84,11 +84,11 @@ flowchart LR
 
 To verify a recursive aggregate signature, a verifier needs:
 
-- the recursive proof
-- the verification key of the recursive circuit
-- the verification key of the non-recursive circuit
-- the genesis verification key
-- the chain state the proof attests to: the current epoch, its `AVK`, the message being certified, and the protocol parameters
+- The recursive proof
+- The verification key of the recursive circuit
+- The verification key of the non-recursive circuit
+- The genesis verification key
+- The chain state the proof attests to: the current epoch, its `AVK`, the message being certified, and the protocol parameters
 
 The recursive circuit's verification key is a fixed piece of data, derived from the recursive circuit, a one-time trusted setup and the [non-recursive SNARK](./non_recursive_SNARK.md)'s own verification key, since each step checks a certificate proof against it.
 It is fixed for a given recursive circuit and publicly available.
