@@ -43,10 +43,7 @@ use crate::{
     proof_system::ivc_halo2_snark::{
         errors::IvcProofError,
         prover_input::IvcProverInput,
-        prover_input_helpers::{
-            IvcTransitionType, assert_message_hash_matches_preimage,
-            create_snark_message_for_next_state,
-        },
+        prover_input_helpers::IvcTransitionType,
         prover_setup::IvcSnarkProverSetup,
         rolling_state::{IvcRollingState, midnight_accumulator_serde},
         verifier_setup::IvcVerifierSetup,
@@ -60,45 +57,6 @@ pub(crate) struct IvcProver<R: RngCore + CryptoRng> {
     pub(crate) ivc_setup: Arc<IvcSnarkProverSetup>,
     /// Randomness source used during proof generation.
     pub(crate) rng: R,
-}
-
-/// Runs [`IvcProverInput::off_circuit_checks`] and discards the result. Exposed so a caller like
-/// `Clerk::aggregate_signatures_with_type` can reject a malformed request before generating the
-/// certificate proof, without needing access to `IvcProverInput` itself.
-pub(crate) fn off_circuit_checks<D: MembershipDigest>(
-    message: &[u8],
-    aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
-    protocol_message_preimage: &ProtocolMessagePreimage,
-    rolling_state: &IvcRollingState,
-) -> StmResult<()> {
-    IvcProverInput::off_circuit_checks(
-        message,
-        aggregate_verification_key,
-        protocol_message_preimage,
-        rolling_state,
-    )?;
-    Ok(())
-}
-
-/// Runs [`IvcProverInput::prepare_genesis`]'s checks and discards the result: verifies the
-/// genesis message hashes to `genesis_protocol_message_preimage`, then verifies the genesis
-/// Schnorr signature. Additionally checks that the first real certificate's own message hashes
-/// to `protocol_message_preimage`, mirroring [`off_circuit_checks`]'s hash check for the
-/// non-genesis path. Exposed so a caller like `Clerk::aggregate_signatures_with_type` can reject
-/// a malformed genesis request before generating the certificate proof.
-pub(crate) fn off_circuit_genesis_checks<D: MembershipDigest>(
-    rolling_state: &IvcRollingState,
-    genesis_protocol_message_preimage: &ProtocolMessagePreimage,
-    global: &Global,
-    message: &[u8],
-    aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
-    protocol_message_preimage: &ProtocolMessagePreimage,
-) -> StmResult<()> {
-    IvcProverInput::prepare_genesis(rolling_state, genesis_protocol_message_preimage, global)?;
-
-    let (certificate_message_hash, _) =
-        create_snark_message_for_next_state(aggregate_verification_key, message)?;
-    assert_message_hash_matches_preimage(certificate_message_hash, protocol_message_preimage)
 }
 
 /// Bootstrap input for the first [`IvcProver::prove`] call in an IVC chain.
@@ -563,7 +521,7 @@ mod tests {
         },
     };
 
-    use super::{IvcProof, off_circuit_genesis_checks};
+    use super::IvcProof;
 
     const STEP_OUTPUT_MSG: [u8; 32] = [
         22, 148, 87, 37, 149, 0, 124, 10, 156, 94, 108, 6, 78, 59, 239, 80, 126, 213, 158, 211,
@@ -621,15 +579,15 @@ mod tests {
                 .expect("zero AVK should decode");
         let mismatched_preimage = ProtocolMessagePreimage::new([0u8; PREIMAGE_SIZE]);
 
-        let err = off_circuit_genesis_checks(
-            &rolling_state,
-            &genesis_protocol_message_preimage,
-            &global,
-            &[0u8; 32],
-            &avk,
-            &mismatched_preimage,
-        )
-        .expect_err("mismatched certificate preimage must be rejected");
+        let err = rolling_state
+            .off_circuit_genesis_checks(
+                &genesis_protocol_message_preimage,
+                &global,
+                &[0u8; 32],
+                &avk,
+                &mismatched_preimage,
+            )
+            .expect_err("mismatched certificate preimage must be rejected");
 
         let circuit_error = err
             .downcast_ref::<IvcCircuitError>()
@@ -656,15 +614,15 @@ mod tests {
                 .expect("AVK should decode from asset bytes");
         let protocol_message_preimage = ProtocolMessagePreimage::new(first_step.message_preimage);
 
-        off_circuit_genesis_checks(
-            &rolling_state,
-            &genesis_protocol_message_preimage,
-            &global,
-            &first_step.message,
-            &avk,
-            &protocol_message_preimage,
-        )
-        .expect("matching certificate preimage should be accepted");
+        rolling_state
+            .off_circuit_genesis_checks(
+                &genesis_protocol_message_preimage,
+                &global,
+                &first_step.message,
+                &avk,
+                &protocol_message_preimage,
+            )
+            .expect("matching certificate preimage should be accepted");
     }
 
     #[test]

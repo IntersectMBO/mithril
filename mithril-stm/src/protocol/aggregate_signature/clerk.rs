@@ -32,10 +32,7 @@ use crate::{
     proof_system::{
         MERKLE_TREE_DEPTH_FOR_SNARK, SnarkClerk, SnarkProver, SnarkVerifierData,
         ivc_halo2_snark::{
-            proof::{
-                IvcGenesisBootstrapInput, IvcProof, IvcProver, off_circuit_checks,
-                off_circuit_genesis_checks,
-            },
+            proof::{IvcGenesisBootstrapInput, IvcProof, IvcProver},
             rolling_state::IvcRollingState,
             verifier_setup::IvcVerifierData,
         },
@@ -283,12 +280,12 @@ fn prepare_and_check_ivc_snark_request<'a>(
     )?;
 
     let avk = snark_clerk.compute_aggregate_verification_key_for_snark::<MithrilMembershipDigest>();
+
     ensure_advanceable_rolling_state(current_rolling_state)?;
     match current_rolling_state {
         Some(rolling_state) => {
             rolling_state.assert_protocol_parameters_unchanged()?;
-
-            off_circuit_checks(msg, &avk, &protocol_message_preimage, rolling_state)?;
+            rolling_state.off_circuit_checks(msg, &avk, &protocol_message_preimage)?;
         }
         None => {
             let combined_fixed_base_names: Vec<String> =
@@ -297,8 +294,7 @@ fn prepare_and_check_ivc_snark_request<'a>(
                 genesis_bootstrap.genesis_signature,
                 &combined_fixed_base_names,
             );
-            off_circuit_genesis_checks(
-                &genesis_rolling_state,
+            genesis_rolling_state.off_circuit_genesis_checks(
                 &genesis_bootstrap.genesis_protocol_message_preimage,
                 &global,
                 msg,

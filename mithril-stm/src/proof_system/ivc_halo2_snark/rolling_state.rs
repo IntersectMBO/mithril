@@ -17,14 +17,28 @@ use crate::{
             accumulator::trivial_accumulator,
             errors::{EpochTransitionErrorKind, IvcCircuitError},
             state::{Global, State},
-            types::{IvcProofBytes, StepCounter},
+            types::{IvcProofBytes, MerkleTreeCommitment, MessageHash, StepCounter},
         },
     },
-    proof_system::ivc_halo2_snark::prover_input_helpers::{
-        IvcTransitionType, create_snark_message_for_next_state,
+    proof_system::ivc_halo2_snark::{
+        IvcProverInput,
+        prover_input_helpers::{
+            IvcTransitionType, assert_message_hash_matches_preimage,
+            create_snark_message_for_next_state,
+        },
     },
     signature_scheme::{BaseFieldElement, StandardSchnorrSignature},
 };
+
+/// Bundles [`IvcProverInput::off_circuit_checks`]'s outputs, carried into
+/// [`IvcProverInput::finish_preparation`] once the certificate proof is available.
+pub(crate) struct IvcProverInputChecks<D: MembershipDigest> {
+    pub(crate) transition_type: IvcTransitionType,
+    pub(crate) certificate_message_hash: MessageHash,
+    pub(crate) certificate_merkle_tree_commitment: MerkleTreeCommitment,
+    pub(crate) message: Vec<u8>,
+    pub(crate) aggregate_verification_key_for_snark: AggregateVerificationKeyForSnark<D>,
+}
 
 /// Caller-owned bridge between consecutive IVC proving steps.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -191,6 +205,60 @@ impl IvcRollingState {
         }
 
         Ok(())
+    }
+
+    /// Runs every `prepare` off circuit check that does not need the certificate proof:
+    /// classifies the step, validates the epoch advance and protocol-parameter lookahead
+    /// against the rolling state, and checks the message hashes to the supplied preimage.
+    pub(crate) fn off_circuit_checks<D: MembershipDigest>(
+        &self,
+        message: &[u8],
+        aggregate_verification_key_for_snark: &AggregateVerificationKeyForSnark<D>,
+        protocol_message_preimage: &ProtocolMessagePreimage,
+    ) -> StmResult<IvcProverInputChecks<D>> {
+        let transition_type =
+            IvcTransitionType::try_compute_transition_type(self, protocol_message_preimage)?;
+
+        self.assert_correct_parameters(
+            protocol_message_preimage,
+            aggregate_verification_key_for_snark,
+            message,
+            transition_type,
+        )?;
+
+        let (certificate_message_hash, certificate_merkle_tree_commitment) =
+            create_snark_message_for_next_state(aggregate_verification_key_for_snark, message)?;
+
+        assert_message_hash_matches_preimage(certificate_message_hash, protocol_message_preimage)?;
+
+        Ok(IvcProverInputChecks {
+            transition_type,
+            certificate_message_hash,
+            certificate_merkle_tree_commitment,
+            message: message.to_vec(),
+            aggregate_verification_key_for_snark: aggregate_verification_key_for_snark.clone(),
+        })
+    }
+
+    /// Runs [`IvcProverInput::prepare_genesis`]'s checks and discards the result: verifies the
+    /// genesis message hashes to `genesis_protocol_message_preimage`, then verifies the genesis
+    /// Schnorr signature. Additionally checks that the first real certificate's own message hashes
+    /// to `protocol_message_preimage`, mirroring [`off_circuit_checks`]'s hash check for the
+    /// non-genesis path. Exposed so a caller like `Clerk::aggregate_signatures_with_type` can reject
+    /// a malformed genesis request before generating the certificate proof.
+    pub(crate) fn off_circuit_genesis_checks<D: MembershipDigest>(
+        &self,
+        genesis_protocol_message_preimage: &ProtocolMessagePreimage,
+        global: &Global,
+        message: &[u8],
+        aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
+        protocol_message_preimage: &ProtocolMessagePreimage,
+    ) -> StmResult<()> {
+        IvcProverInput::prepare_genesis(self, genesis_protocol_message_preimage, global)?;
+
+        let (certificate_message_hash, _) =
+            create_snark_message_for_next_state(aggregate_verification_key, message)?;
+        assert_message_hash_matches_preimage(certificate_message_hash, protocol_message_preimage)
     }
 }
 
