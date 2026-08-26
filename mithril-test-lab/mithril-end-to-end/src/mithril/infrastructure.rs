@@ -340,6 +340,7 @@ impl MithrilInfrastructure {
             protocol_configuration_marker_address: &config
                 .devnet
                 .protocol_configuration_marker_address()?,
+            startup_protocol_parameters: &config.startup_protocol_configuration.protocol_parameters,
             signed_entity_types: &config.signed_entity_types,
             aggregate_signature_type: config.aggregate_signature_type,
             chain_observer_type,

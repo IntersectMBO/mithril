@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::{Context, anyhow};
 use mithril_common::entities::{
-    CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig,
+    CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, ProtocolParameters,
 };
 use slog_scope::info;
 use tokio::process::Child;
@@ -42,6 +42,7 @@ pub struct AggregatorConfig<'a> {
     pub mithril_era_marker_address: &'a str,
     pub protocol_configuration_reader_adapter: &'a str,
     pub protocol_configuration_marker_address: &'a str,
+    pub startup_protocol_parameters: &'a ProtocolParameters,
     pub signed_entity_types: &'a [String],
     pub aggregate_signature_type: AggregateSignatureType,
     pub chain_observer_type: &'a str,
@@ -92,7 +93,11 @@ impl Aggregator {
                     PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY
                 )
             } else {
-                r#"{"type":"fake","protocol_parameters":{"k":5,"m":100,"phi_f":0.95}}"#.to_string()
+                let protocol_parameters = aggregator_config.startup_protocol_parameters.clone();
+                format!(
+                    r#"{{"type":"fake","protocol_parameters":{{"k":{},"m":{},"phi_f":{}}}}}"#,
+                    protocol_parameters.k, protocol_parameters.m, protocol_parameters.phi_f
+                )
             };
         let ancillary_files_signer_config =
             format!(r#"{{"type": "secret-key", "secret_key": "{ANCILLARY_MANIFEST_SECRET_KEY}"}}"#);

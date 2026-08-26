@@ -34,6 +34,9 @@ SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 # Generate the Mithril delegation scripts
 . ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-mithril-delegation.sh
 
+# Generate the Cardano chain lib file
+. ${SCRIPT_DIRECTORY}/mkfiles/lib/mkfiles-cardano-chain.sh
+
 # Generate the Mithril era scripts
 . ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-mithril-era.sh
 
