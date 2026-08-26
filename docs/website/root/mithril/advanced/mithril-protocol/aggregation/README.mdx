@@ -10,17 +10,16 @@ It consists in verifying the signatures received by the aggregator and packing t
 
 Here is a summary of the differences between the aggregation flavors with regards to the proof size:
 
-|                                         | Concatenation                              | Non-recursive SNARK                                      | Recursive SNARK                                                 |
-| --------------------------------------- | ------------------------------------------ | -------------------------------------------------------- | --------------------------------------------------------------- |
-| Size                                    | ~150KB                                     | ~4KB                                                     | ~13KB                                                           |
-| Signature scheme                        | BLS                                        | Schnorr                                                  | Schnorr                                                         |
-| Hash function                           | Blake2b                                    | Poseidon                                                 | Poseidon                                                        |
-| Aggregation                             | Cheap                                      | Expensive (computation of the non-recursive SNARK proof) | Expensive (computation of both SNARK proofs)                    |
-| Verification                            | Fast                                       | Fast                                                     | Fast                                                            |
-| One certificate verifies the full chain | No                                         | No                                                       | Yes                                                             |
-| Statefulness                            | Certificates can be produced independently | Certificates can be produced independently               | Certificates need to follow                                     |
-| Implementation maturity                 | Stable                                     | Unstable                                                 | Unstable                                                        |
-| Pros                                    | Maturity and proving costs                 | Small size                                               | Small size and constant-cost verification of the entire history |
-| Cons                                    | Size and linear growth with epochs         | Proving cost and linear growth with epochs               | Proving cost                                                    |
+|                                             | Concatenation                      | Non-recursive SNARK                        | Recursive SNARK                                                 |
+| ------------------------------------------- | ---------------------------------- | ------------------------------------------ | --------------------------------------------------------------- |
+| **Size**                                    | ~150KB                             | ~4KB                                       | ~13KB                                                           |
+| **Signature scheme**                        | BLS                                | Schnorr                                    | Schnorr                                                         |
+| **Hash function**                           | Blake2b                            | Poseidon                                   | Poseidon                                                        |
+| **Aggregation**                             | Cheap                              | Expensive                                  | Expensive                                                       |
+| **Verification**                            | Fast                               | Fast                                       | Fast                                                            |
+| **One certificate verifies the full chain** | No                                 | No                                         | Yes                                                             |
+| **Implementation maturity**                 | Stable                             | Unstable                                   | Unstable                                                        |
+| **Pros**                                    | Maturity and proving costs         | Small size                                 | Small size and constant-cost verification of the entire history |
+| **Cons**                                    | Size and linear growth with epochs | Proving cost and linear growth with epochs | Proving cost                                                    |
 
 <DocCardList />
