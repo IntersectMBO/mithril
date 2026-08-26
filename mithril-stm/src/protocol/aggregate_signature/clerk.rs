@@ -1,41 +1,21 @@
 use std::marker::PhantomData;
-#[cfg(feature = "future_snark")]
-use std::sync::Arc;
 
 use anyhow::Context;
 #[cfg(feature = "future_snark")]
 use anyhow::anyhow;
-#[cfg(feature = "future_snark")]
-use midnight_proofs::transcript::Blake2b256;
-#[cfg(feature = "future_snark")]
-use rand_core::OsRng;
 
 use crate::{
     AggregateVerificationKey, ClosedKeyRegistration, LotteryIndex, MembershipDigest, Parameters,
     Signer, SingleSignature, Stake, StmResult, VerificationKeyForConcatenation,
     proof_system::{ConcatenationClerk, ConcatenationProof},
 };
-#[cfg(feature = "future_snark")]
-use crate::{
-    AggregationError,
-    circuits::{
-        halo2::keys::NonRecursiveCircuitVerifyingKey, halo2_ivc::PREIMAGE_SIZE,
-        key_provider::KeyProvider, trusted_setup::TrustedSetupProvider,
-    },
-    proof_system::ivc_halo2_snark::IvcSnarkProverSetup,
-};
 
 #[cfg(feature = "future_snark")]
 use crate::{
-    AggregateSignatureError, AncillaryProverData, AncillaryVerifierData, MithrilMembershipDigest,
-    circuits::halo2_ivc::{ProtocolMessagePreimage, state::Global},
+    AggregateSignatureError, AncillaryVerifierData,
     proof_system::{
         MERKLE_TREE_DEPTH_FOR_SNARK, SnarkClerk, SnarkProver, SnarkVerifierData,
-        ivc_halo2_snark::{
-            proof::{IvcGenesisBootstrapInput, IvcProof, IvcProver},
-            rolling_state::IvcRollingState,
-            verifier_setup::IvcVerifierData,
-        },
+        ivc_halo2_snark::PreparedIvcSnarkRequest,
     },
 };
 
@@ -150,11 +130,15 @@ impl<D: MembershipDigest> Clerk<D> {
                     .get_snark_clerk()
                     .ok_or_else(|| anyhow!(AggregateSignatureError::MissingSnarkClerk))?;
 
-                let prepared =
-                    prepare_and_check_ivc_snark_request(snark_clerk, &ancillary_input, msg)?;
+                let prepared_request =
+                    PreparedIvcSnarkRequest::prepare_and_check_ivc_snark_request(
+                        snark_clerk,
+                        &ancillary_input,
+                        msg,
+                    )?;
 
                 let (ivc_proof, next_ancillary_prover_data, ancillary_verifier_data) =
-                    prove_ivc_snark(prepared, sigs, msg, snark_clerk)?;
+                    prepared_request.prove_ivc_snark(sigs, msg, snark_clerk)?;
 
                 Ok((
                     AggregateSignature::IvcSnark(Box::new(ivc_proof)),
@@ -214,169 +198,6 @@ impl<D: MembershipDigest> Clerk<D> {
     pub fn update_m(&mut self, m: u64) {
         self.concatenation_proof_clerk.update_m(m);
     }
-}
-
-/// Bundles the outputs of [`prepare_and_check_ivc_snark_request`]: everything [`prove_ivc_snark`] needs to
-/// generate the certificate proof and complete IVC proving, once the request has passed every
-/// check that doesn't require that proof.
-#[cfg(feature = "future_snark")]
-struct PreparedIvcSnarkRequest<'a> {
-    ivc_prover_setup: Arc<IvcSnarkProverSetup>,
-    certificate_verifying_key: NonRecursiveCircuitVerifyingKey,
-    global: Global,
-    protocol_message_preimage: ProtocolMessagePreimage,
-    current_rolling_state: Option<&'a IvcRollingState>,
-    genesis_bootstrap: IvcGenesisBootstrapInput,
-}
-
-/// Loads the IVC prover setup, builds [`Global`], and runs every off circuit check that
-/// doesn't require the certificate proof: genesis verification key validity, rolling-state
-/// presence, protocol parameters unchanged, and message/preimage hash matching (genesis or
-/// non-genesis, depending on whether `ancillary_input` carries a rolling state).
-#[cfg(feature = "future_snark")]
-fn prepare_and_check_ivc_snark_request<'a>(
-    snark_clerk: &SnarkClerk,
-    ancillary_input: &'a AncillaryProofInput,
-    msg: &[u8],
-) -> StmResult<PreparedIvcSnarkRequest<'a>> {
-    let genesis_data = ancillary_input.genesis_data();
-    let genesis_verifying_key = genesis_data
-        .genesis_schnorr_verification_key()
-        .cloned()
-        .ok_or_else(|| anyhow!(AggregationError::MissingGenesisVerificationKey))?;
-    let genesis_message = genesis_data.genesis_message_preimage().try_into()?;
-    let genesis_bootstrap: IvcGenesisBootstrapInput = genesis_data.try_into()?;
-
-    let current_rolling_state = ancillary_input
-        .prover_data()
-        .map(|prover_data| {
-            prover_data.as_ivc_rolling_state().ok_or(anyhow!(
-                AggregationError::MissingIvcRollingStateInAncillaryProverData
-            ))
-        })
-        .transpose()?;
-    IvcRollingState::ensure_advanceable_rolling_state(current_rolling_state)?;
-
-    let protocol_message_preimage_bytes: [u8; PREIMAGE_SIZE] =
-        ancillary_input.message_preimage().try_into()?;
-    let protocol_message_preimage = ProtocolMessagePreimage(protocol_message_preimage_bytes);
-
-    let trusted_setup_provider = TrustedSetupProvider::default();
-    let certificate_provider = KeyProvider::for_non_recursive_circuit(
-        &snark_clerk.parameters,
-        MERKLE_TREE_DEPTH_FOR_SNARK,
-    )?;
-    let recursive_key_provider = KeyProvider::for_recursive_circuit(certificate_provider);
-    let ivc_prover_setup = Arc::new(IvcSnarkProverSetup::load(
-        &trusted_setup_provider,
-        &recursive_key_provider,
-    )?);
-    let certificate_verifying_key = ivc_prover_setup.certificate_verifying_key.clone();
-
-    let global = Global::new(
-        genesis_message,
-        genesis_verifying_key,
-        &certificate_verifying_key,
-        &ivc_prover_setup.ivc_verifying_key,
-    )?;
-
-    let avk = snark_clerk.compute_aggregate_verification_key_for_snark::<MithrilMembershipDigest>();
-
-    match current_rolling_state {
-        Some(rolling_state) => {
-            rolling_state.assert_protocol_parameters_unchanged()?;
-            rolling_state.off_circuit_checks(msg, &avk, &protocol_message_preimage)?;
-        }
-        None => {
-            let combined_fixed_base_names: Vec<String> =
-                ivc_prover_setup.combined_fixed_bases.keys().cloned().collect();
-            let genesis_rolling_state = IvcRollingState::genesis(
-                genesis_bootstrap.genesis_signature,
-                &combined_fixed_base_names,
-            );
-            genesis_rolling_state.off_circuit_genesis_checks(
-                &genesis_bootstrap.genesis_protocol_message_preimage,
-                &global,
-                msg,
-                &avk,
-                &protocol_message_preimage,
-            )?;
-        }
-    }
-
-    Ok(PreparedIvcSnarkRequest {
-        ivc_prover_setup,
-        certificate_verifying_key,
-        global,
-        protocol_message_preimage,
-        current_rolling_state,
-        genesis_bootstrap,
-    })
-}
-
-/// Generates the certificate proof and completes IVC proving for a request already validated by
-/// [`prepare_and_check_ivc_snark_request`].
-///
-/// Returns `(proof, ancillary_prover_data, ancillary_verifier_data)`. `ancillary_prover_data` is `Some` when
-/// the step advances the epoch and `None` for same-epoch steps.
-///
-/// # Errors
-/// Fails if the message preimage is not PREIMAGE_SIZE bytes, or the proof itself fails.
-#[cfg(feature = "future_snark")]
-fn prove_ivc_snark(
-    prepared: PreparedIvcSnarkRequest,
-    sigs: &[SingleSignature],
-    msg: &[u8],
-    snark_clerk: &SnarkClerk,
-) -> StmResult<(
-    IvcProof<Blake2b256>,
-    Option<AncillaryProverData>,
-    AncillaryVerifierData,
-)> {
-    let snark_proof = SnarkProver::try_new_non_deterministic(
-        &snark_clerk.parameters,
-        MERKLE_TREE_DEPTH_FOR_SNARK,
-    )?
-    .aggregate_signatures::<MithrilMembershipDigest>(snark_clerk, sigs, msg)
-    .with_context(|| {
-        format!(
-            "Signatures failed to aggregate for type {}",
-            AggregateSignatureType::Snark
-        )
-    })?;
-
-    let avk = snark_clerk.compute_aggregate_verification_key_for_snark::<MithrilMembershipDigest>();
-
-    let ivc_verifying_key = prepared.ivc_prover_setup.ivc_verifying_key.clone();
-
-    let mut prover = IvcProver {
-        ivc_setup: prepared.ivc_prover_setup,
-        rng: OsRng,
-    };
-
-    let (ivc_proof, next_rolling_state) = prover.prove(
-        snark_proof,
-        msg,
-        &avk,
-        &prepared.global,
-        &prepared.protocol_message_preimage,
-        &prepared.genesis_bootstrap,
-        prepared.current_rolling_state,
-    )?;
-
-    let next_ancillary_prover_data = next_rolling_state.map(AncillaryProverData::IvcSnark);
-
-    let ancillary_verifier_data = AncillaryVerifierData::IvcSnark(IvcVerifierData::new(
-        prepared.global.genesis_message,
-        prepared.certificate_verifying_key,
-        ivc_verifying_key,
-    ));
-
-    Ok((
-        ivc_proof,
-        next_ancillary_prover_data,
-        ancillary_verifier_data,
-    ))
 }
 
 #[cfg(feature = "future_snark")]

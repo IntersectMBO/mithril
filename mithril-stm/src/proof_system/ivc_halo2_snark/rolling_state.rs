@@ -21,8 +21,8 @@ use crate::{
         },
     },
     proof_system::ivc_halo2_snark::{
-        IvcProverInput,
         errors::IvcProofError,
+        prover_input::IvcProverInput,
         prover_input_helpers::{
             IvcTransitionType, assert_message_hash_matches_preimage,
             create_snark_message_for_next_state,
