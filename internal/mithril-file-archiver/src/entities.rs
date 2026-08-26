@@ -1,12 +1,36 @@
 use std::path::{Path, PathBuf};
 
+use serde::Deserialize;
+
 use mithril_common::entities::CompressionAlgorithm;
+
+/// [Zstandard][CompressionAlgorithm::Zstandard] specific parameters
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+pub struct ZstandardCompressionParameters {
+    /// Level of compression, default to 9.
+    pub level: i32,
+
+    /// Number of workers when compressing, 0 will disable multithreading, default to 4.
+    pub number_of_workers: u32,
+}
+
+impl Default for ZstandardCompressionParameters {
+    fn default() -> Self {
+        Self {
+            level: 9,
+            number_of_workers: 4,
+        }
+    }
+}
 
 /// Parameters for creating an archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveParameters {
+    /// Archive name without file extension
     pub archive_name_without_extension: String,
+    /// Directory where the archive will be created
     pub target_directory: PathBuf,
+    /// Compression algorithm to use for the archive
     pub compression_algorithm: CompressionAlgorithm,
 }
 
@@ -68,41 +92,6 @@ impl FileArchive {
     /// Get the compression algorithm used to create the archive.
     pub fn get_compression_algorithm(&self) -> CompressionAlgorithm {
         self.compression_algorithm
-    }
-
-    /// Unpack the archive to a directory.
-    ///
-    /// An 'unpack' directory will be created in the given parent directory.
-    #[cfg(test)]
-    pub fn unpack_zstandard<P: AsRef<Path>>(&self, parent_dir: P) -> PathBuf {
-        use super::test_tools::create_dir;
-        use std::fs::File;
-        use tar::Archive;
-        use zstd::stream::read::Decoder;
-        if self.compression_algorithm != CompressionAlgorithm::Zstandard {
-            panic!("Only Zstandard compression is supported");
-        }
-
-        let parent_dir = parent_dir.as_ref();
-        let file_tar_zst = File::open(self.get_file_path()).unwrap();
-        let file_tar_zst_decoder = Decoder::new(file_tar_zst).unwrap();
-        let mut archive = Archive::new(file_tar_zst_decoder);
-        let unpack_path = parent_dir.join(create_dir(parent_dir, "unpack"));
-        archive.unpack(&unpack_path).unwrap();
-
-        unpack_path
-    }
-}
-
-#[cfg(test)]
-impl mithril_common::test::double::Dummy for FileArchive {
-    fn dummy() -> Self {
-        Self {
-            filepath: PathBuf::from("archive.tar.zst"),
-            archive_filesize: 10,
-            uncompressed_size: 789,
-            compression_algorithm: CompressionAlgorithm::Zstandard,
-        }
     }
 }
 

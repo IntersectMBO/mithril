@@ -9,6 +9,7 @@ COMPONENTS = demo/protocol-demo \
 			 internal/mithril-doc \
 			 internal/mithril-doc-derive \
 			 internal/mithril-era \
+			 internal/mithril-file-archiver \
 			 internal/mithril-metric \
 			 internal/mithril-persistence \
 			 internal/mithril-protocol-config \

@@ -4214,7 +4214,7 @@ dependencies = [
 
 [[package]]
 name = "mithril-aggregator"
-version = "0.9.21"
+version = "0.9.22"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4241,13 +4241,13 @@ dependencies = [
  "mithril-dmq",
  "mithril-doc",
  "mithril-era",
+ "mithril-file-archiver",
  "mithril-metric",
  "mithril-persistence",
  "mithril-protocol-config",
  "mithril-resource-pool",
  "mithril-signed-entity-lock",
  "mithril-signed-entity-preloader",
- "mithril-test-http-server",
  "mithril-ticker",
  "mockall",
  "paste",
@@ -4265,15 +4265,12 @@ dependencies = [
  "slog-scope",
  "slog-term",
  "sqlite",
- "tar",
- "tempfile",
  "thiserror 2.0.18",
  "tikv-jemallocator",
  "tokio",
  "tokio-util",
  "uuid",
  "warp",
- "zstd",
 ]
 
 [[package]]
@@ -4639,6 +4636,23 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "mithril-file-archiver"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "mithril-common",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "slog",
+ "slog-async",
+ "slog-term",
+ "tar",
+ "zstd",
 ]
 
 [[package]]

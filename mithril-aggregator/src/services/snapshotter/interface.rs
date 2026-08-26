@@ -2,8 +2,7 @@ use async_trait::async_trait;
 
 use mithril_common::StdResult;
 use mithril_common::entities::{CompressionAlgorithm, ImmutableFileNumber};
-
-use crate::tools::file_archiver::FileArchive;
+use mithril_file_archiver::FileArchive;
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]

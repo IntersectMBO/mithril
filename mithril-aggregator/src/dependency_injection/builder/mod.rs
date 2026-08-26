@@ -33,6 +33,7 @@ use mithril_common::{
     signable_builder::{SignableBuilderService, SignableSeedBuilder},
 };
 use mithril_era::{EraChecker, EraReader, EraReaderAdapter};
+use mithril_file_archiver::FileArchiver;
 use mithril_persistence::sqlite::{SqliteConnection, SqliteConnectionPool};
 use mithril_protocol_config::interface::{
     MithrilNetworkConfigurationProvider, ProtocolConfigurationMarkersReader,
@@ -61,7 +62,6 @@ use crate::{
         SignedEntityService, SignerSynchronizer, Snapshotter, StakeDistributionService,
         UpkeepService,
     },
-    tools::file_archiver::FileArchiver,
 };
 
 use super::{
