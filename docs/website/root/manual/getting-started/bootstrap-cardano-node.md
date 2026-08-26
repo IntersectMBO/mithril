@@ -207,9 +207,11 @@ Then, create a shell function for the Mithril client:
 
 ```bash
 mithril_client () {
-  docker run --rm -e GENESIS_VERIFICATION_KEY=$GENESIS_VERIFICATION_KEY -e AGGREGATOR_ENDPOINT=$AGGREGATOR_ENDPOINT --name='mithril-client' -v $(pwd):/app/data -w /app/data -u $(id -u) ghcr.io/intersectmbo/mithril-client:$MITHRIL_IMAGE_ID $@
+  docker run --rm -e GENESIS_VERIFICATION_KEY=$GENESIS_VERIFICATION_KEY -e AGGREGATOR_ENDPOINT=$AGGREGATOR_ENDPOINT --name='mithril-client' --security-opt seccomp=unconfined -v $(pwd):/app/data -w /app/data -u $(id -u) ghcr.io/intersectmbo/mithril-client:$MITHRIL_IMAGE_ID "$@"
 }
 ```
+
+The `--security-opt seccomp=unconfined` option is required by the `LSM` ledger state conversion, which uses io_uring syscalls blocked by the default Docker seccomp profile.
 
 You can now use the `mithril_client` function:
 
