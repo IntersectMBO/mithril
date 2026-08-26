@@ -349,6 +349,14 @@ jobs:
           ]
 
         include:
+          # Include a test with a signer using HTTP adapter for protocol configurations (instead of on-chain by default)
+          - mode: "signer-legacy-http-protocol-configurations"
+            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
+            next_era: ""
+            cardano_node_version: "11.0.1"
+            hard_fork_latest_era_at_epoch: 0
+            run_id: "#1"
+            extra_args: "--signer-protocol-configuration-reader-adapter=http --aggregate-signature-type=Concatenation full --check-client-cli-snapshot-converter"
           # Include a test for partial decentralization with leader/follower signer registration and P2P signature registration with Haskell DMQ node (without fallback signature delayer)
           - mode: "leader-follower-dmq-haskell-skip-delayer"
             era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
