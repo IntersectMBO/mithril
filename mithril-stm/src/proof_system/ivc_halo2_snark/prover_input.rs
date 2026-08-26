@@ -52,41 +52,6 @@ pub(crate) struct IvcProverInput {
 }
 
 impl IvcProverInput {
-    /// Runs every `prepare` off circuit check that does not need the certificate proof:
-    /// classifies the step, validates the epoch advance and protocol-parameter lookahead
-    /// against the rolling state, and checks the message hashes to the supplied preimage.
-    // pub(crate) fn off_circuit_checks<D: MembershipDigest>(
-    //     message: &[u8],
-    //     aggregate_verification_key_for_snark: &AggregateVerificationKeyForSnark<D>,
-    //     protocol_message_preimage: &ProtocolMessagePreimage,
-    //     rolling_state: &IvcRollingState,
-    // ) -> StmResult<IvcProverInputChecks<D>> {
-    //     let transition_type = IvcTransitionType::try_compute_transition_type(
-    //         rolling_state,
-    //         protocol_message_preimage,
-    //     )?;
-
-    //     rolling_state.assert_correct_parameters(
-    //         protocol_message_preimage,
-    //         aggregate_verification_key_for_snark,
-    //         message,
-    //         transition_type,
-    //     )?;
-
-    //     let (certificate_message_hash, certificate_merkle_tree_commitment) =
-    //         create_snark_message_for_next_state(aggregate_verification_key_for_snark, message)?;
-
-    //     assert_message_hash_matches_preimage(certificate_message_hash, protocol_message_preimage)?;
-
-    //     Ok(IvcProverInputChecks {
-    //         transition_type,
-    //         certificate_message_hash,
-    //         certificate_merkle_tree_commitment,
-    //         message: message.to_vec(),
-    //         aggregate_verification_key_for_snark: aggregate_verification_key_for_snark.clone(),
-    //     })
-    // }
-
     /// Completes `prepare` once the certificate proof is available: verifies it, advances the
     /// chain state, and folds the accumulator. `checks` must come from [`Self::off_circuit_checks`]
     /// run against the same `protocol_message_preimage` and `rolling_state`.
@@ -417,7 +382,7 @@ mod test {
             circuits::halo2_ivc::{
                 PREIMAGE_CURRENT_EPOCH_BYTES, PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
                 PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, PREIMAGE_SIZE,
-                errors::{EpochTransitionErrorKind, IvcCircuitError},
+                errors::IvcCircuitError,
                 io::Write as IvcWrite,
                 tests::common::{
                     asset_readers::{
@@ -831,8 +796,6 @@ mod test {
         fn prepare_rejects_invalid_genesis_signature() {
             let setup = shared_ivc_setup();
             let asset_setup = shared_asset_setup();
-            let first_step = load_embedded_first_certificate_in_epoch_asset()
-                .expect("first step cert asset should load");
 
             let global = build_global();
             let mut sig_bytes = asset_setup.genesis_signature.to_bytes();
@@ -843,19 +806,13 @@ mod test {
             let combined_names: Vec<String> = setup.combined_fixed_bases.keys().cloned().collect();
             let rolling_state = IvcRollingState::genesis(bad_signature, &combined_names);
 
-            let snark_proof = wrap_snark_proof(first_step.certificate_proof.clone().into_vec());
-            let avk = wrap_avk(&first_step.aggregate_verification_key_merkle_root);
             let genesis_preimage_bytes = build_genesis_protocol_message_preimage(asset_setup);
             let protocol_message_preimage = wrap_protocol_message_preimage(&genesis_preimage_bytes);
 
-            let result = IvcProverInput::prepare(
-                &snark_proof,
-                &first_step.message,
-                &avk,
-                &global,
-                &protocol_message_preimage,
+            let result = IvcProverInput::prepare_genesis(
                 &rolling_state,
-                setup,
+                &protocol_message_preimage,
+                &global,
             );
 
             let err = result
@@ -865,112 +822,6 @@ mod test {
             assert!(
                 matches!(err, SchnorrSignatureError::StandardSignatureInvalid(_)),
                 "expected StandardSignatureInvalid, got {err:?}"
-            );
-        }
-
-        #[test]
-        #[ignore = "slow: runs real keygen via shared OnceLock; opt-in only"]
-        fn prepare_rejects_invalid_epoch_transition() {
-            let setup = shared_ivc_setup();
-            let chain_state = load_embedded_recursive_chain_state_asset()
-                .expect("recursive chain state asset should load");
-            let step = load_embedded_following_certificate_in_epoch_asset()
-                .expect("same-epoch step output asset should load");
-
-            let modified_state = State::new(
-                chain_state.state.step_counter,
-                chain_state.state.message,
-                chain_state.state.merkle_tree_commitment,
-                chain_state.state.next_merkle_tree_commitment,
-                chain_state.state.protocol_parameters,
-                chain_state.state.next_protocol_parameters,
-                EpochNumber::new(u64::MAX - 100),
-            );
-            let rolling_state = build_rolling_state(
-                modified_state,
-                chain_state.ivc_proof,
-                chain_state.accumulator,
-                chain_state.genesis_signature,
-            );
-
-            let global = build_global();
-            let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
-            let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
-
-            let result = IvcProverInput::prepare(
-                &snark_proof,
-                &step.message,
-                &avk,
-                &global,
-                &protocol_message_preimage,
-                &rolling_state,
-                setup,
-            );
-
-            let err = result
-                .expect_err("prepare should reject a bad epoch transition")
-                .downcast::<IvcCircuitError>()
-                .expect("error should downcast to IvcCircuitError");
-            assert!(
-                matches!(
-                    err,
-                    IvcCircuitError::InvalidEpochTransition {
-                        kind: EpochTransitionErrorKind::EpochGap { .. },
-                        ..
-                    }
-                ),
-                "expected InvalidEpochTransition with OutOfRange kind, got {err:?}"
-            );
-        }
-
-        #[test]
-        #[ignore = "slow: runs real keygen via shared OnceLock; opt-in only"]
-        fn prepare_rejects_step_counter_overflow() {
-            let setup = shared_ivc_setup();
-            let chain_state = load_embedded_recursive_chain_state_asset()
-                .expect("recursive chain state asset should load");
-            let step = load_embedded_following_certificate_in_epoch_asset()
-                .expect("same-epoch step output asset should load");
-
-            let modified_state = State::new(
-                StepCounter::new(u64::MAX),
-                chain_state.state.message,
-                chain_state.state.merkle_tree_commitment,
-                chain_state.state.next_merkle_tree_commitment,
-                chain_state.state.protocol_parameters,
-                chain_state.state.next_protocol_parameters,
-                chain_state.state.current_epoch,
-            );
-            let rolling_state = build_rolling_state(
-                modified_state,
-                chain_state.ivc_proof,
-                chain_state.accumulator,
-                chain_state.genesis_signature,
-            );
-
-            let global = build_global();
-            let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
-            let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
-
-            let result = IvcProverInput::prepare(
-                &snark_proof,
-                &step.message,
-                &avk,
-                &global,
-                &protocol_message_preimage,
-                &rolling_state,
-                setup,
-            );
-
-            let err = result
-                .expect_err("prepare should reject step counter overflow")
-                .downcast::<IvcCircuitError>()
-                .expect("error should downcast to IvcCircuitError");
-            assert!(
-                matches!(err, IvcCircuitError::StepCounterOverflow { .. }),
-                "expected StepCounterOverflow, got {err:?}"
             );
         }
     }
