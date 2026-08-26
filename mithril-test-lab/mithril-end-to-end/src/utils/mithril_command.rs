@@ -1,6 +1,7 @@
 use anyhow::{Context, anyhow};
 use slog_scope::info;
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use tokio::process::{Child, Command};
 
@@ -15,24 +16,65 @@ pub struct MithrilCommand {
     log_path: PathBuf,
     output_path: Option<PathBuf>,
     work_dir: PathBuf,
-    env_vars: HashMap<String, String>,
+    env_vars: EnvVars,
     default_args: Vec<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct EnvVars(HashMap<OsString, OsString>);
+
+impl EnvVars {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with(mut self, name: impl Into<OsString>, value: impl Into<OsString>) -> Self {
+        self.0.insert(name.into(), value.into());
+        self
+    }
+
+    pub fn insert(&mut self, name: impl Into<OsString>, value: impl Into<OsString>) {
+        self.0.insert(name.into(), value.into());
+    }
+
+    pub fn unset(&mut self, name: impl Into<OsString>) {
+        self.0.remove(&name.into());
+    }
+}
+
+impl<const N: usize> From<[(&str, &str); N]> for EnvVars {
+    fn from(arr: [(&str, &str); N]) -> Self {
+        Self(arr.into_iter().map(|(k, v)| (k.into(), v.into())).collect())
+    }
+}
+
+impl From<HashMap<&str, &str>> for EnvVars {
+    fn from(value: HashMap<&str, &str>) -> Self {
+        Self(value.into_iter().map(|(k, v)| (k.into(), v.into())).collect())
+    }
+}
+
+impl<'a> IntoIterator for &'a EnvVars {
+    type Item = (&'a OsString, &'a OsString);
+    type IntoIter = std::collections::hash_map::Iter<'a, OsString, OsString>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 impl MithrilCommand {
-    pub fn new(
+    pub fn new<EV: Into<EnvVars>>(
         name: &str,
         work_dir: &Path,
         bin_dir: &Path,
-        env_vars: HashMap<&str, &str>,
+        env_vars: EV,
         default_args: &[&str],
     ) -> StdResult<MithrilCommand> {
         let process_path = file_utils::get_process_path(name, bin_dir)?;
         let log_path = work_dir.join(format!("{name}.log"));
 
-        // ugly but it's far easier for callers to manipulate string literals
-        let mut env_vars: HashMap<String, String> =
-            env_vars.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let mut env_vars = env_vars.into();
         let default_args = default_args.iter().map(|s| s.to_string()).collect();
 
         env_vars.insert("RUST_BACKTRACE".to_string(), "full".to_string());
@@ -74,7 +116,7 @@ impl MithrilCommand {
     }
 
     pub fn unset_env_var(&mut self, name: &str) {
-        self.env_vars.remove(name);
+        self.env_vars.unset(name);
     }
 
     pub fn start(&mut self, args: &[String]) -> StdResult<Child> {
