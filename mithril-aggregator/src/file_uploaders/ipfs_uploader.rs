@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use slog::{Logger, trace};
+use tokio::sync::OnceCell;
 
 use mithril_common::StdResult;
 use mithril_common::entities::FileUri;
@@ -19,6 +20,7 @@ pub type Cid = String;
 pub struct IpfsUploader {
     rpc_client: Arc<dyn IpfsBackendUploader>,
     ipfs_dir_path: IpfsMfsDirPath,
+    directory_created: OnceCell<()>,
     logger: Logger,
 }
 
@@ -32,8 +34,26 @@ impl IpfsUploader {
         Self {
             rpc_client,
             ipfs_dir_path,
+            directory_created: OnceCell::new(),
             logger: logger.new_with_component_name::<Self>(),
         }
+    }
+
+    async fn ensure_directory_exists(&self) -> StdResult<()> {
+        self.directory_created
+            .get_or_try_init(|| async {
+                self.rpc_client
+                    .create_dir(&self.ipfs_dir_path)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Failed to create directory '{}' in IPFS",
+                            self.ipfs_dir_path
+                        )
+                    })
+            })
+            .await?;
+        Ok(())
     }
 
     /// Get the current directory CID, reflecting the latest state of the directory
@@ -46,15 +66,7 @@ impl IpfsUploader {
 impl FileUploader for IpfsUploader {
     async fn upload_without_retry(&self, filepath: &Path) -> StdResult<FileUri> {
         trace!(self.logger, "Uploading file to IPFS"; "file_path" => %filepath.display());
-        self.rpc_client
-            .create_dir(&self.ipfs_dir_path)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to create directory '{}' in IPFS",
-                    self.ipfs_dir_path
-                )
-            })?;
+        self.ensure_directory_exists().await?;
 
         match self
             .rpc_client
@@ -157,12 +169,13 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn create_dir_when_uploading() {
+    async fn create_dir_only_once_when_uploading_multiple_time() {
         let uploader = IpfsUploader::new(
             MockBuilder::configure(|mock: &mut MockIpfsBackendUploader| {
                 mock.expect_create_dir()
                     .with(eq(IpfsMfsDirPath::from("/test/dir")))
-                    .returning(|_| Ok(()));
+                    .returning(|_| Ok(()))
+                    .once();
                 mock.expect_file_exists().returning(|_, _| Ok(None));
                 mock.expect_upload_file().returning(|_, _| Ok(String::new()));
             }),
@@ -170,6 +183,8 @@ mod tests {
             &TestLogger::stdout(),
         );
 
+        uploader.upload_without_retry(Path::new("whatever")).await.unwrap();
+        uploader.upload_without_retry(Path::new("whatever")).await.unwrap();
         uploader.upload_without_retry(Path::new("whatever")).await.unwrap();
     }
 
