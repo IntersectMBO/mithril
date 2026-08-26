@@ -201,8 +201,10 @@ pub fn log_download_information(
                     json["snapshot_converter_cmd_to_lmdb"] =
                         serde_json::Value::String(snapshot_converter_cmd("LMDB"));
                 }
-                json["snapshot_converter_cmd_to_legacy"] =
-                    serde_json::Value::String(snapshot_converter_cmd("Legacy"));
+                if !is_version_at_least_10_6_2_or_latest(cardano_node_version) {
+                    json["snapshot_converter_cmd_to_legacy"] =
+                        serde_json::Value::String(snapshot_converter_cmd("Legacy"));
+                }
             }
         }
 
