@@ -58,11 +58,11 @@ impl ProtocolConfigurationMarkersReader for CardanoChainProtocolConfigurationMar
             .filter_map(|field_value_str| {
                 SignedProtocolConfigurationMarkersPayload::from_json_hex(&field_value_str).ok()
             })
-            .filter_map(|markers_payload| {
-                markers_payload
+            .filter_map(|signed_payload| {
+                signed_payload
                     .verify_signature(self.verification_key)
                     .ok()
-                    .map(|_| markers_payload.markers)
+                    .map(|_| signed_payload.markers_payload.markers)
             })
             .next()
             .unwrap_or_default();

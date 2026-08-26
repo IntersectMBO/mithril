@@ -39,6 +39,7 @@ pub enum ProtocolConfigurationMarkersPayloadError {
 
 /// Protocol Configuration markers payload
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct ProtocolConfigurationMarkersPayload {
     /// List of protocol configuration markers
     pub markers: Vec<ProtocolConfigurationMarker>,
@@ -47,22 +48,15 @@ pub struct ProtocolConfigurationMarkersPayload {
 /// Signed Protocol Configuration markers payload
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SignedProtocolConfigurationMarkersPayload {
-    /// List of protocol configuration markers
-    pub markers: Vec<ProtocolConfigurationMarker>,
+    /// Protocol Configuration Markers Payload
+    #[serde(rename = "markers")]
+    pub markers_payload: ProtocolConfigurationMarkersPayload,
 
     /// Protocol Configuration markers signature
     pub signature: ProtocolConfigurationMarkersVerifierSignature,
 }
 
 impl SignedProtocolConfigurationMarkersPayload {
-    /// Instanciate a new SignedProtocolConfigurationMarkersPayload with markers and signature
-    pub fn new(
-        markers: Vec<ProtocolConfigurationMarker>,
-        signature: ProtocolConfigurationMarkersVerifierSignature,
-    ) -> Self {
-        Self { markers, signature }
-    }
-
     /// Encode this payload to a json hex string
     pub fn to_json_hex(&self) -> StdResult<String> {
         key_encode_hex(self).with_context(
@@ -77,11 +71,6 @@ impl SignedProtocolConfigurationMarkersPayload {
         )
     }
 
-    fn message_to_bytes(&self) -> Result<Vec<u8>, ProtocolConfigurationMarkersPayloadError> {
-        serde_json::to_vec(&self.markers)
-            .map_err(|e| ProtocolConfigurationMarkersPayloadError::SerializeMessage(e.into()))
-    }
-
     /// Verify the signature of a signed protocol configuration markers payload
     pub fn verify_signature(
         &self,
@@ -91,7 +80,7 @@ impl SignedProtocolConfigurationMarkersPayload {
             ProtocolConfigurationMarkersVerifier::from_verification_key(verification_key);
 
         markers_verifier
-            .verify(&self.message_to_bytes()?, &self.signature)
+            .verify(&self.markers_payload.message_to_bytes()?, &self.signature)
             .with_context(|| "protocol configuration markers payload could not verify signature")
             .map_err(ProtocolConfigurationMarkersPayloadError::VerifySignature)
     }
@@ -120,7 +109,7 @@ impl ProtocolConfigurationMarkersPayload {
             })?);
 
         Ok(SignedProtocolConfigurationMarkersPayload {
-            markers: self.markers,
+            markers_payload: self,
             signature,
         })
     }
