@@ -65,7 +65,7 @@ The **trigger** represents the instant at which a certificate should be created.
 
 :::info
 
-The **aggregate verification key** (`AVK`) is the root of the Merkle tree where each leaf is filled with `H(STAKE(signer) || VK(signer))`. It represents the corresponding stake distribution in a condensed way.
+The **aggregate verification key** (`AVK`) is the root of the Merkle tree where each leaf is filled with either `H(STAKE(signer) || VK(signer))` for the concatenation flavor of aggregation or `H(VK(signer) || LotteryTarget(signer))` for the non-recursive SNARK flavor where `LotteryTarget` is a value that depends on the stake of the signer and the total stake registered. The `AVK` represents the corresponding stake distribution in a condensed way.
 :::
 
 ## The verification algorithm
@@ -112,6 +112,18 @@ An implementation of the algorithm would work as follows for a certificate:
     - **Step 6.2.4**: Verify (or fail) that the `current_protocol_parameters` of the `current_certificate` is part of the message signed by the genesis signature of the `previous_certificate`
     - **Step 6.2.5**: The certificate is valid (success).
 
+:::tip
+
+Steps 4 and 6.1.3 check that a certificate's multi-signature is valid. Mithril supports several ways to produce and verify this, see [aggregation flavors](./aggregation/).
+
+:::
+
+:::tip
+
+The recursive SNARK aggregation flavor collapses this entire walk into a single check: verifying one recursive aggregate signature is equivalent to verifying the whole chain back to genesis. See [recursive SNARK](./aggregation/recursive-snark.md).
+
+:::
+
 ## The coexistence of multiple certificate chains
 
 What would happen if some **Mithril aggregator** claims that not enough signatures were received? This doesn’t really matter, as there will be a different Mithril aggregator that would collect sufficient signatures and aggregate them into a valid certificate.
@@ -127,6 +139,6 @@ The certificate chain is designed to last. At a certain point, a multi-signature
 To achieve this backward compatibility, some options are available:
 
 - Handle multi-signature verification functions of legacy versions
-- Recreate genesis certificates from time to time
+- Recreate genesis certificates from time to time (a requirement for some aggregation flavors — see [aggregation flavors](./aggregation/) for details)
 - Create intermediate **milestone certificates** (with both a multi-signature and a genesis signature)
 - Design a format migration algorithm.
