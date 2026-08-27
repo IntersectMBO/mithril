@@ -301,11 +301,12 @@ impl IvcProverInputVerificationContext {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::{
         Parameters,
         circuits::halo2_ivc::tests::common::asset_readers::load_embedded_verification_context_asset,
     };
+
+    use super::*;
 
     #[test]
     fn prover_input_verification_context_derives_fixed_bases_from_both_verifying_keys() {
@@ -338,11 +339,12 @@ mod tests {
     mod slow {
         use midnight_proofs::poly::commitment::Params;
 
-        use super::*;
         use crate::circuits::halo2_ivc::tests::common::{
             asset_readers::load_embedded_verification_context_asset,
             generators::setup::{QUORUM_SIZE, SIGNER_COUNT},
         };
+
+        use super::*;
 
         // Runs the real `load` path against an oversized unsafe SRS; runs in the `slow` tier.
         #[test]

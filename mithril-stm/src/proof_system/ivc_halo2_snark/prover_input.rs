@@ -174,7 +174,7 @@ mod tests {
             },
         },
         proof_system::ivc_halo2_snark::prover_setup::IvcProverInputVerificationContext,
-        signature_scheme::{SchnorrSignatureError, StandardSchnorrSignature},
+        signature_scheme::SchnorrSignatureError,
     };
 
     use super::*;
@@ -223,7 +223,6 @@ mod tests {
     }
 
     fn wrap_protocol_message_preimage(preimage: &[u8]) -> ProtocolMessagePreimage {
-        use crate::circuits::halo2_ivc::PREIMAGE_SIZE;
         let preimage_array: [u8; PREIMAGE_SIZE] = preimage
             .try_into()
             .expect("preimage should be exactly PREIMAGE_SIZE bytes");
@@ -236,15 +235,6 @@ mod tests {
             .write(&mut bytes, SerdeFormat::RawBytesUnchecked)
             .expect("accumulator serialization should succeed");
         bytes
-    }
-
-    fn build_rolling_state(
-        state: State,
-        ivc_proof: crate::circuits::halo2_ivc::types::IvcProofBytes,
-        accumulator: midnight_circuits::verifier::Accumulator<BlstrsEmulation>,
-        genesis_signature: StandardSchnorrSignature,
-    ) -> IvcRollingState {
-        IvcRollingState::new(state, ivc_proof, accumulator, genesis_signature)
     }
 
     #[test]
@@ -381,7 +371,7 @@ mod tests {
         let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
         let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
         let chain_genesis_signature = chain_state.genesis_signature;
-        let rolling_state = build_rolling_state(
+        let rolling_state = IvcRollingState::new(
             chain_state.state,
             chain_state.ivc_proof,
             chain_state.accumulator,
@@ -425,7 +415,7 @@ mod tests {
         let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
         let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
         let chain_genesis_signature = chain_state.genesis_signature;
-        let rolling_state = build_rolling_state(
+        let rolling_state = IvcRollingState::new(
             chain_state.state,
             chain_state.ivc_proof,
             chain_state.accumulator,
@@ -471,7 +461,7 @@ mod tests {
         let snark_proof = wrap_snark_proof(corrupted);
         let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
         let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
-        let rolling_state = build_rolling_state(
+        let rolling_state = IvcRollingState::new(
             chain_state.state,
             chain_state.ivc_proof,
             chain_state.accumulator,
@@ -511,7 +501,7 @@ mod tests {
             chain_state.state.next_protocol_parameters,
             EpochNumber::new(u64::MAX - 100),
         );
-        let rolling_state = build_rolling_state(
+        let rolling_state = IvcRollingState::new(
             modified_state,
             chain_state.ivc_proof,
             chain_state.accumulator,
@@ -545,7 +535,7 @@ mod tests {
                     ..
                 }
             ),
-            "expected InvalidEpochTransition with OutOfRange kind, got {err:?}"
+            "expected InvalidEpochTransition with EpochGap kind, got {err:?}"
         );
     }
 
@@ -565,7 +555,7 @@ mod tests {
             chain_state.state.next_protocol_parameters,
             chain_state.state.current_epoch,
         );
-        let rolling_state = build_rolling_state(
+        let rolling_state = IvcRollingState::new(
             modified_state,
             chain_state.ivc_proof,
             chain_state.accumulator,
