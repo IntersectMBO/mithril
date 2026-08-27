@@ -69,8 +69,8 @@ Under specific parameters, a message may fail to get certified using Mithril. In
 ### 1. Protocol establishment phase
 
 - Choose/establish a prime order group to serve as the foundation for the multi-signature scheme
-- _When implementing bulletproof_: generate a pseudo-random string, such as hashing unpredictable data from the net (eg, latest block's hash, stock market quotes)
-- Upon request from a party, provide the parameters and a random string.
+- _When implementing a SNARK-based aggregation flavor_: run a one-time trusted setup ceremony to generate the circuit's proving and verification keys
+- Upon request from a party, provide the parameters and circuit keys.
 
 This setup phase must be done only once and is valid for as long as the same proof system (eg, the parameters might be statically baked into the various systems producing and consuming Mithril proofs).
 
@@ -82,12 +82,12 @@ This phase includes both the actual initialization phase of each party and the r
 
 Firstly, the party retrieves the protocol parameters.
 
-Next, they use the parameters to generate a new key pair of a verification key and a signing key, plus a proof of possession (PoP)
-`κ`. The verification key and PoP are broadcast to all other parties for registration, which is expected to last for a limited period. An important difference between the implementation and the paper is that registration is not centralized in the 'idealized' manner described in the paper. Instead, all signers will register against all other signers. Thus
+Next, they use the parameters to generate a new key pair of a verification key and a signing key (for BLS signature, Schnorr signature or both depending on the flavor of aggregation used), plus a proof of possession (PoP)
+`κ` of the signing key(s). The verification key and PoP are broadcast to all other parties for registration, which is expected to last for a limited period. An important difference between the implementation and the paper is that registration is not centralized in the 'idealized' manner described in the paper. Instead, all signers will register against all other signers. Thus
 each signer will trace its own registration procedure. Together with other participants' keys, the stake of each
 party is stored.
 
-Then an aggregate verification key (`AVK` in the paper) is created from the registration material, in the form of a Merkle tree.
+Then an aggregate verification key (`AVK` in the paper) is created from the registration material, in the form of a [Merkle tree](../../../glossary.md#merkle-tree).
 
 The key dissemination process can also occur on-chain, which is logical as it provides parties with assurances about the validity of keys and stake held by each participant.
 
@@ -110,11 +110,11 @@ a quorum of `k` valid signatures must be submitted.
       - Checking the evaluation threshold is correct for the party’s stake given the message, index, and signature
       - Checking the provided path exists in the aggregate keys' Merkle tree
       - Verifying the signature of the message is valid with respect to the verification key
-  - Producing an aggregation key from all verification keys
+  - Producing an aggregation key from all verification keys (for the [Concatenation](./aggregation/concatenation.md) flavor of aggregation)
   - Producing an aggregate signature from all signatures `μ`
   - Producing a proof using the aggregate keys, the message, and the vector of individual proofs from each party:
     - In the concatenation proof system, all these values are simply packed together to form the proof
-    - In the case of _bulletproof_ system, a more compact proof is generated.
+    - In the case of the [non-recursive SNARK](./aggregation/non-recursive-snark.md) or [recursive SNARK](./aggregation/recursive-snark.md) flavors, a small proof is generated instead.
 
 - Each certificate `τ` can be verified as valid for some message, using the known setup parameters to verify the certificate’s proof and then verifying the aggregate signatures and verification keys.
 
