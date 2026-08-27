@@ -149,10 +149,9 @@ impl IpfsBackendUploader for KuboRpcClient {
         file_path: &Path,
     ) -> StdResult<Option<Cid>> {
         let stat = self
-            .send(IpfsFilesStatQuery::for_file_in_dir(
-                mfs_dir_path,
-                file_path,
-            )?)
+            .send(IpfsFilesStatQuery::new(
+                mfs_dir_path.join_file_name_from(file_path)?,
+            ))
             .await?;
         Ok(stat.map(|stat| stat.hash))
     }

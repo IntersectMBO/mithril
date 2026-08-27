@@ -1,13 +1,11 @@
-use std::path::Path;
-
 use anyhow::Context;
 use reqwest::{RequestBuilder, Response};
 use serde::Deserialize;
 
 use mithril_common::StdResult;
 
+use crate::tools::kubo_rpc_client::KuboRpcQuery;
 use crate::tools::kubo_rpc_client::api::format_response_error;
-use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcQuery};
 
 /// Query to display file status in an MFS (Mutable File System) in IPFS via the Kubo RPC API.
 ///
@@ -47,27 +45,6 @@ impl IpfsFilesStatQuery {
         Self {
             path_in_ipfs: path_in_ipfs.as_ref().to_string(),
         }
-    }
-
-    /// Creates a query for the file in `mfs_dir` whose name is taken from `file_path`.
-    ///
-    /// Only the final component of `file_path` is used. Returns an error if the path
-    /// has no file name.
-    pub fn for_file_in_dir<P: AsRef<Path>>(
-        mfs_dir: &IpfsMfsDirPath,
-        file_path: P,
-    ) -> StdResult<Self> {
-        let filename = file_path
-            .as_ref()
-            .file_name()
-            .with_context(|| {
-                format!(
-                    "Failed to get filename from path: {}",
-                    file_path.as_ref().display()
-                )
-            })?
-            .to_string_lossy();
-        Ok(Self::new(format!("{mfs_dir}{filename}")))
     }
 }
 
@@ -116,26 +93,6 @@ mod tests {
     use crate::tools::kubo_rpc_client::test_tools::setup_server_and_client;
 
     use super::*;
-
-    #[test]
-    fn for_file_in_dir_builds_mfs_path_from_directory_and_file_name() {
-        let query = IpfsFilesStatQuery::for_file_in_dir(
-            &IpfsMfsDirPath::from("/test/dir"),
-            "/local/archive/dummy-file.txt",
-        )
-        .unwrap();
-
-        assert_eq!("/test/dir/dummy-file.txt", query.path_in_ipfs);
-    }
-
-    #[test]
-    fn for_file_in_dir_returns_error_when_path_has_no_file_name() {
-        let error =
-            IpfsFilesStatQuery::for_file_in_dir(&IpfsMfsDirPath::from("/test/dir"), Path::new(""))
-                .unwrap_err();
-
-        assert!(error.to_string().contains("Failed to get filename from path"));
-    }
 
     #[tokio::test]
     async fn return_stat_data_if_request_succeeds() {

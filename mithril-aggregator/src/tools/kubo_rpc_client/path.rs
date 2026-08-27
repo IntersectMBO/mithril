@@ -1,4 +1,9 @@
 use std::fmt::Display;
+use std::path::Path;
+
+use anyhow::Context;
+
+use mithril_common::StdResult;
 
 /// A path to a Mutable File System directory in IPFS.
 ///
@@ -6,6 +11,26 @@ use std::fmt::Display;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(transparent)]
 pub struct IpfsMfsDirPath(String);
+
+impl IpfsMfsDirPath {
+    /// Return a path for a file in this directory whose name is taken from `file_path`.
+    ///
+    /// Only the final component of `file_path` is used. Returns an error if the path
+    /// has no file name.
+    pub fn join_file_name_from<P: AsRef<Path>>(&self, file_path: P) -> StdResult<String> {
+        let filename = file_path
+            .as_ref()
+            .file_name()
+            .with_context(|| {
+                format!(
+                    "Failed to get filename from path: {}",
+                    file_path.as_ref().display()
+                )
+            })?
+            .to_string_lossy();
+        Ok(format!("{}{filename}", self.0))
+    }
+}
 
 impl Display for IpfsMfsDirPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -107,5 +132,23 @@ mod tests {
             IpfsMfsDirPath::from("/dir/subdir/"),
             serde_json::from_str(r#""/dir/subdir/""#).unwrap()
         );
+    }
+
+    #[test]
+    fn join_file_name_from_builds_mfs_path_from_directory_and_file_name() {
+        let path = IpfsMfsDirPath::from("/test/dir")
+            .join_file_name_from("/local/archive/dummy-file.txt")
+            .unwrap();
+
+        assert_eq!("/test/dir/dummy-file.txt", path);
+    }
+
+    #[test]
+    fn join_file_name_from_returns_error_when_path_has_no_file_name() {
+        let error = IpfsMfsDirPath::from("/test/dir")
+            .join_file_name_from(Path::new(""))
+            .unwrap_err();
+
+        assert!(error.to_string().contains("Failed to get filename from path"));
     }
 }
