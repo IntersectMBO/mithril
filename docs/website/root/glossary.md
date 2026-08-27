@@ -58,7 +58,7 @@ For each [beacon](#beacon), the [Mithril signers](#mithril-signer) will compute 
 
 IVC (**I**ncrementally **V**erifiable **C**omputation) is a technique that lets a proof be extended step by step: each new proof attests to one more step of computation while also verifying that the previous proof was valid, so a single proof can stand for an entire chain of steps.
 
-> More information is available on the [recursive SNARK page](./mithril/advanced/mithril-protocol/aggregation/recursive_SNARK.md).
+> More information is available on the [recursive SNARK page](./mithril/advanced/mithril-protocol/aggregation/recursive-snark.md).
 
 ## Merkle tree
 

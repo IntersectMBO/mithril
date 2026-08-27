@@ -120,7 +120,7 @@ Steps 4 and 6.1.3 check that a certificate's multi-signature is valid. Mithril s
 
 :::tip
 
-The recursive SNARK aggregation flavor collapses this entire walk into a single check: verifying one recursive aggregate signature is equivalent to verifying the whole chain back to genesis. See [recursive SNARK](./aggregation/recursive_SNARK.md).
+The recursive SNARK aggregation flavor collapses this entire walk into a single check: verifying one recursive aggregate signature is equivalent to verifying the whole chain back to genesis. See [recursive SNARK](./aggregation/recursive-snark.md).
 
 :::
 

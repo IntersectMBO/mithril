@@ -90,6 +90,6 @@ To verify a recursive aggregate signature, a verifier needs:
 - The genesis verification key
 - The chain state the proof attests to: the current epoch, its `AVK`, the message being certified, and the protocol parameters
 
-The recursive circuit's verification key is a fixed piece of data, derived from the recursive circuit, a one-time trusted setup and the [non-recursive SNARK](./non_recursive_SNARK.md)'s own verification key, since each step checks a certificate proof against it.
+The recursive circuit's verification key is a fixed piece of data, derived from the recursive circuit, a one-time trusted setup and the [non-recursive SNARK](./non-recursive-snark.md)'s own verification key, since each step checks a certificate proof against it.
 It is fixed for a given recursive circuit and publicly available.
 As mentioned at the beginning of the section, the verifier only needs to verify the recursive proof inside the recursive aggregate signature to be convinced of the validity of the certificate chain back to the genesis certificate.
