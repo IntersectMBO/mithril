@@ -15,7 +15,10 @@ pub mod era {
     pub type EraMarkersVerifier = Ed25519Verifier;
     /// [EraMarkersSigner] and [EraMarkersVerifier] related errors.
     pub type EraMarkersVerifierError = Ed25519VerifierError;
+}
 
+pub mod protocol_configuration {
+    use super::*;
     /// Protocol Configuration markers verifier secret key
     pub type ProtocolConfigurationMarkersVerifierSecretKey = Ed25519SecretKey;
     /// Protocol Configuration markers verifier verification key
@@ -24,6 +27,8 @@ pub mod era {
     pub type ProtocolConfigurationMarkersVerifierSignature = Ed25519Signature;
     /// A cryptographic signer that is responsible for signing the ProtocolConfigurationMarkers
     pub type ProtocolConfigurationMarkersSigner = Ed25519Signer;
+    /// A protocol configuration markers verifier that checks the authenticity of protocol configuration markers stored on the chain
+    pub type ProtocolConfigurationMarkersVerifier = Ed25519Verifier;
 }
 
 pub mod manifest {

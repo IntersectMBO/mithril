@@ -1,5 +1,7 @@
 mod test_extensions;
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use mithril_aggregator::ServeCommandConfiguration;
 use mithril_common::{
     entities::{
@@ -9,6 +11,9 @@ use mithril_common::{
     },
     temp_dir,
     test::builder::MithrilFixtureBuilder,
+};
+use mithril_protocol_config::model::{
+    ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch,
 };
 use test_extensions::{
     ExpectedCertificate, ExpectedMetrics, RuntimeTester, utilities::get_test_dir,
@@ -22,15 +27,24 @@ async fn create_certificate_with_buffered_signatures() {
         phi_f: 0.95,
     };
     let configuration = ServeCommandConfiguration {
-        protocol_parameters: Some(protocol_parameters.clone()),
         signed_entity_types: Some(SignedEntityTypeDiscriminants::CardanoTransactions.to_string()),
         data_stores_directory: get_test_dir("create_certificate_with_buffered_signatures"),
-        cardano_transactions_signing_config: Some(CardanoTransactionsSigningConfig {
-            security_parameter: BlockNumberOffset(0),
-            step: BlockNumber(30),
-        }),
         ..ServeCommandConfiguration::new_sample(temp_dir!())
     };
+    let protocol_configuration_markers = ConfigurationResolverFromMarkers::new(BTreeMap::from([(
+        Epoch(0),
+        ProtocolConfigurationForEpoch {
+            protocol_parameters: protocol_parameters.clone(),
+            enabled_signed_entity_types: BTreeSet::from([
+                SignedEntityTypeDiscriminants::CardanoTransactions,
+            ]),
+            cardano_transactions: Some(CardanoTransactionsSigningConfig {
+                security_parameter: BlockNumberOffset(0),
+                step: BlockNumber(30),
+            }),
+            cardano_blocks_transactions: None,
+        },
+    )]));
     let mut tester = RuntimeTester::build(
         TimePoint {
             epoch: Epoch(1),
@@ -42,6 +56,7 @@ async fn create_certificate_with_buffered_signatures() {
             },
         },
         configuration,
+        protocol_configuration_markers,
     )
     .await;
 

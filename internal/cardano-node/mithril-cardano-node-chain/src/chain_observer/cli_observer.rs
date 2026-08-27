@@ -4,7 +4,7 @@ use hex::FromHex;
 use nom::IResult;
 use rand_core::RngCore;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
 use tokio::process::Command;
@@ -515,7 +515,8 @@ impl ChainObserver for CardanoCliChainObserver {
             .launch_utxo(address)
             .await
             .map_err(ChainObserverError::General)?;
-        let v: HashMap<String, Value> = serde_json::from_str(&output)
+
+        let v: BTreeMap<String, Value> = serde_json::from_str(&output)
             .with_context(|| format!("output was = '{output}'"))
             .map_err(ChainObserverError::InvalidContent)?;
 

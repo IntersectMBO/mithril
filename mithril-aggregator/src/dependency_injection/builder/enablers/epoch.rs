@@ -2,14 +2,17 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use mithril_protocol_config::{
-    http::HttpMithrilNetworkConfigurationProvider, interface::MithrilNetworkConfigurationProvider,
+    builder::build_protocol_configuration_adapter, interface::MithrilNetworkConfigurationProvider,
+    interface::ProtocolConfigurationMarkersReader,
+    markers::MarkersMithrilNetworkConfigurationProvider,
+    test::double::FakeProtocolConfigurationMarkersReader,
 };
 
-use crate::dependency_injection::{DependenciesBuilder, EpochServiceWrapper, Result};
-use crate::get_dependency;
-use crate::services::{
-    EpochServiceDependencies, LocalMithrilNetworkConfigurationProvider, MithrilEpochService,
+use crate::dependency_injection::{
+    DependenciesBuilder, DependenciesBuilderError, EpochServiceWrapper, Result,
 };
+use crate::services::{EpochServiceDependencies, MithrilEpochService};
+use crate::{ExecutionEnvironment, get_dependency};
 
 impl DependenciesBuilder {
     async fn build_epoch_service(&mut self) -> Result<EpochServiceWrapper> {
@@ -46,24 +49,10 @@ impl DependenciesBuilder {
     async fn build_mithril_network_configuration_provider(
         &mut self,
     ) -> Result<Arc<dyn MithrilNetworkConfigurationProvider>> {
-        let network_configuration_provider: Arc<dyn MithrilNetworkConfigurationProvider> =
-            if self.configuration.is_follower_aggregator() {
-                Arc::new(HttpMithrilNetworkConfigurationProvider::new(
-                    self.get_leader_aggregator_client().await?,
-                    self.root_logger(),
-                ))
-            } else {
-                Arc::new(LocalMithrilNetworkConfigurationProvider::new(
-                    self.configuration
-                        .get_leader_aggregator_epoch_settings_configuration()?,
-                    self.configuration
-                        .compute_allowed_signed_entity_types_discriminants()?,
-                    self.get_epoch_settings_store().await?,
-                    self.root_logger(),
-                ))
-            };
-
-        Ok(network_configuration_provider)
+        Ok(Arc::new(MarkersMithrilNetworkConfigurationProvider::new(
+            self.root_logger(),
+            self.get_protocol_configuration_reader().await?,
+        )))
     }
 
     /// [MithrilNetworkConfigurationProvider][mithril_protocol_config::interface::MithrilNetworkConfigurationProvider] service
@@ -71,5 +60,38 @@ impl DependenciesBuilder {
         &mut self,
     ) -> Result<Arc<dyn MithrilNetworkConfigurationProvider>> {
         get_dependency!(self.mithril_network_configuration_provider)
+    }
+
+    async fn build_protocol_configuration_reader(
+        &mut self,
+    ) -> Result<Arc<dyn ProtocolConfigurationMarkersReader>> {
+        let protocol_configuration_markers_reader: Arc<dyn ProtocolConfigurationMarkersReader> =
+            match self.configuration.environment() {
+                ExecutionEnvironment::Production => {
+                    let adapter_config = self
+                        .configuration
+                        .protocol_configuration_reader_adapter_config()
+                        .ok_or_else(|| {
+                            DependenciesBuilderError::MissingConfiguration(
+                                "protocol_configuration_reader_adapter_config".to_string(),
+                            )
+                        })?;
+
+                    build_protocol_configuration_adapter(
+                        adapter_config,
+                        self.get_chain_observer().await?,
+                    )
+                }
+                _ => Arc::new(FakeProtocolConfigurationMarkersReader::default()),
+            };
+
+        Ok(protocol_configuration_markers_reader)
+    }
+
+    /// [ProtocolConfigurationMarkersReader] service
+    pub async fn get_protocol_configuration_reader(
+        &mut self,
+    ) -> Result<Arc<dyn ProtocolConfigurationMarkersReader>> {
+        get_dependency!(self.protocol_configuration_reader)
     }
 }

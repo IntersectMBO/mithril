@@ -42,6 +42,7 @@ pub async fn bootstrap_aggregator(
         mithril_era_reader_adapter: "dummy",
         protocol_configuration_marker_address: "",
         protocol_configuration_reader_adapter: "dummy",
+        startup_protocol_parameters: &signers_fixture.protocol_parameters(),
         signed_entity_types: &signed_entity_types,
         aggregate_signature_type: AggregateSignatureType::Concatenation,
         chain_observer_type,

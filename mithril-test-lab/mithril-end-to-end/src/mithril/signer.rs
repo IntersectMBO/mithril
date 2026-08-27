@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -10,7 +9,7 @@ use tokio::process::Child;
 use tokio::sync::RwLock;
 
 use crate::devnet::PoolNode;
-use crate::utils::{MithrilCommand, NodeVersion};
+use crate::utils::{EnvVars, MithrilCommand, NodeVersion};
 use crate::{
     DEVNET_DMQ_MAGIC_ID, DEVNET_MAGIC_ID, DmqNodeFlavor, ERA_MARKERS_VERIFICATION_KEY,
     PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY,
@@ -35,7 +34,6 @@ pub struct SignerConfig<'a> {
     pub skip_signature_delayer: bool,
     pub use_dmq: bool,
     pub dmq_node_flavor: &'a Option<DmqNodeFlavor>,
-    pub read_on_chain_protocol_configurations: bool,
 }
 
 #[derive(Debug)]
@@ -68,23 +66,13 @@ impl Signer {
                     signer_config.mithril_era
                 )
             };
-        let protocol_configuration_reader_adapter_config =
-            if signer_config.protocol_configuration_reader_adapter == "cardano-chain" {
-                format!(
-                    r#"{{"type": "cardano-chain", "address": "{}", "verification_key": "{}"}}"#,
-                    signer_config.protocol_configuration_marker_address,
-                    PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY
-                )
-            } else {
-                r#"{{"type": "fake"}}"#.to_string()
-            };
         let mithril_run_interval = format!("{}", signer_config.mithril_run_interval);
         let skip_signature_delayer = if signer_config.skip_signature_delayer {
             "true"
         } else {
             "false"
         };
-        let mut env = HashMap::from([
+        let mut env = EnvVars::from([
             ("NETWORK", "devnet"),
             ("NETWORK_MAGIC", &magic_id),
             ("DMQ_NETWORK_MAGIC", &dmq_magic_id),
@@ -124,11 +112,15 @@ impl Signer {
             ("PARTY_ID", &party_id),
         ]);
         if Self::can_read_protocol_configurations_on_chain(&version)
-            && signer_config.read_on_chain_protocol_configurations
+            && signer_config.protocol_configuration_reader_adapter == "cardano-chain"
         {
             env.insert(
                 "PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG",
-                &protocol_configuration_reader_adapter_config,
+                format!(
+                    r#"{{"type": "cardano-chain", "address": "{}", "verification_key": "{}"}}"#,
+                    signer_config.protocol_configuration_marker_address,
+                    PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY
+                ),
             );
         }
         if signer_config.enable_certification {

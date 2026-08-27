@@ -12,7 +12,7 @@ pub use child_logger::*;
 pub use compatibility_checker::*;
 pub use formatting::*;
 pub use immutable_files_utils::*;
-pub use mithril_command::MithrilCommand;
+pub use mithril_command::{EnvVars, MithrilCommand};
 pub use spec_utils::{AttemptResult, Backoff, TimeoutReason};
 pub use version_req::NodeVersion;
 

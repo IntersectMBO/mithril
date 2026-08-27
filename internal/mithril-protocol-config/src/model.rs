@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use mithril_common::{
     entities::{
         CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, Epoch,
-        ProtocolParameters, SignedEntityTypeDiscriminants,
+        InconsistentSignedEntityConfigError, ProtocolParameters, SignedEntityConfigValidator,
+        SignedEntityTypeDiscriminants,
     },
     messages::{ProtocolConfigurationMessage, SignedEntityTypeDiscriminantsMessage},
 };
@@ -50,6 +51,26 @@ pub struct MithrilNetworkConfigurationForEpoch {
     pub signed_entity_types_config: SignedEntityTypeConfiguration,
 }
 
+impl MithrilNetworkConfigurationForEpoch {
+    /// Ensures signed-entity configuration is consistent
+    /// and clean if needed `enabled_signed_entity_types` with the validated usable subset.
+    pub(crate) fn ensure_consistency<F>(mut self, consistency_error_inspector: F) -> Self
+    where
+        F: FnOnce(&InconsistentSignedEntityConfigError),
+    {
+        if let Err(err) = SignedEntityConfigValidator::check_consistency(
+            &self.enabled_signed_entity_types,
+            &self.signed_entity_types_config.cardano_transactions,
+            &self.signed_entity_types_config.cardano_blocks_transactions,
+        ) {
+            consistency_error_inspector(&err);
+            self.enabled_signed_entity_types = err.usable_discriminants;
+        }
+
+        self
+    }
+}
+
 impl From<ProtocolConfigurationMessage> for MithrilNetworkConfigurationForEpoch {
     fn from(message: ProtocolConfigurationMessage) -> Self {
         MithrilNetworkConfigurationForEpoch {
@@ -82,6 +103,19 @@ pub struct ProtocolConfigurationForEpoch {
     pub cardano_blocks_transactions: Option<CardanoBlocksTransactionsSigningConfig>,
 }
 
+impl From<ProtocolConfigurationForEpoch> for MithrilNetworkConfigurationForEpoch {
+    fn from(protocol_configuration: ProtocolConfigurationForEpoch) -> Self {
+        MithrilNetworkConfigurationForEpoch {
+            protocol_parameters: protocol_configuration.protocol_parameters,
+            enabled_signed_entity_types: protocol_configuration.enabled_signed_entity_types,
+            signed_entity_types_config: SignedEntityTypeConfiguration {
+                cardano_transactions: protocol_configuration.cardano_transactions,
+                cardano_blocks_transactions: protocol_configuration.cardano_blocks_transactions,
+            },
+        }
+    }
+}
+
 /// Configuration containing markers by epoch
 #[derive(Default, PartialEq, Clone, Debug)]
 pub struct ConfigurationResolverFromMarkers {
@@ -93,6 +127,13 @@ impl ConfigurationResolverFromMarkers {
     /// Create a new instance with the given markers.
     pub fn new(markers: BTreeMap<Epoch, ProtocolConfigurationForEpoch>) -> Self {
         Self { markers }
+    }
+
+    /// Create a new instance with a empty BTreeMap markers.
+    pub fn new_empty() -> Self {
+        Self {
+            markers: BTreeMap::new(),
+        }
     }
 
     /// resolve configuration for given Epoch

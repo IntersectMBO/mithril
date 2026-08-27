@@ -1,5 +1,8 @@
 use anyhow::{Context, anyhow};
 use chrono::Utc;
+use mithril_protocol_config::{
+    model::ConfigurationResolverFromMarkers, test::double::FakeProtocolConfigurationMarkersReader,
+};
 use slog::Drain;
 use slog_scope::debug;
 use std::sync::Arc;
@@ -155,6 +158,7 @@ impl RuntimeTester {
     pub async fn build(
         start_time_point: TimePoint,
         configuration: ServeCommandConfiguration,
+        protocol_configuration_markers: ConfigurationResolverFromMarkers,
     ) -> Self {
         let logger = build_logger();
         let global_logger = slog_scope::set_global_logger(logger.clone());
@@ -176,6 +180,10 @@ impl RuntimeTester {
                 Some(Epoch(0)),
             )]));
         let block_scanner = Arc::new(DumbBlockScanner::new());
+        let protocol_configuration_reader =
+            Arc::new(FakeProtocolConfigurationMarkersReader::default());
+        protocol_configuration_reader.set_markers(protocol_configuration_markers);
+
         let mut deps_builder = DependenciesBuilder::new(logger.clone(), Arc::new(configuration));
         deps_builder.snapshot_uploader = Some(snapshot_uploader.clone());
         deps_builder.chain_observer = Some(chain_observer.clone());
@@ -184,6 +192,7 @@ impl RuntimeTester {
         deps_builder.snapshotter = Some(snapshotter.clone());
         deps_builder.era_reader = Some(Arc::new(EraReader::new(era_reader_adapter.clone())));
         deps_builder.block_scanner = Some(block_scanner.clone());
+        deps_builder.protocol_configuration_reader = Some(protocol_configuration_reader.clone());
 
         let dependencies = deps_builder.build_serve_dependencies_container().await.unwrap();
         let runtime = deps_builder.create_aggregator_runner().await.unwrap();
@@ -211,15 +220,26 @@ impl RuntimeTester {
         }
     }
 
-    pub async fn rebuild(&mut self, configuration: ServeCommandConfiguration) {
+    pub async fn rebuild(
+        &mut self,
+        configuration: ServeCommandConfiguration,
+        protocol_configuration_markers: ConfigurationResolverFromMarkers,
+    ) {
         // Rebuild only test doubles that were not stored in the RuntimeTester
         let snapshotter = Arc::new(FakeSnapshotter::new(
             configuration.get_snapshot_dir().unwrap().join("fake_snapshots"),
         ));
 
+        let protocol_configuration_reader =
+            Arc::new(FakeProtocolConfigurationMarkersReader::default());
+        protocol_configuration_reader.set_markers(protocol_configuration_markers);
+
         let mut deps_builder =
             DependenciesBuilder::new(slog_scope::logger(), Arc::new(configuration));
         deps_builder.snapshotter = Some(snapshotter);
+
+        // Re-build protocol configuration reader from input parameter
+        deps_builder.protocol_configuration_reader = Some(protocol_configuration_reader.clone());
 
         // Re-use tests doubles
         deps_builder.snapshot_uploader = Some(self.snapshot_uploader.clone());

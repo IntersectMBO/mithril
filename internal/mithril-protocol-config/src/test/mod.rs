@@ -5,6 +5,7 @@
 //! This module provides in particular test doubles for the traits defined in this crate.
 
 pub mod double;
+pub mod helper;
 
 #[cfg(test)]
 pub(crate) mod test_tools {
