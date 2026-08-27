@@ -8,7 +8,9 @@ use mithril_protocol_config::{
     test::double::FakeProtocolConfigurationMarkersReader,
 };
 
-use crate::dependency_injection::{DependenciesBuilder, EpochServiceWrapper, Result};
+use crate::dependency_injection::{
+    DependenciesBuilder, DependenciesBuilderError, EpochServiceWrapper, Result,
+};
 use crate::services::{EpochServiceDependencies, MithrilEpochService};
 use crate::{ExecutionEnvironment, get_dependency};
 
@@ -66,8 +68,14 @@ impl DependenciesBuilder {
         let protocol_configuration_markers_reader: Arc<dyn ProtocolConfigurationMarkersReader> =
             match self.configuration.environment() {
                 ExecutionEnvironment::Production => {
-                    let adapter_config =
-                        self.configuration.protocol_configuration_reader_adapter_config();
+                    let adapter_config = self
+                        .configuration
+                        .protocol_configuration_reader_adapter_config()
+                        .ok_or_else(|| {
+                            DependenciesBuilderError::MissingConfiguration(
+                                "protocol_configuration_reader_adapter_config".to_string(),
+                            )
+                        })?;
 
                     build_protocol_configuration_adapter(
                         adapter_config,

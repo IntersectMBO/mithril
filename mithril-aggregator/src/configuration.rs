@@ -199,7 +199,7 @@ pub trait ConfigurationSource {
     }
 
     /// Protocol configuration reader adapter configuration
-    fn protocol_configuration_reader_adapter_config(&self) -> AdapterConfig {
+    fn protocol_configuration_reader_adapter_config(&self) -> Option<AdapterConfig> {
         panic!("protocol_configuration_reader_adapter_config is not implemented.");
     }
 
@@ -582,8 +582,11 @@ pub struct ServeCommandConfiguration {
     #[example = "\
     - cardano-chain:<br/>`{ \"type\": \"cardano-chain\", \"address\": \"test_address\",  \"verification_key\": \"136372c3138312c3138382c3130352c3233312c3135\" }`<br/>\
     "]
-    #[serde(deserialize_with = "serde_deserialization::string_or_struct")]
-    pub protocol_configuration_reader_adapter_config: AdapterConfig,
+    #[serde(
+        default,
+        deserialize_with = "serde_deserialization::string_or_struct_optional"
+    )]
+    pub protocol_configuration_reader_adapter_config: Option<AdapterConfig>,
 
     /// Configuration of the ancillary files signer
     ///
@@ -809,13 +812,13 @@ impl ServeCommandConfiguration {
             store_retention_limit: None,
             era_reader_adapter_type: EraReaderAdapterType::Bootstrap,
             era_reader_adapter_params: None,
-            protocol_configuration_reader_adapter_config: AdapterConfig::Fake {
+            protocol_configuration_reader_adapter_config: Some(AdapterConfig::Fake {
                 protocol_parameters: ProtocolParameters {
                     k: 5,
                     m: 100,
                     phi_f: 0.95,
                 },
-            },
+            }),
             ancillary_files_signer_config: AncillaryFilesSignerConfig::SecretKey {
                 secret_key: ancillary_files_signer_secret_key.to_json_hex().unwrap(),
             },
@@ -960,7 +963,7 @@ impl ConfigurationSource for ServeCommandConfiguration {
         self.era_reader_adapter_params.clone()
     }
 
-    fn protocol_configuration_reader_adapter_config(&self) -> AdapterConfig {
+    fn protocol_configuration_reader_adapter_config(&self) -> Option<AdapterConfig> {
         self.protocol_configuration_reader_adapter_config.clone()
     }
 

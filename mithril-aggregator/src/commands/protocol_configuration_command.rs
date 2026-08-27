@@ -73,8 +73,11 @@ pub struct ProtocolConfigurationParametersConfiguration {
     #[example = "\
     - cardano-chain:<br/>`{ \"type\": \"cardano-chain\", \"address\": \"test_address\",  \"verification_key\": \"136372c3138312c3138382c3130352c3233312c3135\" }`<br/>\
     "]
-    #[serde(deserialize_with = "serde_deserialization::string_or_struct")]
-    pub protocol_configuration_reader_adapter_config: AdapterConfig,
+    #[serde(
+        default,
+        deserialize_with = "serde_deserialization::string_or_struct_optional"
+    )]
+    pub protocol_configuration_reader_adapter_config: Option<AdapterConfig>,
 }
 
 impl ConfigurationSource for ProtocolConfigurationParametersConfiguration {
@@ -98,7 +101,7 @@ impl ConfigurationSource for ProtocolConfigurationParametersConfiguration {
         self.chain_observer_type.clone()
     }
 
-    fn protocol_configuration_reader_adapter_config(&self) -> AdapterConfig {
+    fn protocol_configuration_reader_adapter_config(&self) -> Option<AdapterConfig> {
         self.protocol_configuration_reader_adapter_config.clone()
     }
 }
