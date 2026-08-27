@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.10 (08-28-2026)
+
+### Changed
+
+- Recovered the seven ignored IVC prover input preparation tests, which no CI tier ran because no job passes `--run-ignored`, and retired the two of them that no longer matched the API after the genesis step was simplified.
+- Narrowed `IvcProverInput::prepare` and its helpers to a verification context holding only the verifying keys, their fixed bases and the KZG verifier parameters, so that preparing a prover input no longer requires the IVC proving key.
+- Rebuilt the preparation tests on the committed assets and removed their inert `OnceLock` fixtures, so that the module needs no key generation, no SRS and no cache and its tests now run in the fast tier.
+
 ## 0.12.9 (08-26-2026)
 
 ### Changed
