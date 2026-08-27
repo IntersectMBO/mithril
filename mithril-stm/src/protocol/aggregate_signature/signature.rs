@@ -211,7 +211,7 @@ impl<D: MembershipDigest> AggregateSignature<D> {
                     genesis_verification_key_bundle.schnorr,
                     ivc_verifier_data.certificate_circuit_verification_key(),
                     ivc_verifier_data.ivc_circuit_verification_key(),
-                );
+                )?;
 
                 let verifier_setup = IvcVerifierSetup::try_new(
                     ivc_verifier_data.certificate_circuit_verification_key(),

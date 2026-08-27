@@ -17,14 +17,29 @@ use crate::{
             accumulator::trivial_accumulator,
             errors::{EpochTransitionErrorKind, IvcCircuitError},
             state::{Global, State},
-            types::{IvcProofBytes, StepCounter},
+            types::{IvcProofBytes, MerkleTreeCommitment, MessageHash, StepCounter},
         },
     },
-    proof_system::ivc_halo2_snark::prover_input_helpers::{
-        IvcTransitionType, create_snark_message_for_next_state,
+    proof_system::ivc_halo2_snark::{
+        errors::IvcProofError,
+        prover_input::IvcProverInput,
+        prover_input_helpers::{
+            IvcTransitionType, assert_message_hash_matches_preimage,
+            create_snark_message_for_next_state,
+        },
     },
     signature_scheme::{BaseFieldElement, StandardSchnorrSignature},
 };
+
+/// Bundles [`IvcProverInput::off_circuit_checks`]'s outputs, carried into
+/// [`IvcProverInput::finish_preparation`] once the certificate proof is available.
+pub(crate) struct IvcProverInputChecks<D: MembershipDigest> {
+    pub(crate) transition_type: IvcTransitionType,
+    pub(crate) certificate_message_hash: MessageHash,
+    pub(crate) certificate_merkle_tree_commitment: MerkleTreeCommitment,
+    pub(crate) message: Vec<u8>,
+    pub(crate) aggregate_verification_key_for_snark: AggregateVerificationKeyForSnark<D>,
+}
 
 /// Caller-owned bridge between consecutive IVC proving steps.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -138,6 +153,17 @@ impl IvcRollingState {
             == self.state.current_epoch.as_field() + EpochNumber::new(1).as_field()
     }
 
+    /// Asserts that protocol_parameters and next_protocol_parameters agree for
+    /// every step except genesis.
+    pub(crate) fn assert_protocol_parameters_unchanged(&self) -> StmResult<()> {
+        if !self.is_genesis()
+            && self.state.protocol_parameters != self.state.next_protocol_parameters
+        {
+            return Err(IvcCircuitError::ProtocolParametersChanged.into());
+        }
+        Ok(())
+    }
+
     /// Asserts that the parameters in the rolling state matches the ones in
     /// the protocol message depending on the epoch transition type.
     /// This is done mainly to avoid computing a proof that will not verify.
@@ -179,6 +205,76 @@ impl IvcRollingState {
             .into());
         }
 
+        Ok(())
+    }
+
+    /// Runs every `prepare` off circuit check that does not need the certificate proof:
+    /// classifies the step, validates the epoch advance and protocol-parameter lookahead
+    /// against the rolling state, and checks the message hashes to the supplied preimage.
+    pub(crate) fn off_circuit_checks<D: MembershipDigest>(
+        &self,
+        message: &[u8],
+        aggregate_verification_key_for_snark: &AggregateVerificationKeyForSnark<D>,
+        protocol_message_preimage: &ProtocolMessagePreimage,
+    ) -> StmResult<IvcProverInputChecks<D>> {
+        let transition_type =
+            IvcTransitionType::try_compute_transition_type(self, protocol_message_preimage)?;
+
+        self.assert_correct_parameters(
+            protocol_message_preimage,
+            aggregate_verification_key_for_snark,
+            message,
+            transition_type,
+        )?;
+
+        let (certificate_message_hash, certificate_merkle_tree_commitment) =
+            create_snark_message_for_next_state(aggregate_verification_key_for_snark, message)?;
+
+        assert_message_hash_matches_preimage(certificate_message_hash, protocol_message_preimage)?;
+
+        Ok(IvcProverInputChecks {
+            transition_type,
+            certificate_message_hash,
+            certificate_merkle_tree_commitment,
+            message: message.to_vec(),
+            aggregate_verification_key_for_snark: aggregate_verification_key_for_snark.clone(),
+        })
+    }
+
+    /// Runs [`IvcProverInput::prepare_genesis`]'s checks and discards the result: verifies the
+    /// genesis message hashes to `genesis_protocol_message_preimage`, then verifies the genesis
+    /// Schnorr signature. Additionally checks that the first real certificate's own message hashes
+    /// to `protocol_message_preimage`, mirroring [`off_circuit_checks`]'s hash check for the
+    /// non-genesis path. Exposed so a caller like `Clerk::aggregate_signatures_with_type` can reject
+    /// a malformed genesis request before generating the certificate proof.
+    pub(crate) fn off_circuit_genesis_checks<D: MembershipDigest>(
+        &self,
+        genesis_protocol_message_preimage: &ProtocolMessagePreimage,
+        global: &Global,
+        message: &[u8],
+        aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
+        protocol_message_preimage: &ProtocolMessagePreimage,
+    ) -> StmResult<()> {
+        IvcProverInput::prepare_genesis(self, genesis_protocol_message_preimage, global)?;
+
+        let (certificate_message_hash, _) =
+            create_snark_message_for_next_state(aggregate_verification_key, message)?;
+        assert_message_hash_matches_preimage(certificate_message_hash, protocol_message_preimage)
+    }
+
+    /// Rejects a `rolling_state` that carries a genesis state (`step_counter == 0`).
+    ///
+    /// The genesis step is only ever produced internally by the bootstrap path; callers reach it by
+    /// passing `rolling_state = None`. A genesis state supplied as a previous step would instead run
+    /// a normal step that silently ignores the certificate. Since `genesis_bootstrap` is always
+    /// supplied, this is the only remaining invalid context: the previously-possible both-`Some` and
+    /// both-`None` misuses are now unrepresentable.
+    pub(crate) fn ensure_advanceable_rolling_state(
+        rolling_state: Option<&IvcRollingState>,
+    ) -> StmResult<()> {
+        if rolling_state.is_some_and(|rs| rs.is_genesis()) {
+            return Err(IvcProofError::InvalidProvingContext.into());
+        }
         Ok(())
     }
 }
@@ -290,7 +386,7 @@ mod tests {
     mod assert_correct_parameters {
         use crate::{
             MithrilMembershipDigest,
-            circuits::halo2_ivc::types::ProtocolParametersHash,
+            circuits::halo2_ivc::types::{MerkleTreeCommitment, ProtocolParametersHash},
             proof_system::{
                 AggregateVerificationKeyForSnark,
                 ivc_halo2_snark::prover_input_helpers::tests::{
@@ -493,6 +589,61 @@ mod tests {
             );
 
             assert!(result.is_ok());
+        }
+
+        #[test]
+        fn passes_when_protocol_parameters_match_past_first_step() {
+            let matching_parameters =
+                ProtocolParametersHash::from_field(BaseFieldElement::from(7u64).0);
+            let rolling_state = build_rolling_state(
+                StepCounter::new(2),
+                EpochNumber::new(3),
+                MerkleTreeCommitment::ZERO,
+                matching_parameters,
+                matching_parameters,
+            );
+
+            assert!(rolling_state.assert_protocol_parameters_unchanged().is_ok());
+        }
+
+        #[test]
+        fn rejects_at_first_step_when_protocol_parameters_differ() {
+            let rolling_state = build_rolling_state(
+                StepCounter::new(1),
+                EpochNumber::ZERO,
+                MerkleTreeCommitment::ZERO,
+                ProtocolParametersHash::ZERO,
+                ProtocolParametersHash::from_field(BaseFieldElement::from(7u64).0),
+            );
+
+            let err = rolling_state.assert_protocol_parameters_unchanged().unwrap_err();
+            let circuit_error = err
+                .downcast_ref::<IvcCircuitError>()
+                .expect("error chain should carry IvcCircuitError");
+            assert!(matches!(
+                circuit_error,
+                IvcCircuitError::ProtocolParametersChanged
+            ));
+        }
+
+        #[test]
+        fn rejects_diverged_protocol_parameters_past_first_step() {
+            let rolling_state = build_rolling_state(
+                StepCounter::new(2),
+                EpochNumber::new(3),
+                MerkleTreeCommitment::ZERO,
+                ProtocolParametersHash::ZERO,
+                ProtocolParametersHash::from_field(BaseFieldElement::from(7u64).0),
+            );
+
+            let err = rolling_state.assert_protocol_parameters_unchanged().unwrap_err();
+            let circuit_error = err
+                .downcast_ref::<IvcCircuitError>()
+                .expect("error chain should carry IvcCircuitError");
+            assert!(matches!(
+                circuit_error,
+                IvcCircuitError::ProtocolParametersChanged
+            ));
         }
     }
 }

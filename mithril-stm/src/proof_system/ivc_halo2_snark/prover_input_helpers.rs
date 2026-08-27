@@ -3,7 +3,7 @@ use midnight_curves::Bls12;
 use midnight_proofs::poly::kzg::msm::DualMSM;
 
 use crate::{
-    AggregateVerificationKeyForSnark, MembershipDigest, SnarkProof, StmResult,
+    AggregateVerificationKeyForSnark, BaseFieldElement, MembershipDigest, SnarkProof, StmResult,
     circuits::halo2_ivc::{
         errors::{EpochTransitionErrorKind, IvcCircuitError},
         state::{Global, State},
@@ -11,7 +11,10 @@ use crate::{
     },
     proof_system::{
         halo2_snark::build_snark_message,
-        ivc_halo2_snark::{prover_setup::IvcSnarkProverSetup, rolling_state::IvcRollingState},
+        ivc_halo2_snark::{
+            errors::IvcProofError, prover_setup::IvcSnarkProverSetup,
+            rolling_state::IvcRollingState,
+        },
     },
 };
 
@@ -102,6 +105,19 @@ pub(crate) fn create_snark_message_for_next_state<D: MembershipDigest>(
     Ok((certificate_message_hash, certificate_merkle_tree_commitment))
 }
 
+/// Recomputes `SHA256(protocol_message_preimage)`, reduced into the base field (SHA256 digest, then
+/// little-endian base-256 reduction modulo the field), and checks it equals `expected_message`.
+pub(crate) fn assert_message_hash_matches_preimage(
+    expected_message: MessageHash,
+    protocol_message_preimage: &ProtocolMessagePreimage,
+) -> StmResult<()> {
+    let recomputed_message = BaseFieldElement::try_from(protocol_message_preimage.0.as_slice())?;
+    if MessageHash::from_field(recomputed_message.0) != expected_message {
+        return Err(IvcCircuitError::MessagePreimageMismatch.into());
+    }
+    Ok(())
+}
+
 /// Builds the non-genesis `State` for the next step. Advances the step counter
 /// (overflow-checked), selects the next state's protocol parameters from the rolling
 /// state (current for same-epoch, next-epoch lookahead promoted for next-epoch
@@ -133,7 +149,8 @@ pub(crate) fn build_next_state(
 }
 
 /// Folds the certificate proof's accumulator and the previous IVC proof's accumulator
-/// into the rolling state's accumulator, then collapses the result.
+/// into the rolling state's accumulator, then collapses the result. Check that the
+/// result verifies before returning it.
 ///
 /// The returned accumulator is the off-circuit twin of the one the in-circuit IVC
 /// verifier gadget computes from the same inputs; the new IVC proof commits to it.
@@ -155,6 +172,9 @@ pub(crate) fn build_next_accumulator(
         previous_ivc_proof_collapsed_accumulator,
     ]);
     next_accumulator.collapse();
+    if !next_accumulator.check(&setup.srs.verifier_params(), &setup.combined_fixed_bases) {
+        return Err(IvcProofError::InvalidNextAccumulator.into());
+    }
     Ok(next_accumulator)
 }
 
@@ -465,6 +485,38 @@ pub(crate) mod tests {
                     },
                     ..
                 }
+            ));
+        }
+    }
+
+    mod assert_message_hash_matches_preimage {
+        use super::*;
+
+        #[test]
+        fn accepts_message_matching_preimage_hash() {
+            let preimage = build_standard_preimage(EpochNumber::new(3));
+            let expected_message = MessageHash::from_field(
+                BaseFieldElement::try_from(preimage.0.as_slice())
+                    .expect("hashing should not fail")
+                    .0,
+            );
+
+            assert!(assert_message_hash_matches_preimage(expected_message, &preimage).is_ok());
+        }
+
+        #[test]
+        fn rejects_message_not_matching_preimage_hash() {
+            let preimage = build_standard_preimage(EpochNumber::new(3));
+
+            let err =
+                assert_message_hash_matches_preimage(MessageHash::ZERO, &preimage).unwrap_err();
+
+            let circuit_error = err
+                .downcast_ref::<IvcCircuitError>()
+                .expect("error chain should carry IvcCircuitError");
+            assert!(matches!(
+                circuit_error,
+                IvcCircuitError::MessagePreimageMismatch
             ));
         }
     }
