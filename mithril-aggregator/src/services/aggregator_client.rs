@@ -26,18 +26,20 @@ impl RemoteCertificateRetriever for AggregatorHttpClient {
         match latest_certificates_list.first() {
             None => Ok(None),
             Some(latest_certificate_list_item) => {
-                let latest_certificate_message = self
-                    .send(GetCertificateQuery::by_hash(
-                        &latest_certificate_list_item.hash,
-                    ))
-                    .await?;
-                latest_certificate_message.map(TryInto::try_into).transpose()
+                self.get_certificate_details(&latest_certificate_list_item.hash).await
             }
         }
     }
 
     async fn get_genesis_certificate_details(&self) -> StdResult<Option<Certificate>> {
         match self.send(GetCertificateQuery::latest_genesis()).await? {
+            Some(message) => Ok(Some(message.try_into()?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn get_certificate_details(&self, hash: &str) -> StdResult<Option<Certificate>> {
+        match self.send(GetCertificateQuery::by_hash(hash)).await? {
             Some(message) => Ok(Some(message.try_into()?)),
             None => Ok(None),
         }
