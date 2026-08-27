@@ -52,17 +52,16 @@ pub use concatenation::{
 pub(crate) use concatenation::{ConcatenationProofSigner, SingleSignatureForConcatenation};
 
 #[cfg(feature = "future_snark")]
-pub use halo2_snark::AggregateVerificationKeyForSnark;
-
-#[cfg(feature = "future_snark")]
-pub use halo2_snark::{MERKLE_TREE_DEPTH_FOR_SNARK, SnarkProof, SnarkVerifierData};
+pub use halo2_snark::{
+    AggregateVerificationKeyForSnark, MERKLE_TREE_DEPTH_FOR_SNARK, SnarkProof, SnarkVerifierData,
+};
 
 #[cfg(all(test, feature = "future_snark"))]
 pub(crate) use halo2_snark::SnarkProverSetup;
 #[cfg(feature = "future_snark")]
 pub(crate) use halo2_snark::{
-    SingleSignatureForSnark, SnarkClerk, SnarkProofSigner, SnarkProver, SnarkVerifierSetup,
-    compute_target_value_for_snark_lottery,
+    CertificateProver, SingleSignatureForSnark, SnarkClerk, SnarkProofSigner, SnarkProver,
+    SnarkVerifierSetup, compute_target_value_for_snark_lottery,
 };
 
 #[cfg(all(test, feature = "future_snark"))]

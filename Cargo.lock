@@ -4851,6 +4851,7 @@ dependencies = [
  "midnight-curves",
  "midnight-proofs",
  "midnight-zk-stdlib",
+ "mockall",
  "num-bigint",
  "num-integer",
  "num-rational",

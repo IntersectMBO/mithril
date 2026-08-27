@@ -27,11 +27,10 @@ use crate::{
 
 #[cfg(feature = "future_snark")]
 use crate::{
-    AggregateSignatureError, AncillaryProverData, AncillaryVerifierData, MithrilMembershipDigest,
-    SnarkProof,
+    AggregateSignatureError, AncillaryProverData, AncillaryVerifierData, SnarkProof,
     circuits::halo2_ivc::{ProtocolMessagePreimage, state::Global},
     proof_system::{
-        MERKLE_TREE_DEPTH_FOR_SNARK, SnarkClerk, SnarkProver, SnarkVerifierData,
+        CertificateProver, MERKLE_TREE_DEPTH_FOR_SNARK, SnarkClerk, SnarkProver, SnarkVerifierData,
         ivc_halo2_snark::{
             proof::{IvcProof, IvcProver},
             verifier_setup::IvcVerifierData,
@@ -128,7 +127,7 @@ impl<D: MembershipDigest> Clerk<D> {
                 // data and the proof provably originate from the same setup.
                 let certificate_verifying_key = prover.verification_key().clone();
                 let snark_proof =
-                    prover.aggregate_signatures(clerk, sigs, msg).with_context(|| {
+                    prover.prove_certificate(clerk, sigs, msg).with_context(|| {
                         format!(
                             "Signatures failed to aggregate for type {}",
                             AggregateSignatureType::Snark
@@ -154,7 +153,7 @@ impl<D: MembershipDigest> Clerk<D> {
                     &snark_clerk.parameters,
                     MERKLE_TREE_DEPTH_FOR_SNARK,
                 )?
-                .aggregate_signatures::<MithrilMembershipDigest>(snark_clerk, sigs, msg)
+                .prove_certificate(snark_clerk, sigs, msg)
                 .with_context(|| {
                     format!(
                         "Signatures failed to aggregate for type {}",
