@@ -23,12 +23,13 @@ use midnight_proofs::{
     },
     transcript::{Blake2b256, CircuitTranscript, Hashable, Sampleable, Transcript, TranscriptHash},
 };
-use rand_core::{CryptoRng, RngCore};
+use rand_core::{CryptoRng, OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     AggregateVerificationKeyForSnark, AggregationError, AncillaryGenesisData, AncillaryProofInput,
-    BaseFieldElement, MembershipDigest, MithrilMembershipDigest, SnarkProof, StmResult,
+    BaseFieldElement, MERKLE_TREE_DEPTH_FOR_SNARK, MembershipDigest, MithrilMembershipDigest,
+    Parameters, SnarkProof, StmResult,
     circuits::{
         halo2::{keys::NonRecursiveCircuitVerifyingKey, types::CircuitBase},
         halo2_ivc::{
@@ -38,6 +39,8 @@ use crate::{
             state::{Global, State},
             types::{CertificateProofBytes, IvcProofBytes, MessageHash, ProtocolMessagePreimage},
         },
+        key_provider::KeyProvider,
+        trusted_setup::TrustedSetupProvider,
     },
     codec,
     proof_system::ivc_halo2_snark::{
@@ -556,6 +559,24 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
             genesis_prover_input.next_accumulator,
             bootstrap.genesis_signature,
         ))
+    }
+}
+
+impl IvcProver<OsRng> {
+    /// Loads the IVC setup from the trusted setup and the recursive key provider
+    /// derived from `parameters` and `MERKLE_TREE_DEPTH_FOR_SNARK`.
+    pub(crate) fn try_new_non_deterministic(parameters: &Parameters) -> StmResult<Self> {
+        let trusted_setup_provider = TrustedSetupProvider::default();
+        let certificate_key_provider =
+            KeyProvider::for_non_recursive_circuit(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?;
+        let recursive_key_provider = KeyProvider::for_recursive_circuit(certificate_key_provider);
+        let ivc_setup =
+            IvcSnarkProverSetup::load(&trusted_setup_provider, &recursive_key_provider)?;
+
+        Ok(Self {
+            ivc_setup: Arc::new(ivc_setup),
+            rng: OsRng,
+        })
     }
 }
 
