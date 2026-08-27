@@ -108,12 +108,7 @@ impl ImmutableFilesUploader for IpfsUploader {
         filepaths: &[PathBuf],
         compression_algorithm: Option<CompressionAlgorithm>,
     ) -> StdResult<ImmutablesLocation> {
-        self.refresh_existing_files_path_cache().await?;
-        for filepath in filepaths {
-            self.upload(filepath).await?;
-        }
-
-        let directory_cid = self.get_current_directory_cid().await?;
+        let directory_cid = self.batch_upload_to_dir(filepaths).await?;
 
         Ok(ImmutablesLocation::Ipfs {
             uri: MultiFilesUri::Template(TemplateUri(format!(

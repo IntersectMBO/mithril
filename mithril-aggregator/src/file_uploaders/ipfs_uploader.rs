@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use anyhow::{Context, anyhow};
+use anyhow::Context;
 use slog::{Logger, trace};
-use tokio::sync::OnceCell;
 
 use mithril_common::StdResult;
 use mithril_common::entities::FileUri;
@@ -20,17 +19,9 @@ use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcClient};
 pub type Cid = String;
 
 /// File uploader that stores files to IPFS
-///
-/// #### Cache policy
-/// The integrated cache is designed to work with batch uploads only, as it relies on the assumption
-/// that all files are uploaded at once.
-/// Consequently, items are not cached individually, and the cache is designed to be reset before
-/// each batch using [IpfsUploader::refresh_existing_files_path_cache].
 pub struct IpfsUploader {
     rpc_client: Arc<dyn IpfsBackendUploader>,
     ipfs_dir_path: IpfsMfsDirPath,
-    directory_created: OnceCell<()>,
-    existing_files_cache: Mutex<HashMap<String, Cid>>,
     logger: Logger,
 }
 
@@ -44,27 +35,45 @@ impl IpfsUploader {
         Self {
             rpc_client,
             ipfs_dir_path,
-            directory_created: OnceCell::new(),
-            existing_files_cache: Mutex::new(HashMap::new()),
             logger: logger.new_with_component_name::<Self>(),
         }
     }
 
-    async fn ensure_directory_exists(&self) -> StdResult<()> {
-        self.directory_created
-            .get_or_try_init(|| async {
-                self.rpc_client
-                    .create_dir(&self.ipfs_dir_path)
-                    .await
+    /// Upload a batch of files at once to the target IPFS MFS directory, returning the updated CID
+    /// of the directory
+    ///
+    /// Compared to uploading the files one by one:
+    /// - it checks if the target directory exists in IPFS only once
+    /// - it batches the existence checks of the files by listing them using one `files ls` query
+    pub async fn batch_upload_to_dir(&self, files: &[PathBuf]) -> StdResult<Cid> {
+        self.ensure_directory_exists().await?;
+
+        let existing_entries = self
+            .rpc_client
+            .list_directory_files(&self.ipfs_dir_path)
+            .await
+            .with_context(|| "listing files in IPFS MFS directory")?;
+
+        for file_path in files {
+            let filename =
+                file_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
                     .with_context(|| {
                         format!(
-                            "Failed to create directory '{}' in IPFS",
-                            self.ipfs_dir_path
+                            "File path '{}' has no valid UTF-8 filename",
+                            file_path.display()
                         )
-                    })
-            })
-            .await?;
-        Ok(())
+                    })?;
+
+            if existing_entries.contains_key(filename) {
+                continue;
+            }
+
+            self.upload_missing_file_once(file_path).await?;
+        }
+
+        self.get_current_directory_cid().await
     }
 
     /// Get the current directory CID, reflecting the latest state of the directory
@@ -72,52 +81,22 @@ impl IpfsUploader {
         self.rpc_client.get_dir_cid(&self.ipfs_dir_path).await
     }
 
-    /// Refresh the cache of files paths from the cloud backend
-    pub async fn refresh_existing_files_path_cache(&self) -> StdResult<()> {
-        self.ensure_directory_exists().await?;
-
-        let files = self
-            .rpc_client
-            .list_directory_files(&self.ipfs_dir_path)
+    async fn ensure_directory_exists(&self) -> StdResult<()> {
+        self.rpc_client
+            .create_dir(&self.ipfs_dir_path)
             .await
-            .with_context(|| "listing files in IPFS MFS directory")?;
-
-        let mut cache = self
-            .existing_files_cache
-            .lock()
-            .map_err(|_| anyhow!("Failed to acquire lock on existing_files_path_cache"))?;
-        *cache = files;
-        Ok(())
+            .with_context(|| {
+                format!(
+                    "Failed to create directory '{}' in IPFS",
+                    self.ipfs_dir_path
+                )
+            })
     }
 
-    fn find_file_in_cache(&self, file_path: &Path) -> StdResult<Option<Cid>> {
-        let filename = file_path
-            .file_name()
-            .with_context(|| format!("Failed to get filename from path: {}", file_path.display()))?
-            .to_string_lossy();
-        let cache = self
-            .existing_files_cache
-            .lock()
-            .map_err(|_| anyhow!("Failed to acquire lock on existing_files_path_cache"))?;
-
-        Ok(cache.get(filename.as_ref()).cloned())
-    }
-}
-
-#[async_trait::async_trait]
-impl FileUploader for IpfsUploader {
-    async fn upload_without_retry(&self, filepath: &Path) -> StdResult<FileUri> {
-        trace!(self.logger, "Uploading file to IPFS"; "file_path" => %filepath.display());
+    async fn upload_file_once(&self, filepath: &Path) -> StdResult<FileUri> {
         self.ensure_directory_exists().await?;
 
         if let Some(cid) = self
-            .find_file_in_cache(filepath)
-            .with_context(|| format!("Failed to find file '{}' in cache", filepath.display()))?
-        {
-            return Ok(FileUri(cid));
-        }
-
-        match self
             .rpc_client
             .file_exists(&self.ipfs_dir_path, filepath)
             .await
@@ -126,27 +105,37 @@ impl FileUploader for IpfsUploader {
                     "Failed to check if file '{}' exists in IPFS",
                     filepath.display()
                 )
-            })? {
-            Some(cid) => {
-                trace!(self.logger, "File already exists in IPFS"; "cid" => %cid);
-                Ok(FileUri(cid))
-            }
-            None => {
-                let cid = self
-                    .rpc_client
-                    .upload_file(filepath, &self.ipfs_dir_path)
-                    .await
-                    .with_context(|| {
-                        format!("Failed to upload file '{}' to IPFS", filepath.display())
-                    })?;
-                trace!(
-                    self.logger, "File upload to IPFS finished";
-                    "file_path" => %filepath.display(), "cid" => %cid
-                );
-
-                Ok(FileUri(cid))
-            }
+            })?
+        {
+            trace!(self.logger, "File already exists in IPFS"; "cid" => %cid);
+            return Ok(FileUri(cid));
         }
+
+        self.upload_missing_file_once(filepath).await
+    }
+
+    // Note: this method assumes that the target directory exists and the file does not exist in IPFS
+    async fn upload_missing_file_once(&self, filepath: &Path) -> StdResult<FileUri> {
+        trace!(self.logger, "Uploading file to IPFS"; "file_path" => %filepath.display());
+
+        let cid = self
+            .rpc_client
+            .upload_file(filepath, &self.ipfs_dir_path)
+            .await
+            .with_context(|| format!("Failed to upload file '{}' to IPFS", filepath.display()))?;
+        trace!(
+            self.logger, "File upload to IPFS finished";
+            "file_path" => %filepath.display(), "cid" => %cid
+        );
+
+        Ok(FileUri(cid))
+    }
+}
+
+#[async_trait::async_trait]
+impl FileUploader for IpfsUploader {
+    async fn upload_without_retry(&self, filepath: &Path) -> StdResult<FileUri> {
+        self.upload_file_once(filepath).await
     }
 }
 
@@ -240,35 +229,6 @@ mod tests {
                 &TestLogger::stdout(),
             )
         }
-
-        fn with_initial_cache<K: Into<String>, V: Into<Cid>>(
-            mut self,
-            initial_cache: HashMap<K, V>,
-        ) -> Self {
-            self.existing_files_cache =
-                Mutex::new(initial_cache.into_iter().map(|(k, v)| (k.into(), v.into())).collect());
-            self
-        }
-
-        fn cache_content(&self) -> HashMap<String, Cid> {
-            self.existing_files_cache.lock().unwrap().clone()
-        }
-    }
-
-    #[tokio::test]
-    async fn create_dir_only_once_when_uploading_multiple_time() {
-        let uploader = IpfsUploader::new_for_test(IpfsMfsDirPath::from("/test/dir"), |mock| {
-            mock.expect_create_dir()
-                .with(eq(IpfsMfsDirPath::from("/test/dir")))
-                .returning(|_| Ok(()))
-                .once();
-            mock.expect_file_exists().returning(|_, _| Ok(None));
-            mock.expect_upload_file().returning(|_, _| Ok(String::new()));
-        });
-
-        uploader.upload_without_retry(Path::new("whatever")).await.unwrap();
-        uploader.upload_without_retry(Path::new("whatever")).await.unwrap();
-        uploader.upload_without_retry(Path::new("whatever")).await.unwrap();
     }
 
     #[tokio::test]
@@ -318,87 +278,182 @@ mod tests {
             .unwrap();
     }
 
-    mod file_caching {
+    mod batch_upload {
+        use anyhow::anyhow;
+
         use super::*;
 
-        #[track_caller]
-        fn assert_cache_eq<K: Into<String>, V: Into<Cid>>(
-            uploader: &IpfsUploader,
-            expected: HashMap<K, V>,
-        ) {
-            assert_eq!(
-                expected
-                    .into_iter()
-                    .map(|(k, v)| (k.into(), v.into()))
-                    .collect::<HashMap<String, Cid>>(),
-                uploader.cache_content()
-            );
+        const MFS_DIR: &str = "/test/dir";
+
+        #[tokio::test]
+        async fn uploads_only_missing_files_and_returns_directory_cid() {
+            let existing_files = HashMap::from([(
+                "already-uploaded.txt".to_string(),
+                "existing-cid".to_string(),
+            )]);
+
+            let uploader = IpfsUploader::new_for_test(MFS_DIR, move |mock| {
+                mock.expect_create_dir()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(|_| Ok(()))
+                    .once();
+                mock.expect_list_directory_files()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(move |_| Ok(existing_files))
+                    .once();
+                mock.expect_file_exists().never();
+                mock.expect_upload_file()
+                    .with(
+                        eq(PathBuf::from("/local/new-file-1.txt")),
+                        eq(IpfsMfsDirPath::from(MFS_DIR)),
+                    )
+                    .return_once(|_, _| Ok("file-1-cid".to_string()))
+                    .once();
+                mock.expect_upload_file()
+                    .with(
+                        eq(PathBuf::from("/other/new-file-2.txt")),
+                        eq(IpfsMfsDirPath::from(MFS_DIR)),
+                    )
+                    .return_once(|_, _| Ok("file-2-cid".to_string()))
+                    .once();
+                mock.expect_get_dir_cid()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(|_| Ok("directory-cid".to_string()))
+                    .once();
+            });
+
+            let directory_cid = uploader
+                .batch_upload_to_dir(&[
+                    PathBuf::from("/local/already-uploaded.txt"),
+                    PathBuf::from("/local/new-file-1.txt"),
+                    PathBuf::from("/other/new-file-2.txt"),
+                ])
+                .await
+                .unwrap();
+
+            assert_eq!("directory-cid", directory_cid);
         }
 
         #[tokio::test]
-        async fn refresh_list_only_once() {
-            let uploader =
-                IpfsUploader::new_for_test("/test/dir", |mock: &mut MockIpfsBackendUploader| {
-                    mock.expect_create_dir().returning(|_| Ok(()));
-                    mock.expect_list_dir()
-                        .with(eq(IpfsMfsDirPath::from("/test/dir")))
-                        .return_once(move |_| Ok(HashMap::from([("key".into(), "value".into())])))
-                        .once();
-                });
+        async fn empty_batch_returns_current_directory_cid_without_uploading_files() {
+            let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
+                mock.expect_create_dir()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(|_| Ok(()))
+                    .once();
+                mock.expect_list_directory_files()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(|_| Ok(HashMap::new()))
+                    .once();
+                mock.expect_file_exists().never();
+                mock.expect_upload_file().never();
+                mock.expect_get_dir_cid()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(|_| Ok("directory-cid".to_string()))
+                    .once();
+            });
 
-            uploader.refresh_existing_files_path_cache().await.unwrap();
+            let directory_cid = uploader.batch_upload_to_dir(&[]).await.unwrap();
 
-            assert_cache_eq(&uploader, HashMap::from([("key", "value")]));
+            assert_eq!("directory-cid", directory_cid);
         }
 
         #[tokio::test]
-        async fn failed_refresh_does_not_overwrite_cache() {
-            let uploader =
-                IpfsUploader::new_for_test("/test/dir", |mock: &mut MockIpfsBackendUploader| {
-                    mock.expect_create_dir().returning(|_| Ok(()));
-                    mock.expect_list_dir()
-                        .return_once(move |_| Err(anyhow!("error")))
-                        .once();
-                })
-                .with_initial_cache(HashMap::from([("initial", "content")]));
+        async fn returns_error_when_a_file_path_has_no_filename() {
+            let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
+                mock.expect_create_dir().return_once(|_| Ok(())).once();
+                mock.expect_list_directory_files()
+                    .return_once(|_| Ok(HashMap::new()))
+                    .once();
+                mock.expect_file_exists().never();
+                mock.expect_upload_file().never();
+                mock.expect_get_dir_cid().never();
+            });
 
-            uploader.refresh_existing_files_path_cache().await.unwrap_err();
-
-            assert_cache_eq(&uploader, HashMap::from([("initial", "content")]));
+            uploader
+                .batch_upload_to_dir(&[PathBuf::new()])
+                .await
+                .expect_err("a path without a filename should fail");
         }
 
         #[tokio::test]
-        async fn cached_files_are_not_stat_nor_uploaded() {
-            let uploader =
-                IpfsUploader::new_for_test("/test/dir", |mock: &mut MockIpfsBackendUploader| {
-                    mock.expect_create_dir().returning(|_| Ok(()));
-                    mock.expect_file_exists().never();
-                    mock.expect_upload_file().never();
-                })
-                .with_initial_cache(HashMap::from([("dummy-file.txt", "FileCid")]));
+        async fn returns_error_when_directory_creation_fails() {
+            let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
+                mock.expect_create_dir()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(|_| Err(anyhow!("create directory failure")))
+                    .once();
+                mock.expect_list_directory_files().never();
+                mock.expect_upload_file().never();
+                mock.expect_get_dir_cid().never();
+            });
 
-            let uri = uploader.upload(Path::new("/my/dummy-file.txt")).await.unwrap();
-
-            assert_eq!(FileUri("FileCid".to_string()), uri);
+            uploader
+                .batch_upload_to_dir(&[PathBuf::from("new-file.txt")])
+                .await
+                .expect_err("directory creation failure should be returned");
         }
 
         #[tokio::test]
-        async fn check_file_exist_if_not_in_cache() {
-            let uploader =
-                IpfsUploader::new_for_test("/test/dir", |mock: &mut MockIpfsBackendUploader| {
-                    mock.expect_create_dir().returning(|_| Ok(()));
-                    mock.expect_file_exists()
-                        .with(
-                            eq(IpfsMfsDirPath::from("/test/dir")),
-                            eq(Path::new("/my/dummy-file.txt")),
-                        )
-                        .returning(|_, _| Ok(Some("FileCid".to_string())));
-                    mock.expect_upload_file().never();
-                });
+        async fn returns_error_when_listing_directory_files_fails() {
+            let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
+                mock.expect_create_dir().return_once(|_| Ok(())).once();
+                mock.expect_list_directory_files()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(|_| Err(anyhow!("list directory failure")))
+                    .once();
+                mock.expect_upload_file().never();
+                mock.expect_get_dir_cid().never();
+            });
 
-            let uri = uploader.upload(Path::new("/my/dummy-file.txt")).await.unwrap();
+            uploader
+                .batch_upload_to_dir(&[PathBuf::from("new-file.txt")])
+                .await
+                .expect_err("directory listing failure should be returned");
+        }
 
-            assert_eq!(FileUri("FileCid".to_string()), uri);
+        #[tokio::test]
+        async fn returns_error_when_uploading_a_missing_file_fails() {
+            let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
+                mock.expect_create_dir().return_once(|_| Ok(())).once();
+                mock.expect_list_directory_files()
+                    .return_once(|_| Ok(HashMap::new()))
+                    .once();
+                mock.expect_file_exists().never();
+                mock.expect_upload_file()
+                    .with(
+                        eq(PathBuf::from("/local/new-file.txt")),
+                        eq(IpfsMfsDirPath::from(MFS_DIR)),
+                    )
+                    .return_once(|_, _| Err(anyhow!("upload failure")))
+                    .once();
+                mock.expect_get_dir_cid().never();
+            });
+
+            uploader
+                .batch_upload_to_dir(&[PathBuf::from("/local/new-file.txt")])
+                .await
+                .expect_err("file upload failure should be returned");
+        }
+
+        #[tokio::test]
+        async fn returns_error_when_retrieving_directory_cid_fails() {
+            let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
+                mock.expect_create_dir().return_once(|_| Ok(())).once();
+                mock.expect_list_directory_files()
+                    .return_once(|_| Ok(HashMap::new()))
+                    .once();
+                mock.expect_upload_file().never();
+                mock.expect_get_dir_cid()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(|_| Err(anyhow!("get directory CID failure")))
+                    .once();
+            });
+
+            uploader
+                .batch_upload_to_dir(&[])
+                .await
+                .expect_err("directory CID retrieval failure should be returned");
         }
     }
 }
