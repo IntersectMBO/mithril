@@ -57,6 +57,16 @@ impl AncillaryProverData {
             Self::Future => None,
         }
     }
+
+    /// Returns the wrapped IvcRollingState of an AncillaryProverData if it exists.
+    #[cfg(feature = "future_snark")]
+    pub fn into_ivc_rolling_state(self) -> Option<IvcRollingState> {
+        match self {
+            Self::IvcSnark(state) => Some(state),
+            #[cfg(test)]
+            Self::Future => None,
+        }
+    }
 }
 
 /// Ancillary data carried by a certificate for the verifier.
@@ -219,6 +229,11 @@ impl AncillaryProofInput {
     /// Return the prover ancillary data carried from the previous certificate.
     pub fn prover_data(&self) -> Option<&AncillaryProverData> {
         self.prover_data.as_ref()
+    }
+
+    /// Return the prover ancillary data carried from the previous certificate.
+    pub fn into_prover_data(self) -> Option<AncillaryProverData> {
+        self.prover_data
     }
 
     /// Return the genesis ancillary data.

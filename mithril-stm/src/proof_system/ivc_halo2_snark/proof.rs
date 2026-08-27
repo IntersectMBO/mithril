@@ -27,14 +27,14 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AggregateVerificationKeyForSnark, AncillaryGenesisData, BaseFieldElement, MembershipDigest,
-    SnarkProof, StmResult,
+    AggregateVerificationKeyForSnark, AggregationError, AncillaryGenesisData, AncillaryProofInput,
+    BaseFieldElement, MembershipDigest, MithrilMembershipDigest, SnarkProof, StmResult,
     circuits::{
-        halo2::types::CircuitBase,
+        halo2::{keys::NonRecursiveCircuitVerifyingKey, types::CircuitBase},
         halo2_ivc::{
             PREIMAGE_SIZE,
             circuit::IvcCircuitData,
-            keys::RecursiveCircuitProvingKey,
+            keys::{RecursiveCircuitProvingKey, RecursiveCircuitVerifyingKey},
             state::{Global, State},
             types::{CertificateProofBytes, IvcProofBytes, MessageHash, ProtocolMessagePreimage},
         },
@@ -314,6 +314,83 @@ fn ensure_advanceable_rolling_state(rolling_state: Option<&IvcRollingState>) -> 
     Ok(())
 }
 
+/// All inputs of one IVC step.
+pub(crate) struct IvcStepInput {
+    pub(crate) certificate_proof: SnarkProof<MithrilMembershipDigest>,
+    pub(crate) message: Vec<u8>,
+    pub(crate) aggregate_verification_key:
+        AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
+    pub(crate) global: Global,
+    pub(crate) protocol_message_preimage: ProtocolMessagePreimage,
+    pub(crate) genesis_bootstrap: IvcGenesisBootstrapInput,
+    pub(crate) rolling_state: Option<IvcRollingState>,
+}
+
+impl IvcStepInput {
+    /// Fails on a missing genesis verifying key, a prover data without IVC rolling state,
+    /// a missing genesis Schnorr signature or a preimage that is not PREIMAGE_SIZE bytes.
+    pub(crate) fn try_new(
+        certificate_proof: SnarkProof<MithrilMembershipDigest>,
+        message: &[u8],
+        aggregate_verification_key: AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
+        ancillary_input: AncillaryProofInput,
+        certificate_verifying_key: &NonRecursiveCircuitVerifyingKey,
+        ivc_verifying_key: &RecursiveCircuitVerifyingKey,
+    ) -> StmResult<Self> {
+        // Add checks for the inputs of the try new
+
+        let protocol_message_preimage_bytes: [u8; PREIMAGE_SIZE] =
+            ancillary_input.message_preimage().try_into()?;
+
+        let genesis_data = ancillary_input.genesis_data();
+
+        let genesis_verifying_key = genesis_data
+            .genesis_schnorr_verification_key()
+            .cloned()
+            .ok_or_else(|| anyhow!(AggregationError::MissingGenesisVerificationKey))?;
+
+        let genesis_message = genesis_data.genesis_message_preimage().try_into()?;
+
+        let genesis_bootstrap: IvcGenesisBootstrapInput = genesis_data.try_into()?;
+
+        let current_rolling_state = ancillary_input
+            .into_prover_data()
+            .map(|prover_data| {
+                prover_data.into_ivc_rolling_state().ok_or(anyhow!(
+                    AggregationError::MissingIvcRollingStateInAncillaryProverData
+                ))
+            })
+            .transpose()?;
+
+        let global = Global::new(
+            genesis_message,
+            genesis_verifying_key,
+            &certificate_verifying_key,
+            &ivc_verifying_key,
+        );
+
+        Ok(Self {
+            certificate_proof,
+            message: message.to_vec(),
+            aggregate_verification_key,
+            global: global,
+            protocol_message_preimage: ProtocolMessagePreimage(protocol_message_preimage_bytes),
+            genesis_bootstrap: genesis_bootstrap,
+            rolling_state: current_rolling_state,
+        })
+    }
+}
+
+/// Recursive proving side: advances the IVC chain by one step.
+#[cfg_attr(test, mockall::automock)]
+pub(crate) trait IvcStepProver {
+    fn ivc_verifying_key(&self) -> &RecursiveCircuitVerifyingKey;
+    fn prove_step(
+        &mut self,
+        step_input: IvcStepInput,
+    ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)>;
+}
+
 impl<R: RngCore + CryptoRng> IvcProver<R> {
     /// Advances the IVC chain by one step.
     ///
@@ -479,6 +556,36 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
             genesis_prover_input.next_accumulator,
             bootstrap.genesis_signature,
         ))
+    }
+}
+
+impl<R: RngCore + CryptoRng> IvcStepProver for IvcProver<R> {
+    fn ivc_verifying_key(&self) -> &RecursiveCircuitVerifyingKey {
+        &self.ivc_setup.ivc_verifying_key
+    }
+
+    fn prove_step(
+        &mut self,
+        step_input: IvcStepInput,
+    ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)> {
+        let IvcStepInput {
+            certificate_proof,
+            message,
+            aggregate_verification_key,
+            global,
+            protocol_message_preimage,
+            genesis_bootstrap,
+            rolling_state,
+        } = step_input;
+        self.prove(
+            certificate_proof,
+            message.as_slice(),
+            &aggregate_verification_key,
+            &global,
+            &protocol_message_preimage,
+            &genesis_bootstrap,
+            rolling_state.as_ref(),
+        )
     }
 }
 
