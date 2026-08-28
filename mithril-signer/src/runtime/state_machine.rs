@@ -233,6 +233,11 @@ impl StateMachine {
                     nested_error: Some(e),
                 })?;
             info!(self.logger, "→ Mithril network configuration found");
+            debug!(
+                self.logger,
+                "Mithril network configuration fetched";
+                "network_configuration" => ?network_configuration
+            );
 
             if signer_registrations.epoch >= epoch {
                 info!(self.logger, "New Epoch found");
