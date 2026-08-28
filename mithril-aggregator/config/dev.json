@@ -1,15 +1,11 @@
 {
   "environment": "Production",
+  "cardano_node_version": "11.0.1",
   "cardano_cli_path": "cardano-cli",
   "cardano_node_socket_path": "/ipc/node.socket",
   "network": "devnet",
   "network_magic": 42,
   "run_interval": 30000,
-  "protocol_parameters": {
-    "k": 5,
-    "m": 100,
-    "phi_f": 0.65
-  },
   "ancillary_files_signer_config": {
     "type": "secret-key",
     "secret_key": "5b3131382c3138342c3232342c3137332c3136302c3234312c36312c3134342c36342c39332c3130362c3232392c38332c3133342c3138392c34302c3138392c3231302c32352c3138342c3136302c3134312c3233372c32362c3136382c35342c3233392c3230342c3133392c3131392c31332c3139395d"
@@ -17,5 +13,6 @@
   "snapshot_uploader_type": "local",
   "data_stores_directory": "/tmp/mithril-aggregator/stores",
   "genesis_verification_key": "5b33322c3235332c3138362c3230312c3137372c31312c3131372c3133352c3138372c3136372c3138312c3138382c32322c35392c3230362c3130352c3233312c3135302c3231352c33302c37382c3231322c37362c31362c3235322c3138302c37322c3133342c3133372c3234372c3136312c36385d",
-  "era_adapter_type": "bootstrap"
+  "era_reader_adapter_type": "bootstrap",
+  "chain_observer_type": "pallas"
 }
