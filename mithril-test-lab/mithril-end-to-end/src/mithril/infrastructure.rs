@@ -54,6 +54,7 @@ pub struct MithrilInfrastructureConfig {
     pub aggregate_signature_type: AggregateSignatureType,
     pub genesis_keys: GenesisKeys,
     pub use_relays: bool,
+    pub chain_follower_aggregators: bool,
     pub relay_signer_registration_mode: String,
     pub relay_signature_registration_mode: String,
     pub use_p2p_passive_relays: bool,
@@ -105,6 +106,7 @@ impl MithrilInfrastructureConfig {
             aggregate_signature_type: AggregateSignatureType::Concatenation,
             genesis_keys: GenesisKeys::LEGACY,
             use_relays: false,
+            chain_follower_aggregators: false,
             relay_signer_registration_mode: "passthrough".to_string(),
             relay_signature_registration_mode: "passthrough".to_string(),
             use_p2p_passive_relays: false,
@@ -319,8 +321,12 @@ impl MithrilInfrastructure {
         )
         .await?;
 
-        let mut follower_aggregators = vec![];
+        let mut follower_aggregators: Vec<Aggregator> = vec![];
         for (index, full_node) in follower_nodes.iter().enumerate() {
+            let certificate_chain_aggregator_endpoint = config
+                .chain_follower_aggregators
+                .then(|| follower_aggregators.last().map(Aggregator::endpoint))
+                .flatten();
             let aggregator = Self::prepare_aggregator(
                 index + 1,
                 full_node,
@@ -328,7 +334,7 @@ impl MithrilInfrastructure {
                 chain_observer_type,
                 ipfs_devnet.and_then(|n| n.get(index + 1)),
                 Some(leader_aggregator.endpoint()),
-                None,
+                certificate_chain_aggregator_endpoint,
             )
             .await?;
             follower_aggregators.push(aggregator);
