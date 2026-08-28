@@ -198,6 +198,10 @@ inputs:
     description: Mithril aggregator leader aggregator endpoint to follow.
     required: false
     default: ""
+  mithril_aggregator_certificate_chain_aggregator_endpoint:
+    description: Mithril aggregator endpoint to synchronize the certificate chain from, defaults to the leader aggregator endpoint.
+    required: false
+    default: ""
   mithril_aggregator_ancillary_signer_type:
     description: Mithril aggregator ancillary signer type ('secret-key' or 'gcp-kms').
     required: true
@@ -335,6 +339,7 @@ runs:
           mithril_aggregator_cardano_transactions_prover_cache_pool_size               = "${{ inputs.mithril_aggregator_cardano_transactions_prover_cache_pool_size }}"
           mithril_aggregator_cardano_transactions_database_connection_pool_size        = "${{ inputs.mithril_aggregator_cardano_transactions_database_connection_pool_size }}"
           mithril_aggregator_leader_aggregator_endpoint                                = "${{ inputs.mithril_aggregator_leader_aggregator_endpoint }}"
+          mithril_aggregator_certificate_chain_aggregator_endpoint                     = "${{ inputs.mithril_aggregator_certificate_chain_aggregator_endpoint }}"
           mithril_aggregator_ancillary_signer_type                                     = "${{ inputs.mithril_aggregator_ancillary_signer_type }}"
           mithril_aggregator_ancillary_signer_secret_key                               = "${{ inputs.mithril_aggregator_ancillary_signer_secret_key }}"
           mithril_aggregator_ancillary_signer_gcp_kms_resource_name                    = "${{ inputs.mithril_aggregator_ancillary_signer_gcp_kms_resource_name }}"
