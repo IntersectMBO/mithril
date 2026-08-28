@@ -315,6 +315,7 @@ impl MithrilInfrastructure {
             chain_observer_type,
             ipfs_devnet.and_then(|n| n.first()),
             None,
+            None,
         )
         .await?;
 
@@ -327,6 +328,7 @@ impl MithrilInfrastructure {
                 chain_observer_type,
                 ipfs_devnet.and_then(|n| n.get(index + 1)),
                 Some(leader_aggregator.endpoint()),
+                None,
             )
             .await?;
             follower_aggregators.push(aggregator);
@@ -342,6 +344,7 @@ impl MithrilInfrastructure {
         chain_observer_type: &str,
         ipfs_kubo_node: Option<&KuboNode>,
         leader_aggregator_endpoint: Option<String>,
+        certificate_chain_aggregator_endpoint: Option<String>,
     ) -> StdResult<Aggregator> {
         let aggregator_name = Aggregator::name_suffix(index);
         let aggregator_artifacts_dir = config
@@ -373,6 +376,7 @@ impl MithrilInfrastructure {
             aggregate_signature_type: config.aggregate_signature_type,
             chain_observer_type,
             leader_aggregator_endpoint: &leader_aggregator_endpoint,
+            certificate_chain_aggregator_endpoint: &certificate_chain_aggregator_endpoint,
             genesis_keys: config.genesis_keys,
             use_dmq: config.use_dmq,
             dmq_node_flavor: &config.dmq_node_flavor,
