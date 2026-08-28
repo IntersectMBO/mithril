@@ -245,8 +245,8 @@ pub fn get_default_protocol_configurations() -> ConfigurationResolverFromMarkers
             Epoch(0),
             ProtocolConfigurationForEpoch {
                 protocol_parameters: ProtocolParameters {
-                    k: 2422,
-                    m: 20973,
+                    k: 1944,
+                    m: 16948,
                     phi_f: 0.2,
                 },
                 enabled_signed_entity_types: BTreeSet::from([
@@ -283,6 +283,10 @@ pub struct ImportProtocolConfigurationSubCommand {
     /// Protocol Configuration Markers Secret Key
     #[clap(long, env = "PROTOCOL_CONFIGURATION_READER_SECRET_KEY")]
     protocol_configuration_markers_secret_key: HexEncodedProtocolConfigurationMarkersSecretKey,
+
+    /// Force datum file generation without verifying protocol configuration markers against on chain configuration
+    #[clap(long)]
+    force: bool,
 }
 
 impl ImportProtocolConfigurationSubCommand {
@@ -324,12 +328,17 @@ impl ImportProtocolConfigurationSubCommand {
         println!("Verifying protocol configuration consistency...");
         Self::verify_protocol_configurations(&protocol_configurations)?;
 
-        // 4: Verify protocol configuration against on chain configuration
-        println!("Verifying protocol configuration against on chain configuration...");
         let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
             .await
             .with_context(|| "protocol-configuration-tools: initialization error")?;
-        tools.verify_configurations_against_chain(protocol_configurations.clone())?;
+
+        // 4: Verify protocol configuration against on chain configuration
+        if self.force {
+            println!("/!\\ --force option is set, bypassing the verification against chain /!\\");
+        } else {
+            println!("Verifying protocol configuration against on chain configuration...");
+            tools.verify_configurations_against_chain(protocol_configurations.clone())?;
+        }
 
         // 5: Generate Tx datum
         println!("Generating Tx datum ...");
@@ -508,6 +517,7 @@ mod tests {
             "protocol_configuration_tx_datum.json",
             "--protocol-configuration-markers-secret-key",
             &signer_secret_key,
+            "--force",
         ])
         .expect("CLI parse should succeed");
     }
