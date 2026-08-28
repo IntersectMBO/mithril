@@ -56,6 +56,7 @@ jobs:
                 },
               }
             mithril_leader_aggregator_endpoint: ""
+            mithril_certificate_chain_aggregator_endpoint: ""
             terraform_backend_bucket: hydra-terraform-admin
             google_region: europe-west1
             google_zone: europe-west1-b
@@ -78,6 +79,7 @@ jobs:
             mithril_signers: |
               {}
             mithril_leader_aggregator_endpoint: https://aggregator.dev-preview.api.mithril.network/aggregator
+            mithril_certificate_chain_aggregator_endpoint: ""
             terraform_backend_bucket: hydra-terraform-admin
             google_region: europe-west1
             google_zone: europe-west1-b
@@ -102,6 +104,7 @@ jobs:
                 }
               }
             mithril_leader_aggregator_endpoint: ""
+            mithril_certificate_chain_aggregator_endpoint: ""
             terraform_backend_bucket: hydra-terraform-admin
             google_region: europe-west1
             google_zone: europe-west1-b
@@ -175,6 +178,7 @@ jobs:
           mithril_aggregator_cardano_transactions_prover_cache_pool_size: ${{ vars.AGGREGATOR_CARDANO_TRANSACTIONS_PROVER_CACHE_POOL_SIZE }}
           mithril_aggregator_cardano_transactions_database_connection_pool_size: ${{ vars.AGGREGATOR_CARDANO_TRANSACTIONS_DATABASE_CONNECTION_POOL_SIZE }}
           mithril_aggregator_leader_aggregator_endpoint: ${{ matrix.mithril_leader_aggregator_endpoint }}
+          mithril_aggregator_certificate_chain_aggregator_endpoint: ${{ matrix.mithril_certificate_chain_aggregator_endpoint }}
           mithril_aggregator_ancillary_signer_type: ${{ vars.AGGREGATOR_ANCILLARY_SIGNER_TYPE }}
           mithril_aggregator_ancillary_signer_secret_key: ${{ secrets.AGGREGATOR_ANCILLARY_SIGNER_SECRET_KEY }}
           mithril_aggregator_ancillary_signer_gcp_kms_resource_name: ${{ secrets.AGGREGATOR_ANCILLARY_SIGNER_GCP_KMS_RESOURCE_NAME }}
