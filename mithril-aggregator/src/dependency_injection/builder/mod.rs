@@ -297,6 +297,9 @@ pub struct DependenciesBuilder {
     /// Leader aggregator client
     pub leader_aggregator_client: Option<Arc<AggregatorHttpClient>>,
 
+    /// Certificate chain aggregator client
+    pub certificate_chain_aggregator_client: Option<Arc<AggregatorHttpClient>>,
+
     /// Protocol parameters retriever
     pub protocol_parameters_retriever: Option<Arc<dyn ProtocolParametersRetriever>>,
 
@@ -366,6 +369,7 @@ impl DependenciesBuilder {
             single_signature_authenticator: None,
             metrics_service: None,
             leader_aggregator_client: None,
+            certificate_chain_aggregator_client: None,
             protocol_parameters_retriever: None,
             stop_signal_channel: None,
             chain_data_repository: None,
