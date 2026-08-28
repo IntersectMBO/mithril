@@ -364,7 +364,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
             global,
             protocol_message_preimage,
             effective_rolling_state,
-            &self.ivc_setup,
+            &self.ivc_setup.prover_input_verification_context(),
         )?;
 
         let certificate_proof_bytes = snark_proof.into_circuit_proof_bytes();

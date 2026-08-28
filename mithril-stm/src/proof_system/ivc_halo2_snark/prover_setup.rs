@@ -1,10 +1,14 @@
-//! Load-once, deployment-constant artifacts shared by every step of an IVC proving session.
+//! Load-once, deployment-constant artifacts shared by every step of an IVC proving session, and the
+//! verification-side view of them that one step's input preparation reads.
 
 use std::collections::BTreeMap;
 
 use midnight_circuits::verifier::{Accumulator, BlstrsEmulation};
 use midnight_curves::{Bls12, G1Projective};
-use midnight_proofs::poly::kzg::{msm::DualMSM, params::ParamsKZG};
+use midnight_proofs::poly::kzg::{
+    msm::DualMSM,
+    params::{ParamsKZG, ParamsVerifierKZG},
+};
 
 #[cfg(test)]
 use crate::{
@@ -111,50 +115,18 @@ impl IvcSnarkProverSetup {
         })
     }
 
-    /// Wrap the certificate proof's prepared `DualMSM` into a collapsed accumulator on
-    /// the certificate circuit's fixed bases.
-    pub(crate) fn certificate_collapsed_accumulator(
-        &self,
-        dual_msm: DualMSM<Bls12>,
-    ) -> StmResult<Accumulator<BlstrsEmulation>> {
-        check_dual_msm_matches_fixed_bases(
-            &dual_msm,
-            CERTIFICATE_FIXED_BASES_PREFIX,
-            &self.certificate_fixed_bases,
-        )?;
-        let mut accumulator: Accumulator<BlstrsEmulation> = Accumulator::from_dual_msm(
-            dual_msm,
-            CERTIFICATE_FIXED_BASES_PREFIX,
-            &self.certificate_fixed_bases,
-        );
-        accumulator.collapse();
-        Ok(accumulator)
-    }
-
-    /// Off-circuit verify of the previous step's IVC proof, returning the collapsed
-    /// accumulator the in-circuit IVC verifier gadget would have produced on the same
-    /// proof. Used at every non-genesis step.
-    pub(crate) fn previous_ivc_proof_collapsed_accumulator(
-        &self,
-        ivc_proof_bytes: &[u8],
-        public_inputs: &[CircuitBase],
-    ) -> StmResult<Accumulator<BlstrsEmulation>> {
-        let verifier_params = self.srs.verifier_params();
-        let dual_msm = verify_and_prepare_accumulator(
-            ivc_proof_bytes,
-            public_inputs,
-            self.ivc_verifying_key.as_ref(),
-            &verifier_params,
-        )?;
-        check_dual_msm_matches_fixed_bases(
-            &dual_msm,
-            IVC_FIXED_BASES_PREFIX,
-            &self.ivc_fixed_bases,
-        )?;
-        let mut accumulator: Accumulator<BlstrsEmulation> =
-            Accumulator::from_dual_msm(dual_msm, IVC_FIXED_BASES_PREFIX, &self.ivc_fixed_bases);
-        accumulator.collapse();
-        Ok(accumulator)
+    /// Returns the verification-side artifacts an IVC prover input preparation reads.
+    ///
+    /// The verifier parameters come from this setup's own SRS, so a test or benchmark running on the
+    /// deterministic unsafe SRS gets the parameters matching it rather than the production ones.
+    pub(crate) fn prover_input_verification_context(&self) -> IvcProverInputVerificationContext {
+        IvcProverInputVerificationContext {
+            verifier_params: self.srs.verifier_params(),
+            certificate_verifying_key: self.certificate_verifying_key.clone(),
+            ivc_verifying_key: self.ivc_verifying_key.clone(),
+            certificate_fixed_bases: self.certificate_fixed_bases.clone(),
+            ivc_fixed_bases: self.ivc_fixed_bases.clone(),
+        }
     }
 
     /// Builds an [`IvcSnarkProverSetup`] from a deterministic unsafe SRS with degree `RECURSIVE_CIRCUIT_DEGREE`
@@ -218,19 +190,161 @@ impl IvcSnarkProverSetup {
     }
 }
 
+/// Verification-side artifacts read while preparing an IVC prover input.
+///
+/// `IvcProverInput::prepare` verifies the incoming certificate proof and folds accumulators. That needs the
+/// two verifying keys, their fixed bases and the KZG verifier parameters — never the IVC proving key, which
+/// is only used to create a proof. Keeping the narrower set in its own type means a caller that only prepares
+/// an input does not have to hold a proving key.
+///
+/// # Invariants
+///
+/// Each fixed-base map must match its corresponding verifying key. `from_verifying_keys` derives the maps
+/// directly, while `prover_input_verification_context` inherits the invariant established by
+/// [`IvcSnarkProverSetup::load`].
+pub(crate) struct IvcProverInputVerificationContext {
+    /// KZG verifier parameters of the SRS the proofs were produced under.
+    verifier_params: ParamsVerifierKZG<Bls12>,
+    /// Verifying key of the certificate circuit.
+    certificate_verifying_key: NonRecursiveCircuitVerifyingKey,
+    /// Verifying key of the IVC circuit.
+    ivc_verifying_key: RecursiveCircuitVerifyingKey,
+    /// Fixed-base map used to normalize the certificate accumulator.
+    certificate_fixed_bases: BTreeMap<String, G1Projective>,
+    /// Fixed-base map used to normalize the IVC proof accumulator.
+    ivc_fixed_bases: BTreeMap<String, G1Projective>,
+}
+
+impl IvcProverInputVerificationContext {
+    /// Builds the context from the two verifying keys, deriving both fixed-base maps from them.
+    ///
+    /// Lets a test assemble the context from the committed verification-context asset, with no SRS and no
+    /// key generation.
+    #[cfg(test)]
+    pub(crate) fn from_verifying_keys(
+        verifier_params: ParamsVerifierKZG<Bls12>,
+        certificate_verifying_key: &NonRecursiveCircuitVerifyingKey,
+        ivc_verifying_key: &RecursiveCircuitVerifyingKey,
+    ) -> Self {
+        let (certificate_fixed_bases, _) = fixed_bases_and_names_from_verifying_key(
+            CERTIFICATE_FIXED_BASES_PREFIX,
+            certificate_verifying_key.as_ref(),
+        );
+        let (ivc_fixed_bases, _) = fixed_bases_and_names_from_verifying_key(
+            IVC_FIXED_BASES_PREFIX,
+            ivc_verifying_key.as_ref(),
+        );
+        Self {
+            verifier_params,
+            certificate_verifying_key: certificate_verifying_key.clone(),
+            ivc_verifying_key: ivc_verifying_key.clone(),
+            certificate_fixed_bases,
+            ivc_fixed_bases,
+        }
+    }
+
+    /// Returns the verifying key of the certificate circuit.
+    pub(crate) fn certificate_verifying_key(&self) -> &NonRecursiveCircuitVerifyingKey {
+        &self.certificate_verifying_key
+    }
+
+    /// Returns the KZG verifier parameters.
+    pub(crate) fn verifier_params(&self) -> &ParamsVerifierKZG<Bls12> {
+        &self.verifier_params
+    }
+
+    /// Wrap the certificate proof's prepared `DualMSM` into a collapsed accumulator on
+    /// the certificate circuit's fixed bases.
+    pub(crate) fn certificate_collapsed_accumulator(
+        &self,
+        dual_msm: DualMSM<Bls12>,
+    ) -> StmResult<Accumulator<BlstrsEmulation>> {
+        check_dual_msm_matches_fixed_bases(
+            &dual_msm,
+            CERTIFICATE_FIXED_BASES_PREFIX,
+            &self.certificate_fixed_bases,
+        )?;
+        let mut accumulator: Accumulator<BlstrsEmulation> = Accumulator::from_dual_msm(
+            dual_msm,
+            CERTIFICATE_FIXED_BASES_PREFIX,
+            &self.certificate_fixed_bases,
+        );
+        accumulator.collapse();
+        Ok(accumulator)
+    }
+
+    /// Off-circuit verify of the previous step's IVC proof, returning the collapsed
+    /// accumulator the in-circuit IVC verifier gadget would have produced on the same
+    /// proof. Used at every non-genesis step.
+    pub(crate) fn previous_ivc_proof_collapsed_accumulator(
+        &self,
+        ivc_proof_bytes: &[u8],
+        public_inputs: &[CircuitBase],
+    ) -> StmResult<Accumulator<BlstrsEmulation>> {
+        let dual_msm = verify_and_prepare_accumulator(
+            ivc_proof_bytes,
+            public_inputs,
+            self.ivc_verifying_key.as_ref(),
+            &self.verifier_params,
+        )?;
+        check_dual_msm_matches_fixed_bases(
+            &dual_msm,
+            IVC_FIXED_BASES_PREFIX,
+            &self.ivc_fixed_bases,
+        )?;
+        let mut accumulator: Accumulator<BlstrsEmulation> =
+            Accumulator::from_dual_msm(dual_msm, IVC_FIXED_BASES_PREFIX, &self.ivc_fixed_bases);
+        accumulator.collapse();
+        Ok(accumulator)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::{
+        Parameters,
+        circuits::halo2_ivc::tests::common::asset_readers::load_embedded_verification_context_asset,
+    };
+
     use super::*;
-    use crate::Parameters;
+
+    #[test]
+    fn prover_input_verification_context_derives_fixed_bases_from_both_verifying_keys() {
+        let asset = load_embedded_verification_context_asset()
+            .expect("verification context asset should load");
+        let context = IvcProverInputVerificationContext::from_verifying_keys(
+            asset.verifier_params,
+            &asset.certificate_verifying_key,
+            &asset.recursive_verifying_key,
+        );
+
+        assert!(
+            !context.certificate_fixed_bases.is_empty(),
+            "certificate fixed bases should be populated"
+        );
+        assert!(
+            !context.ivc_fixed_bases.is_empty(),
+            "IVC fixed bases should be populated"
+        );
+
+        // The two maps overlap on the shared generator base, so they merge as a union.
+        let mut derived_fixed_bases = context.certificate_fixed_bases.clone();
+        derived_fixed_bases.extend(context.ivc_fixed_bases.clone());
+        assert_eq!(
+            derived_fixed_bases, asset.combined_fixed_bases,
+            "the two derived maps together must reproduce the stored combined fixed bases"
+        );
+    }
 
     mod slow {
         use midnight_proofs::poly::commitment::Params;
 
-        use super::*;
         use crate::circuits::halo2_ivc::tests::common::{
             asset_readers::load_embedded_verification_context_asset,
             generators::setup::{QUORUM_SIZE, SIGNER_COUNT},
         };
+
+        use super::*;
 
         // Runs the real `load` path against an oversized unsafe SRS; runs in the `slow` tier.
         #[test]

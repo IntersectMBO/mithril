@@ -334,7 +334,7 @@ impl IvcBenchEnv {
             &self.global,
             &preimage,
             &rolling_state,
-            &self.setup,
+            &self.setup.prover_input_verification_context(),
         )?;
 
         let circuit_data = IvcCircuitData::try_new(
@@ -386,16 +386,17 @@ impl IvcBenchEnv {
         aggregate_verification_key: &AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
         rolling_state: &IvcRollingState,
     ) -> StmResult<FoldInputs> {
+        let verification_context = self.setup.prover_input_verification_context();
         let certificate_dual_msm = snark_proof.prepare_and_check(
             message,
             aggregate_verification_key,
-            &self.setup.certificate_verifying_key,
-            &self.setup.srs.verifier_params(),
+            verification_context.certificate_verifying_key(),
+            verification_context.verifier_params(),
         )?;
         let certificate_collapsed_accumulator =
-            self.setup.certificate_collapsed_accumulator(certificate_dual_msm)?;
-        let previous_ivc_proof_collapsed_accumulator =
-            self.setup.previous_ivc_proof_collapsed_accumulator(
+            verification_context.certificate_collapsed_accumulator(certificate_dual_msm)?;
+        let previous_ivc_proof_collapsed_accumulator = verification_context
+            .previous_ivc_proof_collapsed_accumulator(
                 rolling_state.ivc_proof().as_bytes(),
                 &rolling_state.previous_ivc_proof_public_inputs(&self.global),
             )?;
