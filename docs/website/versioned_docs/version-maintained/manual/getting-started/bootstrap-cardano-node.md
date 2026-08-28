@@ -207,9 +207,11 @@ Then, create a shell function for the Mithril client:
 
 ```bash
 mithril_client () {
-  docker run --rm -e GENESIS_VERIFICATION_KEY=$GENESIS_VERIFICATION_KEY -e AGGREGATOR_ENDPOINT=$AGGREGATOR_ENDPOINT --name='mithril-client' -v $(pwd):/app/data -w /app/data -u $(id -u) ghcr.io/intersectmbo/mithril-client:$MITHRIL_IMAGE_ID $@
+  docker run --rm -e GENESIS_VERIFICATION_KEY=$GENESIS_VERIFICATION_KEY -e AGGREGATOR_ENDPOINT=$AGGREGATOR_ENDPOINT --name='mithril-client' --security-opt seccomp=unconfined -v $(pwd):/app/data -w /app/data -u $(id -u) ghcr.io/intersectmbo/mithril-client:$MITHRIL_IMAGE_ID "$@"
 }
 ```
+
+The `--security-opt seccomp=unconfined` option is required by the `LSM` ledger state conversion, which uses io_uring syscalls blocked by the default Docker seccomp profile.
 
 You can now use the `mithril_client` function:
 
@@ -520,19 +522,29 @@ Upgrade and replace the restored ledger state snapshot to 'LMDB' flavor by runni
 
 ### Step 5 (optional): Convert the ledger state snapshot to another flavor
 
-After restoring a snapshot with the `--include-ancillary` option, the ledger state is in the `InMemory` format. You can convert it to another UTxO-HD flavor (e.g., `LMDB` or `Legacy`) using the Mithril client `tools utxo-hd snapshot-converter` command.
+After restoring a snapshot with the `--include-ancillary` option, the ledger state is in the `InMemory` format. You can convert it to another UTxO-HD flavor using the Mithril client `tools utxo-hd snapshot-converter` command.
 
-To do so, run the following command:
+Each flavor can only be read by a range of Cardano node versions:
+
+| Flavor   | Cardano node versions running the converted ledger state |
+| -------- | -------------------------------------------------------- |
+| `LSM`    | `10.7.0` and above                                       |
+| `LMDB`   | `11.0.1` and below                                       |
+| `Legacy` | `10.3.1` and below                                       |
+
+To convert the ledger state to the `LSM` flavor, run the following command:
 
 ```
-mithril-client tools utxo-hd snapshot-converter --db-directory db --cardano-node-version latest --utxo-hd-flavor LMDB
+mithril-client tools utxo-hd snapshot-converter --db-directory db --cardano-node-version latest --utxo-hd-flavor LSM
 ```
 
-Or, to convert it to the `Legacy` flavor:
+Or, to convert it to the `LMDB` flavor, which is useful to run a Cardano node older than the one used by the aggregator:
 
 ```
-mithril-client tools utxo-hd snapshot-converter --db-directory db --cardano-node-version latest --utxo-hd-flavor Legacy
+mithril-client tools utxo-hd snapshot-converter --db-directory db --cardano-node-version 11.0.1 --utxo-hd-flavor LMDB
 ```
+
+The `LMDB` backend was dropped in Cardano node `11.1.0`. Requesting that flavor with `11.1.0` or upper fails, so pass a version able to run it.
 
 Use the `--commit` option to replace the current ledger state with the converted snapshot.
 

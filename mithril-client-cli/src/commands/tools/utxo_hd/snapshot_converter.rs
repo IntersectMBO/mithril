@@ -14,14 +14,12 @@ use mithril_client::{
     common::{CardanoNetwork, MagicId},
 };
 
+use crate::CommandContext;
 use crate::utils::{
     ArchiveUnpacker, CardanoDbUtils, GitHubReleaseRetriever, HttpDownloader, LedgerFormat,
     ProgressOutputType, ProgressPrinter, ReqwestGitHubApiClient, ReqwestHttpDownloader, copy_dir,
-    is_version_equal_or_upper, print_simple_warning, remove_dir_contents,
-};
-use crate::{
-    CommandContext,
-    utils::{CARDANO_NODE_V10_6_2, CARDANO_NODE_V10_7_0, CARDANO_NODE_V11_1_0},
+    is_version_at_least_10_6_2_or_latest, is_version_at_least_10_7_0_or_latest,
+    is_version_at_least_11_1_0_or_latest, print_simple_warning, remove_dir_contents,
 };
 
 const GITHUB_ORGANIZATION: &str = "IntersectMBO";
@@ -46,6 +44,9 @@ const LSM_EXPORT_DIR: &str = "lsm_export";
 const PROTOCOL_MAGIC_ID_FILE: &str = "protocolMagicId";
 
 const CONVERSION_FALLBACK_LIMIT: usize = 2;
+
+/// Last Cardano node version able to run a ledger state converted to the LMDB flavor.
+const CARDANO_NODE_LAST_LMDB_VERSION: &str = "11.0.1";
 
 #[derive(Debug, Clone, ValueEnum, Eq, PartialEq)]
 enum UTxOHDFlavor {
@@ -396,6 +397,14 @@ impl SnapshotConverterCommand {
             ));
         }
 
+        if is_version_at_least_11_1_0_or_latest(&self.cardano_node_version)
+            && self.utxo_hd_flavor == UTxOHDFlavor::Lmdb
+        {
+            return Err(anyhow!(
+                "UTxO HD Flavor LMDB is not supported on Cardano node 11.1.0 or upper"
+            ));
+        }
+
         let is_local_bin_mode = self.binary_path.is_some() && self.config_path.is_some();
 
         let number_of_steps = Self::calculate_number_of_steps(is_local_bin_mode, self.commit);
@@ -661,6 +670,15 @@ impl SnapshotConverterCommand {
             if matches!(&utxo_hd_flavor, UTxOHDFlavor::Legacy) {
                 print_simple_warning(
                     "Legacy ledger format is only compatible with cardano-node up to `10.3.1`.",
+                    is_json_output_enabled,
+                );
+            }
+
+            if matches!(&utxo_hd_flavor, UTxOHDFlavor::Lmdb) {
+                print_simple_warning(
+                    &format!(
+                        "LMDB ledger format is only compatible with cardano-node up to `{CARDANO_NODE_LAST_LMDB_VERSION}`."
+                    ),
                     is_json_output_enabled,
                 );
             }
@@ -987,18 +1005,6 @@ fn get_snapshot_converter_bin_by_version(
     }
 }
 
-fn is_version_at_least_11_1_0_or_latest(version: &str) -> bool {
-    is_version_equal_or_upper(version, CARDANO_NODE_V11_1_0)
-}
-
-fn is_version_at_least_10_7_0_or_latest(version: &str) -> bool {
-    is_version_equal_or_upper(version, CARDANO_NODE_V10_7_0)
-}
-
-fn is_version_at_least_10_6_2_or_latest(version: &str) -> bool {
-    is_version_equal_or_upper(version, CARDANO_NODE_V10_6_2)
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs::File;
@@ -1091,6 +1097,58 @@ mod tests {
             assert_eq!(
                 result.unwrap_err().to_string(),
                 "UTxO HD Flavor Legacy is not supported on Cardano node 10.6.2 or upper"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_return_error_if_utxo_hd_flavor_is_lmdb_and_cardano_node_version_11_1_0() {
+            let command = SnapshotConverterCommand {
+                cardano_node_version: "11.1.0".to_string(),
+                utxo_hd_flavor: UTxOHDFlavor::Lmdb,
+                ..dummy_snapshot_converter_command()
+            };
+
+            let result = SnapshotConverterCommand::execute(&command, fake_command_context()).await;
+
+            assert!(result.is_err());
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "UTxO HD Flavor LMDB is not supported on Cardano node 11.1.0 or upper"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_return_error_if_utxo_hd_flavor_is_lmdb_and_cardano_node_version_11_1_0_or_upper()
+         {
+            let command = SnapshotConverterCommand {
+                cardano_node_version: "11.2.1".to_string(),
+                utxo_hd_flavor: UTxOHDFlavor::Lmdb,
+                ..dummy_snapshot_converter_command()
+            };
+
+            let result = SnapshotConverterCommand::execute(&command, fake_command_context()).await;
+
+            assert!(result.is_err());
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "UTxO HD Flavor LMDB is not supported on Cardano node 11.1.0 or upper"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_return_error_if_utxo_hd_flavor_is_lmdb_and_cardano_node_version_latest() {
+            let command = SnapshotConverterCommand {
+                cardano_node_version: "latest".to_string(),
+                utxo_hd_flavor: UTxOHDFlavor::Lmdb,
+                ..dummy_snapshot_converter_command()
+            };
+
+            let result = SnapshotConverterCommand::execute(&command, fake_command_context()).await;
+
+            assert!(result.is_err());
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "UTxO HD Flavor LMDB is not supported on Cardano node 11.1.0 or upper"
             );
         }
     }

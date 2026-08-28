@@ -10,8 +10,8 @@ use mithril_client::{
 };
 
 use crate::utils::{
-    CARDANO_NODE_V10_6_2, CARDANO_NODE_V10_7_0, CardanoDbUtils, LedgerFormat, ProgressPrinter,
-    is_version_equal_or_upper,
+    CardanoDbUtils, LedgerFormat, ProgressPrinter, is_version_at_least_10_6_2_or_latest,
+    is_version_at_least_10_7_0_or_latest, is_version_at_least_11_1_0_or_latest,
 };
 
 pub struct ComputeCardanoDatabaseMessageOptions {
@@ -197,10 +197,14 @@ pub fn log_download_information(
                     json["snapshot_converter_cmd_to_lsm"] =
                         serde_json::Value::String(snapshot_converter_cmd("LSM"));
                 }
-                json["snapshot_converter_cmd_to_lmdb"] =
-                    serde_json::Value::String(snapshot_converter_cmd("LMDB"));
-                json["snapshot_converter_cmd_to_legacy"] =
-                    serde_json::Value::String(snapshot_converter_cmd("Legacy"));
+                if !is_version_at_least_11_1_0_or_latest(cardano_node_version) {
+                    json["snapshot_converter_cmd_to_lmdb"] =
+                        serde_json::Value::String(snapshot_converter_cmd("LMDB"));
+                }
+                if !is_version_at_least_10_6_2_or_latest(cardano_node_version) {
+                    json["snapshot_converter_cmd_to_legacy"] =
+                        serde_json::Value::String(snapshot_converter_cmd("Legacy"));
+                }
             }
         }
 
@@ -235,13 +239,15 @@ pub fn log_download_information(
                     );
                 }
 
-                println!(
-                    r###"Upgrade and replace the restored ledger state snapshot to 'LMDB' flavor by running the command:
+                if !is_version_at_least_11_1_0_or_latest(cardano_node_version) {
+                    println!(
+                        r###"Upgrade and replace the restored ledger state snapshot to 'LMDB' flavor by running the command:
 
     {}
     "###,
-                    snapshot_converter_cmd("LMDB"),
-                );
+                        snapshot_converter_cmd("LMDB"),
+                    );
+                }
 
                 if !is_version_at_least_10_6_2_or_latest(cardano_node_version) {
                     println!(
@@ -257,14 +263,6 @@ pub fn log_download_information(
     }
 
     Ok(())
-}
-
-pub fn is_version_at_least_10_7_0_or_latest(version: &str) -> bool {
-    is_version_equal_or_upper(version, CARDANO_NODE_V10_7_0)
-}
-
-pub fn is_version_at_least_10_6_2_or_latest(version: &str) -> bool {
-    is_version_equal_or_upper(version, CARDANO_NODE_V10_6_2)
 }
 
 #[cfg(test)]
