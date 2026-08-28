@@ -8,16 +8,20 @@ use crate::{
     },
 };
 
-/// Builds the provers an aggregation needs, once the aggregate signature type is known.
+/// Builds the provers needed to generate a non-recursive SNARK aggregate signature
+/// and a recursive SNARK proof that the chain is valid.
 #[cfg_attr(test, mockall::automock)]
 pub(crate) trait SnarkProverFactory<D: MembershipDigest>: Debug + Send + Sync {
-    /// Builds the non-recursive prover for the certificate proof.
+    /// Builds a non-recursive SNARK prover given the parameters. This prover can generate
+    /// a succinct proof that a set of enough signatures are valid to reach the quorum
+    /// `k` of the parameters.
     fn snark_signature_prover(
         &self,
         parameters: &Parameters,
     ) -> StmResult<Box<dyn SnarkAggregateSignatureProver<D>>>;
 
-    /// Builds the recursive prover for one IVC step.
+    /// Builds the recursive SNARK prover that can take one step of the chain and generate a
+    /// proof that the chain is valid up to and including this step.
     fn ivc_chain_prover(&self, parameters: &Parameters) -> StmResult<Box<dyn IvcChainProver<D>>>;
 }
 
