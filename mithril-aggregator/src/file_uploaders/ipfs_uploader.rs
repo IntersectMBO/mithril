@@ -10,6 +10,8 @@ use mithril_common::entities::FileUri;
 use mithril_common::logging::LoggerExtensions;
 
 use crate::FileUploader;
+use crate::file_uploaders::FileUploadRetryPolicy;
+use crate::file_uploaders::interface::retry;
 use crate::tools::kubo_rpc_client::query::{
     IpfsAddQuery, IpfsFilesLsQuery, IpfsFilesMkdirQuery, IpfsFilesStatQuery,
 };
@@ -22,6 +24,7 @@ pub type Cid = String;
 pub struct IpfsUploader {
     rpc_client: Arc<dyn IpfsBackendUploader>,
     ipfs_dir_path: IpfsMfsDirPath,
+    retry_policy: FileUploadRetryPolicy,
     logger: Logger,
 }
 
@@ -30,11 +33,13 @@ impl IpfsUploader {
     pub fn new(
         rpc_client: Arc<dyn IpfsBackendUploader>,
         ipfs_dir_path: IpfsMfsDirPath,
+        retry_policy: FileUploadRetryPolicy,
         logger: &Logger,
     ) -> Self {
         Self {
             rpc_client,
             ipfs_dir_path,
+            retry_policy,
             logger: logger.new_with_component_name::<Self>(),
         }
     }
@@ -70,7 +75,13 @@ impl IpfsUploader {
                 continue;
             }
 
-            self.upload_missing_file_once(file_path).await?;
+            // We are bypassing retry-capable [FileUploader::upload] to avoid already batched checks, so we need to retry manually
+            retry(
+                || async { self.upload_missing_file_once(file_path).await },
+                self.retry_policy(),
+                format!(" Uploaded file path: {}", file_path.display()),
+            )
+            .await?;
         }
 
         self.get_current_directory_cid().await
@@ -136,6 +147,10 @@ impl IpfsUploader {
 impl FileUploader for IpfsUploader {
     async fn upload_without_retry(&self, filepath: &Path) -> StdResult<FileUri> {
         self.upload_file_once(filepath).await
+    }
+
+    fn retry_policy(&self) -> FileUploadRetryPolicy {
+        self.retry_policy.clone()
     }
 }
 
@@ -226,6 +241,7 @@ mod tests {
             Self::new(
                 MockBuilder::configure(mock_config),
                 mfs_dir.into(),
+                FileUploadRetryPolicy::never(),
                 &TestLogger::stdout(),
             )
         }
@@ -279,6 +295,8 @@ mod tests {
     }
 
     mod batch_upload {
+        use std::time::Duration;
+
         use anyhow::anyhow;
 
         use super::*;
@@ -328,6 +346,49 @@ mod tests {
                     PathBuf::from("/local/new-file-1.txt"),
                     PathBuf::from("/other/new-file-2.txt"),
                 ])
+                .await
+                .unwrap();
+
+            assert_eq!("directory-cid", directory_cid);
+        }
+
+        #[tokio::test]
+        async fn support_retry() {
+            let mut uploader = IpfsUploader::new_for_test(MFS_DIR, move |mock| {
+                mock.expect_create_dir()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(|_| Ok(()))
+                    .once();
+                mock.expect_list_directory_files()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(move |_| Ok(HashMap::new()))
+                    .once();
+                mock.expect_upload_file()
+                    .with(
+                        eq(PathBuf::from("/local/new-file.txt")),
+                        eq(IpfsMfsDirPath::from(MFS_DIR)),
+                    )
+                    .return_once(|_, _| Err(anyhow!("first upload failed")))
+                    .once();
+                mock.expect_upload_file()
+                    .with(
+                        eq(PathBuf::from("/local/new-file.txt")),
+                        eq(IpfsMfsDirPath::from(MFS_DIR)),
+                    )
+                    .return_once(|_, _| Ok("file-cid".to_string()))
+                    .once();
+                mock.expect_get_dir_cid()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(|_| Ok("directory-cid".to_string()))
+                    .once();
+            });
+            uploader.retry_policy = FileUploadRetryPolicy {
+                attempts: 2,
+                delay_between_attempts: Duration::from_millis(5),
+            };
+
+            let directory_cid = uploader
+                .batch_upload_to_dir(&[PathBuf::from("/local/new-file.txt")])
                 .await
                 .unwrap();
 
