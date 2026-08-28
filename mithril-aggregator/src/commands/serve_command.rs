@@ -81,6 +81,14 @@ pub struct ServeCommand {
     /// If this is not set, the aggregator will run in a leader mode.
     #[clap(long)]
     leader_aggregator_endpoint: Option<String>,
+
+    /// Certificate chain aggregator endpoint
+    ///
+    /// This is the endpoint of the aggregator that will be used to synchronize the certificate
+    /// chain when the aggregator is running in a follower mode.
+    /// If this is not set, the leader aggregator endpoint is used.
+    #[clap(long)]
+    certificate_chain_aggregator_endpoint: Option<String>,
 }
 
 impl Source for ServeCommand {
@@ -110,6 +118,12 @@ impl Source for ServeCommand {
             result,
             &namespace,
             self.leader_aggregator_endpoint,
+            |v: String| { Some(v) }
+        );
+        register_config_value_option!(
+            result,
+            &namespace,
+            self.certificate_chain_aggregator_endpoint,
             |v: String| { Some(v) }
         );
 
