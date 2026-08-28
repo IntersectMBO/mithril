@@ -38,7 +38,7 @@ use crate::{
     AggregateSignatureError, AncillaryProverData, AncillaryVerifierData, SnarkProof,
     circuits::halo2_ivc::{ProtocolMessagePreimage, state::Global},
     proof_system::{
-        MERKLE_TREE_DEPTH_FOR_SNARK, SnarkClerk, SnarkProver, SnarkSignatureProver,
+        MERKLE_TREE_DEPTH_FOR_SNARK, SnarkAggregateSignatureProver, SnarkClerk, SnarkProver,
         SnarkVerifierData,
         ivc_halo2_snark::{
             proof::{IvcProof, IvcProver},
@@ -180,7 +180,7 @@ impl<D: MembershipDigest> Clerk<D> {
 
     fn aggregate_signatures_for_snark(
         snark_clerk: &SnarkClerk,
-        prover: &mut dyn SnarkSignatureProver<D>,
+        prover: &mut dyn SnarkAggregateSignatureProver<D>,
         sigs: &[SingleSignature],
         msg: &[u8],
     ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
@@ -201,7 +201,7 @@ impl<D: MembershipDigest> Clerk<D> {
 
     fn aggregate_signatures_for_ivc_snark(
         snark_clerk: &SnarkClerk,
-        certificate_prover: &mut dyn SnarkSignatureProver<D>,
+        certificate_prover: &mut dyn SnarkAggregateSignatureProver<D>,
         ivc_prover: &mut dyn IvcChainProver<D>,
         sigs: &[SingleSignature],
         msg: &[u8],

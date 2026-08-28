@@ -17,7 +17,7 @@ pub(crate) use eligibility::{
 };
 pub(crate) use message::build_snark_message;
 pub use proof::SnarkProof;
-pub(crate) use proof::{SnarkProver, SnarkSignatureProver};
+pub(crate) use proof::{SnarkAggregateSignatureProver, SnarkProver};
 pub use setup::SnarkVerifierData;
 pub(crate) use setup::{SnarkProverSetup, SnarkVerifierSetup};
 pub(crate) use signer::SnarkProofSigner;

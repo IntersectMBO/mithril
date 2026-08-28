@@ -1225,7 +1225,7 @@ mod tests {
         use crate::{
             Clerk, Initializer, KeyRegistration, MithrilMembershipDigest, Parameters,
             SingleSignature,
-            proof_system::{SnarkProver, SnarkProverSetup, SnarkSignatureProver},
+            proof_system::{SnarkAggregateSignatureProver, SnarkProver, SnarkProverSetup},
         };
 
         type D = MithrilMembershipDigest;

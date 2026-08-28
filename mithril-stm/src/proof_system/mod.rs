@@ -62,8 +62,8 @@ pub use halo2_snark::{
 pub(crate) use halo2_snark::SnarkProverSetup;
 #[cfg(feature = "future_snark")]
 pub(crate) use halo2_snark::{
-    SingleSignatureForSnark, SnarkClerk, SnarkProofSigner, SnarkProver, SnarkSignatureProver,
-    SnarkVerifierSetup, compute_target_value_for_snark_lottery,
+    SingleSignatureForSnark, SnarkAggregateSignatureProver, SnarkClerk, SnarkProofSigner,
+    SnarkProver, SnarkVerifierSetup, compute_target_value_for_snark_lottery,
 };
 
 #[cfg(all(test, feature = "future_snark"))]

@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::{
     MERKLE_TREE_DEPTH_FOR_SNARK, MembershipDigest, Parameters, StmResult,
     proof_system::{
-        SnarkProver, SnarkSignatureProver,
+        SnarkAggregateSignatureProver, SnarkProver,
         ivc_halo2_snark::proof::{IvcChainProver, IvcProver},
     },
 };
@@ -15,7 +15,7 @@ pub(crate) trait SnarkProverFactory<D: MembershipDigest>: Debug + Send + Sync {
     fn snark_signature_prover(
         &self,
         parameters: &Parameters,
-    ) -> StmResult<Box<dyn SnarkSignatureProver<D>>>;
+    ) -> StmResult<Box<dyn SnarkAggregateSignatureProver<D>>>;
 
     /// Builds the recursive prover for one IVC step.
     fn ivc_chain_prover(&self, parameters: &Parameters) -> StmResult<Box<dyn IvcChainProver<D>>>;
@@ -29,7 +29,7 @@ impl<D: MembershipDigest> SnarkProverFactory<D> for NonDeterministicSnarkProverF
     fn snark_signature_prover(
         &self,
         parameters: &Parameters,
-    ) -> StmResult<Box<dyn SnarkSignatureProver<D>>> {
+    ) -> StmResult<Box<dyn SnarkAggregateSignatureProver<D>>> {
         Ok(Box::new(SnarkProver::try_new_non_deterministic(
             parameters,
             MERKLE_TREE_DEPTH_FOR_SNARK,
