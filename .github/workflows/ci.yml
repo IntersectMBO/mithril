@@ -389,6 +389,14 @@ jobs:
             hard_fork_latest_era_at_epoch: 0
             run_id: "#1"
             extra_args: "--number-of-aggregators=2 --use-relays --relay-signer-registration-mode=passthrough --relay-signature-registration-mode=p2p --aggregate-signature-type=Concatenation"
+          # Include a test for chained follower aggregators synchronizing their certificate chain from the previous follower
+          - mode: "leader-follower-chained-relay"
+            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
+            next_era: ""
+            cardano_node_version: "10.6.2"
+            hard_fork_latest_era_at_epoch: 0
+            run_id: "#1"
+            extra_args: "--number-of-aggregators=3 --chain-follower-aggregators --use-relays --relay-signer-registration-mode=passthrough --relay-signature-registration-mode=p2p --aggregate-signature-type=Concatenation"
           # Include a test for full dedentralization P2P signer registration and P2P signature registration
           - mode: "decentralized"
             era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
