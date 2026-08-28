@@ -244,9 +244,15 @@ struct MithrilArgs {
     #[clap(long, default_value = "cardano-chain")]
     signer_protocol_configuration_reader_adapter: String,
 
-    /// Aggregate signature type used to create the certificates
-    #[clap(long, value_enum, default_value = "Concatenation")]
-    aggregate_signature_type: AggregateSignatureType,
+    /// Aggregate signature types used to create the certificates: a single one for every
+    /// aggregator, or one per aggregator in their order (leader first), comma separated
+    #[clap(
+        long = "aggregate-signature-type",
+        value_enum,
+        value_delimiter = ',',
+        default_value = "Concatenation"
+    )]
+    aggregate_signature_types: Vec<AggregateSignatureType>,
 
     /// Skip the signature delayer in mithril-signer
     #[clap(long)]
@@ -300,6 +306,16 @@ impl Cli {
         if !self.network_topology.use_relays && self.network_topology.number_of_aggregators >= 2 {
             return Err(anyhow!(
                 "The 'use_relays' parameter must be activated to run more than one aggregator"
+            ));
+        }
+
+        let number_of_aggregate_signature_types = self.mithril.aggregate_signature_types.len();
+        if number_of_aggregate_signature_types != 1
+            && number_of_aggregate_signature_types
+                != self.network_topology.number_of_aggregators as usize
+        {
+            return Err(anyhow!(
+                "The 'aggregate_signature_type' parameter must hold a single value or one value per aggregator"
             ));
         }
 
@@ -565,8 +581,9 @@ impl App {
         };
         *self.ipfs_devnet.lock().await = ipfs_devnet.clone();
 
-        let startup_protocol_configuration =
-            Self::build_startup_protocol_configuration(&args.mithril.aggregate_signature_type);
+        let startup_protocol_configuration = Self::build_startup_protocol_configuration(
+            &AggregateSignatureType::most_constraining(&args.mithril.aggregate_signature_types),
+        );
 
         let infrastructure = Arc::new(
             MithrilInfrastructure::start(
@@ -593,7 +610,7 @@ impl App {
                         .signer_protocol_configuration_reader_adapter,
                     startup_protocol_configuration,
                     signed_entity_types: scenario.signed_entity_types(),
-                    aggregate_signature_type: args.mithril.aggregate_signature_type,
+                    aggregate_signature_types: args.mithril.aggregate_signature_types,
                     genesis_keys,
                     use_dmq,
                     dmq_node_flavor: args.network_topology.dmq_node_flavor,
@@ -852,5 +869,29 @@ mod tests {
         let args = Cli::parse_from(["", "--use-relays", "--number-of-aggregators", "2"]);
         args.validate()
             .expect("validate should succeed with more than one aggregator if p2p network is used");
+    }
+
+    #[test]
+    fn args_validation_requires_a_single_aggregate_signature_type_or_one_per_aggregator() {
+        let args_with = |aggregate_signature_types: &str| {
+            Cli::parse_from([
+                "",
+                "--use-relays",
+                "--number-of-aggregators",
+                "2",
+                "--aggregate-signature-type",
+                aggregate_signature_types,
+            ])
+        };
+
+        args_with("Concatenation,IvcSnark,IvcSnark").validate().expect_err(
+            "validate should fail with three aggregate signature types for two aggregators",
+        );
+        args_with("Concatenation,IvcSnark")
+            .validate()
+            .expect("validate should succeed with one aggregate signature type per aggregator");
+        args_with("IvcSnark")
+            .validate()
+            .expect("validate should succeed with a single aggregate signature type");
     }
 }
