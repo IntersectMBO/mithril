@@ -991,14 +991,11 @@ mod tests {
                             RecursiveChainStateAsset,
                             load_embedded_first_certificate_in_epoch_asset,
                             load_embedded_following_certificate_in_epoch_asset,
+                            load_embedded_genesis_benchmark_fixture,
                             load_embedded_recursive_chain_state_asset,
                             load_embedded_verification_context_asset,
                         },
-                        generators::{
-                            build_asset_generation_setup_from_cache,
-                            build_genesis_protocol_message_preimage, build_recursive_global,
-                            setup::{AssetGenerationSetup, QUORUM_SIZE, SIGNER_COUNT, TOTAL_STAKE},
-                        },
+                        generators::setup::{QUORUM_SIZE, SIGNER_COUNT, TOTAL_STAKE},
                     },
                     types::ProtocolMessagePreimage,
                 },
@@ -1015,7 +1012,7 @@ mod tests {
             ivc_setup: Arc<IvcSnarkProverSetup>,
             global: Global,
             verifier_setup: IvcVerifierSetup,
-            asset_setup: AssetGenerationSetup,
+            genesis_bootstrap: IvcGenesisBootstrapInput,
         }
 
         fn wrap_snark_proof(
@@ -1036,24 +1033,6 @@ mod tests {
             avk_bytes[32..40].copy_from_slice(&TOTAL_STAKE.to_be_bytes());
             AggregateVerificationKeyForSnark::<MithrilMembershipDigest>::from_bytes(&avk_bytes)
                 .expect("AVK should decode from bytes")
-        }
-
-        fn wrap_protocol_message_preimage(preimage: &[u8]) -> ProtocolMessagePreimage {
-            use crate::circuits::halo2_ivc::PREIMAGE_SIZE;
-            let preimage_array: [u8; PREIMAGE_SIZE] = preimage
-                .try_into()
-                .expect("preimage should be exactly PREIMAGE_SIZE bytes");
-            ProtocolMessagePreimage::new(preimage_array)
-        }
-
-        fn genesis_bootstrap(asset_setup: &AssetGenerationSetup) -> IvcGenesisBootstrapInput {
-            let genesis_preimage_bytes = build_genesis_protocol_message_preimage(asset_setup);
-            IvcGenesisBootstrapInput {
-                genesis_signature: asset_setup.genesis_signature,
-                genesis_protocol_message_preimage: wrap_protocol_message_preimage(
-                    &genesis_preimage_bytes,
-                ),
-            }
         }
 
         fn rolling_state_from_asset(asset: RecursiveChainStateAsset) -> IvcRollingState {
@@ -1080,7 +1059,8 @@ mod tests {
 
             let verification_context = load_embedded_verification_context_asset()
                 .expect("verification context asset should load");
-            let asset_setup = build_asset_generation_setup_from_cache();
+            let genesis_fixture = load_embedded_genesis_benchmark_fixture()
+                .expect("genesis benchmark fixture should load");
 
             assert_eq!(
                 verification_context
@@ -1104,11 +1084,18 @@ mod tests {
                 "stored verification context IVC VK must match freshly generated IVC VK"
             );
 
-            let global = build_recursive_global(
-                &asset_setup,
+            let global = Global::new(
+                genesis_fixture.genesis_message_hash(),
+                genesis_fixture.genesis_verification_key,
                 &verification_context.certificate_verifying_key,
                 &verification_context.recursive_verifying_key,
             );
+            let genesis_bootstrap = IvcGenesisBootstrapInput {
+                genesis_signature: genesis_fixture.genesis_signature,
+                genesis_protocol_message_preimage: ProtocolMessagePreimage::new(
+                    genesis_fixture.genesis_protocol_message_preimage,
+                ),
+            };
             let verifier_setup = IvcVerifierSetup::from_ivc_setup_with_srs(&ivc_setup);
             println!("[setup] {:.1}s", t_setup.elapsed().as_secs_f64());
 
@@ -1116,7 +1103,7 @@ mod tests {
                 ivc_setup,
                 global,
                 verifier_setup,
-                asset_setup,
+                genesis_bootstrap,
             }
         }
 
@@ -1128,8 +1115,7 @@ mod tests {
                 .expect("first-step certificate asset should load");
             let avk = wrap_avk(&first_step.aggregate_verification_key_merkle_root);
             let snark_proof = wrap_snark_proof(first_step.certificate_proof.clone().into_vec());
-            let epoch1_preimage = wrap_protocol_message_preimage(&first_step.message_preimage);
-            let bootstrap = genesis_bootstrap(&ctx.asset_setup);
+            let epoch1_preimage = ProtocolMessagePreimage::new(first_step.message_preimage);
 
             let mut prover = IvcProver {
                 ivc_setup: Arc::clone(&ctx.ivc_setup),
@@ -1143,7 +1129,7 @@ mod tests {
                     &avk,
                     &ctx.global,
                     &epoch1_preimage,
-                    &bootstrap,
+                    &ctx.genesis_bootstrap,
                     None,
                 )
                 .expect("bootstrap prove should succeed");
@@ -1194,7 +1180,7 @@ mod tests {
 
             let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
             let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let preimage = wrap_protocol_message_preimage(&step.message_preimage);
+            let preimage = ProtocolMessagePreimage::new(step.message_preimage);
 
             let mut prover = IvcProver {
                 ivc_setup: Arc::clone(&ctx.ivc_setup),
@@ -1207,7 +1193,8 @@ mod tests {
                     &avk,
                     &ctx.global,
                     &preimage,
-                    &genesis_bootstrap(&ctx.asset_setup),
+                    // Ignored when continuing from an existing rolling state.
+                    &ctx.genesis_bootstrap,
                     Some(&rolling_state),
                 )
                 .expect("same-epoch prove should succeed");
