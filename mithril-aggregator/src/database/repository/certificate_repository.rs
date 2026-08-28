@@ -82,6 +82,22 @@ impl CertificateRepository {
         record.map(|c| c.try_into().map_err(Into::into)).transpose()
     }
 
+    /// Return the most recent reference certificate of the given epoch that satisfies the
+    /// predicate, see [Self::get_master_certificate_for_epoch].
+    pub async fn get_master_certificate_for_epoch_matching(
+        &self,
+        epoch: Epoch,
+        predicate: impl Fn(&Certificate) -> bool + Send,
+    ) -> StdResult<Option<Certificate>> {
+        let candidates: Vec<Certificate> = self
+            .connection
+            .fetch(MasterCertificateQuery::for_epoch(epoch))?
+            .map(TryInto::try_into)
+            .collect::<StdResult<_>>()?;
+
+        Ok(candidates.into_iter().find(|certificate| predicate(certificate)))
+    }
+
     /// Create a new certificate in the database.
     pub async fn create_certificate(&self, certificate: Certificate) -> StdResult<Certificate> {
         let record = self
@@ -175,6 +191,7 @@ impl SynchronizedCertificateStorer for CertificateRepository {
 
 #[cfg(test)]
 mod tests {
+    use mithril_common::entities::SignedEntityType;
     use mithril_common::test::crypto_helper::setup_certificate_chain;
 
     use crate::database::test_helper::{insert_certificate_records, main_db_connection};
@@ -368,6 +385,60 @@ mod tests {
         let expected = Some(certificates.genesis_certificate().clone());
 
         assert_eq!(expected, latest_certificates);
+    }
+
+    mod get_master_certificate_for_epoch_matching {
+        use super::*;
+
+        fn insert_genesis_and_standard_certificate(connection: &ConnectionThreadSafe) {
+            insert_certificate_records(
+                connection,
+                vec![
+                    CertificateRecord::dummy_genesis("genesis", Epoch(1)),
+                    CertificateRecord::dummy(
+                        "certificate",
+                        "genesis",
+                        Epoch(2),
+                        SignedEntityType::MithrilStakeDistribution(Epoch(2)),
+                    ),
+                ],
+            );
+        }
+
+        #[tokio::test]
+        async fn returns_the_most_recent_candidate_satisfying_the_predicate() {
+            let connection = Arc::new(main_db_connection().unwrap());
+            insert_genesis_and_standard_certificate(&connection);
+            let repository = CertificateRepository::new(connection);
+
+            let most_recent = repository
+                .get_master_certificate_for_epoch_matching(Epoch(2), |_| true)
+                .await
+                .unwrap()
+                .expect("This should return a certificate.");
+            let genesis = repository
+                .get_master_certificate_for_epoch_matching(Epoch(2), Certificate::is_genesis)
+                .await
+                .unwrap()
+                .expect("This should return a certificate.");
+
+            assert_eq!("certificate", most_recent.hash);
+            assert_eq!("genesis", genesis.hash);
+        }
+
+        #[tokio::test]
+        async fn returns_none_when_no_candidate_satisfies_the_predicate() {
+            let connection = Arc::new(main_db_connection().unwrap());
+            insert_genesis_and_standard_certificate(&connection);
+            let repository = CertificateRepository::new(connection);
+
+            let certificate = repository
+                .get_master_certificate_for_epoch_matching(Epoch(2), |_| false)
+                .await
+                .unwrap();
+
+            assert_eq!(None, certificate);
+        }
     }
 
     #[tokio::test]
