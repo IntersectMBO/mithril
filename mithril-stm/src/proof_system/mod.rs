@@ -59,7 +59,7 @@ pub use halo2_snark::{
 };
 
 #[cfg(all(test, feature = "future_snark"))]
-pub(crate) use halo2_snark::SnarkProverSetup;
+pub(crate) use halo2_snark::{MockSnarkAggregateSignatureProver, SnarkProverSetup};
 #[cfg(feature = "future_snark")]
 pub(crate) use halo2_snark::{
     SingleSignatureForSnark, SnarkAggregateSignatureProver, SnarkClerk, SnarkProofSigner,

@@ -16,6 +16,8 @@ pub(crate) use eligibility::{
     compute_target_value_for_snark_lottery, compute_winning_lottery_indices,
 };
 pub(crate) use message::build_snark_message;
+#[cfg(test)]
+pub(crate) use proof::MockSnarkAggregateSignatureProver;
 pub use proof::SnarkProof;
 pub(crate) use proof::{SnarkAggregateSignatureProver, SnarkProver};
 pub use setup::SnarkVerifierData;

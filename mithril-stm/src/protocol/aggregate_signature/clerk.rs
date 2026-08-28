@@ -378,24 +378,94 @@ mod tests {
     use std::sync::Arc;
 
     use midnight_curves::Bls12;
-    use midnight_proofs::poly::kzg::params::ParamsKZG;
+    use midnight_proofs::{poly::kzg::params::ParamsKZG, transcript::Blake2b256};
     use midnight_zk_stdlib::{self as zk, MidnightCircuit};
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
 
     use crate::{
-        AncillaryGenesisData, AncillaryProofInput, MithrilMembershipDigest, Parameters,
-        circuits::halo2::circuit::StmCertificateCircuit,
-        circuits::halo2::keys::NonRecursiveCircuitVerifyingKey,
-        circuits::halo2_ivc::PREIMAGE_SIZE,
-        circuits::halo2_ivc::keys::{RecursiveCircuitProvingKey, RecursiveCircuitVerifyingKey},
-        proof_system::SnarkClerk,
-        proof_system::{MERKLE_TREE_DEPTH_FOR_SNARK, ivc_halo2_snark::IvcSnarkProverSetup},
+        AggregateSignature, AggregateSignatureType, AggregationError, AncillaryGenesisData,
+        AncillaryProofInput, AncillaryProverData, Clerk, MembershipDigest, MithrilMembershipDigest,
+        Parameters, SnarkProof,
+        circuits::{
+            halo2::{
+                NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                circuit::StmCertificateCircuit, keys::NonRecursiveCircuitVerifyingKey,
+            },
+            halo2_ivc::{
+                PREIMAGE_SIZE, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                accumulator::trivial_accumulator,
+                keys::{RecursiveCircuitProvingKey, RecursiveCircuitVerifyingKey},
+                state::State,
+                types::{EpochNumber, IvcProofBytes, StepCounter},
+            },
+        },
+        codec::TryFromBytes,
+        proof_system::{
+            MERKLE_TREE_DEPTH_FOR_SNARK, MockSnarkAggregateSignatureProver, MockSnarkProverFactory,
+            SnarkClerk,
+            ivc_halo2_snark::{
+                IvcSnarkProverSetup, build_standard_rolling_state,
+                proof::{IvcProof, MockIvcChainProver},
+            },
+        },
         protocol::aggregate_signature::tests::setup_equal_parties,
-        {AggregationError, AncillaryProverData, SnarkProof},
     };
 
     use super::ivc_prover_input_preparation_and_prove;
+
+    const MESSAGE: [u8; 0] = [];
+
+    fn certificate_verifying_key() -> NonRecursiveCircuitVerifyingKey {
+        NonRecursiveCircuitVerifyingKey::try_from_bytes(
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        )
+        .expect("production verifying key bytes should deserialize")
+    }
+
+    fn ivc_verifying_key() -> RecursiveCircuitVerifyingKey {
+        RecursiveCircuitVerifyingKey::try_from_bytes(
+            RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        )
+        .expect("production verifying key bytes should deserialize")
+    }
+
+    fn dummy_certificate_proof(params: Parameters) -> SnarkProof<MithrilMembershipDigest> {
+        SnarkProof::new(vec![], params, MERKLE_TREE_DEPTH_FOR_SNARK)
+    }
+
+    fn build_ancillary_input(prover_data: Option<AncillaryProverData>) -> AncillaryProofInput {
+        AncillaryProofInput::new(
+            prover_data,
+            AncillaryGenesisData::dummy(),
+            #[cfg(feature = "future_snark")]
+            Vec::new(),
+        )
+    }
+
+    fn dummy_ivc_proof() -> IvcProof<Blake2b256> {
+        IvcProof::new(
+            IvcProofBytes::empty(),
+            State::genesis(),
+            trivial_accumulator(&[]),
+        )
+    }
+
+    fn factory_with<D: MembershipDigest + 'static>(
+        certificate_prover: MockSnarkAggregateSignatureProver<D>,
+        ivc_prover: MockIvcChainProver<D>,
+    ) -> MockSnarkProverFactory<D> {
+        let mut factory = MockSnarkProverFactory::new();
+        factory
+            .expect_snark_signature_prover()
+            .once()
+            .return_once(move |_| Ok(Box::new(certificate_prover)));
+        factory
+            .expect_ivc_chain_prover()
+            .once()
+            .return_once(move |_| Ok(Box::new(ivc_prover)));
+        factory
+    }
 
     fn build_fast_dummy_ivc_setup(
         params: Parameters,
@@ -508,6 +578,68 @@ mod tests {
             err.downcast_ref::<AggregationError>(),
             Some(&AggregationError::MissingGenesisVerificationKey),
             "missing genesis verification key must be rejected, got: {err}"
+        );
+    }
+
+    #[test]
+    fn ivc_aggregation_threads_next_rolling_state_into_prover_data() {
+        let params = Parameters {
+            k: 1,
+            m: 10,
+            phi_f: 0.9,
+        };
+        let signers = setup_equal_parties(params, 1);
+        let current_rolling_state =
+            build_standard_rolling_state(StepCounter::new(3), EpochNumber::new(2));
+        let next_rolling_state =
+            build_standard_rolling_state(StepCounter::new(4), EpochNumber::new(3));
+        let expected_prover_data = AncillaryProverData::IvcSnark(next_rolling_state.clone())
+            .to_bytes()
+            .unwrap();
+
+        let mut certificate_prover = MockSnarkAggregateSignatureProver::new();
+        certificate_prover
+            .expect_verification_key()
+            .return_const(certificate_verifying_key());
+        certificate_prover
+            .expect_aggregate_signatures()
+            .once()
+            .return_once(move |_, _, _| Ok(dummy_certificate_proof(params)));
+
+        let mut ivc_prover = MockIvcChainProver::new();
+        ivc_prover.expect_verifying_key().return_const(ivc_verifying_key());
+        ivc_prover
+            .expect_advance_chain()
+            .once()
+            .withf(|step_input| {
+                step_input.message == MESSAGE
+                    && step_input.rolling_state.as_ref().is_some_and(|rolling_state| {
+                        rolling_state.state().step_counter == StepCounter::new(3)
+                    })
+            })
+            .return_once(move |_| Ok((dummy_ivc_proof(), Some(next_rolling_state))));
+
+        let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(
+            &signers[0],
+            factory_with(certificate_prover, ivc_prover),
+        );
+
+        let (aggregate_signature, ancillary_output) = clerk
+            .aggregate_signatures_with_type(
+                &[],
+                &MESSAGE,
+                AggregateSignatureType::IvcSnark,
+                build_ancillary_input(Some(AncillaryProverData::IvcSnark(current_rolling_state))),
+            )
+            .expect("aggregation with mocked provers should succeed");
+
+        assert!(matches!(
+            aggregate_signature,
+            AggregateSignature::IvcSnark(_)
+        ));
+        assert_eq!(
+            ancillary_output.prover_data().unwrap().to_bytes().unwrap(),
+            expected_prover_data
         );
     }
 }
