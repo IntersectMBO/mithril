@@ -61,7 +61,7 @@ pub struct Clerk<D: MembershipDigest> {
     #[cfg(feature = "future_snark")]
     snark_proof_clerk: Option<SnarkClerk>,
     #[cfg(feature = "future_snark")]
-    snark_prover_factory: Arc<dyn SnarkProverFactory>,
+    snark_prover_factory: Arc<dyn SnarkProverFactory<D>>,
     phantom_data: PhantomData<D>,
 }
 
@@ -105,8 +105,11 @@ impl<D: MembershipDigest> Clerk<D> {
     #[cfg(all(feature = "future_snark", test))]
     pub(crate) fn new_clerk_from_signer_with_mock_prover_factory(
         signer: &Signer<D>,
-        snark_prover_factory: MockSnarkProverFactory,
-    ) -> Self {
+        snark_prover_factory: MockSnarkProverFactory<D>,
+    ) -> Self
+    where
+        D: 'static,
+    {
         Self {
             snark_prover_factory: Arc::new(snark_prover_factory),
             ..Self::new_clerk_from_signer(signer)
@@ -175,12 +178,14 @@ impl<D: MembershipDigest> Clerk<D> {
 
     fn aggregate_signatures_for_snark(
         snark_clerk: &SnarkClerk,
-        prover: &mut dyn CertificateProver,
+        prover: &mut dyn CertificateProver<D>,
         sigs: &[SingleSignature],
         msg: &[u8],
     ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
         let certificate_verifying_key = prover.verification_key().clone();
-        let snark_proof = prover.prove_certificate(snark_clerk, sigs, msg).with_context(|| "")?;
+        let snark_proof = prover
+            .aggregate_signatures(snark_clerk, sigs, msg)
+            .with_context(|| "")?;
         Ok((
             AggregateSignature::Snark(Box::new(snark_proof)),
             AncillaryProofOutput::new(
@@ -194,15 +199,15 @@ impl<D: MembershipDigest> Clerk<D> {
 
     fn aggregate_signatures_for_ivc_snark(
         snark_clerk: &SnarkClerk,
-        certificate_prover: &mut dyn CertificateProver,
-        ivc_prover: &mut dyn IvcStepProver,
+        certificate_prover: &mut dyn CertificateProver<D>,
+        ivc_prover: &mut dyn IvcStepProver<D>,
         sigs: &[SingleSignature],
         msg: &[u8],
         ancillary_input: AncillaryProofInput,
     ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
         let certificate_verifying_key = certificate_prover.verification_key().clone();
         let certificate_proof = certificate_prover
-            .prove_certificate(snark_clerk, sigs, msg)
+            .aggregate_signatures(snark_clerk, sigs, msg)
             .with_context(|| "")?;
         let step_input = IvcStepInput::try_new(
             certificate_proof,
@@ -288,7 +293,6 @@ impl<D: MembershipDigest> Clerk<D> {
 /// or the proof itself fails.
 #[cfg(feature = "future_snark")]
 #[cfg(test)]
-
 fn ivc_prover_input_preparation_and_prove<D: MembershipDigest>(
     snark_proof: SnarkProof<D>,
     msg: &[u8],

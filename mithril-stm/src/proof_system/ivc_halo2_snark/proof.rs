@@ -28,8 +28,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AggregateVerificationKeyForSnark, AggregationError, AncillaryGenesisData, AncillaryProofInput,
-    BaseFieldElement, MERKLE_TREE_DEPTH_FOR_SNARK, MembershipDigest, MithrilMembershipDigest,
-    Parameters, SnarkProof, StmResult,
+    BaseFieldElement, MERKLE_TREE_DEPTH_FOR_SNARK, MembershipDigest, Parameters, SnarkProof,
+    StmResult,
     circuits::{
         halo2::{keys::NonRecursiveCircuitVerifyingKey, types::CircuitBase},
         halo2_ivc::{
@@ -318,24 +318,23 @@ fn ensure_advanceable_rolling_state(rolling_state: Option<&IvcRollingState>) -> 
 }
 
 /// All inputs of one IVC step.
-pub(crate) struct IvcStepInput {
-    pub(crate) certificate_proof: SnarkProof<MithrilMembershipDigest>,
+pub(crate) struct IvcStepInput<D: MembershipDigest> {
+    pub(crate) certificate_proof: SnarkProof<D>,
     pub(crate) message: Vec<u8>,
-    pub(crate) aggregate_verification_key:
-        AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
+    pub(crate) aggregate_verification_key: AggregateVerificationKeyForSnark<D>,
     pub(crate) global: Global,
     pub(crate) protocol_message_preimage: ProtocolMessagePreimage,
     pub(crate) genesis_bootstrap: IvcGenesisBootstrapInput,
     pub(crate) rolling_state: Option<IvcRollingState>,
 }
 
-impl IvcStepInput {
+impl<D: MembershipDigest> IvcStepInput<D> {
     /// Fails on a missing genesis verifying key, a prover data without IVC rolling state,
     /// a missing genesis Schnorr signature or a preimage that is not PREIMAGE_SIZE bytes.
     pub(crate) fn try_new(
-        certificate_proof: SnarkProof<MithrilMembershipDigest>,
+        certificate_proof: SnarkProof<D>,
         message: &[u8],
-        aggregate_verification_key: AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
+        aggregate_verification_key: AggregateVerificationKeyForSnark<D>,
         ancillary_input: AncillaryProofInput,
         certificate_verifying_key: &NonRecursiveCircuitVerifyingKey,
         ivc_verifying_key: &RecursiveCircuitVerifyingKey,
@@ -386,11 +385,11 @@ impl IvcStepInput {
 
 /// Recursive proving side: advances the IVC chain by one step.
 #[cfg_attr(test, mockall::automock)]
-pub(crate) trait IvcStepProver {
+pub(crate) trait IvcStepProver<D: MembershipDigest> {
     fn ivc_verifying_key(&self) -> &RecursiveCircuitVerifyingKey;
     fn prove_step(
         &mut self,
-        step_input: IvcStepInput,
+        step_input: IvcStepInput<D>,
     ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)>;
 }
 
@@ -580,14 +579,14 @@ impl IvcProver<OsRng> {
     }
 }
 
-impl<R: RngCore + CryptoRng> IvcStepProver for IvcProver<R> {
+impl<D: MembershipDigest, R: RngCore + CryptoRng> IvcStepProver<D> for IvcProver<R> {
     fn ivc_verifying_key(&self) -> &RecursiveCircuitVerifyingKey {
         &self.ivc_setup.ivc_verifying_key
     }
 
     fn prove_step(
         &mut self,
-        step_input: IvcStepInput,
+        step_input: IvcStepInput<D>,
     ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)> {
         let IvcStepInput {
             certificate_proof,

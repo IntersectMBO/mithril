@@ -3,7 +3,7 @@ use crate::{
 };
 
 #[cfg(feature = "future_snark")]
-use crate::{MithrilMembershipDigest, proof_system::AggregateVerificationKeyForSnark};
+use crate::proof_system::AggregateVerificationKeyForSnark;
 
 /// Aggregate verification key combining both the concatenation and SNARK proof systems.
 ///
@@ -16,8 +16,7 @@ pub struct AggregateVerificationKey<D: MembershipDigest> {
     concatenation_aggregate_verification_key: AggregateVerificationKeyForConcatenation<D>,
     /// SNARK aggregate verification key (when `future_snark` feature is enabled).
     #[cfg(feature = "future_snark")]
-    snark_aggregate_verification_key:
-        Option<AggregateVerificationKeyForSnark<MithrilMembershipDigest>>,
+    snark_aggregate_verification_key: Option<AggregateVerificationKeyForSnark<D>>,
 }
 
 impl<D: MembershipDigest> AggregateVerificationKey<D> {
@@ -25,7 +24,7 @@ impl<D: MembershipDigest> AggregateVerificationKey<D> {
     pub fn new(
         concatenation_aggregate_verification_key: AggregateVerificationKeyForConcatenation<D>,
         #[cfg(feature = "future_snark")] snark_aggregate_verification_key: Option<
-            AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
+            AggregateVerificationKeyForSnark<D>,
         >,
     ) -> Self {
         Self {
@@ -46,7 +45,7 @@ impl<D: MembershipDigest> AggregateVerificationKey<D> {
     #[cfg(feature = "future_snark")]
     pub fn to_snark_aggregate_verification_key(
         &self,
-    ) -> Option<&AggregateVerificationKeyForSnark<MithrilMembershipDigest>> {
+    ) -> Option<&AggregateVerificationKeyForSnark<D>> {
         self.snark_aggregate_verification_key.as_ref()
     }
 }

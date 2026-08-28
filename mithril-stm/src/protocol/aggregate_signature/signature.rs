@@ -11,7 +11,6 @@ use crate::{
 };
 #[cfg(feature = "future_snark")]
 use crate::{
-    MithrilMembershipDigest,
     circuits::halo2_ivc::state::Global,
     proof_system::{
         SnarkProof, SnarkVerifierSetup,
@@ -144,7 +143,7 @@ struct AggregateSignatureCborEnvelope {
 pub enum AggregateSignature<D: MembershipDigest> {
     /// SNARK proof system.
     #[cfg(feature = "future_snark")]
-    Snark(Box<SnarkProof<MithrilMembershipDigest>>),
+    Snark(Box<SnarkProof<D>>),
 
     /// IVC SNARK proof system.
     #[cfg(feature = "future_snark")]
@@ -489,7 +488,7 @@ impl<D: MembershipDigest> AggregateSignature<D> {
 
     /// If the aggregate signature is a SNARK proof, return it.
     #[cfg(feature = "future_snark")]
-    pub fn get_snark_proof(&self) -> Option<&SnarkProof<MithrilMembershipDigest>> {
+    pub fn get_snark_proof(&self) -> Option<&SnarkProof<D>> {
         match self {
             AggregateSignature::Snark(proof) => Some(proof),
             AggregateSignature::Concatenation(_) => None,
@@ -1644,7 +1643,7 @@ mod tests {
                 .expect("SnarkProverSetup creation must succeed");
             let snark_proof = SnarkProver::try_new_deterministic(prover_seed, setup)
                 .expect("SnarkProver creation must succeed")
-                .prove_certificate(snark_clerk, &signatures, &message)
+                .aggregate_signatures(snark_clerk, &signatures, &message)
                 .expect("SNARK signature aggregation must succeed");
 
             AggregateSignature::Snark(Box::new(snark_proof))

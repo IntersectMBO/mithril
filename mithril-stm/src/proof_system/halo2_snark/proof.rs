@@ -157,14 +157,14 @@ impl<D: MembershipDigest> SnarkProof<D> {
 
 /// Non-recursive proving side: one certificate proof per aggregation.
 #[cfg_attr(test, mockall::automock)]
-pub(crate) trait CertificateProver {
+pub(crate) trait CertificateProver<D: MembershipDigest> {
     fn verification_key(&self) -> &NonRecursiveCircuitVerifyingKey;
-    fn prove_certificate(
+    fn aggregate_signatures(
         &mut self,
         clerk: &SnarkClerk,
         signatures: &[SingleSignature],
         message: &[u8],
-    ) -> StmResult<SnarkProof<MithrilMembershipDigest>>;
+    ) -> StmResult<SnarkProof<D>>;
 }
 
 /// Holds the pre-computed SNARK setup and exposes proof generation.
@@ -211,7 +211,7 @@ impl SnarkProver<ChaCha20Rng> {
     }
 }
 
-impl<R: RngCore + CryptoRng> CertificateProver for SnarkProver<R> {
+impl<D: MembershipDigest, R: RngCore + CryptoRng> CertificateProver<D> for SnarkProver<R> {
     /// Returns the certificate circuit verification key derived by this prover's setup.
     ///
     /// The clerk clones this before proving so the certificate's ancillary verifier data and the
@@ -226,16 +226,15 @@ impl<R: RngCore + CryptoRng> CertificateProver for SnarkProver<R> {
     /// single signatures, then runs the SNARK prover.
     ///
     /// Returns an error if fewer than `k` valid signatures are available or if proof generation fails.
-    fn prove_certificate(
+    fn aggregate_signatures(
         &mut self,
         clerk: &SnarkClerk,
         signatures: &[SingleSignature],
         message: &[u8],
-    ) -> StmResult<SnarkProof<MithrilMembershipDigest>> {
-        let snark_prover_input = SnarkProverInput::prepare_prover_input::<MithrilMembershipDigest>(
-            clerk, signatures, message,
-        )
-        .with_context(|| "Failed to prepare SNARK prover input")?;
+    ) -> StmResult<SnarkProof<D>> {
+        let snark_prover_input =
+            SnarkProverInput::prepare_prover_input::<D>(clerk, signatures, message)
+                .with_context(|| "Failed to prepare SNARK prover input")?;
         let instance = snark_prover_input.get_instance();
         let witness = snark_prover_input.into_witness();
 
@@ -317,11 +316,11 @@ mod tests {
     }
 
     fn snark_verifier_data(prover: &SnarkProver<ChaCha20Rng>) -> SnarkVerifierData {
-        SnarkVerifierData::new(prover.verification_key().clone())
+        SnarkVerifierData::new(CertificateProver::<D>::verification_key(prover).clone())
     }
 
     fn snark_verifier_data_non_deterministic(prover: &SnarkProver<OsRng>) -> SnarkVerifierData {
-        SnarkVerifierData::new(prover.verification_key().clone())
+        SnarkVerifierData::new(CertificateProver::<D>::verification_key(prover).clone())
     }
 
     fn create_prover(params: Parameters, seed: [u8; 32]) -> SnarkProver<ChaCha20Rng> {
@@ -353,7 +352,8 @@ mod tests {
             let (_, clerk) = setup_signers_and_clerk(params, nparties, &mut rng);
             let mut prover = create_prover(params, [2u8; 32]);
 
-            let result = prover.prove_certificate(&clerk, &[], &[3u8; 32]);
+            let result: Result<SnarkProof<D>, anyhow::Error> =
+                prover.aggregate_signatures(&clerk, &[], &[3u8; 32]);
             assert!(result.is_err(), "Expected failure with empty signatures");
         }
 
@@ -372,7 +372,8 @@ mod tests {
             let signatures = collect_signatures(&signers, &message);
             let mut prover = create_prover(params, [1u8; 32]);
 
-            let result = prover.prove_certificate(&clerk, &signatures, &message);
+            let result: Result<SnarkProof<D>, anyhow::Error> =
+                prover.aggregate_signatures(&clerk, &signatures, &message);
             assert!(
                 result.is_err(),
                 "Expected failure due to insufficient signatures"
@@ -395,7 +396,7 @@ mod tests {
             let mut prover = create_prover(params, [0u8; 32]);
 
             let result: Result<SnarkProof<MithrilMembershipDigest>, anyhow::Error> =
-                prover.prove_certificate(&clerk, &signatures, &message);
+                prover.aggregate_signatures(&clerk, &signatures, &message);
             assert!(
                 result.is_ok(),
                 "Expected proof creation to succeed, got: {result:?}"
@@ -414,7 +415,7 @@ mod tests {
                 .prepare_and_check(
                     &message,
                     &avk,
-                    prover.verification_key(),
+                    CertificateProver::<D>::verification_key(&prover),
                     &prover.verifier_params(),
                 )
                 .expect("prepare_and_check should succeed on a freshly produced proof");
@@ -433,7 +434,7 @@ mod tests {
             let message = [1u8; 32];
             let (signers, clerk) = setup_signers_and_clerk(params, nparties, &mut rng);
             let signatures = collect_signatures(&signers, &message);
-            let avk = clerk.compute_aggregate_verification_key_for_snark();
+            let avk = clerk.compute_aggregate_verification_key_for_snark::<D>();
 
             let current_merkle_tree_depth = clerk
                 .closed_key_registration
@@ -450,7 +451,7 @@ mod tests {
 
             assert!(path_length >= current_merkle_tree_depth as usize);
 
-            let snark_proof = prover.prove_certificate(&clerk, &signatures, &message).unwrap();
+            let snark_proof = prover.aggregate_signatures(&clerk, &signatures, &message).unwrap();
             let result = snark_proof.verify(
                 message.as_slice(),
                 &avk,
@@ -489,8 +490,8 @@ mod tests {
 
             let mut forged_prover = create_prover(forged_params, [0u8; 32]);
 
-            let forged_snark_proof = forged_prover
-                .prove_certificate(&clerk, &signatures, &message)
+            let forged_snark_proof: SnarkProof<D> = forged_prover
+                .aggregate_signatures(&clerk, &signatures, &message)
                 .unwrap();
 
             let snark_proof =
@@ -519,12 +520,14 @@ mod tests {
             let message = [1u8; 32];
             let (signers, clerk) = setup_signers_and_clerk(params, nparties, &mut rng);
             let signatures = collect_signatures(&signers, &message);
-            let avk = clerk.compute_aggregate_verification_key_for_snark();
+            let avk = clerk.compute_aggregate_verification_key_for_snark::<D>();
 
             let mut prover_1 = create_prover(params, [0u8; 32]);
 
-            let snark_proof_1 = prover_1.prove_certificate(&clerk, &signatures, &message).unwrap();
-            let snark_proof_2 = prover_1.prove_certificate(&clerk, &signatures, &message).unwrap();
+            let snark_proof_1 =
+                prover_1.aggregate_signatures(&clerk, &signatures, &message).unwrap();
+            let snark_proof_2 =
+                prover_1.aggregate_signatures(&clerk, &signatures, &message).unwrap();
 
             assert!(
                 snark_proof_1
@@ -619,7 +622,7 @@ mod tests {
                     .unwrap();
 
             let proof: SnarkProof<MithrilMembershipDigest> =
-                prover.prove_certificate(&clerk, &signatures, &message).unwrap();
+                prover.aggregate_signatures(&clerk, &signatures, &message).unwrap();
 
             println!("proof value: {:?}", serde_json::to_string(&proof));
             println!(

@@ -215,7 +215,7 @@ pub type StmResult<T> = anyhow::Result<T, StmError>;
 pub type LotteryTargetValue = crate::signature_scheme::BaseFieldElement;
 
 /// Trait defining the different hash types for different proof systems.
-pub trait MembershipDigest: Clone {
+pub trait MembershipDigest: Clone + Send + Sync {
     type ConcatenationHash: Digest + FixedOutput + Clone + Debug + Send + Sync;
     #[cfg(feature = "future_snark")]
     type SnarkHash: Digest + FixedOutput + Clone + Debug + Send + Sync;
