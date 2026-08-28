@@ -159,6 +159,11 @@ struct NetworkTopologyArgs {
     #[clap(long)]
     use_relays: bool,
 
+    /// Chain the follower aggregators: each follower synchronizes its certificate chain from the
+    /// previous follower instead of the leader aggregator (the first follower keeps the leader)
+    #[clap(long)]
+    chain_follower_aggregators: bool,
+
     /// Signer registration relay mode (used only when 'use_relays' is set, can be 'passthrough' or 'p2p')
     #[clap(long, default_value = "passthrough")]
     relay_signer_registration_mode: String,
@@ -588,6 +593,7 @@ impl App {
                     use_dmq,
                     dmq_node_flavor: args.network_topology.dmq_node_flavor,
                     use_relays,
+                    chain_follower_aggregators: args.network_topology.chain_follower_aggregators,
                     relay_signer_registration_mode,
                     relay_signature_registration_mode,
                     skip_signature_delayer: args.mithril.skip_signature_delayer,
