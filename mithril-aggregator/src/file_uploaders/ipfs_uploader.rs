@@ -18,7 +18,7 @@ use crate::tools::kubo_rpc_client::query::{
 use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcClient};
 
 /// IPFS Content Identifier (CID)
-pub type Cid = String;
+pub type IpfsCid = String;
 
 /// File uploader that stores files to IPFS
 pub struct IpfsUploader {
@@ -50,7 +50,7 @@ impl IpfsUploader {
     /// Compared to uploading the files one by one:
     /// - it checks if the target directory exists in IPFS only once
     /// - it batches the existence checks of the files by listing them using one `files ls` query
-    pub async fn batch_upload_to_dir(&self, files: &[PathBuf]) -> StdResult<Cid> {
+    pub async fn batch_upload_to_dir(&self, files: &[PathBuf]) -> StdResult<IpfsCid> {
         self.ensure_directory_exists().await?;
 
         let existing_entries = self
@@ -88,7 +88,7 @@ impl IpfsUploader {
     }
 
     /// Get the current directory CID, reflecting the latest state of the directory
-    pub async fn get_current_directory_cid(&self) -> StdResult<Cid> {
+    pub async fn get_current_directory_cid(&self) -> StdResult<IpfsCid> {
         self.rpc_client.get_dir_cid(&self.ipfs_dir_path).await
     }
 
@@ -165,20 +165,20 @@ pub trait IpfsBackendUploader: Sync + Send {
     async fn list_directory_files(
         &self,
         dir_path: &IpfsMfsDirPath,
-    ) -> StdResult<HashMap<String, Cid>>;
+    ) -> StdResult<HashMap<String, IpfsCid>>;
 
     /// Get the CID of a directory
-    async fn get_dir_cid(&self, dir_path: &IpfsMfsDirPath) -> StdResult<Cid>;
+    async fn get_dir_cid(&self, dir_path: &IpfsMfsDirPath) -> StdResult<IpfsCid>;
 
     /// Upload a file to IPFS and return its CID
-    async fn upload_file(&self, file_path: &Path, mfs_path: &IpfsMfsDirPath) -> StdResult<Cid>;
+    async fn upload_file(&self, file_path: &Path, mfs_path: &IpfsMfsDirPath) -> StdResult<IpfsCid>;
 
     /// Check if a file exists in a given MFS directory and return its CID if it does
     async fn file_exists(
         &self,
         mfs_dir_path: &IpfsMfsDirPath,
         file_path: &Path,
-    ) -> StdResult<Option<Cid>>;
+    ) -> StdResult<Option<IpfsCid>>;
 }
 
 #[async_trait::async_trait]
@@ -190,11 +190,11 @@ impl IpfsBackendUploader for KuboRpcClient {
     async fn list_directory_files(
         &self,
         dir_path: &IpfsMfsDirPath,
-    ) -> StdResult<HashMap<String, Cid>> {
+    ) -> StdResult<HashMap<String, IpfsCid>> {
         self.send(IpfsFilesLsQuery::new(dir_path)).await
     }
 
-    async fn get_dir_cid(&self, dir_path: &IpfsMfsDirPath) -> StdResult<Cid> {
+    async fn get_dir_cid(&self, dir_path: &IpfsMfsDirPath) -> StdResult<IpfsCid> {
         let stat = self
             .send(IpfsFilesStatQuery::new(dir_path.as_ref()))
             .await?
@@ -202,7 +202,7 @@ impl IpfsBackendUploader for KuboRpcClient {
         Ok(stat.hash)
     }
 
-    async fn upload_file(&self, file_path: &Path, mfs_path: &IpfsMfsDirPath) -> StdResult<Cid> {
+    async fn upload_file(&self, file_path: &Path, mfs_path: &IpfsMfsDirPath) -> StdResult<IpfsCid> {
         let res = self
             .send(IpfsAddQuery::new_with_mfs_reference(file_path, mfs_path))
             .await?;
@@ -213,7 +213,7 @@ impl IpfsBackendUploader for KuboRpcClient {
         &self,
         mfs_dir_path: &IpfsMfsDirPath,
         file_path: &Path,
-    ) -> StdResult<Option<Cid>> {
+    ) -> StdResult<Option<IpfsCid>> {
         let stat = self
             .send(IpfsFilesStatQuery::new(
                 mfs_dir_path.join_file_name_from(file_path)?,
