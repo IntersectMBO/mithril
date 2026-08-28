@@ -47,6 +47,7 @@ pub struct AggregatorConfig<'a> {
     pub aggregate_signature_type: AggregateSignatureType,
     pub chain_observer_type: &'a str,
     pub leader_aggregator_endpoint: &'a Option<String>,
+    pub certificate_chain_aggregator_endpoint: &'a Option<String>,
     pub genesis_keys: GenesisKeys,
     pub use_dmq: bool,
     pub dmq_node_flavor: &'a Option<DmqNodeFlavor>,
@@ -172,6 +173,14 @@ impl Aggregator {
 
         if let Some(leader_aggregator_endpoint) = aggregator_config.leader_aggregator_endpoint {
             env.insert("LEADER_AGGREGATOR_ENDPOINT", leader_aggregator_endpoint);
+        }
+        if let Some(certificate_chain_aggregator_endpoint) =
+            aggregator_config.certificate_chain_aggregator_endpoint
+        {
+            env.insert(
+                "CERTIFICATE_CHAIN_AGGREGATOR_ENDPOINT",
+                certificate_chain_aggregator_endpoint,
+            );
         }
         let dmq_node_socket_path = if aggregator_config.use_dmq {
             match aggregator_config.dmq_node_flavor {
