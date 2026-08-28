@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use mithril_common::StdResult;
 
+use crate::tools::kubo_rpc_client::api::handle_file_not_exist_error;
 use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcQuery};
 
 /// Query to list directories in an MFS (Mutable File System) in IPFS via the Kubo RPC API.
@@ -21,7 +22,7 @@ pub struct IpfsFilesLsQuery {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct IpfsLsResponse {
-    entries: Vec<IpfsLsResponseItem>,
+    entries: Option<Vec<IpfsLsResponseItem>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -44,7 +45,7 @@ impl IpfsFilesLsQuery {
 
 #[async_trait::async_trait]
 impl KuboRpcQuery for IpfsFilesLsQuery {
-    type Response = HashMap<String, String>;
+    type Response = Option<HashMap<String, String>>;
 
     fn route(&self) -> String {
         "api/v0/files/ls".to_string()
@@ -70,11 +71,17 @@ impl KuboRpcQuery for IpfsFilesLsQuery {
             .await
             .with_context(|| "Failed to deserialize IPFS ls response")?;
 
-        Ok(response
-            .entries
-            .into_iter()
-            .map(|item| (item.name, item.hash))
-            .collect())
+        match response.entries {
+            Some(entries) => Ok(Some(
+                entries.into_iter().map(|item| (item.name, item.hash)).collect(),
+            )),
+            // If entries are null, the directory exists but is empty
+            None => Ok(Some(HashMap::<String, String>::new())),
+        }
+    }
+
+    async fn handle_error(&self, response: Response) -> StdResult<Self::Response> {
+        handle_file_not_exist_error("files ls", response).await
     }
 }
 
@@ -85,6 +92,26 @@ mod tests {
     use crate::tools::kubo_rpc_client::test_tools::setup_server_and_client;
 
     use super::*;
+
+    #[tokio::test]
+    async fn return_empty_list_when_directory_is_empty() {
+        let (server, client) = setup_server_and_client();
+        server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/v0/files/ls")
+                .query_param("arg", "/test/")
+                .query_param("long", "true")
+                .query_param("U", "true");
+            // Kubo returns null if the directory exists but is empty
+            then.status(200).json_body(serde_json::json!({ "Entries": null }));
+        });
+
+        let response = client
+            .send(IpfsFilesLsQuery::new(&IpfsMfsDirPath::from("/test")))
+            .await
+            .unwrap();
+        assert_eq!(Some(HashMap::<String, String>::new()), response);
+    }
 
     #[tokio::test]
     async fn return_items_list_if_request_succeeds() {
@@ -110,8 +137,9 @@ mod tests {
             .send(IpfsFilesLsQuery::new(&IpfsMfsDirPath::from("/test")))
             .await
             .unwrap();
+
         assert_eq!(
-            HashMap::<String, String>::from([
+            Some(HashMap::<String, String>::from([
                 (
                     "00000.tar.zst".to_string(),
                     "QmePDH8sb7dux6VEvACJYS3m76D4Cc8eyfhejs7wcDFwWi".to_string(),
@@ -132,9 +160,28 @@ mod tests {
                     "sub-dir".to_string(),
                     "QmX5UvqhAYnEqAGx41SCovCg4x6NTF5XEVBMLarqk8J4x7".to_string(),
                 ),
-            ]),
+            ])),
             response
         );
+    }
+
+    #[tokio::test]
+    async fn return_none_if_request_fails_with_not_exist_message() {
+        let (server, client) = setup_server_and_client();
+        server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/v0/files/ls")
+                .query_param("arg", "/test/");
+            then.status(500).json_body(
+                serde_json::json!({"Message":"file does not exist","Code":0,"Type":"error"}),
+            );
+        });
+
+        let response = client
+            .send(IpfsFilesLsQuery::new(&IpfsMfsDirPath::from("/test")))
+            .await
+            .unwrap();
+        assert_eq!(None, response);
     }
 
     #[tokio::test]

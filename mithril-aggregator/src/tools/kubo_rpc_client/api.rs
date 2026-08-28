@@ -117,6 +117,23 @@ pub(super) fn format_response_error(status: StatusCode, response_text: &str) -> 
     anyhow::anyhow!("Request to Kubo RPC failed: {status}: '{response_text}'")
 }
 
+pub(super) async fn handle_file_not_exist_error<T>(
+    query_name: &str,
+    response: Response,
+) -> StdResult<Option<T>> {
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .with_context(|| format!("Failed to read IPFS {query_name} error response"))?;
+
+    if body.contains("file does not exist") {
+        Ok(None)
+    } else {
+        Err(format_response_error(status, &body))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use httpmock::Method::POST;

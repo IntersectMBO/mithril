@@ -5,7 +5,7 @@ use serde::Deserialize;
 use mithril_common::StdResult;
 
 use crate::tools::kubo_rpc_client::KuboRpcQuery;
-use crate::tools::kubo_rpc_client::api::format_response_error;
+use crate::tools::kubo_rpc_client::api::handle_file_not_exist_error;
 
 /// Query to display file status in an MFS (Mutable File System) in IPFS via the Kubo RPC API.
 ///
@@ -72,17 +72,7 @@ impl KuboRpcQuery for IpfsFilesStatQuery {
     }
 
     async fn handle_error(&self, response: Response) -> StdResult<Self::Response> {
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .with_context(|| "Failed to read IPFS files stat error response")?;
-
-        if body.contains("file does not exist") {
-            Ok(None)
-        } else {
-            Err(format_response_error(status, &body))
-        }
+        handle_file_not_exist_error("files stat", response).await
     }
 }
 

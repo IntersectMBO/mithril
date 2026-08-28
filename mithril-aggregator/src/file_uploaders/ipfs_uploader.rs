@@ -191,7 +191,8 @@ impl IpfsBackendUploader for KuboRpcClient {
         &self,
         dir_path: &IpfsMfsDirPath,
     ) -> StdResult<HashMap<String, IpfsCid>> {
-        self.send(IpfsFilesLsQuery::new(dir_path)).await
+        let response = self.send(IpfsFilesLsQuery::new(dir_path)).await?;
+        Ok(response.unwrap_or_default())
     }
 
     async fn get_dir_cid(&self, dir_path: &IpfsMfsDirPath) -> StdResult<IpfsCid> {
