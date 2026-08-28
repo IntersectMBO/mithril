@@ -17,7 +17,7 @@ use crate::{
     Signer, SingleSignature, Stake, StmResult, VerificationKeyForConcatenation,
     proof_system::{
         ConcatenationClerk, ConcatenationProof,
-        ivc_halo2_snark::proof::{IvcStepInput, IvcStepProver},
+        ivc_halo2_snark::proof::{IvcChainInput, IvcChainProver},
     },
 };
 #[cfg(feature = "future_snark")]
@@ -38,7 +38,8 @@ use crate::{
     AggregateSignatureError, AncillaryProverData, AncillaryVerifierData, SnarkProof,
     circuits::halo2_ivc::{ProtocolMessagePreimage, state::Global},
     proof_system::{
-        CertificateProver, MERKLE_TREE_DEPTH_FOR_SNARK, SnarkClerk, SnarkProver, SnarkVerifierData,
+        MERKLE_TREE_DEPTH_FOR_SNARK, SnarkClerk, SnarkProver, SnarkSignatureProver,
+        SnarkVerifierData,
         ivc_halo2_snark::{
             proof::{IvcProof, IvcProver},
             verifier_setup::IvcVerifierData,
@@ -149,7 +150,8 @@ impl<D: MembershipDigest> Clerk<D> {
                     .get_snark_clerk()
                     .ok_or_else(|| anyhow!(AggregateSignatureError::MissingSnarkClerk))?;
 
-                let mut prover = self.snark_prover_factory.certificate_prover(&clerk.parameters)?;
+                let mut prover =
+                    self.snark_prover_factory.snark_signature_prover(&clerk.parameters)?;
                 Self::aggregate_signatures_for_snark(clerk, prover.as_mut(), sigs, msg)
             }
             #[cfg(feature = "future_snark")]
@@ -160,10 +162,10 @@ impl<D: MembershipDigest> Clerk<D> {
 
                 let mut certificate_prover = self
                     .snark_prover_factory
-                    .certificate_prover(&snark_clerk.parameters)?;
+                    .snark_signature_prover(&snark_clerk.parameters)?;
 
                 let mut ivc_prover =
-                    self.snark_prover_factory.ivc_step_prover(&snark_clerk.parameters)?;
+                    self.snark_prover_factory.ivc_chain_prover(&snark_clerk.parameters)?;
                 Self::aggregate_signatures_for_ivc_snark(
                     snark_clerk,
                     certificate_prover.as_mut(),
@@ -178,7 +180,7 @@ impl<D: MembershipDigest> Clerk<D> {
 
     fn aggregate_signatures_for_snark(
         snark_clerk: &SnarkClerk,
-        prover: &mut dyn CertificateProver<D>,
+        prover: &mut dyn SnarkSignatureProver<D>,
         sigs: &[SingleSignature],
         msg: &[u8],
     ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
@@ -199,8 +201,8 @@ impl<D: MembershipDigest> Clerk<D> {
 
     fn aggregate_signatures_for_ivc_snark(
         snark_clerk: &SnarkClerk,
-        certificate_prover: &mut dyn CertificateProver<D>,
-        ivc_prover: &mut dyn IvcStepProver<D>,
+        certificate_prover: &mut dyn SnarkSignatureProver<D>,
+        ivc_prover: &mut dyn IvcChainProver<D>,
         sigs: &[SingleSignature],
         msg: &[u8],
         ancillary_input: AncillaryProofInput,
@@ -209,20 +211,20 @@ impl<D: MembershipDigest> Clerk<D> {
         let certificate_proof = certificate_prover
             .aggregate_signatures(snark_clerk, sigs, msg)
             .with_context(|| "")?;
-        let step_input = IvcStepInput::try_new(
+        let chain_input = IvcChainInput::try_new(
             certificate_proof,
             msg,
             snark_clerk.compute_aggregate_verification_key_for_snark(),
             ancillary_input,
             &certificate_verifying_key,
-            ivc_prover.ivc_verifying_key(),
+            ivc_prover.verifying_key(),
         )?;
-        let genesis_message = step_input.global.genesis_message;
-        let (ivc_proof, next_rolling_state) = ivc_prover.prove_step(step_input)?;
+        let genesis_message = chain_input.global.genesis_message;
+        let (ivc_proof, next_rolling_state) = ivc_prover.advance_chain(chain_input)?;
         let verifier_data = IvcVerifierData::new(
             genesis_message,
             certificate_verifying_key,
-            ivc_prover.ivc_verifying_key().clone(),
+            ivc_prover.verifying_key().clone(),
         );
         Ok((
             AggregateSignature::IvcSnark(Box::new(ivc_proof)),

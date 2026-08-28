@@ -13,7 +13,7 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    MembershipDigest, MithrilMembershipDigest, Parameters, SingleSignature, StmResult,
+    MembershipDigest, Parameters, SingleSignature, StmResult,
     circuits::{
         halo2::{circuit::StmCertificateCircuit, types::CircuitBase},
         halo2_ivc::{
@@ -157,8 +157,10 @@ impl<D: MembershipDigest> SnarkProof<D> {
 
 /// Non-recursive proving side: one certificate proof per aggregation.
 #[cfg_attr(test, mockall::automock)]
-pub(crate) trait CertificateProver<D: MembershipDigest> {
+pub(crate) trait SnarkSignatureProver<D: MembershipDigest> {
+    /// Comment on function
     fn verification_key(&self) -> &NonRecursiveCircuitVerifyingKey;
+    /// Comment on function
     fn aggregate_signatures(
         &mut self,
         clerk: &SnarkClerk,
@@ -211,7 +213,7 @@ impl SnarkProver<ChaCha20Rng> {
     }
 }
 
-impl<D: MembershipDigest, R: RngCore + CryptoRng> CertificateProver<D> for SnarkProver<R> {
+impl<D: MembershipDigest, R: RngCore + CryptoRng> SnarkSignatureProver<D> for SnarkProver<R> {
     /// Returns the certificate circuit verification key derived by this prover's setup.
     ///
     /// The clerk clones this before proving so the certificate's ancillary verifier data and the
@@ -274,7 +276,7 @@ mod tests {
             SnarkClerk,
             halo2_snark::{
                 MERKLE_TREE_DEPTH_FOR_SNARK, SnarkProverSetup, SnarkVerifierData,
-                proof::{CertificateProver, SnarkProof},
+                proof::{SnarkProof, SnarkSignatureProver},
                 prover_input::SnarkProverInput,
             },
         },
@@ -316,11 +318,11 @@ mod tests {
     }
 
     fn snark_verifier_data(prover: &SnarkProver<ChaCha20Rng>) -> SnarkVerifierData {
-        SnarkVerifierData::new(CertificateProver::<D>::verification_key(prover).clone())
+        SnarkVerifierData::new(SnarkSignatureProver::<D>::verification_key(prover).clone())
     }
 
     fn snark_verifier_data_non_deterministic(prover: &SnarkProver<OsRng>) -> SnarkVerifierData {
-        SnarkVerifierData::new(CertificateProver::<D>::verification_key(prover).clone())
+        SnarkVerifierData::new(SnarkSignatureProver::<D>::verification_key(prover).clone())
     }
 
     fn create_prover(params: Parameters, seed: [u8; 32]) -> SnarkProver<ChaCha20Rng> {
@@ -415,7 +417,7 @@ mod tests {
                 .prepare_and_check(
                     &message,
                     &avk,
-                    CertificateProver::<D>::verification_key(&prover),
+                    SnarkSignatureProver::<D>::verification_key(&prover),
                     &prover.verifier_params(),
                 )
                 .expect("prepare_and_check should succeed on a freshly produced proof");

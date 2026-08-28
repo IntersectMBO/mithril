@@ -318,7 +318,7 @@ fn ensure_advanceable_rolling_state(rolling_state: Option<&IvcRollingState>) -> 
 }
 
 /// All inputs of one IVC step.
-pub(crate) struct IvcStepInput<D: MembershipDigest> {
+pub(crate) struct IvcChainInput<D: MembershipDigest> {
     pub(crate) certificate_proof: SnarkProof<D>,
     pub(crate) message: Vec<u8>,
     pub(crate) aggregate_verification_key: AggregateVerificationKeyForSnark<D>,
@@ -328,7 +328,7 @@ pub(crate) struct IvcStepInput<D: MembershipDigest> {
     pub(crate) rolling_state: Option<IvcRollingState>,
 }
 
-impl<D: MembershipDigest> IvcStepInput<D> {
+impl<D: MembershipDigest> IvcChainInput<D> {
     /// Fails on a missing genesis verifying key, a prover data without IVC rolling state,
     /// a missing genesis Schnorr signature or a preimage that is not PREIMAGE_SIZE bytes.
     pub(crate) fn try_new(
@@ -385,11 +385,11 @@ impl<D: MembershipDigest> IvcStepInput<D> {
 
 /// Recursive proving side: advances the IVC chain by one step.
 #[cfg_attr(test, mockall::automock)]
-pub(crate) trait IvcStepProver<D: MembershipDigest> {
-    fn ivc_verifying_key(&self) -> &RecursiveCircuitVerifyingKey;
-    fn prove_step(
+pub(crate) trait IvcChainProver<D: MembershipDigest> {
+    fn verifying_key(&self) -> &RecursiveCircuitVerifyingKey;
+    fn advance_chain(
         &mut self,
-        step_input: IvcStepInput<D>,
+        chain_input: IvcChainInput<D>,
     ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)>;
 }
 
@@ -579,16 +579,16 @@ impl IvcProver<OsRng> {
     }
 }
 
-impl<D: MembershipDigest, R: RngCore + CryptoRng> IvcStepProver<D> for IvcProver<R> {
-    fn ivc_verifying_key(&self) -> &RecursiveCircuitVerifyingKey {
+impl<D: MembershipDigest, R: RngCore + CryptoRng> IvcChainProver<D> for IvcProver<R> {
+    fn verifying_key(&self) -> &RecursiveCircuitVerifyingKey {
         &self.ivc_setup.ivc_verifying_key
     }
 
-    fn prove_step(
+    fn advance_chain(
         &mut self,
-        step_input: IvcStepInput<D>,
+        chain_input: IvcChainInput<D>,
     ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)> {
-        let IvcStepInput {
+        let IvcChainInput {
             certificate_proof,
             message,
             aggregate_verification_key,
@@ -596,7 +596,7 @@ impl<D: MembershipDigest, R: RngCore + CryptoRng> IvcStepProver<D> for IvcProver
             protocol_message_preimage,
             genesis_bootstrap,
             rolling_state,
-        } = step_input;
+        } = chain_input;
         self.prove(
             certificate_proof,
             message.as_slice(),
