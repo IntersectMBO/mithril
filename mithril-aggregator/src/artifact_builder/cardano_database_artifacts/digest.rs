@@ -251,9 +251,8 @@ impl DigestArtifactBuilder {
                 }
                 Err(e) => {
                     error!(
-                        self.logger,
-                        "Failed to upload digest file";
-                        "error" => e.to_string()
+                        self.logger, "Failed to upload digest file";
+                        "error" => ?e
                     );
                 }
             }

@@ -13,11 +13,12 @@ use crate::artifact_builder::{
     DigestSnapshotter, ImmutableArtifactBuilder, ImmutableFilesUploader,
     MithrilStakeDistributionArtifactBuilder,
 };
-use crate::configuration::AncillaryFilesSignerConfig;
+use crate::configuration::{AncillaryFilesSignerConfig, IpfsRpcServerConfig};
 use crate::dependency_injection::builder::SNAPSHOT_ARTIFACTS_DIR;
 use crate::dependency_injection::{DependenciesBuilder, DependenciesBuilderError, Result};
 use crate::file_uploaders::{
-    CloudRemotePath, CloudUploader, FileUploadRetryPolicy, GCloudBackendUploader, LocalUploader,
+    CloudRemotePath, CloudUploader, FileUploadRetryPolicy, GCloudBackendUploader, IpfsUploader,
+    LocalUploader,
 };
 use crate::get_dependency;
 use crate::http_server::{CARDANO_DATABASE_DOWNLOAD_PATH, SNAPSHOT_DOWNLOAD_PATH};
@@ -29,6 +30,7 @@ use crate::services::{
     SignedEntityServiceArtifactsDependencies, Snapshotter,
 };
 use crate::tools::DEFAULT_GCP_CREDENTIALS_JSON_ENV_VAR;
+use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcClient};
 use crate::{DumbUploader, ExecutionEnvironment, FileUploader, SnapshotUploaderType};
 
 impl DependenciesBuilder {
@@ -253,6 +255,20 @@ impl DependenciesBuilder {
         ))
     }
 
+    async fn build_ipfs_uploader(
+        &self,
+        ipfs_rpc_config: IpfsRpcServerConfig,
+    ) -> Result<IpfsUploader> {
+        let rpc_api_client =
+            KuboRpcClient::new(ipfs_rpc_config.sanitized_url()?, self.root_logger())?;
+        Ok(IpfsUploader::new(
+            Arc::new(rpc_api_client),
+            IpfsMfsDirPath::from(ipfs_rpc_config.mfs_folder_name),
+            FileUploadRetryPolicy::default(),
+            &self.root_logger(),
+        ))
+    }
+
     async fn build_cardano_database_ancillary_uploaders(
         &self,
     ) -> Result<Vec<Arc<dyn AncillaryFileUploader>>> {
@@ -301,28 +317,36 @@ impl DependenciesBuilder {
     ) -> Result<Vec<Arc<dyn ImmutableFilesUploader>>> {
         let logger = self.root_logger();
         if self.configuration.environment() == ExecutionEnvironment::Production {
-            match self.configuration.snapshot_uploader_type() {
-                SnapshotUploaderType::Gcp => {
-                    let allow_overwrite = false;
-                    let remote_folder_path =
-                        CloudRemotePath::new("cardano-database").join("immutable");
+            let mut uploaders: Vec<Arc<dyn ImmutableFilesUploader>> =
+                match self.configuration.snapshot_uploader_type() {
+                    SnapshotUploaderType::Gcp => {
+                        let allow_overwrite = false;
+                        let remote_folder_path =
+                            CloudRemotePath::new("cardano-database").join("immutable");
 
-                    Ok(vec![Arc::new(
-                        self.build_gcp_uploader(remote_folder_path, allow_overwrite).await?,
-                    )])
-                }
-                SnapshotUploaderType::Local => {
-                    let server_url_prefix = self.configuration.get_server_url()?;
-                    let immutable_url_prefix = server_url_prefix
-                        .sanitize_join(&format!("{CARDANO_DATABASE_DOWNLOAD_PATH}/immutable/"))?;
+                        vec![Arc::new(
+                            self.build_gcp_uploader(remote_folder_path, allow_overwrite).await?,
+                        )]
+                    }
+                    SnapshotUploaderType::Local => {
+                        let server_url_prefix = self.configuration.get_server_url()?;
+                        let immutable_url_prefix = server_url_prefix.sanitize_join(&format!(
+                            "{CARDANO_DATABASE_DOWNLOAD_PATH}/immutable/"
+                        ))?;
 
-                    Ok(vec![Arc::new(LocalUploader::new_without_copy(
-                        immutable_url_prefix,
-                        FileUploadRetryPolicy::default(),
-                        logger,
-                    ))])
-                }
+                        vec![Arc::new(LocalUploader::new_without_copy(
+                            immutable_url_prefix,
+                            FileUploadRetryPolicy::default(),
+                            logger,
+                        ))]
+                    }
+                };
+
+            if let Some(ipfs_rpc_config) = self.configuration.ipfs_rpc_server_config() {
+                uploaders.push(Arc::new(self.build_ipfs_uploader(ipfs_rpc_config).await?));
             }
+
+            Ok(uploaders)
         } else {
             Ok(vec![Arc::new(DumbUploader::new(
                 FileUploadRetryPolicy::never(),

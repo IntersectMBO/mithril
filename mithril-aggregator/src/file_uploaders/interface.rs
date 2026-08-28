@@ -47,20 +47,35 @@ pub trait FileUploader: Sync + Send {
     /// Upload a file with retries according to the retry policy.
     async fn upload(&self, filepath: &Path) -> StdResult<FileUri> {
         let retry_policy = self.retry_policy();
+        retry(
+            async || self.upload_without_retry(filepath).await,
+            retry_policy,
+            format!(" Uploaded file path: {}", filepath.display()),
+        )
+        .await
+    }
+}
 
-        let mut nb_attempts = 0;
-        loop {
-            nb_attempts += 1;
-            match self.upload_without_retry(filepath).await {
-                Ok(result) => return Ok(result),
-                Err(e) if nb_attempts >= retry_policy.attempts => {
-                    return Err(e.context(format!(
-                        "Upload failed after {nb_attempts} attempts. Uploaded file path: {}",
-                        filepath.display()
-                    )));
-                }
-                _ => tokio::time::sleep(retry_policy.delay_between_attempts).await,
+pub(super) async fn retry<T, F, Fut>(
+    f: F,
+    retry_policy: FileUploadRetryPolicy,
+    additional_err_context: String,
+) -> StdResult<T>
+where
+    F: Fn() -> Fut,
+    Fut: Future<Output = StdResult<T>>,
+{
+    let mut nb_attempts = 0;
+    loop {
+        nb_attempts += 1;
+        match f().await {
+            Ok(result) => return Ok(result),
+            Err(e) if nb_attempts >= retry_policy.attempts => {
+                return Err(e.context(format!(
+                    "Upload failed after {nb_attempts} attempts.{additional_err_context}"
+                )));
             }
+            _ => tokio::time::sleep(retry_policy.delay_between_attempts).await,
         }
     }
 }

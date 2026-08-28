@@ -141,6 +141,14 @@ fn immutables_location_iter(
                 template_uri.0
             )),
         },
+        ImmutablesLocation::Ipfs {
+            uri,
+            compression_algorithm: _,
+        } => match uri {
+            MultiFilesUri::Template(template_uri) => {
+                Some(format!("IPFS, template_uri: \"{}\"", template_uri.0))
+            }
+        },
         ImmutablesLocation::Unknown => None,
     })
 }
