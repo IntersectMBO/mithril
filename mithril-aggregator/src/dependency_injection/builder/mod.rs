@@ -480,6 +480,15 @@ impl DependenciesBuilder {
                 allow_http_serve_directory: self.configuration.allow_http_serve_directory(),
                 origin_tag_white_list: self.configuration.compute_origin_tag_white_list(),
                 aggregate_signature_type: self.configuration.aggregate_signature_type(),
+                leader_aggregator_endpoint: self.configuration.leader_aggregator_endpoint(),
+                certificate_chain_aggregator_endpoint: self
+                    .configuration
+                    .leader_aggregator_endpoint()
+                    .map(|leader_aggregator_endpoint| {
+                        self.configuration
+                            .certificate_chain_aggregator_endpoint()
+                            .unwrap_or(leader_aggregator_endpoint)
+                    }),
             },
         );
 
