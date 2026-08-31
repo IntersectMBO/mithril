@@ -5,6 +5,8 @@
 mod api_version;
 mod certificate_retriever;
 #[cfg(feature = "future_snark")]
+mod circuit_key_registry_certifier;
+#[cfg(feature = "future_snark")]
 mod circuit_key_registry_retriever;
 mod dummies;
 pub mod fake_data;
@@ -13,6 +15,8 @@ pub(super) mod precomputed_kes_key;
 
 pub use api_version::DummyApiVersionDiscriminantSource;
 pub use certificate_retriever::FakeCertificaterRetriever;
+#[cfg(feature = "future_snark")]
+pub use circuit_key_registry_certifier::FakeCircuitVerificationKeyCertifier;
 #[cfg(feature = "future_snark")]
 pub use circuit_key_registry_retriever::FakeCircuitVerificationKeyRegistryRetriever;
 
