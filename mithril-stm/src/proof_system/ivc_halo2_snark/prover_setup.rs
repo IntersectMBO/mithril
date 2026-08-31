@@ -357,7 +357,7 @@ mod tests {
                 },
                 4,
             )
-            .expect("IvcSnarkProverSetup::load should succeed");
+            .expect("IvcSnarkProverSetup::build_for_test should succeed");
 
             assert!(
                 !setup.certificate_fixed_bases.is_empty(),
@@ -400,7 +400,7 @@ mod tests {
                 merkle_tree_depth,
                 RECURSIVE_CIRCUIT_DEGREE + 1,
             )
-            .expect("IvcSnarkProverSetup::load should succeed");
+            .expect("IvcSnarkProverSetup::build_for_test should succeed");
 
             let verification_context = load_embedded_verification_context_asset()
                 .expect("verification context asset should load");

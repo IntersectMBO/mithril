@@ -1054,7 +1054,7 @@ mod tests {
             let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
             let ivc_setup = Arc::new(
                 IvcSnarkProverSetup::build_for_test(&parameters, merkle_tree_depth)
-                    .expect("IvcSnarkProverSetup::load should succeed"),
+                    .expect("IvcSnarkProverSetup::build_for_test should succeed"),
             );
 
             let verification_context = load_embedded_verification_context_asset()
