@@ -15,6 +15,12 @@ use mithril_common::{
     logging::LoggerExtensions,
 };
 
+#[cfg(feature = "future_snark")]
+use mithril_common::crypto_helper::{
+    CachedCircuitVerificationKeyCertifier, CircuitVerificationKeyCertifier,
+    CircuitVerificationKeyRegistryRetriever, MithrilCircuitVerificationKeyCertifier,
+};
+
 #[cfg(feature = "unstable")]
 use crate::certificate_client::CertificateVerifierCache;
 use crate::certificate_client::fetch::InternalCertificateRetriever;
@@ -60,6 +66,9 @@ impl MithrilCertificateVerifier {
         genesis_verification_key: &str,
         feedback_sender: FeedbackSender,
         #[cfg(feature = "unstable")] verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
+        #[cfg(feature = "future_snark")] circuit_key_registry_retriever: Option<
+            Arc<dyn CircuitVerificationKeyRegistryRetriever>,
+        >,
         logger: Logger,
     ) -> MithrilResult<MithrilCertificateVerifier> {
         let logger = logger.new_with_component_name::<Self>();
@@ -68,10 +77,22 @@ impl MithrilCertificateVerifier {
             GenesisVerifier::try_from_hex(genesis_verification_key)
                 .with_context(|| "Invalid genesis verification key")?,
         );
+        #[cfg(feature = "future_snark")]
+        let circuit_verification_key_certifier =
+            circuit_key_registry_retriever.map(|registry_retriever| {
+                Arc::new(CachedCircuitVerificationKeyCertifier::new(Arc::new(
+                    MithrilCircuitVerificationKeyCertifier::new(
+                        registry_retriever,
+                        genesis_verifier.clone(),
+                    ),
+                ))) as Arc<dyn CircuitVerificationKeyCertifier>
+            });
         let internal_verifier = Arc::new(CommonMithrilCertificateVerifier::new(
             logger.clone(),
             retriever.clone(),
             genesis_verifier,
+            #[cfg(feature = "future_snark")]
+            circuit_verification_key_certifier,
         ));
 
         Ok(Self {
@@ -334,6 +355,8 @@ mod tests {
             FeedbackSender::new(&[]),
             #[cfg(feature = "unstable")]
             None,
+            #[cfg(feature = "future_snark")]
+            None,
             TestLogger::stdout(),
         )
         .map(|_| ())
@@ -470,6 +493,8 @@ mod tests {
                 &genesis_verification_key,
                 FeedbackSender::new(&[]),
                 Some(cache),
+                #[cfg(feature = "future_snark")]
+                None,
                 TestLogger::stdout(),
             )
             .unwrap()
