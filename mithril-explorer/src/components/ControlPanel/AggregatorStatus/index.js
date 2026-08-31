@@ -6,6 +6,7 @@ import RawJsonButton from "#/RawJsonButton";
 import ProtocolParameters from "#/ProtocolParameters";
 import QuestionTooltip from "#/QuestionTooltip";
 import Stake from "#/Stake";
+import { aggregatorSearchParam } from "@/constants";
 import { selectedAggregatorUrl, selectedAggregatorCapabilities } from "@/store/settingsSlice";
 import { checkUrl, formatStake, percent } from "@/utils";
 import { fetchAggregator } from "@/aggregator-api";
@@ -44,6 +45,10 @@ function PercentTooltip({ value, total, ...props }) {
 function parseVersion(version) {
   const split_version = version?.split("+") ?? [];
   return { number: split_version[0] ?? "0.0.0", sha: split_version[1] ?? undefined };
+}
+
+function aggregatorExplorerUrl(endpoint) {
+  return `/?${new URLSearchParams({ [aggregatorSearchParam]: endpoint })}`;
 }
 
 export default function AggregatorStatus({ showContent = true }) {
@@ -102,6 +107,9 @@ export default function AggregatorStatus({ showContent = true }) {
               <InfoRow label="Aggregation" className="text-capitalize">
                 {aggregatorCapabilities.aggregate_signature_type ?? "Concatenation"}
               </InfoRow>
+              <InfoRow label="Role">
+                {aggregatorStatus.leader_aggregator_endpoint ? "Follower" : "Leader"}
+              </InfoRow>
             </InfoGroupCard>
 
             <InfoGroupCard title="SPOs">
@@ -150,6 +158,31 @@ export default function AggregatorStatus({ showContent = true }) {
               </InfoRow>
               <InfoRow label="Cardano">{aggregatorStatus.cardano_node_version}</InfoRow>
             </InfoGroupCard>
+
+            {aggregatorStatus.leader_aggregator_endpoint && (
+              <InfoGroupCard title="Followed Aggregators">
+                <div>
+                  <em>Signer registrations:</em>
+                  <div className="ps-1 text-break">
+                    <a href={aggregatorExplorerUrl(aggregatorStatus.leader_aggregator_endpoint)}>
+                      {aggregatorStatus.leader_aggregator_endpoint}
+                    </a>
+                  </div>
+                </div>
+                <hr className="my-2" />
+                <div>
+                  <em>Certificate chain:</em>
+                  <div className="ps-1 text-break">
+                    <a
+                      href={aggregatorExplorerUrl(
+                        aggregatorStatus.certificate_chain_aggregator_endpoint,
+                      )}>
+                      {aggregatorStatus.certificate_chain_aggregator_endpoint}
+                    </a>
+                  </div>
+                </div>
+              </InfoGroupCard>
+            )}
           </Row>
         </div>
       </Collapse>
