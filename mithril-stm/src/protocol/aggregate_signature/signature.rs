@@ -80,6 +80,22 @@ impl AggregateSignatureType {
             AggregateSignatureType::IvcSnark => true,
         }
     }
+
+    /// Whether an aggregate signature of this type is verified against circuit verification keys
+    /// that must be certified by an external authority before verification.
+    ///
+    /// Returns `true` for the SNARK proof systems, whose circuit verification keys are carried in
+    /// the ancillary verifier data, and `false` for the concatenation proof system, which uses no
+    /// circuit.
+    pub fn requires_certified_circuit_verification_keys(&self) -> bool {
+        match self {
+            AggregateSignatureType::Concatenation => false,
+            #[cfg(feature = "future_snark")]
+            AggregateSignatureType::Snark => true,
+            #[cfg(feature = "future_snark")]
+            AggregateSignatureType::IvcSnark => true,
+        }
+    }
 }
 
 impl<D: MembershipDigest> From<&AggregateSignature<D>> for AggregateSignatureType {
@@ -886,6 +902,23 @@ mod tests {
         assert_golden_value(AggregateSignatureType::Concatenation, false);
         #[cfg(feature = "future_snark")]
         assert_golden_value(AggregateSignatureType::Snark, false);
+    }
+
+    #[test]
+    fn golden_requires_certified_circuit_verification_keys_per_aggregate_signature_type() {
+        fn assert_golden_value(aggregate_signature_type: AggregateSignatureType, expected: bool) {
+            assert_eq!(
+                expected,
+                aggregate_signature_type.requires_certified_circuit_verification_keys(),
+                "golden 'requires_certified_circuit_verification_keys' value changed for {aggregate_signature_type}, this alters certificate verification semantics"
+            );
+        }
+
+        assert_golden_value(AggregateSignatureType::Concatenation, false);
+        #[cfg(feature = "future_snark")]
+        assert_golden_value(AggregateSignatureType::Snark, true);
+        #[cfg(feature = "future_snark")]
+        assert_golden_value(AggregateSignatureType::IvcSnark, true);
     }
 
     mod aggregate_signature_golden_concatenation {
