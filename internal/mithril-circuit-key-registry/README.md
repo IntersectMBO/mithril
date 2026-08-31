@@ -13,4 +13,5 @@ It holds:
 - the retrievers of the signed registry from a local file or over HTTP.
 
 The nodes enforce the registry through the `CircuitVerificationKeyCertifier` trait of
-`mithril-common`.
+`mithril-common`. The operations on the registry are provided by the
+`circuit-key-registry` command of the Mithril aggregator.
