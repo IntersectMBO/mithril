@@ -7,6 +7,7 @@ mod interface;
 #[cfg(test)]
 mod mock_builder;
 mod retry;
+mod streaming;
 
 pub use http::HttpFileDownloader;
 #[cfg(test)]
