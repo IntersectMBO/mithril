@@ -10,7 +10,7 @@ use mithril_common::{
 };
 
 use crate::{
-    Aggregator, MithrilInfrastructure, NodeVersion,
+    AggregateSignatureType, Aggregator, MithrilInfrastructure, NodeVersion,
     toolkit::ScenarioToolkit,
     utils::{
         randomly_take_blocks_hashes, randomly_take_transactions_hashes,
@@ -207,9 +207,16 @@ impl FullScenario {
         .await?;
 
         // Verify that artifacts are produced and signed correctly
-        let mut target_epoch = self
-            .verify_artifacts_production(target_epoch, aggregator, infrastructure)
-            .await?;
+        let mut target_epoch = if self.is_waiting_for_a_compatible_genesis(aggregator) {
+            info!(
+                "Deferring artifact verification of {} to after the era switch re-genesis",
+                aggregator.name()
+            );
+            target_epoch
+        } else {
+            self.verify_artifacts_production(target_epoch, aggregator, infrastructure)
+                .await?
+        };
 
         // Verify that artifacts are produced and signed correctly after era switch
         if let Some(next_era) = &self.next_era {
@@ -227,9 +234,12 @@ impl FullScenario {
                 )
                 .await?;
 
-            // Proceed to a re-genesis of the certificate chain
+            // Proceed to a re-genesis of the certificate chain, on the leader only since the
+            // followers catch the new genesis up through their certificate chain synchronization
             if self.regenesis_on_era_switch {
-                self.toolkit.exec.bootstrap_genesis_certificate(aggregator).await?;
+                if aggregator.is_leader() {
+                    self.toolkit.exec.bootstrap_genesis_certificate(aggregator).await?;
+                }
                 target_epoch += 5;
                 self.toolkit
                     .wait
@@ -262,6 +272,29 @@ impl FullScenario {
         }
 
         Ok(())
+    }
+
+    /// Tell if the aggregator can not produce certificates before the era switch re-genesis
+    /// provides a genesis certificate compatible with its aggregate signature type.
+    ///
+    /// A leader aggregator bootstraps its own compatible genesis certificate, so only a follower
+    /// defers its certification.
+    fn is_waiting_for_a_compatible_genesis(&self, aggregator: &Aggregator) -> bool {
+        Self::defers_certification_to_a_re_genesis(
+            aggregator.is_leader(),
+            aggregator.aggregate_signature_type(),
+            self.next_era.is_some() && self.regenesis_on_era_switch,
+        )
+    }
+
+    fn defers_certification_to_a_re_genesis(
+        is_leader_aggregator: bool,
+        aggregate_signature_type: AggregateSignatureType,
+        era_switch_with_regenesis_planned: bool,
+    ) -> bool {
+        !is_leader_aggregator
+            && aggregate_signature_type == AggregateSignatureType::IvcSnark
+            && era_switch_with_regenesis_planned
     }
 
     async fn verify_artifacts_production(
@@ -362,5 +395,39 @@ impl FullScenario {
         }
 
         Ok(target_epoch)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_an_ivc_snark_follower_defers_its_certification_to_a_planned_re_genesis() {
+        assert!(FullScenario::defers_certification_to_a_re_genesis(
+            false,
+            AggregateSignatureType::IvcSnark,
+            true
+        ));
+        assert!(!FullScenario::defers_certification_to_a_re_genesis(
+            true,
+            AggregateSignatureType::IvcSnark,
+            true
+        ));
+        assert!(!FullScenario::defers_certification_to_a_re_genesis(
+            false,
+            AggregateSignatureType::IvcSnark,
+            false
+        ));
+        assert!(!FullScenario::defers_certification_to_a_re_genesis(
+            false,
+            AggregateSignatureType::Concatenation,
+            true
+        ));
+        assert!(!FullScenario::defers_certification_to_a_re_genesis(
+            false,
+            AggregateSignatureType::Snark,
+            true
+        ));
     }
 }
