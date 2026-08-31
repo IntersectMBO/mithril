@@ -5,9 +5,11 @@
 //! the repository per network, retrieved at runtime and verified against the Ed25519 half of
 //! the genesis verification key before use.
 
+mod certifier;
 mod registry;
 mod retriever;
 
+pub use certifier::*;
 pub use mithril_stm::{CIRCUIT_VERIFICATION_KEY_DIGEST_SIZE, CircuitVerificationKeyDigest};
 pub use registry::*;
 pub use retriever::*;
