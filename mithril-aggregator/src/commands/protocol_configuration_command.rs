@@ -228,7 +228,7 @@ impl ExportProtocolConfigurationSubCommand {
         target_file.write_all(json_protocol_configurations.as_bytes())?;
 
         println!(
-            "Sucessfully wrote JSON protocol configurations file at {}",
+            "Successfully wrote JSON protocol configurations file at {}",
             self.target_path.to_string_lossy()
         );
         Ok(())
@@ -360,7 +360,7 @@ impl ImportProtocolConfigurationSubCommand {
         target_file.write_all(tx_datum.as_bytes())?;
 
         println!(
-            "Sucessfully wrote Tx datum file at {}",
+            "Successfully wrote Tx datum file at {}",
             self.target_path.to_string_lossy()
         );
 
