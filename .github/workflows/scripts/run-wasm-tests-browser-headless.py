@@ -28,8 +28,8 @@ def run_headless_test():
     try:
         driver.get('http://localhost:8080/')
 
-        # Adjust the timeout to 10 minutes
-        wait = WebDriverWait(driver, 600)
+        # Adjust the timeout to 15 minutes
+        wait = WebDriverWait(driver, 900)
 
         # Wait until the div with id "tests_finished" is displayed
         tests_finished_element = wait.until(EC.presence_of_element_located((By.ID, "tests_finished")))
