@@ -4236,6 +4236,7 @@ dependencies = [
  "mithril-api-spec",
  "mithril-cardano-node-chain",
  "mithril-cardano-node-internal-database",
+ "mithril-circuit-key-registry",
  "mithril-cli-helper",
  "mithril-common",
  "mithril-dmq",
