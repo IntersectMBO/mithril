@@ -486,6 +486,42 @@ mod tests {
     }
 
     #[test]
+    fn prepare_rejects_empty_snark_proof() {
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let step = load_embedded_following_certificate_in_epoch_asset()
+            .expect("same-epoch step output asset should load");
+
+        let (global, verification_context) = build_preparation_context();
+
+        let snark_proof = wrap_snark_proof(vec![]);
+        let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+        let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
+        let rolling_state = IvcRollingState::new(
+            chain_state.state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+
+        let result = IvcProverInput::prepare(
+            &snark_proof,
+            &step.message,
+            &avk,
+            &global,
+            &protocol_message_preimage,
+            &rolling_state,
+            &verification_context,
+        );
+
+        let err = result
+            .expect_err("prepare should reject an empty certificate proof")
+            .downcast::<IvcCircuitError>()
+            .expect("error should downcast to IvcCircuitError");
+        assert!(matches!(err, IvcCircuitError::CertificateProofRejected(..)));
+    }
+
+    #[test]
     fn prepare_rejects_tampered_certificate_message() {
         let chain_state = load_embedded_recursive_chain_state_asset()
             .expect("recursive chain state asset should load");
