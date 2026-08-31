@@ -4460,6 +4460,7 @@ dependencies = [
  "mithril-aggregator-client",
  "mithril-aggregator-discovery",
  "mithril-cardano-node-internal-database",
+ "mithril-circuit-key-registry",
  "mithril-common",
  "mockall",
  "rand 0.10.2",
