@@ -4,7 +4,7 @@ info:
   # `mithril-common/src/lib.rs` file. If you plan to update it
   # here to reflect changes in the API, please also update the constant in the
   # Rust file.
-  version: 0.1.69
+  version: 0.1.70
   title: Mithril Aggregator Server
   description: |
     The REST API provided by a Mithril Aggregator Node in a Mithril network.
@@ -856,6 +856,16 @@ components:
           type: string
         aggregator_node_version:
           description: Version of the Aggregator node
+          type: string
+        leader_aggregator_endpoint:
+          description: |
+            Endpoint of the leader aggregator followed for the signer registrations. Omitted when
+            the aggregator is a leader.
+          type: string
+        certificate_chain_aggregator_endpoint:
+          description: |
+            Endpoint of the aggregator followed for the certificate chain. Omitted when the
+            aggregator is a leader.
           type: string
         protocol:
           $ref: "#/components/schemas/ProtocolParameters"

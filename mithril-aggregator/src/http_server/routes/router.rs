@@ -34,6 +34,8 @@ pub struct RouterConfig {
     pub allow_http_serve_directory: bool,
     pub origin_tag_white_list: HashSet<String>,
     pub aggregate_signature_type: AggregateSignatureType,
+    pub leader_aggregator_endpoint: Option<String>,
+    pub certificate_chain_aggregator_endpoint: Option<String>,
 }
 
 #[cfg(test)]
@@ -52,6 +54,8 @@ impl Dummy for RouterConfig {
             allow_http_serve_directory: false,
             origin_tag_white_list: HashSet::from(["DUMMY_TAG".to_string()]),
             aggregate_signature_type: AggregateSignatureType::Concatenation,
+            leader_aggregator_endpoint: None,
+            certificate_chain_aggregator_endpoint: None,
         }
     }
 }
