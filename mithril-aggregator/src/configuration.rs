@@ -322,6 +322,13 @@ pub trait ConfigurationSource {
         panic!("custom_origin_tag_white_list is not implemented.");
     }
 
+    /// URL of the signed circuit verification key registry enforced on the certificates whose
+    /// aggregate signature type requires it, none when no registry source is configured, an
+    /// empty URL meaning none as well.
+    fn circuit_verification_key_registry_url(&self) -> Option<String> {
+        None
+    }
+
     /// Get the server URL.
     fn get_server_url(&self) -> StdResult<SanitizedUrlWithTrailingSlash> {
         panic!("get_server_url is not implemented.");
@@ -657,6 +664,15 @@ pub struct ServeCommandConfiguration {
 
     /// Delay to wait between two signature processing attempts after an error
     pub signature_processor_wait_delay_on_error_ms: u64,
+
+    /// URL of the signed circuit verification key registry enforced on the certificates whose
+    /// aggregate signature type requires it, refreshed at most once per hour when a certificate is
+    /// verified so a published revocation reaches the running aggregator without a redeployment.
+    ///
+    /// A `file://` URL reads the registry from a local file (tests and local deployments). An
+    /// empty URL, as set by a deployment without registry, means no registry source.
+    #[example = "`https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/circuit-verification-key-registry.json`"]
+    pub circuit_verification_key_registry_url: Option<String>,
 }
 
 /// Uploader needed to copy the snapshot once computed.
@@ -835,6 +851,7 @@ impl ServeCommandConfiguration {
             custom_origin_tag_white_list: None,
             aggregate_signature_type: AggregateSignatureType::Concatenation,
             signature_processor_wait_delay_on_error_ms: 5000,
+            circuit_verification_key_registry_url: None,
         }
     }
 
@@ -1038,6 +1055,12 @@ impl ConfigurationSource for ServeCommandConfiguration {
 
     fn custom_origin_tag_white_list(&self) -> Option<String> {
         self.custom_origin_tag_white_list.clone()
+    }
+
+    fn circuit_verification_key_registry_url(&self) -> Option<String> {
+        self.circuit_verification_key_registry_url
+            .clone()
+            .filter(|url| !url.is_empty())
     }
 
     fn get_server_url(&self) -> StdResult<SanitizedUrlWithTrailingSlash> {
@@ -1310,6 +1333,27 @@ mod test {
                 ..ServeCommandConfiguration::new_sample(temp_dir!())
             };
             assert_eq!(configuration.safe_epoch_retention_limit(), Some(3));
+        }
+    }
+
+    #[test]
+    fn circuit_verification_key_registry_url_treats_an_empty_url_as_no_source() {
+        for (url, expected) in [
+            (None, None),
+            (Some("".to_string()), None),
+            (
+                Some("https://registry.example/registry.json".to_string()),
+                Some("https://registry.example/registry.json".to_string()),
+            ),
+        ] {
+            let configuration = ServeCommandConfiguration {
+                circuit_verification_key_registry_url: url,
+                ..ServeCommandConfiguration::new_sample(temp_dir!())
+            };
+            assert_eq!(
+                configuration.circuit_verification_key_registry_url(),
+                expected
+            );
         }
     }
 

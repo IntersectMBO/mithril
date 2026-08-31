@@ -3,6 +3,17 @@ use std::sync::Arc;
 #[cfg(feature = "future_snark")]
 use tokio::runtime::Handle;
 
+#[cfg(feature = "future_snark")]
+use std::path::PathBuf;
+
+#[cfg(feature = "future_snark")]
+use mithril_circuit_key_registry::{
+    CachedCircuitVerificationKeyCertifier, CircuitVerificationKeyRegistryRetriever,
+    FileCircuitVerificationKeyRegistryRetriever, HttpCircuitVerificationKeyRegistryRetriever,
+    MithrilCircuitVerificationKeyCertifier, UnconfiguredCircuitVerificationKeyRegistryRetriever,
+};
+#[cfg(feature = "future_snark")]
+use mithril_common::certificate_chain::CircuitVerificationKeyCertifier;
 use mithril_common::certificate_chain::{CertificateVerifier, MithrilCertificateVerifier};
 use mithril_common::crypto_helper::GenesisVerifier;
 #[cfg(feature = "future_snark")]
@@ -138,6 +149,8 @@ impl DependenciesBuilder {
                     self.root_logger(),
                     leader_aggregator_client.clone(),
                     self.get_genesis_verifier().await?,
+                    #[cfg(feature = "future_snark")]
+                    self.get_circuit_verification_key_certifier().await?,
                 ));
 
                 Arc::new(MithrilCertificateChainSynchronizer::new(
@@ -167,9 +180,74 @@ impl DependenciesBuilder {
             self.root_logger(),
             self.get_certificate_repository().await?,
             self.get_genesis_verifier().await?,
+            #[cfg(feature = "future_snark")]
+            self.get_circuit_verification_key_certifier().await?,
         ));
 
         Ok(verifier)
+    }
+
+    /// Build the certifier enforcing the signed circuit verification key registry read from the
+    /// configured registry path, with a caching decorator refreshing it periodically.
+    #[cfg(feature = "future_snark")]
+    async fn build_circuit_verification_key_certifier(
+        &mut self,
+    ) -> Result<Arc<dyn CircuitVerificationKeyCertifier>> {
+        Ok(Arc::new(CachedCircuitVerificationKeyCertifier::new(
+            Arc::new(MithrilCircuitVerificationKeyCertifier::new(
+                self.get_circuit_verification_key_registry_retriever().await?,
+                self.get_genesis_verifier().await?,
+            )),
+            self.root_logger(),
+        )))
+    }
+
+    /// Build the retriever of the signed circuit verification key registry from the configured
+    /// registry URL: downloaded over HTTP, or read from a local file for a `file://` URL. Without
+    /// a URL, every retrieval fails so the certificates requiring the registry are rejected.
+    #[cfg(feature = "future_snark")]
+    async fn build_circuit_verification_key_registry_retriever(
+        &mut self,
+    ) -> Result<Arc<dyn CircuitVerificationKeyRegistryRetriever>> {
+        let retriever: Arc<dyn CircuitVerificationKeyRegistryRetriever> = match self
+            .configuration
+            .circuit_verification_key_registry_url()
+            .as_deref()
+        {
+            Some(registry_url) => match registry_url.strip_prefix("file://") {
+                Some(registry_path) => Arc::new(FileCircuitVerificationKeyRegistryRetriever::new(
+                    PathBuf::from(registry_path),
+                )),
+                None => Arc::new(
+                    HttpCircuitVerificationKeyRegistryRetriever::new(registry_url.to_string())
+                        .map_err(|e| DependenciesBuilderError::Initialization {
+                            message:
+                                "Could not build the circuit verification key registry retriever"
+                                    .to_string(),
+                            error: Some(e),
+                        })?,
+                ),
+            },
+            None => Arc::new(UnconfiguredCircuitVerificationKeyRegistryRetriever),
+        };
+
+        Ok(retriever)
+    }
+
+    /// [CircuitVerificationKeyRegistryRetriever] service.
+    #[cfg(feature = "future_snark")]
+    pub async fn get_circuit_verification_key_registry_retriever(
+        &mut self,
+    ) -> Result<Arc<dyn CircuitVerificationKeyRegistryRetriever>> {
+        get_dependency!(self.circuit_verification_key_registry_retriever)
+    }
+
+    /// [CircuitVerificationKeyCertifier] service.
+    #[cfg(feature = "future_snark")]
+    pub async fn get_circuit_verification_key_certifier(
+        &mut self,
+    ) -> Result<Arc<dyn CircuitVerificationKeyCertifier>> {
+        get_dependency!(self.circuit_verification_key_certifier)
     }
 
     /// [CertificateVerifier] service.
