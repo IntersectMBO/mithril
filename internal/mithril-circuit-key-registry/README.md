@@ -14,4 +14,5 @@ It holds:
 
 The nodes enforce the registry through the `CircuitVerificationKeyCertifier` trait of
 `mithril-common`. The operations on the registry are provided by the
-`circuit-key-registry` command of the Mithril aggregator.
+`circuit-key-registry` command of the Mithril aggregator, documented in the
+[runbook](../../docs/runbook/circuit-key-registry/README.md).
