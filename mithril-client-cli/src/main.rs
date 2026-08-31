@@ -95,6 +95,13 @@ pub struct Args {
     #[clap(long, global = true)]
     origin_tag: Option<String>,
 
+    /// Read the circuit verification key registry from a local signed registry file instead of
+    /// resolving it through the published networks configuration (unstable, for local deployments)
+    #[cfg(feature = "future_snark")]
+    #[clap(long, env = "CIRCUIT_VERIFICATION_KEY_REGISTRY_PATH", global = true)]
+    #[example = "`./circuit-verification-key-registry.json`"]
+    circuit_verification_key_registry_path: Option<String>,
+
     /// Override the Mithril era
     #[clap(long, global = true)]
     #[example = "`pythagoras`"]
@@ -217,6 +224,12 @@ impl Source for Args {
         register_config_value_option!(map, &namespace, myself.aggregator_endpoint);
         register_config_value_option!(map, &namespace, myself.origin_tag);
         register_config_value_option!(map, &namespace, myself.era);
+        #[cfg(feature = "future_snark")]
+        register_config_value_option!(
+            map,
+            &namespace,
+            myself.circuit_verification_key_registry_path
+        );
 
         Ok(map)
     }
