@@ -6,6 +6,8 @@
 //! the genesis verification key before use.
 
 mod registry;
+mod retriever;
 
 pub use mithril_stm::{CIRCUIT_VERIFICATION_KEY_DIGEST_SIZE, CircuitVerificationKeyDigest};
 pub use registry::*;
+pub use retriever::*;
