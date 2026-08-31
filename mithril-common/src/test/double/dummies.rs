@@ -343,6 +343,8 @@ mod messages {
                 total_next_stakes_signers: 150_000,
                 total_cardano_spo: 100,
                 total_cardano_stake: 1_000_000,
+                leader_aggregator_endpoint: None,
+                certificate_chain_aggregator_endpoint: None,
             }
         }
     }
