@@ -1,3 +1,5 @@
+#[cfg(feature = "future_snark")]
+mod circuit_key_registry_command;
 mod config_association;
 mod database_command;
 mod era_command;
@@ -26,6 +28,8 @@ pub enum MainCommand {
     Tools(tools_command::ToolsCommand),
     Database(database_command::DatabaseCommand),
     ProtocolConfiguration(protocol_configuration_command::ProtocolConfigurationCommand),
+    #[cfg(feature = "future_snark")]
+    CircuitKeyRegistry(circuit_key_registry_command::CircuitKeyRegistryCommand),
     #[clap(alias("doc"), hide(true))]
     GenerateDoc(GenerateDocCommands),
 }
@@ -51,6 +55,8 @@ impl MainCommand {
             Self::Tools(cmd) => cmd.execute(root_logger, config_builder).await,
             Self::Database(cmd) => cmd.execute(root_logger, config_builder).await,
             Self::ProtocolConfiguration(cmd) => cmd.execute(root_logger, config_builder).await,
+            #[cfg(feature = "future_snark")]
+            Self::CircuitKeyRegistry(cmd) => cmd.execute(root_logger).await,
             Self::GenerateDoc(cmd) => {
                 let commands_configs =
                     Self::extract_config(Self::format_crate_name_to_config_key());
@@ -62,18 +68,37 @@ impl MainCommand {
     }
 
     pub fn extract_config(command_path: String) -> HashMap<String, StructDoc> {
-        extract_all!(
-            command_path,
-            MainCommand,
-            Database = { database_command::DatabaseCommand },
-            Era = { era_command::EraCommand },
-            Genesis = { genesis_command::GenesisCommand },
-            Serve = { serve_command::ServeCommand },
-            Tools = { tools_command::ToolsCommand },
-            ProtocolConfiguration =
-                { protocol_configuration_command::ProtocolConfigurationCommand },
-            GenerateDoc = {},
-        )
+        #[cfg(feature = "future_snark")]
+        {
+            extract_all!(
+                command_path,
+                MainCommand,
+                Database = { database_command::DatabaseCommand },
+                Era = { era_command::EraCommand },
+                Genesis = { genesis_command::GenesisCommand },
+                Serve = { serve_command::ServeCommand },
+                Tools = { tools_command::ToolsCommand },
+                ProtocolConfiguration =
+                    { protocol_configuration_command::ProtocolConfigurationCommand },
+                CircuitKeyRegistry = { circuit_key_registry_command::CircuitKeyRegistryCommand },
+                GenerateDoc = {},
+            )
+        }
+        #[cfg(not(feature = "future_snark"))]
+        {
+            extract_all!(
+                command_path,
+                MainCommand,
+                Database = { database_command::DatabaseCommand },
+                Era = { era_command::EraCommand },
+                Genesis = { genesis_command::GenesisCommand },
+                Serve = { serve_command::ServeCommand },
+                Tools = { tools_command::ToolsCommand },
+                ProtocolConfiguration =
+                    { protocol_configuration_command::ProtocolConfigurationCommand },
+                GenerateDoc = {},
+            )
+        }
     }
 
     fn format_crate_name_to_config_key() -> String {
@@ -88,6 +113,8 @@ impl MainCommand {
             MainCommand::Tools(_) => CommandType::CommandLine,
             MainCommand::Database(_) => CommandType::CommandLine,
             MainCommand::ProtocolConfiguration(_) => CommandType::CommandLine,
+            #[cfg(feature = "future_snark")]
+            MainCommand::CircuitKeyRegistry(_) => CommandType::CommandLine,
             MainCommand::GenerateDoc(_) => CommandType::CommandLine,
         }
     }
