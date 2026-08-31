@@ -102,7 +102,7 @@ impl AssignedState {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Global {
     // Persistent values that do not change through an ivc stream
     pub(crate) genesis_message: MessageHash,
