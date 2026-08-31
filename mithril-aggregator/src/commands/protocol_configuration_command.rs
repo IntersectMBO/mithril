@@ -38,7 +38,9 @@ use crate::{
     ConfigurationSource, ExecutionEnvironment, extract_all,
     tools::HumanReadableProtocolConfiguration,
 };
-use crate::{dependency_injection::DependenciesBuilder, tools::ProtocolConfigurationTools};
+use crate::{
+    dependency_injection::DependenciesBuilder, tools::ProtocolConfigurationTools as Tools,
+};
 
 #[derive(Debug, Error)]
 pub enum InputConfigurationImportVerificationError {
@@ -196,7 +198,7 @@ impl ExportProtocolConfigurationSubCommand {
                     || "Dependencies Builder can not create protocol configuration command dependencies container",
                 )?;
 
-            let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
+            let tools = Tools::from_dependencies(dependencies)
                 .await
                 .with_context(|| "protocol-configuration-tools: initialization error")?;
 
@@ -228,7 +230,7 @@ impl ExportProtocolConfigurationSubCommand {
         target_file.write_all(json_protocol_configurations.as_bytes())?;
 
         println!(
-            "Sucessfully wrote JSON protocol configurations file at {}",
+            "Successfully wrote JSON protocol configurations file at {}",
             self.target_path.to_string_lossy()
         );
         Ok(())
@@ -245,8 +247,8 @@ pub fn get_default_protocol_configurations() -> ConfigurationResolverFromMarkers
             Epoch(0),
             ProtocolConfigurationForEpoch {
                 protocol_parameters: ProtocolParameters {
-                    k: 2422,
-                    m: 20973,
+                    k: 1944,
+                    m: 16948,
                     phi_f: 0.2,
                 },
                 enabled_signed_entity_types: BTreeSet::from([
@@ -283,6 +285,10 @@ pub struct ImportProtocolConfigurationSubCommand {
     /// Protocol Configuration Markers Secret Key
     #[clap(long, env = "PROTOCOL_CONFIGURATION_READER_SECRET_KEY")]
     protocol_configuration_markers_secret_key: HexEncodedProtocolConfigurationMarkersSecretKey,
+
+    /// Force datum file generation without verifying protocol configuration markers against on chain configuration
+    #[clap(long)]
+    force: bool,
 }
 
 impl ImportProtocolConfigurationSubCommand {
@@ -325,25 +331,31 @@ impl ImportProtocolConfigurationSubCommand {
         Self::verify_protocol_configurations(&protocol_configurations)?;
 
         // 4: Verify protocol configuration against on chain configuration
-        println!("Verifying protocol configuration against on chain configuration...");
-        let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
-            .await
-            .with_context(|| "protocol-configuration-tools: initialization error")?;
-        tools.verify_configurations_against_chain(protocol_configurations.clone())?;
+        if self.force {
+            println!(
+                "/!\\ the `--force` option is set: bypassing the verification against chain at your own risks. /!\\"
+            );
+        } else {
+            let tools = Tools::from_dependencies(dependencies)
+                .await
+                .with_context(|| "protocol-configuration-tools: initialization error")?;
+            println!("Verifying protocol configuration against on chain configuration...");
+            tools.verify_configurations_against_chain(protocol_configurations.clone())?;
+        }
 
         // 5: Generate Tx datum
         println!("Generating Tx datum ...");
         let protocol_configuration_markers_signer =
             Self::get_markers_signer(self.protocol_configuration_markers_secret_key.clone())?;
 
-        let tx_datum = tools.generate_tx_datum(
+        let tx_datum = Tools::generate_tx_datum(
             protocol_configurations,
             &protocol_configuration_markers_signer,
         )?;
 
         // 6: Verifying datum size
         println!("Verifying datum content do not exceed maximum size...");
-        tools.verify_tx_datum_size(tx_datum.clone())?;
+        Tools::verify_tx_datum_size(tx_datum.clone())?;
 
         // 7: Write datum file
         println!("Generating Tx datum output file...");
@@ -351,7 +363,7 @@ impl ImportProtocolConfigurationSubCommand {
         target_file.write_all(tx_datum.as_bytes())?;
 
         println!(
-            "Sucessfully wrote Tx datum file at {}",
+            "Successfully wrote Tx datum file at {}",
             self.target_path.to_string_lossy()
         );
 
@@ -508,6 +520,7 @@ mod tests {
             "protocol_configuration_tx_datum.json",
             "--protocol-configuration-markers-secret-key",
             &signer_secret_key,
+            "--force",
         ])
         .expect("CLI parse should succeed");
     }

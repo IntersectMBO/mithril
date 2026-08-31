@@ -305,6 +305,12 @@ impl EpochService for MithrilEpochService {
             .get_network_configuration(epoch)
             .await?;
 
+        debug!(
+            self.logger,
+            "Mithril network configuration fetched";
+            "network_configuration" => ?network_configuration
+        );
+
         let signer_registration_epoch_settings = AggregatorEpochSettings {
             protocol_parameters: network_configuration
                 .configuration_for_registration

@@ -1,18 +1,16 @@
 {
   "environment": "Production",
+  "cardano_node_version": "11.0.1",
   "cardano_cli_path": "cardano-cli",
   "cardano_node_socket_path": "/ipc/node.socket",
   "network": "preview",
   "run_interval": 60000,
-  "protocol_parameters": {
-    "k": 5,
-    "m": 100,
-    "phi_f": 0.65
-  },
   "snapshot_uploader_type": "gcp",
   "snapshot_bucket_name": "cardano-testnet",
-  "stores_directory": "./mithril-aggregator/stores",
+  "data_stores_directory": "/tmp/mithril-aggregator/stores",
   "genesis_verification_key": "5b3132372c37332c3132342c3136312c362c3133372c3133312c3231332c3230372c3131372c3139382c38352c3137362c3139392c3136322c3234312c36382c3132332c3131392c3134352c31332c3233322c3234332c34392c3232392c322c3234392c3230352c3230352c33392c3233352c34345d",
   "limit_keys_in_stores": 5,
-  "era_adapter_type": "bootstrap"
+  "era_reader_adapter_type": "bootstrap",
+  "chain_observer_type": "pallas",
+  "protocol_configuration_reader_adapter_config": "{\"type\": \"cardano-chain\", \"address\": \"addr_test1vr9gfzm8ryem4nck0tm6tqtf2mj407gwl3nhf2wh7d2t5kcl6r65s\", \"verification_key\": \"5b35342c3233362c3130322c33352c36372c3139362c3138372c36352c32332c37372c35342c3132392c3138322c32352c37312c3230322c3132322c36392c3234322c36302c3234332c3133312c36342c3131352c34302c32352c37362c3134302c3137342c3130342c322c3139335d\"}"
 }
