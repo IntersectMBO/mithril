@@ -81,6 +81,9 @@ impl CardanoDatabaseClient {
     pub fn new(
         aggregator_requester: Arc<dyn CardanoDatabaseAggregatorRequest>,
         #[cfg(feature = "fs")] http_file_downloader: Arc<dyn FileDownloader>,
+        #[cfg(all(feature = "unstable", feature = "fs"))] ipfs_file_downloader: Option<
+            Arc<dyn FileDownloader>,
+        >,
         #[cfg(feature = "fs")] ancillary_verifier: Option<Arc<AncillaryVerifier>>,
         #[cfg(feature = "fs")] feedback_sender: FeedbackSender,
         #[cfg(feature = "fs")] temp_directory_provider: Arc<dyn TempDirectoryProvider>,
@@ -94,6 +97,8 @@ impl CardanoDatabaseClient {
             #[cfg(feature = "fs")]
             artifact_downloader: InternalArtifactDownloader::new(
                 http_file_downloader.clone(),
+                #[cfg(feature = "unstable")]
+                ipfs_file_downloader,
                 ancillary_verifier,
                 feedback_sender.clone(),
                 logger.clone(),
@@ -240,6 +245,8 @@ pub(crate) mod test_dependency_injector {
         aggregator_requester: MockCardanoDatabaseAggregatorRequest,
         #[cfg(feature = "fs")]
         http_file_downloader: Arc<dyn FileDownloader>,
+        #[cfg(all(feature = "unstable", feature = "fs"))]
+        ipfs_file_downloader: Option<Arc<dyn FileDownloader>>,
         #[cfg(feature = "fs")]
         ancillary_verifier: Option<Arc<AncillaryVerifier>>,
         #[cfg(feature = "fs")]
@@ -262,6 +269,8 @@ pub(crate) mod test_dependency_injector {
                         .with_times(0)
                         .build(),
                 ),
+                #[cfg(all(feature = "unstable", feature = "fs"))]
+                ipfs_file_downloader: None,
                 #[cfg(feature = "fs")]
                 ancillary_verifier: None,
                 #[cfg(feature = "fs")]
@@ -297,6 +306,17 @@ pub(crate) mod test_dependency_injector {
         ) -> Self {
             Self {
                 http_file_downloader,
+                ..self
+            }
+        }
+
+        #[cfg(all(feature = "unstable", feature = "fs"))]
+        pub(crate) fn with_ipfs_file_downloader(
+            self,
+            ipfs_file_downloader: Arc<dyn FileDownloader>,
+        ) -> Self {
+            Self {
+                ipfs_file_downloader: Some(ipfs_file_downloader),
                 ..self
             }
         }
@@ -342,6 +362,8 @@ pub(crate) mod test_dependency_injector {
             CardanoDatabaseClient::new(
                 Arc::new(self.aggregator_requester),
                 self.http_file_downloader,
+                #[cfg(feature = "unstable")]
+                self.ipfs_file_downloader,
                 self.ancillary_verifier,
                 FeedbackSender::new(&self.feedback_receivers),
                 self.temp_directory_provider,
@@ -366,7 +388,7 @@ pub(crate) mod test_dependency_injector {
         #[cfg(feature = "fs")]
         #[test]
         fn test_cardano_database_client_dependency_injector_builds() {
-            let _ = CardanoDatabaseClientDependencyInjector::new()
+            let injector = CardanoDatabaseClientDependencyInjector::new()
                 .with_aggregator_requester_mock_config(|requester| {
                     let message = vec![CardanoDatabaseSnapshotListItem {
                         hash: "hash-123".to_string(),
@@ -380,8 +402,16 @@ pub(crate) mod test_dependency_injector {
                         .with_times(0)
                         .build(),
                 ))
-                .with_feedback_receivers(&[Arc::new(StackFeedbackReceiver::new())])
-                .build_cardano_database_client();
+                .with_feedback_receivers(&[Arc::new(StackFeedbackReceiver::new())]);
+            #[cfg(feature = "unstable")]
+            let injector = injector.with_ipfs_file_downloader(Arc::new(
+                MockFileDownloaderBuilder::default()
+                    .with_success()
+                    .with_times(0)
+                    .build(),
+            ));
+
+            injector.build_cardano_database_client();
         }
 
         #[cfg(not(feature = "fs"))]
