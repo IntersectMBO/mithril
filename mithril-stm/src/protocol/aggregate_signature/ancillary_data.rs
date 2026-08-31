@@ -11,8 +11,9 @@ use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
 #[cfg(all(test, feature = "future_snark"))]
+use crate::circuits::halo2_ivc::PREIMAGE_SIZE;
+#[cfg(all(test, feature = "future_snark"))]
 use crate::{BaseFieldElement, SchnorrSigningKey};
-
 #[cfg(feature = "future_snark")]
 use crate::{
     SchnorrVerificationKey, StandardSchnorrSignature,
@@ -190,7 +191,6 @@ impl AncillaryGenesisData {
         self.genesis_schnorr_verification_key.as_ref()
     }
 
-    /// Build genesis ancillary data carrying no data, for use in tests.
     #[cfg(all(test, feature = "future_snark"))]
     pub fn dummy() -> Self {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
@@ -199,13 +199,15 @@ impl AncillaryGenesisData {
         let signature = signing_key.sign_standard(&message, &mut rng).unwrap();
         let verification_key = SchnorrVerificationKey::new_from_signing_key(signing_key);
         Self::new(
-            #[cfg(feature = "future_snark")]
-            vec![0u8; 190],
-            #[cfg(feature = "future_snark")]
+            vec![0u8; PREIMAGE_SIZE],
             Some(signature),
-            #[cfg(feature = "future_snark")]
             Some(verification_key),
         )
+    }
+
+    #[cfg(all(test, not(feature = "future_snark")))]
+    pub fn dummy() -> Self {
+        Self::new()
     }
 }
 
