@@ -329,7 +329,7 @@ pub(crate) struct IvcChainInput<D: MembershipDigest> {
     pub(crate) global: Global,
     /// The protocol message preimage of the next step
     pub(crate) protocol_message_preimage: ProtocolMessagePreimage,
-    /// Genesis signature information 
+    /// Genesis signature information
     pub(crate) genesis_bootstrap: IvcGenesisBootstrapInput,
     /// Current rolling state
     pub(crate) rolling_state: Option<IvcRollingState>,

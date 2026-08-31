@@ -86,6 +86,21 @@ mod tests {
             .collect()
     }
 
+    #[cfg(feature = "future_snark")]
+    pub(crate) fn setup_party_without_snark_keys(params: Parameters, stake: Stake) -> Signer<D> {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let mut initializer = Initializer::new(params, stake, &mut rng);
+        initializer.schnorr_signing_key = None;
+        initializer.schnorr_verification_key = None;
+
+        let entry: RegistrationEntry = initializer.clone().try_into().unwrap();
+        let mut kr = KeyRegistration::initialize();
+        kr.register_by_entry(&entry).unwrap();
+        let closed_reg = kr.close_registration(&params).unwrap();
+
+        initializer.try_create_signer(&closed_reg).unwrap()
+    }
+
     /// Generate a vector of stakes that should sum to `honest_stake`
     /// when ignoring the indices in `adversaries`
     fn arb_honest_for_adversaries(

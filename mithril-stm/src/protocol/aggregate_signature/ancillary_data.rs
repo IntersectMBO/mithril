@@ -5,6 +5,14 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(all(test, feature = "future_snark"))]
+use rand_chacha::ChaCha20Rng;
+#[cfg(all(test, feature = "future_snark"))]
+use rand_core::SeedableRng;
+
+#[cfg(all(test, feature = "future_snark"))]
+use crate::{BaseFieldElement, SchnorrSigningKey};
+
 #[cfg(feature = "future_snark")]
 use crate::{
     SchnorrVerificationKey, StandardSchnorrSignature,
@@ -185,13 +193,18 @@ impl AncillaryGenesisData {
     /// Build genesis ancillary data carrying no data, for use in tests.
     #[cfg(test)]
     pub fn dummy() -> Self {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let signing_key = SchnorrSigningKey::generate(&mut rng);
+        let message = vec![BaseFieldElement::from(1u64)];
+        let signature = signing_key.sign_standard(&message, &mut rng).unwrap();
+        let verification_key = SchnorrVerificationKey::new_from_signing_key(signing_key);
         Self::new(
             #[cfg(feature = "future_snark")]
-            Vec::new(),
+            vec![0u8; 190],
             #[cfg(feature = "future_snark")]
-            None,
+            Some(signature),
             #[cfg(feature = "future_snark")]
-            None,
+            Some(verification_key),
         )
     }
 }
