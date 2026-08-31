@@ -11,6 +11,7 @@ pub mod halo2_ivc;
 pub(crate) mod key_generator;
 pub(crate) mod key_provider;
 pub mod trusted_setup;
+mod verification_key_digest;
 
 #[cfg(test)]
 pub(crate) mod test_utils;
@@ -18,6 +19,9 @@ pub(crate) mod test_utils;
 pub(crate) use halo2::types::CircuitCurve;
 pub(crate) use halo2::witness::{
     CircuitInstance, CircuitMerkleTreeLeaf, CircuitWitness, MerklePath,
+};
+pub use verification_key_digest::{
+    CIRCUIT_VERIFICATION_KEY_DIGEST_SIZE, CircuitVerificationKeyDigest,
 };
 
 /// Constant holding the current path of the cached values related to the circuits
