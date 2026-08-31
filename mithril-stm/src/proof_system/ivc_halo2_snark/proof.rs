@@ -376,17 +376,17 @@ impl<D: MembershipDigest> IvcChainInput<D> {
         let global = Global::new(
             genesis_message,
             genesis_verifying_key,
-            &certificate_verifying_key,
-            &ivc_verifying_key,
+            certificate_verifying_key,
+            ivc_verifying_key,
         );
 
         Ok(Self {
             certificate_proof,
             message: message.to_vec(),
             aggregate_verification_key,
-            global: global,
+            global,
             protocol_message_preimage: ProtocolMessagePreimage(protocol_message_preimage_bytes),
-            genesis_bootstrap: genesis_bootstrap,
+            genesis_bootstrap,
             rolling_state: current_rolling_state,
         })
     }

@@ -11,10 +11,7 @@ use crate::proof_system::MockSnarkProverFactory;
 use crate::{
     AggregateVerificationKey, ClosedKeyRegistration, LotteryIndex, MembershipDigest, Parameters,
     Signer, SingleSignature, Stake, StmResult, VerificationKeyForConcatenation,
-    proof_system::{
-        ConcatenationClerk, ConcatenationProof,
-        ivc_halo2_snark::proof::{IvcChainInput, IvcChainProver},
-    },
+    proof_system::{ConcatenationClerk, ConcatenationProof},
 };
 
 #[cfg(feature = "future_snark")]
@@ -22,7 +19,9 @@ use crate::{
     AggregateSignatureError, AncillaryProverData, AncillaryVerifierData,
     proof_system::{
         NonDeterministicSnarkProverFactory, SnarkAggregateSignatureProver, SnarkClerk,
-        SnarkProverFactory, SnarkVerifierData, ivc_halo2_snark::verifier_setup::IvcVerifierData,
+        SnarkProverFactory, SnarkVerifierData,
+        ivc_halo2_snark::proof::{IvcChainInput, IvcChainProver},
+        ivc_halo2_snark::verifier_setup::IvcVerifierData,
     },
 };
 
@@ -157,6 +156,7 @@ impl<D: MembershipDigest> Clerk<D> {
         }
     }
 
+    #[cfg(feature = "future_snark")]
     fn aggregate_signatures_for_snark(
         snark_clerk: &SnarkClerk,
         prover: &mut dyn SnarkAggregateSignatureProver<D>,
@@ -164,9 +164,13 @@ impl<D: MembershipDigest> Clerk<D> {
         msg: &[u8],
     ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
         let certificate_verifying_key = prover.verification_key().clone();
-        let snark_proof = prover
-            .aggregate_signatures(snark_clerk, sigs, msg)
-            .with_context(|| "")?;
+        let snark_proof =
+            prover.aggregate_signatures(snark_clerk, sigs, msg).with_context(|| {
+                format!(
+                    "Signatures failed to aggregate for type {}",
+                    AggregateSignatureType::Snark
+                )
+            })?;
         Ok((
             AggregateSignature::Snark(Box::new(snark_proof)),
             AncillaryProofOutput::new(
@@ -178,6 +182,7 @@ impl<D: MembershipDigest> Clerk<D> {
         ))
     }
 
+    #[cfg(feature = "future_snark")]
     fn aggregate_signatures_for_ivc_snark(
         snark_clerk: &SnarkClerk,
         snark_agg_sig_prover: &mut dyn SnarkAggregateSignatureProver<D>,
@@ -189,7 +194,12 @@ impl<D: MembershipDigest> Clerk<D> {
         let certificate_verifying_key = snark_agg_sig_prover.verification_key().clone();
         let certificate_proof = snark_agg_sig_prover
             .aggregate_signatures(snark_clerk, sigs, msg)
-            .with_context(|| "")?;
+            .with_context(|| {
+            format!(
+                "Signatures failed to aggregate for type {}",
+                AggregateSignatureType::IvcSnark
+            )
+        })?;
         let chain_input = IvcChainInput::try_new(
             certificate_proof,
             msg,

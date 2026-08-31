@@ -191,7 +191,7 @@ impl AncillaryGenesisData {
     }
 
     /// Build genesis ancillary data carrying no data, for use in tests.
-    #[cfg(test)]
+    #[cfg(all(test, feature = "future_snark"))]
     pub fn dummy() -> Self {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let signing_key = SchnorrSigningKey::generate(&mut rng);
