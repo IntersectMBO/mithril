@@ -64,6 +64,7 @@ pub struct Aggregator {
     process: RwLock<Option<Child>>,
     chain_observer: Arc<dyn ChainObserver>,
     full_node: FullNode,
+    aggregate_signature_type: AggregateSignatureType,
 }
 
 impl Aggregator {
@@ -248,6 +249,7 @@ impl Aggregator {
             process: RwLock::new(None),
             chain_observer,
             full_node: aggregator_config.full_node.clone(),
+            aggregate_signature_type: aggregator_config.aggregate_signature_type,
         })
     }
 
@@ -267,11 +269,16 @@ impl Aggregator {
             process: RwLock::new(None),
             chain_observer: other.chain_observer.clone(),
             full_node: other.full_node.clone(),
+            aggregate_signature_type: other.aggregate_signature_type,
         }
     }
 
     pub fn is_leader(&self) -> bool {
         self.index == 0
+    }
+
+    pub fn aggregate_signature_type(&self) -> AggregateSignatureType {
+        self.aggregate_signature_type
     }
 
     pub fn index(&self) -> usize {
