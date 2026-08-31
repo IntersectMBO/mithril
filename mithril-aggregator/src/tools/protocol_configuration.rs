@@ -190,7 +190,6 @@ impl ProtocolConfigurationTools {
 
     /// Generate TxDatum from HumanReadableProtocolConfiguration Vec
     pub fn generate_tx_datum(
-        &self,
         configurations: Vec<HumanReadableProtocolConfiguration>,
         protocol_configuration_markers_signer: &ProtocolConfigurationMarkersSigner,
     ) -> ProtocolConfigurationToolsResult<String> {
@@ -217,10 +216,7 @@ impl ProtocolConfigurationTools {
     }
 
     /// Verify if the size of the TxDatum is under the maximum authorized size.
-    pub fn verify_tx_datum_size(
-        &self,
-        datum: String,
-    ) -> Result<(), ProtocolConfigurationVerifierError> {
+    pub fn verify_tx_datum_size(datum: String) -> Result<(), ProtocolConfigurationVerifierError> {
         let size_bytes = datum.len();
         let size_kb = size_bytes as f64 / 1024.0;
 
@@ -299,14 +295,6 @@ mod tests {
     use crate::test::TestLogger;
 
     use super::*;
-
-    fn build_tools_dummy() -> ProtocolConfigurationTools {
-        let configuration = ProtocolConfigurationToolsConfiguration {
-            epoch: Epoch(30),
-            on_chain_configurations: ConfigurationResolverFromMarkers::new(BTreeMap::new()),
-        };
-        ProtocolConfigurationTools::new(configuration, TestLogger::stdout())
-    }
 
     fn build_tools(
         current_epoch: Epoch,
@@ -420,14 +408,15 @@ mod tests {
             cardano_blocks_transactions_signing_config: None,
         }];
         let signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
-        let tools = build_tools_dummy();
-        assert!(tools.generate_tx_datum(configurations, &signer).is_ok());
+        assert!(ProtocolConfigurationTools::generate_tx_datum(configurations, &signer).is_ok());
     }
 
     #[test]
     fn verify_tx_datum_size_is_ok_with_datum_under_10_kb() {
-        let tools = build_tools_dummy();
-        assert!(tools.verify_tx_datum_size("tx datum under 10 kb".to_string()).is_ok());
+        assert!(
+            ProtocolConfigurationTools::verify_tx_datum_size("tx datum under 10 kb".to_string())
+                .is_ok()
+        );
     }
 
     #[test]
@@ -443,12 +432,10 @@ mod tests {
             },
         ];
         let signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
-        let tools = build_tools_dummy();
-        let datum = tools
-            .generate_tx_datum(configurations, &signer)
+        let datum = ProtocolConfigurationTools::generate_tx_datum(configurations, &signer)
             .expect("generate_tx_datum should not fail");
 
-        assert!(tools.verify_tx_datum_size(datum).is_ok());
+        assert!(ProtocolConfigurationTools::verify_tx_datum_size(datum).is_ok());
     }
 
     mod verify_configurations_against_chain {

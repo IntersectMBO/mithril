@@ -38,7 +38,9 @@ use crate::{
     ConfigurationSource, ExecutionEnvironment, extract_all,
     tools::HumanReadableProtocolConfiguration,
 };
-use crate::{dependency_injection::DependenciesBuilder, tools::ProtocolConfigurationTools};
+use crate::{
+    dependency_injection::DependenciesBuilder, tools::ProtocolConfigurationTools as Tools,
+};
 
 #[derive(Debug, Error)]
 pub enum InputConfigurationImportVerificationError {
@@ -196,7 +198,7 @@ impl ExportProtocolConfigurationSubCommand {
                     || "Dependencies Builder can not create protocol configuration command dependencies container",
                 )?;
 
-            let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
+            let tools = Tools::from_dependencies(dependencies)
                 .await
                 .with_context(|| "protocol-configuration-tools: initialization error")?;
 
@@ -328,14 +330,15 @@ impl ImportProtocolConfigurationSubCommand {
         println!("Verifying protocol configuration consistency...");
         Self::verify_protocol_configurations(&protocol_configurations)?;
 
-        let tools = ProtocolConfigurationTools::from_dependencies(dependencies)
-            .await
-            .with_context(|| "protocol-configuration-tools: initialization error")?;
-
         // 4: Verify protocol configuration against on chain configuration
         if self.force {
-            println!("/!\\ --force option is set, bypassing the verification against chain /!\\");
+            println!(
+                "/!\\ the `--force` option is set: bypassing the verification against chain at your own risks. /!\\"
+            );
         } else {
+            let tools = Tools::from_dependencies(dependencies)
+                .await
+                .with_context(|| "protocol-configuration-tools: initialization error")?;
             println!("Verifying protocol configuration against on chain configuration...");
             tools.verify_configurations_against_chain(protocol_configurations.clone())?;
         }
@@ -345,14 +348,14 @@ impl ImportProtocolConfigurationSubCommand {
         let protocol_configuration_markers_signer =
             Self::get_markers_signer(self.protocol_configuration_markers_secret_key.clone())?;
 
-        let tx_datum = tools.generate_tx_datum(
+        let tx_datum = Tools::generate_tx_datum(
             protocol_configurations,
             &protocol_configuration_markers_signer,
         )?;
 
         // 6: Verifying datum size
         println!("Verifying datum content do not exceed maximum size...");
-        tools.verify_tx_datum_size(tx_datum.clone())?;
+        Tools::verify_tx_datum_size(tx_datum.clone())?;
 
         // 7: Write datum file
         println!("Generating Tx datum output file...");
