@@ -3,6 +3,11 @@ use std::sync::Arc;
 
 use mithril_common::certificate_chain::{CertificateVerifier, MithrilCertificateVerifier};
 use mithril_common::crypto_helper::GenesisVerifier;
+#[cfg(feature = "future_snark")]
+use mithril_common::crypto_helper::{
+    CachedCircuitVerificationKeyCertifier, CircuitVerificationKeyCertifier,
+    FileCircuitVerificationKeyRegistryRetriever, MithrilCircuitVerificationKeyCertifier,
+};
 
 use crate::database::repository::{BufferedSingleSignatureRepository, SingleSignatureRepository};
 use crate::dependency_injection::{DependenciesBuilder, DependenciesBuilderError, Result};
@@ -98,6 +103,8 @@ impl DependenciesBuilder {
                     self.root_logger(),
                     leader_aggregator_client.clone(),
                     self.get_genesis_verifier().await?,
+                    #[cfg(feature = "future_snark")]
+                    self.build_circuit_verification_key_certifier().await?,
                 ));
 
                 Arc::new(MithrilCertificateChainSynchronizer::new(
@@ -127,9 +134,27 @@ impl DependenciesBuilder {
             self.root_logger(),
             self.get_certificate_repository().await?,
             self.get_genesis_verifier().await?,
+            #[cfg(feature = "future_snark")]
+            self.build_circuit_verification_key_certifier().await?,
         ));
 
         Ok(verifier)
+    }
+
+    /// Build the certifier enforcing the signed circuit verification key registry read from the
+    /// configured registry path, with a caching decorator refreshing it periodically.
+    #[cfg(feature = "future_snark")]
+    async fn build_circuit_verification_key_certifier(
+        &mut self,
+    ) -> Result<Option<Arc<dyn CircuitVerificationKeyCertifier>>> {
+        Ok(Some(Arc::new(CachedCircuitVerificationKeyCertifier::new(
+            Arc::new(MithrilCircuitVerificationKeyCertifier::new(
+                Arc::new(FileCircuitVerificationKeyRegistryRetriever::new(
+                    self.configuration.circuit_verification_key_registry_path(),
+                )),
+                self.get_genesis_verifier().await?,
+            )),
+        ))))
     }
 
     /// [CertificateVerifier] service.
