@@ -112,12 +112,6 @@ jobs:
             mithril_p2p_use_real_dmq_node: true
             mithril_p2p_dmq_use_ledger_peers: true
             mithril_api_domain: api.mithril.network
-            mithril_protocol_parameters: |
-              {
-                k     = 5
-                m     = 100
-                phi_f = 0.70
-              }
             mithril_signers: |
               {
                 "2" = {
@@ -141,12 +135,6 @@ jobs:
             mithril_p2p_use_real_dmq_node: true
             mithril_p2p_dmq_use_ledger_peers: true
             mithril_api_domain: api.mithril.network
-            mithril_protocol_parameters: |
-              {
-                k     = 1944
-                m     = 16948
-                phi_f = 0.20
-              }
             mithril_signers: |
               {}
             terraform_backend_bucket: mithril-terraform-prod
@@ -210,7 +198,6 @@ jobs:
           mithril_p2p_network_bootstrap_peer: ${{ vars.MITHRIL_P2P_NETWORK_BOOTSTRAP_PEER }}
           mithril_api_domain: ${{ matrix.mithril_api_domain }}
           mithril_image_id: ${{ env.DOCKER_IMAGE_ID }}
-          mithril_protocol_parameters: ${{ toJSON(matrix.mithril_protocol_parameters) }}
           mithril_signers: ${{ toJSON(matrix.mithril_signers) }}
           mithril_genesis_verification_key_url: ${{ vars.GENESIS_VERIFICATION_KEY_URL }}
           mithril_era_reader_address_url: ${{ vars.ERA_READER_ADDRESS_URL }}
@@ -227,12 +214,8 @@ jobs:
           mithril_aggregator_blockfrost_parameters: ${{ secrets.AGGREGATOR_BLOCKFROST_PARAMETERS }}
           mithril_aggregator_cardano_blocks_transactions_prover_cache_pool_size: ${{ vars.AGGREGATOR_CARDANO_BLOCKS_TRANSACTIONS_PROVER_CACHE_POOL_SIZE }}
           mithril_aggregator_cardano_blocks_transactions_database_connection_pool_size: ${{ vars.AGGREGATOR_CARDANO_BLOCKS_TRANSACTIONS_DATABASE_CONNECTION_POOL_SIZE }}
-          mithril_aggregator_cardano_blocks_transactions_signing_config_security_parameter: ${{ vars.AGGREGATOR_CARDANO_BLOCKS_TRANSACTIONS_SIGNING_CONFIG_SECURITY_PARAMETER }}
-          mithril_aggregator_cardano_blocks_transactions_signing_config_step: ${{ vars.AGGREGATOR_CARDANO_BLOCKS_TRANSACTIONS_SIGNING_CONFIG_STEP }}
           mithril_aggregator_cardano_transactions_prover_cache_pool_size: ${{ vars.AGGREGATOR_CARDANO_TRANSACTIONS_PROVER_CACHE_POOL_SIZE }}
           mithril_aggregator_cardano_transactions_database_connection_pool_size: ${{ vars.AGGREGATOR_CARDANO_TRANSACTIONS_DATABASE_CONNECTION_POOL_SIZE }}
-          mithril_aggregator_cardano_transactions_signing_config_security_parameter: ${{ vars.AGGREGATOR_CARDANO_TRANSACTIONS_SIGNING_CONFIG_SECURITY_PARAMETER }}
-          mithril_aggregator_cardano_transactions_signing_config_step: ${{ vars.AGGREGATOR_CARDANO_TRANSACTIONS_SIGNING_CONFIG_STEP }}
           mithril_aggregator_ancillary_signer_type: ${{ vars.AGGREGATOR_ANCILLARY_SIGNER_TYPE }}
           mithril_aggregator_ancillary_signer_secret_key: ${{ secrets.AGGREGATOR_ANCILLARY_SIGNER_SECRET_KEY }}
           mithril_aggregator_ancillary_signer_gcp_kms_resource_name: ${{ secrets.AGGREGATOR_ANCILLARY_SIGNER_GCP_KMS_RESOURCE_NAME }}
