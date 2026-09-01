@@ -206,6 +206,7 @@ impl InternalArtifactDownloader {
                         uri.expand_for_immutable_file_number(immutable_file_number),
                     ),
                     compression_algorithm,
+                    circuit_breaker: None,
                 })
             })
             .collect();
@@ -254,6 +255,7 @@ impl InternalArtifactDownloader {
                         file_downloader,
                         file_downloader_uri,
                         compression_algorithm: compression_algorithm.to_owned(),
+                        circuit_breaker: None,
                     }
                 }
                 // Note: unknown locations should have been filtered out by `sanitized_locations`

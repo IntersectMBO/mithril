@@ -2,6 +2,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, anyhow};
 use slog::Logger;
@@ -10,7 +11,9 @@ use mithril_common::entities::{CompressionAlgorithm, ImmutableFileNumber};
 
 use crate::{
     MithrilResult,
-    file_downloader::{DownloadEvent, FileDownloader, FileDownloaderUri},
+    file_downloader::{
+        DownloadEvent, FileDownloader, FileDownloaderUnreachable, FileDownloaderUri,
+    },
     utils::AncillaryVerifier,
 };
 
@@ -48,6 +51,10 @@ impl DownloadTask {
         let mut download_succeeded = false;
 
         for location_to_try in &self.locations_to_try {
+            if location_to_try.is_circuit_breaker_triggered() {
+                continue;
+            }
+
             let downloaded = location_to_try
                 .file_downloader
                 .download_unpack(
@@ -60,6 +67,15 @@ impl DownloadTask {
                 .await;
 
             if let Err(e) = downloaded {
+                // Only confirmed unreachable downloads trigger the circuit breaker.
+                // A location-specific miss (e.g., file not found) should not disable the downloader
+                // for a whole batch.
+                if let Some(circuit_breaker) = &location_to_try.circuit_breaker
+                    && e.is::<FileDownloaderUnreachable>()
+                {
+                    circuit_breaker.trigger();
+                }
+
                 slog::error!(
                     logger,
                     "Failed downloading and unpacking {} for location {:?}",
@@ -153,10 +169,49 @@ pub enum DownloadKind {
     Ancillary { verifier: Arc<AncillaryVerifier> },
 }
 
+/// A circuit breaker for a download location, meant to be shared across every location backed by
+/// the same downloader kind within one batch (e.g., one per download_unpack() call for all Ipfs locations).
+#[derive(Clone)]
+pub struct CircuitBreaker(Arc<AtomicBool>);
+
+impl CircuitBreaker {
+    pub fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+
+    #[cfg(test)]
+    pub fn new_triggered() -> Self {
+        Self(Arc::new(AtomicBool::new(true)))
+    }
+
+    pub fn trigger(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_triggered(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
+impl Default for CircuitBreaker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct LocationToDownload {
     pub file_downloader: Arc<dyn FileDownloader>,
     pub file_downloader_uri: FileDownloaderUri,
     pub compression_algorithm: Option<CompressionAlgorithm>,
+    pub circuit_breaker: Option<CircuitBreaker>,
+}
+
+impl LocationToDownload {
+    pub fn is_circuit_breaker_triggered(&self) -> bool {
+        self.circuit_breaker
+            .as_ref()
+            .is_some_and(|breaker| breaker.is_triggered())
+    }
 }
 
 #[cfg(test)]
@@ -182,6 +237,7 @@ mod tests {
                 file_downloader: file_downloader.clone(),
                 file_downloader_uri: FileDownloaderUri::FileUri(FileUri(uri.as_ref().to_string())),
                 compression_algorithm: Some(CompressionAlgorithm::default()),
+                circuit_breaker: None,
             })
             .collect()
     }
@@ -458,5 +514,127 @@ mod tests {
 
             assert_dir_eq!(&target_dir, "* dummy_ledger");
         }
+    }
+
+    mod circuit_breaker {
+        use super::*;
+
+        #[tokio::test]
+        async fn skip_to_next_location_if_first_location_circuit_breaker_was_triggered() {
+            let target_dir = temp_dir_create!();
+            let logger = TestLogger::stdout();
+            let file_downloader = Arc::new(
+                MockFileDownloaderBuilder::default()
+                    .with_file_uri("http://whatever-2/00001.tar.zst")
+                    .with_target_dir(target_dir.clone())
+                    .with_compression(None)
+                    .with_success()
+                    .build(),
+            );
+
+            let download_task = DownloadTask {
+                kind: DownloadKind::Immutable(1),
+                locations_to_try: vec![
+                    LocationToDownload {
+                        file_downloader: file_downloader.clone(),
+                        file_downloader_uri: FileDownloaderUri::FileUri(FileUri(
+                            "http://whatever-1/00001.tar.zst".to_string(),
+                        )),
+                        compression_algorithm: None,
+                        circuit_breaker: Some(CircuitBreaker::new_triggered()),
+                    },
+                    LocationToDownload {
+                        file_downloader: file_downloader.clone(),
+                        file_downloader_uri: FileDownloaderUri::FileUri(FileUri(
+                            "http://whatever-2/00001.tar.zst".to_string(),
+                        )),
+                        compression_algorithm: None,
+                        circuit_breaker: None,
+                    },
+                ],
+                size_uncompressed: 0,
+                target_dir: target_dir.clone(),
+                download_event: DownloadEvent::Immutable {
+                    download_id: "download_id".to_string(),
+                    immutable_file_number: 1,
+                },
+            };
+
+            download_task.build_download_future(logger).await.unwrap();
+        }
+
+        #[tokio::test]
+        async fn if_circuit_breaker_is_set_and_downloader_is_unreachable_it_trigger_the_circuit_breaker()
+         {
+            let target_dir = temp_dir_create!();
+            let logger = TestLogger::stdout();
+            let file_downloader = Arc::new(
+                MockFileDownloaderBuilder::default()
+                    .with_file_uri("http://whatever-1/00001.tar.zst")
+                    .with_unreachable_downloader_failure("source")
+                    .with_compression(None)
+                    .build(),
+            );
+            let circuit_breaker = Some(CircuitBreaker::new());
+
+            let download_task = DownloadTask {
+                kind: DownloadKind::Immutable(1),
+                locations_to_try: vec![LocationToDownload {
+                    file_downloader: file_downloader.clone(),
+                    file_downloader_uri: FileDownloaderUri::FileUri(FileUri(
+                        "http://whatever-1/00001.tar.zst".to_string(),
+                    )),
+                    compression_algorithm: None,
+                    circuit_breaker: circuit_breaker.clone(),
+                }],
+                size_uncompressed: 0,
+                target_dir: target_dir.clone(),
+                download_event: DownloadEvent::Immutable {
+                    download_id: "download_id".to_string(),
+                    immutable_file_number: 1,
+                },
+            };
+
+            let err = download_task.build_download_future(logger).await.unwrap_err();
+            assert!(err.to_string().contains("All locations failed"));
+            assert!(circuit_breaker.is_some_and(|c| c.is_triggered()));
+        }
+    }
+
+    #[tokio::test]
+    async fn if_circuit_breaker_is_set_and_downloader_is_raise_error_other_than_unreachable_the_circuit_breaker_is_not_triggered()
+     {
+        let target_dir = temp_dir_create!();
+        let logger = TestLogger::stdout();
+        let file_downloader = Arc::new(
+            MockFileDownloaderBuilder::default()
+                .with_file_uri("http://whatever-1/00001.tar.zst")
+                .with_compression(None)
+                .with_failure()
+                .build(),
+        );
+        let circuit_breaker = Some(CircuitBreaker::new());
+
+        let download_task = DownloadTask {
+            kind: DownloadKind::Immutable(1),
+            locations_to_try: vec![LocationToDownload {
+                file_downloader: file_downloader.clone(),
+                file_downloader_uri: FileDownloaderUri::FileUri(FileUri(
+                    "http://whatever-1/00001.tar.zst".to_string(),
+                )),
+                compression_algorithm: None,
+                circuit_breaker: circuit_breaker.clone(),
+            }],
+            size_uncompressed: 0,
+            target_dir: target_dir.clone(),
+            download_event: DownloadEvent::Immutable {
+                download_id: "download_id".to_string(),
+                immutable_file_number: 1,
+            },
+        };
+
+        let err = download_task.build_download_future(logger).await.unwrap_err();
+        assert!(err.to_string().contains("All locations failed"));
+        assert!(circuit_breaker.is_some_and(|c| !c.is_triggered()));
     }
 }
