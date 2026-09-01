@@ -16,7 +16,8 @@ use crate::LotteryTargetValue;
 use crate::circuits::halo2::types::CircuitBase;
 use crate::circuits::halo2::witness::LotteryTargetValue as CircuitLotteryTargetValue;
 use crate::circuits::halo2::witness::{
-    CircuitMerkleTreeLeaf, CircuitWitnessEntry, MerklePath, MerkleRoot, SignedMessageWithoutPrefix,
+    CircuitMerkleTreeLeaf, CircuitWitnessEntry, MerklePath, MerkleTreeCommitment,
+    SignedMessageWithoutPrefix,
 };
 use crate::hash::poseidon::MidnightPoseidonDigest;
 use crate::membership_commitment::{
@@ -80,7 +81,11 @@ pub(crate) fn jubjub_poseidon_used_chips() -> midnight_zk_stdlib::ZkStdLibArch {
 /// Builds one valid circuit witness entry for focused gadget tests.
 pub(crate) fn sample_valid_circuit_witness_entry(
     merkle_path_length: u32,
-) -> Result<(CircuitWitnessEntry, MerkleRoot, SignedMessageWithoutPrefix)> {
+) -> Result<(
+    CircuitWitnessEntry,
+    MerkleTreeCommitment,
+    SignedMessageWithoutPrefix,
+)> {
     let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
     let signing_key = SchnorrSigningKey::generate(&mut rng);
     let verification_key = SchnorrVerificationKey::new_from_signing_key(signing_key.clone());
@@ -90,7 +95,7 @@ pub(crate) fn sample_valid_circuit_witness_entry(
     let stm_tree = StmMerkleTree::<MidnightPoseidonDigest, StmMerkleTreeSnarkLeaf>::new(
         &vec![leaf; 1 << TEST_MERKLE_TREE_DEPTH],
     );
-    let merkle_tree_commitment: MerkleRoot =
+    let merkle_tree_commitment: MerkleTreeCommitment =
         BaseFieldElement::from_bytes(stm_tree.to_merkle_tree_commitment().root.as_slice())?.into();
     let message = SignedMessageWithoutPrefix::from(42u64);
     let transcript = [merkle_tree_commitment.into(), message.into()];

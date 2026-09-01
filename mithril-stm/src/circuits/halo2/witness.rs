@@ -17,10 +17,10 @@ pub use crate::circuits::common::merkle::MerklePath;
 pub type LotteryTargetValue = CircuitBaseField;
 /// Signed message value used by the circuit transcript, without any domain prefix.
 pub type SignedMessageWithoutPrefix = CircuitBaseField;
-/// Merkle root public input committed by the STM membership commitment tree.
-pub type MerkleRoot = CircuitBaseField;
+/// Merkle tree commitment of the STM membership tree, carried as a circuit public input.
+pub type MerkleTreeCommitment = CircuitBaseField;
 /// Circuit statement/instance type, representing the public inputs to the STM SNARK circuit.
-pub(crate) type CircuitInstance = (MerkleRoot, SignedMessageWithoutPrefix);
+pub(crate) type CircuitInstance = (MerkleTreeCommitment, SignedMessageWithoutPrefix);
 
 /// Merkle-tree leaf material used by Halo2 witness construction.
 ///
@@ -51,7 +51,7 @@ impl CircuitMerkleTreeLeaf {
 pub struct CircuitWitnessEntry {
     /// Merkle leaf material committed for the current signer.
     pub(crate) leaf: CircuitMerkleTreeLeaf,
-    /// Merkle authentication path opening `leaf` to the public root.
+    /// Merkle authentication path opening `leaf` to the public Merkle tree commitment.
     pub(crate) merkle_path: MerklePath,
     /// Unique Schnorr signature carried by this witness entry.
     pub(crate) unique_schnorr_signature: UniqueSchnorrSignature,

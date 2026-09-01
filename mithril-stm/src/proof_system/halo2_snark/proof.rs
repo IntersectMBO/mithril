@@ -89,8 +89,9 @@ impl<D: MembershipDigest> SnarkProof<D> {
         snark_verifier_data: &SnarkVerifierData,
         verifier_params: &ParamsVerifierKZG<Bls12>,
     ) -> StmResult<()> {
-        let merkle_root = &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root;
-        let proof_message = build_snark_message(merkle_root, message)?;
+        let merkle_tree_commitment_digest =
+            &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root;
+        let proof_message = build_snark_message(merkle_tree_commitment_digest, message)?;
         let proof_instance = (proof_message[0].into(), proof_message[1].into());
 
         let verify_result = zk::verify::<CertificateCircuit, PoseidonState<CircuitBase>>(
@@ -109,7 +110,7 @@ impl<D: MembershipDigest> SnarkProof<D> {
     /// Runs the off-circuit SNARK verifier and returns the verifier's intermediate
     /// `DualMSM`.
     ///
-    /// The public inputs are reconstructed from `message` and the Merkle-tree root
+    /// The public inputs are reconstructed from `message` and the Merkle tree commitment
     /// inside `aggregate_verification_key_for_snark`; the proof is then checked
     /// against the certificate verifying key under the Poseidon transcript.
     ///
@@ -127,8 +128,9 @@ impl<D: MembershipDigest> SnarkProof<D> {
         circuit_verification_key: &NonRecursiveCircuitVerifyingKey,
         verifier_params: &ParamsVerifierKZG<Bls12>,
     ) -> StmResult<DualMSM<Bls12>> {
-        let merkle_root = &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root;
-        let proof_message = build_snark_message(merkle_root, message)?;
+        let merkle_tree_commitment_digest =
+            &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root;
+        let proof_message = build_snark_message(merkle_tree_commitment_digest, message)?;
         let public_inputs: Vec<CircuitBase> =
             vec![proof_message[0].into(), proof_message[1].into()];
 

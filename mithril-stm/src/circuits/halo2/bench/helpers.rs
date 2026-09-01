@@ -27,7 +27,7 @@ use crate::circuits::halo2::circuit::CertificateCircuit;
 use crate::circuits::halo2::types::CircuitBase;
 use crate::circuits::halo2::witness::{
     CircuitMerkleTreeLeaf, CircuitWitnessEntry, LotteryTargetValue as CircuitLotteryTargetValue,
-    MerkleRoot, SignedMessageWithoutPrefix,
+    MerkleTreeCommitment, SignedMessageWithoutPrefix,
 };
 use crate::hash::poseidon::MidnightPoseidonDigest;
 use crate::membership_commitment::{
@@ -69,7 +69,7 @@ pub struct BenchEnv {
 
 /// Pre-built witness ready for repeated `BenchEnv::prove` calls.
 pub struct BenchWitness {
-    merkle_tree_commitment: MerkleRoot,
+    merkle_tree_commitment: MerkleTreeCommitment,
     message: SignedMessageWithoutPrefix,
     entries: Vec<CircuitWitnessEntry>,
 }
@@ -124,7 +124,7 @@ impl BenchEnv {
     pub fn build_witness(&self) -> StmResult<BenchWitness> {
         let message = SignedMessageWithoutPrefix::from(DEFAULT_BENCH_MSG);
         let (tree, signer_fixtures) = build_bench_merkle_tree(self.num_signers)?;
-        let commitment = bench_merkle_root(&tree)?;
+        let commitment = bench_merkle_tree_commitment(&tree)?;
         let entries = build_bench_witness(&tree, &signer_fixtures, commitment, message, self.k)?;
         Ok(BenchWitness {
             merkle_tree_commitment: commitment,
@@ -286,24 +286,26 @@ fn build_bench_merkle_tree(
     Ok((tree, signer_entries))
 }
 
-fn bench_merkle_root(
+fn bench_merkle_tree_commitment(
     tree: &StmMerkleTree<MidnightPoseidonDigest, StmMerkleTreeSnarkLeaf>,
-) -> StmResult<MerkleRoot> {
+) -> StmResult<MerkleTreeCommitment> {
     let root_bytes = tree.to_merkle_tree_commitment().root;
     let root_array: [u8; 32] = root_bytes
         .as_slice()
         .try_into()
-        .map_err(|_| anyhow!("bench: merkle root digest has unexpected length"))?;
+        .map_err(|_| anyhow!("bench: merkle tree commitment digest has unexpected length"))?;
     BaseFieldElement::from_bytes(&root_array)
         .ok()
         .map(Into::into)
-        .ok_or_else(|| anyhow!("bench: merkle root digest is not a canonical field element"))
+        .ok_or_else(|| {
+            anyhow!("bench: merkle tree commitment digest is not a canonical field element")
+        })
 }
 
 fn build_bench_witness(
     tree: &StmMerkleTree<MidnightPoseidonDigest, StmMerkleTreeSnarkLeaf>,
     signer_entries: &[SignerEntry],
-    commitment: MerkleRoot,
+    commitment: MerkleTreeCommitment,
     message: SignedMessageWithoutPrefix,
     k: u32,
 ) -> StmResult<Vec<CircuitWitnessEntry>> {
