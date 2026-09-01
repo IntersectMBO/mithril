@@ -14,8 +14,7 @@ use crate::{
     proof_system::{
         NonDeterministicSnarkProverFactory, SnarkAggregateSignatureProver, SnarkClerk,
         SnarkProverFactory, SnarkVerifierData,
-        ivc_halo2_snark::proof::{IvcChainInput, IvcChainProver},
-        ivc_halo2_snark::verifier_setup::IvcVerifierData,
+        ivc_halo2_snark::{IvcChainProver, proof::IvcChainInput, verifier_setup::IvcVerifierData},
     },
 };
 use crate::{
@@ -38,8 +37,8 @@ pub struct Clerk<D: MembershipDigest> {
     concatenation_proof_clerk: ConcatenationClerk,
     #[cfg(feature = "future_snark")]
     snark_proof_clerk: Option<SnarkClerk>,
-    #[cfg(feature = "future_snark")]
     /// A factory that returns the provers necessary to create the SNARK proofs
+    #[cfg(feature = "future_snark")]
     snark_prover_factory: Arc<dyn SnarkProverFactory<D>>,
     phantom_data: PhantomData<D>,
 }
@@ -137,8 +136,9 @@ impl<D: MembershipDigest> Clerk<D> {
                     .get_snark_clerk()
                     .ok_or_else(|| anyhow!(AggregateSignatureError::MissingSnarkClerk))?;
 
-                let mut prover =
-                    self.snark_prover_factory.snark_signature_prover(&clerk.parameters)?;
+                let mut prover = self
+                    .snark_prover_factory
+                    .snark_aggregate_signature_prover(&clerk.parameters)?;
                 Self::aggregate_signatures_for_snark(clerk, prover.as_mut(), sigs, msg)
             }
             #[cfg(feature = "future_snark")]
@@ -147,15 +147,15 @@ impl<D: MembershipDigest> Clerk<D> {
                     .get_snark_clerk()
                     .ok_or_else(|| anyhow!(AggregateSignatureError::MissingSnarkClerk))?;
 
-                let mut snark_agg_sig_prover = self
+                let mut snark_prover = self
                     .snark_prover_factory
-                    .snark_signature_prover(&snark_clerk.parameters)?;
+                    .snark_aggregate_signature_prover(&snark_clerk.parameters)?;
 
                 let mut ivc_prover =
                     self.snark_prover_factory.ivc_chain_prover(&snark_clerk.parameters)?;
                 Self::aggregate_signatures_for_ivc_snark(
                     snark_clerk,
-                    snark_agg_sig_prover.as_mut(),
+                    snark_prover.as_mut(),
                     ivc_prover.as_mut(),
                     sigs,
                     msg,
@@ -194,21 +194,21 @@ impl<D: MembershipDigest> Clerk<D> {
     #[cfg(feature = "future_snark")]
     fn aggregate_signatures_for_ivc_snark(
         snark_clerk: &SnarkClerk,
-        snark_agg_sig_prover: &mut dyn SnarkAggregateSignatureProver<D>,
+        snark_prover: &mut dyn SnarkAggregateSignatureProver<D>,
         ivc_prover: &mut dyn IvcChainProver<D>,
         sigs: &[SingleSignature],
         msg: &[u8],
         ancillary_input: AncillaryProofInput,
     ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
-        let certificate_verifying_key = snark_agg_sig_prover.verification_key().clone();
-        let certificate_proof = snark_agg_sig_prover
+        let certificate_verifying_key = snark_prover.verification_key().clone();
+        let certificate_proof = snark_prover
             .aggregate_signatures(snark_clerk, sigs, msg)
             .with_context(|| {
-            format!(
-                "Signatures failed to aggregate for type {}",
-                AggregateSignatureType::IvcSnark
-            )
-        })?;
+                format!(
+                    "Signatures failed to aggregate for type {}",
+                    AggregateSignatureType::IvcSnark
+                )
+            })?;
         let chain_input = IvcChainInput::try_new(
             certificate_proof,
             msg,
@@ -311,8 +311,7 @@ mod tests {
             MERKLE_TREE_DEPTH_FOR_SNARK, MockSnarkAggregateSignatureProver, MockSnarkProverFactory,
             SnarkClerk,
             ivc_halo2_snark::{
-                build_standard_rolling_state,
-                proof::{IvcProof, MockIvcChainProver},
+                MockIvcChainProver, build_standard_rolling_state, proof::IvcProof,
                 verifier_setup::IvcVerifierData,
             },
         },
@@ -347,7 +346,6 @@ mod tests {
         AncillaryProofInput::new(
             prover_data,
             AncillaryGenesisData::dummy(),
-            #[cfg(feature = "future_snark")]
             DUMMY_PROTOCOL_MESSAGE_PREIMAGE.to_vec(),
         )
     }
@@ -360,15 +358,15 @@ mod tests {
         )
     }
 
-    fn factory_with<D: MembershipDigest + Send + Sync + 'static>(
-        snark_agg_sig_prover: MockSnarkAggregateSignatureProver<D>,
+    fn create_factory_with_both_provers<D: MembershipDigest + Send + Sync + 'static>(
+        snark_prover: MockSnarkAggregateSignatureProver<D>,
         ivc_prover: MockIvcChainProver<D>,
     ) -> MockSnarkProverFactory<D> {
         let mut factory = MockSnarkProverFactory::new();
         factory
-            .expect_snark_signature_prover()
+            .expect_snark_aggregate_signature_prover()
             .once()
-            .return_once(move |_| Ok(Box::new(snark_agg_sig_prover)));
+            .return_once(move |_| Ok(Box::new(snark_prover)));
         factory
             .expect_ivc_chain_prover()
             .once()
@@ -392,11 +390,11 @@ mod tests {
             .to_bytes()
             .unwrap();
 
-        let mut snark_agg_sig_prover = MockSnarkAggregateSignatureProver::new();
-        snark_agg_sig_prover
+        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
+        snark_prover
             .expect_verification_key()
             .return_const(certificate_verifying_key());
-        snark_agg_sig_prover
+        snark_prover
             .expect_aggregate_signatures()
             .once()
             .return_once(move |_, _, _| Ok(dummy_snark_proof(params)));
@@ -418,7 +416,7 @@ mod tests {
 
         let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(
             &signers[0],
-            factory_with(snark_agg_sig_prover, ivc_chain_prover),
+            create_factory_with_both_provers(snark_prover, ivc_chain_prover),
         );
 
         let (aggregate_signature, ancillary_output) = clerk
@@ -451,7 +449,7 @@ mod tests {
         let signature = signers[0].create_single_signature(&DUMMY_MESSAGE).unwrap();
 
         let mut factory = MockSnarkProverFactory::new();
-        factory.expect_snark_signature_prover().never();
+        factory.expect_snark_aggregate_signature_prover().never();
         factory.expect_ivc_chain_prover().never();
 
         let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(&signers[0], factory);
@@ -498,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn snark_aggregation_builds_snark_agg_sig_prover_with_clerk_parameters() {
+    fn snark_aggregation_builds_snark_prover_with_clerk_parameters() {
         let params = Parameters {
             k: 1,
             m: 10,
@@ -506,21 +504,21 @@ mod tests {
         };
         let signers = setup_equal_parties(params, 1);
 
-        let mut snark_agg_sig_prover = MockSnarkAggregateSignatureProver::new();
-        snark_agg_sig_prover
+        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
+        snark_prover
             .expect_verification_key()
             .return_const(certificate_verifying_key());
-        snark_agg_sig_prover
+        snark_prover
             .expect_aggregate_signatures()
             .once()
             .return_once(move |_, _, _| Ok(dummy_snark_proof(params)));
 
         let mut factory = MockSnarkProverFactory::new();
         factory
-            .expect_snark_signature_prover()
+            .expect_snark_aggregate_signature_prover()
             .once()
             .withf(move |actual_params| *actual_params == params)
-            .return_once(move |_| Ok(Box::new(snark_agg_sig_prover)));
+            .return_once(move |_| Ok(Box::new(snark_prover)));
 
         let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(&signers[0], factory);
 
@@ -547,7 +545,7 @@ mod tests {
 
         let mut factory = MockSnarkProverFactory::new();
         factory
-            .expect_snark_signature_prover()
+            .expect_snark_aggregate_signature_prover()
             .once()
             .return_once(|_| Err(anyhow!("factory error")));
 
@@ -574,20 +572,20 @@ mod tests {
         };
         let signers = setup_equal_parties(params, 1);
 
-        let mut snark_agg_sig_prover = MockSnarkAggregateSignatureProver::new();
-        snark_agg_sig_prover
+        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
+        snark_prover
             .expect_verification_key()
             .return_const(certificate_verifying_key());
-        snark_agg_sig_prover
+        snark_prover
             .expect_aggregate_signatures()
             .once()
             .return_once(move |_, _, _| Ok(dummy_snark_proof(params)));
 
         let mut factory = MockSnarkProverFactory::new();
         factory
-            .expect_snark_signature_prover()
+            .expect_snark_aggregate_signature_prover()
             .once()
-            .return_once(move |_| Ok(Box::new(snark_agg_sig_prover)));
+            .return_once(move |_| Ok(Box::new(snark_prover)));
 
         let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(&signers[0], factory);
 
@@ -626,20 +624,20 @@ mod tests {
         };
         let signers = setup_equal_parties(params, 1);
 
-        let mut snark_agg_sig_prover = MockSnarkAggregateSignatureProver::new();
-        snark_agg_sig_prover
+        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
+        snark_prover
             .expect_verification_key()
             .return_const(certificate_verifying_key());
-        snark_agg_sig_prover
+        snark_prover
             .expect_aggregate_signatures()
             .once()
             .return_once(|_, _, _| Err(anyhow!("prover error")));
 
         let mut factory = MockSnarkProverFactory::new();
         factory
-            .expect_snark_signature_prover()
+            .expect_snark_aggregate_signature_prover()
             .once()
-            .return_once(move |_| Ok(Box::new(snark_agg_sig_prover)));
+            .return_once(move |_| Ok(Box::new(snark_prover)));
 
         let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(&signers[0], factory);
 
@@ -690,12 +688,12 @@ mod tests {
         };
         let signers = setup_equal_parties(params, 1);
 
-        let snark_agg_sig_prover = MockSnarkAggregateSignatureProver::new();
+        let snark_prover = MockSnarkAggregateSignatureProver::new();
         let mut factory = MockSnarkProverFactory::new();
         factory
-            .expect_snark_signature_prover()
+            .expect_snark_aggregate_signature_prover()
             .once()
-            .return_once(move |_| Ok(Box::new(snark_agg_sig_prover)));
+            .return_once(move |_| Ok(Box::new(snark_prover)));
         factory
             .expect_ivc_chain_prover()
             .once()
@@ -724,11 +722,11 @@ mod tests {
         };
         let signers = setup_equal_parties(params, 1);
 
-        let mut snark_agg_sig_prover = MockSnarkAggregateSignatureProver::new();
-        snark_agg_sig_prover
+        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
+        snark_prover
             .expect_verification_key()
             .return_const(certificate_verifying_key());
-        snark_agg_sig_prover
+        snark_prover
             .expect_aggregate_signatures()
             .once()
             .return_once(move |_, _, _| Ok(dummy_snark_proof(params)));
@@ -739,7 +737,7 @@ mod tests {
 
         let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(
             &signers[0],
-            factory_with(snark_agg_sig_prover, ivc_prover),
+            create_factory_with_both_provers(snark_prover, ivc_prover),
         );
 
         let invalid_ancillary_input = AncillaryProofInput::new(
@@ -776,11 +774,11 @@ mod tests {
 
         let snark_clerk = SnarkClerk::new_clerk_from_signer(&signers[0]);
 
-        let mut snark_agg_sig_prover = MockSnarkAggregateSignatureProver::new();
-        snark_agg_sig_prover
+        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
+        snark_prover
             .expect_verification_key()
             .return_const(certificate_verifying_key());
-        snark_agg_sig_prover
+        snark_prover
             .expect_aggregate_signatures()
             .once()
             .return_once(move |_, _, _| Ok(dummy_snark_proof(params)));
@@ -802,7 +800,7 @@ mod tests {
 
         let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(
             &signers[0],
-            factory_with(snark_agg_sig_prover, ivc_prover),
+            create_factory_with_both_provers(snark_prover, ivc_prover),
         );
 
         clerk
@@ -816,7 +814,7 @@ mod tests {
     }
 
     #[test]
-    fn ivc_aggregation_uses_snark_agg_sig_prover_key_for_global_and_verifier_data() {
+    fn ivc_aggregation_uses_snark_prover_key_for_global_and_verifier_data() {
         let params = Parameters {
             k: 1,
             m: 10,
@@ -824,11 +822,11 @@ mod tests {
         };
         let signers = setup_equal_parties(params, 1);
 
-        let mut snark_agg_sig_prover = MockSnarkAggregateSignatureProver::new();
-        snark_agg_sig_prover
+        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
+        snark_prover
             .expect_verification_key()
             .return_const(certificate_verifying_key());
-        snark_agg_sig_prover
+        snark_prover
             .expect_aggregate_signatures()
             .once()
             .return_once(move |_, _, _| Ok(dummy_snark_proof(params)));
@@ -842,7 +840,7 @@ mod tests {
 
         let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(
             &signers[0],
-            factory_with(snark_agg_sig_prover, ivc_prover),
+            create_factory_with_both_provers(snark_prover, ivc_prover),
         );
 
         let (_aggregate_signature, ancillary_output) = clerk
@@ -885,11 +883,11 @@ mod tests {
         };
         let signers = setup_equal_parties(params, 1);
 
-        let mut snark_agg_sig_prover = MockSnarkAggregateSignatureProver::new();
-        snark_agg_sig_prover
+        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
+        snark_prover
             .expect_verification_key()
             .return_const(certificate_verifying_key());
-        snark_agg_sig_prover
+        snark_prover
             .expect_aggregate_signatures()
             .once()
             .return_once(move |_, _, _| Ok(dummy_snark_proof(params)));
@@ -903,7 +901,7 @@ mod tests {
 
         let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(
             &signers[0],
-            factory_with(snark_agg_sig_prover, ivc_prover),
+            create_factory_with_both_provers(snark_prover, ivc_prover),
         );
 
         let (_aggregate_signature, ancillary_output) = clerk
@@ -919,7 +917,7 @@ mod tests {
     }
 
     #[test]
-    fn ivc_aggregation_propagates_snark_agg_sig_prover_error() {
+    fn ivc_aggregation_propagates_snark_prover_error() {
         let params = Parameters {
             k: 1,
             m: 10,
@@ -927,11 +925,11 @@ mod tests {
         };
         let signers = setup_equal_parties(params, 1);
 
-        let mut snark_agg_sig_prover = MockSnarkAggregateSignatureProver::new();
-        snark_agg_sig_prover
+        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
+        snark_prover
             .expect_verification_key()
             .return_const(certificate_verifying_key());
-        snark_agg_sig_prover
+        snark_prover
             .expect_aggregate_signatures()
             .once()
             .return_once(|_, _, _| Err(anyhow!("SNARK aggregate signature prover error")));
@@ -942,7 +940,7 @@ mod tests {
 
         let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(
             &signers[0],
-            factory_with(snark_agg_sig_prover, ivc_prover),
+            create_factory_with_both_provers(snark_prover, ivc_prover),
         );
 
         let err = clerk
@@ -969,11 +967,11 @@ mod tests {
         };
         let signers = setup_equal_parties(params, 1);
 
-        let mut snark_agg_sig_prover = MockSnarkAggregateSignatureProver::new();
-        snark_agg_sig_prover
+        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
+        snark_prover
             .expect_verification_key()
             .return_const(certificate_verifying_key());
-        snark_agg_sig_prover
+        snark_prover
             .expect_aggregate_signatures()
             .once()
             .return_once(move |_, _, _| Ok(dummy_snark_proof(params)));
@@ -987,7 +985,7 @@ mod tests {
 
         let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(
             &signers[0],
-            factory_with(snark_agg_sig_prover, ivc_prover),
+            create_factory_with_both_provers(snark_prover, ivc_prover),
         );
 
         let err = clerk
@@ -1011,11 +1009,11 @@ mod tests {
         };
         let signers = setup_equal_parties(params, 1);
 
-        let mut snark_agg_sig_prover = MockSnarkAggregateSignatureProver::new();
-        snark_agg_sig_prover
+        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
+        snark_prover
             .expect_verification_key()
             .return_const(certificate_verifying_key());
-        snark_agg_sig_prover
+        snark_prover
             .expect_aggregate_signatures()
             .once()
             .return_once(move |_, _, _| Ok(dummy_snark_proof(params)));
@@ -1026,7 +1024,7 @@ mod tests {
 
         let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(
             &signers[0],
-            factory_with(snark_agg_sig_prover, ivc_prover),
+            create_factory_with_both_provers(snark_prover, ivc_prover),
         );
 
         let err = clerk

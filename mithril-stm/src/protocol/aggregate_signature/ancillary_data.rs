@@ -65,7 +65,7 @@ impl AncillaryProverData {
         }
     }
 
-    /// Consumes self an returns the wrapped IvcRollingState of an AncillaryProverData if it exists.
+    /// Consumes self and returns the wrapped IvcRollingState of an AncillaryProverData if it exists.
     #[cfg(feature = "future_snark")]
     pub fn into_ivc_rolling_state(self) -> Option<IvcRollingState> {
         match self {
@@ -189,6 +189,7 @@ impl AncillaryGenesisData {
         self.genesis_schnorr_verification_key.as_ref()
     }
 
+    /// Builds deterministic genesis ancillary data for tests.
     #[cfg(all(test, feature = "future_snark"))]
     pub fn dummy() -> Self {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
@@ -203,6 +204,7 @@ impl AncillaryGenesisData {
         )
     }
 
+    /// Build genesis ancillary data carrying no data, for use in tests.
     #[cfg(all(test, not(feature = "future_snark")))]
     pub fn dummy() -> Self {
         Self::new()
@@ -260,7 +262,8 @@ impl AncillaryProofInput {
         &self.message_preimage
     }
 
-    /// Build an ancillary proof input carrying no data, for use in tests.
+    /// Build an ancillary proof input carrying deterministic AncillaryGenesisData or no data
+    /// depending on the tests it is used in.
     #[cfg(test)]
     pub fn dummy() -> Self {
         Self::new(

@@ -115,7 +115,6 @@ pub(crate) struct Global {
 }
 
 impl Global {
-    #[allow(dead_code)]
     pub(crate) fn new(
         genesis_message: MessageHash,
         genesis_verification_key: SchnorrVerificationKey,

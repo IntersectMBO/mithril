@@ -1,6 +1,7 @@
 mod aggregate_key;
 mod clerk;
 mod eligibility;
+mod interface;
 mod message;
 mod proof;
 mod prover_input;
@@ -15,11 +16,12 @@ pub(crate) use clerk::SnarkClerk;
 pub(crate) use eligibility::{
     compute_target_value_for_snark_lottery, compute_winning_lottery_indices,
 };
-pub(crate) use message::build_snark_message;
 #[cfg(test)]
-pub(crate) use proof::MockSnarkAggregateSignatureProver;
+pub(crate) use interface::MockSnarkAggregateSignatureProver;
+pub(crate) use interface::SnarkAggregateSignatureProver;
+pub(crate) use message::build_snark_message;
 pub use proof::SnarkProof;
-pub(crate) use proof::{SnarkAggregateSignatureProver, SnarkProver};
+pub(crate) use proof::SnarkProver;
 pub use setup::SnarkVerifierData;
 pub(crate) use setup::{SnarkProverSetup, SnarkVerifierSetup};
 pub(crate) use signer::SnarkProofSigner;
