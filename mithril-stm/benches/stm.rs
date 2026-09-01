@@ -13,7 +13,7 @@ use mithril_stm::{
 /// * Registration depends on the number of parties (should be constant, as it is a lookup table)
 /// * Signing depends on the parameter `m`, as it defines the number of lotteries a user can play
 /// * Aggregation depends on `k`.
-fn stm_benches<D: MembershipDigest>(
+fn stm_benches<D: MembershipDigest + Send + Sync>(
     c: &mut Criterion,
     nr_parties: usize,
     params: Parameters,
@@ -107,7 +107,7 @@ fn batch_benches<D>(
     params: Parameters,
     hashing_alg: &str,
 ) where
-    D: MembershipDigest,
+    D: MembershipDigest + Send + Sync,
 {
     let mut group = c.benchmark_group(format!("STM/{hashing_alg}"));
     let mut rng = ChaCha20Rng::from_seed([0u8; 32]);

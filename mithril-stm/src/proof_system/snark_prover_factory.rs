@@ -11,7 +11,7 @@ use crate::{
 /// Builds the provers needed to generate a non-recursive SNARK aggregate signature
 /// and a recursive SNARK proof that the chain is valid.
 #[cfg_attr(test, mockall::automock)]
-pub(crate) trait SnarkProverFactory<D: MembershipDigest>: Debug + Send + Sync {
+pub(crate) trait SnarkProverFactory<D: MembershipDigest + Send + Sync>: Debug + Send + Sync {
     /// Builds a non-recursive SNARK prover given the parameters. This prover can generate
     /// a succinct proof that a set of enough signatures are valid to reach the quorum
     /// `k` of the parameters.
@@ -29,7 +29,7 @@ pub(crate) trait SnarkProverFactory<D: MembershipDigest>: Debug + Send + Sync {
 #[derive(Debug, Default)]
 pub(crate) struct NonDeterministicSnarkProverFactory;
 
-impl<D: MembershipDigest> SnarkProverFactory<D> for NonDeterministicSnarkProverFactory {
+impl<D: MembershipDigest + Send + Sync> SnarkProverFactory<D> for NonDeterministicSnarkProverFactory {
     fn snark_signature_prover(
         &self,
         parameters: &Parameters,

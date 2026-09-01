@@ -46,7 +46,10 @@ pub struct Clerk<D: MembershipDigest> {
 
 impl<D: MembershipDigest> Clerk<D> {
     /// Create a Clerk from a signer.
-    pub fn new_clerk_from_signer(signer: &Signer<D>) -> Self {
+    pub fn new_clerk_from_signer(signer: &Signer<D>) -> Self
+    where
+        D: Send + Sync,
+    {
         Self {
             concatenation_proof_clerk: ConcatenationClerk::new_clerk_from_signer(signer),
             #[cfg(feature = "future_snark")]
@@ -64,7 +67,10 @@ impl<D: MembershipDigest> Clerk<D> {
     pub fn new_clerk_from_closed_key_registration(
         parameters: &Parameters,
         closed_registration: &ClosedKeyRegistration,
-    ) -> Self {
+    ) -> Self
+    where
+        D: Send + Sync,
+    {
         Self {
             concatenation_proof_clerk: ConcatenationClerk::new_clerk_from_closed_key_registration(
                 parameters,
@@ -87,7 +93,7 @@ impl<D: MembershipDigest> Clerk<D> {
         snark_prover_factory: MockSnarkProverFactory<D>,
     ) -> Self
     where
-        D: 'static,
+        D: Send + Sync + 'static,
     {
         Self {
             snark_prover_factory: Arc::new(snark_prover_factory),
@@ -102,7 +108,10 @@ impl<D: MembershipDigest> Clerk<D> {
         msg: &[u8],
         aggregate_signature_type: AggregateSignatureType,
         ancillary_input: AncillaryProofInput,
-    ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
+    ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)>
+    where
+        D: Send + Sync,
+    {
         let _ = &ancillary_input;
         match aggregate_signature_type {
             AggregateSignatureType::Concatenation => {
@@ -351,7 +360,7 @@ mod tests {
         )
     }
 
-    fn factory_with<D: MembershipDigest + 'static>(
+    fn factory_with<D: MembershipDigest + Send + Sync + 'static>(
         snark_agg_sig_prover: MockSnarkAggregateSignatureProver<D>,
         ivc_prover: MockIvcChainProver<D>,
     ) -> MockSnarkProverFactory<D> {
