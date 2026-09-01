@@ -278,6 +278,11 @@ sudo mv mithril-signer /opt/mithril
 
 #### Set up the service
 
+:::info
+For Signer in version **1.2.1 and upper**, since protocol configuration is now **decentralized**, the mechanism to retrieve protocol configuration has changed.
+Setting up `PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG` as described in the following steps will allow the signer to retrieve this information on the Cardano Chain.
+:::
+
 :::caution
 
 - `User=cardano`:
@@ -293,6 +298,7 @@ sudo mv mithril-signer /opt/mithril
   - `STORE_RETENTION_LIMIT`: if set, this will limit the number of records in some internal stores (5 is a good fit)
   - `ERA_READER_ADAPTER_TYPE=cardano-chain`: replace `cardano-chain` with the era reader adapter type used in your Mithril network
   - `ERA_READER_ADAPTER_PARAMS={"address": "...", "verification_key": "..."}`: replace `{"address": "...", "verification_key": "..."}` with the era reader parameters that you need to compute by running the command `jq -nc --arg address $(wget -q -O - **YOUR_ERA_READER_ADDRESS**) --arg verification_key $(wget -q -O - **YOUR_ERA_READER_VERIFICATION_KEY**) '{"address": $address, "verification_key": $verification_key}'`
+  - `PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG`: JSON encoded parameters for the protocol configuration reader adapter. For `cardano-chain` type, compute using: `jq -nc --arg address $(wget -q -O - **YOUR_PROTOCOL_CONFIGURATION_READER_ADDRESS**) --arg verification_key $(wget -q -O - **YOUR_PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY**) '{"type": "cardano-chain", "address": $address, "verification_key": $verification_key}'` (URLs can be found in the [Network configurations](../getting-started/network-configurations.md))
   - `RELAY_ENDPOINT=http://192.168.1.50:3132` **(optional)**: this is the endpoint of the **Mithril relay**, which is required for **production** deployment only. For **naive** deployment, do not set this variable in your environment file.
 
 :::
@@ -307,6 +313,7 @@ Here is an **example** set of values for **release-mainnet** that will be used i
 - **YOUR_AGGREGATOR_ENDPOINT**: `https://aggregator.release-mainnet.api.mithril.network/aggregator`
 - **YOUR_ERA_READER_ADAPTER_TYPE**: `cardano-chain`
 - **YOUR_ERA_READER_ADAPTER_PARAMS**: `{"address": "addr1qy72kwgm6kypyc5maw0h8mfagwag8wjnx6emgfnsnhqaml6gx7gg4tzplw9l32nsgclqax7stc4u6c5dn0ctljwscm2sqv0teg", "verification_key": "5b31312c3133342c3231352c37362c3134312c3232302c3131312c3135342c36332c3233302c3131342c31322c38372c37342c39342c3137322c3133322c32372c39362c3138362c3132362c3137382c31392c3131342c33302c3234332c36342c3134312c3131302c38332c38362c31395d"}`
+- **PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG**: `{"type": "cardano-chain", "address": "**TO_COMPLETE**", "verification_key": "**TO_COMPLETE**"}`
 - **YOUR_RELAY_ENDPOINT**: `192.168.1.50`
 - **YOUR_RELAY_LISTENING_PORT**: `3132`
 - **YOUR_BLOCK_PRODUCER_INTERNAL_IP**: `192.168.1.75`
@@ -333,6 +340,7 @@ DATA_STORES_DIRECTORY=/opt/mithril/stores
 STORE_RETENTION_LIMIT=5
 ERA_READER_ADAPTER_TYPE=**YOUR_ERA_READER_ADAPTER_TYPE**
 ERA_READER_ADAPTER_PARAMS=**YOUR_ERA_READER_ADAPTER_PARAMS**
+PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG=**YOUR_PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG**
 RELAY_ENDPOINT=**YOUR_RELAY_ENDPOINT**
 EOF'
 ```
@@ -355,6 +363,7 @@ DATA_STORES_DIRECTORY=/opt/mithril/stores
 STORE_RETENTION_LIMIT=5
 ERA_READER_ADAPTER_TYPE=cardano-chain
 ERA_READER_ADAPTER_PARAMS={"address": "addr1qy72kwgm6kypyc5maw0h8mfagwag8wjnx6emgfnsnhqaml6gx7gg4tzplw9l32nsgclqax7stc4u6c5dn0ctljwscm2sqv0teg", "verification_key": "5b31312c3133342c3231352c37362c3134312c3232302c3131312c3135342c36332c3233302c3131342c31322c38372c37342c39342c3137322c3133322c32372c39362c3138362c3132362c3137382c31392c3131342c33302c3234332c36342c3134312c3131302c38332c38362c31395d"}
+PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG={"type": "cardano-chain", "address": "**TO_COMPLETE**", "verification_key": "**TO_COMPLETE**"}
 RELAY_ENDPOINT=http://192.168.1.50:3132
 EOF'
 ```
@@ -377,6 +386,7 @@ DATA_STORES_DIRECTORY=/opt/mithril/stores
 STORE_RETENTION_LIMIT=5
 ERA_READER_ADAPTER_TYPE=**YOUR_ERA_READER_ADAPTER_TYPE**
 ERA_READER_ADAPTER_PARAMS=**YOUR_ERA_READER_ADAPTER_PARAMS**
+PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG=**YOUR_PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG**
 EOF'
 ```
 
@@ -398,6 +408,7 @@ DATA_STORES_DIRECTORY=/opt/mithril/stores
 STORE_RETENTION_LIMIT=5
 ERA_READER_ADAPTER_TYPE=cardano-chain
 ERA_READER_ADAPTER_PARAMS={"address": "addr1qy72kwgm6kypyc5maw0h8mfagwag8wjnx6emgfnsnhqaml6gx7gg4tzplw9l32nsgclqax7stc4u6c5dn0ctljwscm2sqv0teg", "verification_key": "5b31312c3133342c3231352c37362c3134312c3232302c3131312c3135342c36332c3233302c3131342c31322c38372c37342c39342c3137322c3133322c32372c39362c3138362c3132362c3137382c31392c3131342c33302c3234332c36342c3134312c3131302c38332c38362c31395d"}
+PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG={"type": "cardano-chain", "address": "**TO_COMPLETE**", "verification_key": "**TO_COMPLETE**"}
 EOF'
 ```
 
