@@ -21,6 +21,8 @@ use crate::utils::{
 };
 
 use super::DownloadUnpackOptions;
+#[cfg(feature = "unstable")]
+use super::download_task::CircuitBreaker;
 use super::download_task::{DownloadKind, DownloadTask, LocationToDownload};
 
 pub struct InternalArtifactDownloader {
@@ -153,12 +155,16 @@ impl InternalArtifactDownloader {
             .collect::<BTreeSet<_>>();
 
         let mut immutable_tasks = vec![];
+        #[cfg(feature = "unstable")]
+        let ipfs_circuit_breaker = CircuitBreaker::default();
         for immutable_file_number in immutable_file_numbers_to_download {
             immutable_tasks.push(self.new_immutable_download_task(
                 immutable_locations,
                 immutable_file_number,
                 target_dir,
                 download_id,
+                #[cfg(feature = "unstable")]
+                ipfs_circuit_breaker.clone(),
             )?);
         }
         Ok(immutable_tasks)
@@ -170,13 +176,15 @@ impl InternalArtifactDownloader {
         immutable_file_number: ImmutableFileNumber,
         immutable_files_target_dir: &Path,
         download_id: &str,
+        #[cfg(feature = "unstable")] ipfs_circuit_breaker: CircuitBreaker,
     ) -> MithrilResult<DownloadTask> {
         let mut locations_sorted = immutable_locations.sanitized_locations()?;
         locations_sorted.sort();
         let locations_to_try: Vec<_> = locations_sorted
             .into_iter()
             .filter_map(|location| {
-                let (file_downloader, uri, compression_algorithm) = match location {
+                let (file_downloader, uri, compression_algorithm, circuit_breaker) = match location
+                {
                     ImmutablesLocation::CloudStorage {
                         uri,
                         compression_algorithm,
@@ -184,6 +192,7 @@ impl InternalArtifactDownloader {
                         self.http_file_downloader.clone(),
                         uri,
                         compression_algorithm,
+                        None,
                     ),
                     #[cfg(feature = "unstable")]
                     ImmutablesLocation::Ipfs {
@@ -193,6 +202,7 @@ impl InternalArtifactDownloader {
                         self.ipfs_file_downloader.clone()?,
                         uri,
                         compression_algorithm,
+                        Some(ipfs_circuit_breaker.clone()),
                     ),
                     // No IPFS downloader configured (or unstable disabled), or an `Unknown` location that
                     // `sanitized_locations` should already have filtered out — skip rather than
@@ -206,7 +216,7 @@ impl InternalArtifactDownloader {
                         uri.expand_for_immutable_file_number(immutable_file_number),
                     ),
                     compression_algorithm,
-                    circuit_breaker: None,
+                    circuit_breaker,
                 })
             })
             .collect();
@@ -482,6 +492,85 @@ mod tests {
                         .build()
                 }))
                 .with_ancillary_verifier(ancillary_signer.verification_key())
+                .build_cardano_database_client();
+
+            client
+                .download_unpack(
+                    &cardano_db_snapshot,
+                    &immutable_file_range,
+                    &target_dir,
+                    download_unpack_options,
+                )
+                .await
+                .unwrap();
+        }
+
+        #[cfg(feature = "unstable")]
+        #[tokio::test]
+        async fn if_ipfs_circuit_breaker_trip_later_download_switch_to_cloud_storage() {
+            let immutable_file_range = ImmutableFileRange::Range(1, 3);
+            let download_unpack_options = DownloadUnpackOptions {
+                include_ancillary: false,
+                ..DownloadUnpackOptions::default()
+            };
+            let cardano_db_snapshot = CardanoDatabaseSnapshot {
+                hash: "hash-123".to_string(),
+                beacon: CardanoDbBeacon {
+                    immutable_file_number: 3,
+                    epoch: Epoch(123),
+                },
+                immutables: ImmutablesMessagePart {
+                    average_size_uncompressed: 512,
+                    locations: vec![
+                        ImmutablesLocation::Ipfs {
+                            uri: MultiFilesUri::Template(TemplateUri(
+                                "WhateverCiD/{immutable_file_number}.tar.zst".to_string(),
+                            )),
+                            compression_algorithm: Some(CompressionAlgorithm::Zstandard),
+                        },
+                        ImmutablesLocation::CloudStorage {
+                            uri: MultiFilesUri::Template(TemplateUri(
+                                "http://whatever/{immutable_file_number}.tar.zst".to_string(),
+                            )),
+                            compression_algorithm: Some(CompressionAlgorithm::Zstandard),
+                        },
+                    ],
+                },
+                ancillary: AncillaryMessagePart {
+                    size_uncompressed: 512,
+                    locations: vec![],
+                },
+                digests: DigestsMessagePart {
+                    size_uncompressed: 1024,
+                    locations: vec![],
+                },
+                ..CardanoDatabaseSnapshot::dummy()
+            };
+            let target_dir = temp_dir_create!();
+            let client = CardanoDatabaseClientDependencyInjector::new()
+                .with_ipfs_file_downloader(Arc::new({
+                    MockFileDownloaderBuilder::default()
+                        .with_file_uri("WhateverCiD/00001.tar.zst")
+                        .with_target_dir(target_dir.clone())
+                        .with_success()
+                        .next_call()
+                        .with_file_uri("WhateverCiD/00002.tar.zst")
+                        .with_target_dir(target_dir.clone())
+                        // unreachable trigger the circuit breaker
+                        .with_unreachable_downloader_failure("ipfs")
+                        .build()
+                }))
+                .with_http_file_downloader(Arc::new({
+                    MockFileDownloaderBuilder::default()
+                        .with_file_uri("http://whatever/00002.tar.zst")
+                        .with_target_dir(target_dir.clone())
+                        .with_success()
+                        .next_call()
+                        .with_file_uri("http://whatever/00003.tar.zst")
+                        .with_target_dir(target_dir.clone())
+                        .with_success()
+                        .build()
+                }))
                 .build_cardano_database_client();
 
             client
