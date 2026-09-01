@@ -5,69 +5,17 @@ use midnight_proofs::poly::kzg::msm::DualMSM;
 use crate::{
     AggregateVerificationKeyForSnark, MembershipDigest, SnarkProof, StmResult,
     circuits::halo2_ivc::{
-        errors::{EpochTransitionErrorKind, IvcCircuitError},
         state::{Global, State},
         types::{MerkleTreeCommitment, MessageHash, ProtocolMessagePreimage},
     },
     proof_system::{
         halo2_snark::build_snark_message,
         ivc_halo2_snark::{
-            prover_setup::IvcProverInputVerificationContext, rolling_state::IvcRollingState,
+            prover_setup::IvcProverInputVerificationContext,
+            rolling_state::{IvcRollingState, IvcTransitionType},
         },
     },
 };
-
-/// Classifies how the incoming certificate advances the chain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum IvcTransitionType {
-    /// First step of the chain; no certificate is processed.
-    Genesis,
-    /// Certificate extends the current epoch.
-    SameEpoch,
-    /// Certificate starts a new epoch.
-    NextEpoch,
-}
-
-impl IvcTransitionType {
-    /// Categorizes the requested step same epoch, or next epoch, and
-    /// validates the epoch advance against the rolling chain state.
-    /// Returns the matching `IvcTransitionType` when the step is valid.
-    ///
-    /// Returns `IvcCircuitError::InvalidEpochTransition` with the specific
-    /// `EpochTransitionErrorKind` when the incoming certificate's epoch is out of
-    /// range.
-    pub(crate) fn try_compute_transition_type(
-        rolling_state: &IvcRollingState,
-        protocol_message_preimage: &ProtocolMessagePreimage,
-    ) -> StmResult<Self> {
-        let last_committed_epoch = rolling_state.state().current_epoch;
-        let next_last_committed_epoch =
-            last_committed_epoch
-                .next_epoch()
-                .ok_or(IvcCircuitError::InvalidEpochTransition {
-                    kind: EpochTransitionErrorKind::EpochOverflow,
-                    last_committed_epoch: last_committed_epoch.as_u64(),
-                })?;
-        let incoming_certificate_epoch = protocol_message_preimage.current_epoch();
-
-        let transition_type = if incoming_certificate_epoch.is_equal(&last_committed_epoch) {
-            Self::SameEpoch
-        } else if incoming_certificate_epoch.is_equal(&next_last_committed_epoch) {
-            Self::NextEpoch
-        } else {
-            return Err(IvcCircuitError::InvalidEpochTransition {
-                kind: EpochTransitionErrorKind::EpochGap {
-                    incoming_certificate_epoch: incoming_certificate_epoch.as_u64(),
-                    last_committed_epoch: last_committed_epoch.as_u64(),
-                },
-                last_committed_epoch: last_committed_epoch.as_u64(),
-            }
-            .into());
-        };
-
-        Ok(transition_type)
-    }
-}
 
 /// Runs the off-circuit verifier on the certificate proof and returns the prepared `DualMSM`.
 ///
@@ -171,6 +119,7 @@ pub(crate) mod tests {
             PREIMAGE_CURRENT_EPOCH_BYTES, PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
             PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, PREIMAGE_SIZE,
             accumulator::trivial_accumulator,
+            errors::IvcCircuitError,
             types::{EpochNumber, IvcProofBytes, ProtocolParametersHash, StepCounter},
         },
         signature_scheme::{BaseFieldElement, SchnorrSigningKey, StandardSchnorrSignature},
@@ -402,72 +351,6 @@ pub(crate) mod tests {
             assert!(matches!(
                 circuit_error,
                 IvcCircuitError::StepCounterOverflow { .. }
-            ));
-        }
-    }
-
-    mod try_compute_transition {
-
-        use super::*;
-
-        #[test]
-        fn returns_same_epoch_for_matching_cert_epoch() {
-            let rolling_state =
-                build_standard_rolling_state(StepCounter::new(5), EpochNumber::new(3));
-            let preimage = build_standard_preimage(EpochNumber::new(3));
-            let transition =
-                IvcTransitionType::try_compute_transition_type(&rolling_state, &preimage).unwrap();
-            assert!(matches!(transition, IvcTransitionType::SameEpoch));
-        }
-
-        #[test]
-        fn returns_next_epoch_for_advanced_cert_epoch() {
-            let rolling_state =
-                build_standard_rolling_state(StepCounter::new(5), EpochNumber::new(3));
-            let preimage = build_standard_preimage(EpochNumber::new(4));
-            let transition =
-                IvcTransitionType::try_compute_transition_type(&rolling_state, &preimage).unwrap();
-            assert!(matches!(transition, IvcTransitionType::NextEpoch));
-        }
-
-        #[test]
-        fn rejects_next_epoch_overflowing_cert_epoch() {
-            let rolling_state =
-                build_standard_rolling_state(StepCounter::new(5), EpochNumber::new(u64::MAX));
-            let preimage = build_standard_preimage(EpochNumber::new(4));
-            let err = IvcTransitionType::try_compute_transition_type(&rolling_state, &preimage)
-                .unwrap_err();
-            let circuit_error = err
-                .downcast_ref::<IvcCircuitError>()
-                .expect("error chain should carry IvcCircuitError");
-            assert!(matches!(
-                circuit_error,
-                IvcCircuitError::InvalidEpochTransition {
-                    kind: EpochTransitionErrorKind::EpochOverflow,
-                    ..
-                }
-            ));
-        }
-
-        #[test]
-        fn rejects_out_of_range_cert_epoch() {
-            let rolling_state =
-                build_standard_rolling_state(StepCounter::new(5), EpochNumber::new(3));
-            let preimage = build_standard_preimage(EpochNumber::new(10));
-            let err = IvcTransitionType::try_compute_transition_type(&rolling_state, &preimage)
-                .unwrap_err();
-            let circuit_error = err
-                .downcast_ref::<IvcCircuitError>()
-                .expect("error chain should carry IvcCircuitError");
-            assert!(matches!(
-                circuit_error,
-                IvcCircuitError::InvalidEpochTransition {
-                    kind: EpochTransitionErrorKind::EpochGap {
-                        incoming_certificate_epoch: 10,
-                        ..
-                    },
-                    ..
-                }
             ));
         }
     }

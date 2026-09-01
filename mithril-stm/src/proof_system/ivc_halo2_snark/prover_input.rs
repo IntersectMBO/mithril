@@ -15,11 +15,11 @@ use crate::{
     },
     proof_system::ivc_halo2_snark::{
         prover_input_helpers::{
-            IvcTransitionType, build_next_accumulator, build_next_state,
-            create_snark_message_for_next_state, verify_certificate_proof,
+            build_next_accumulator, build_next_state, create_snark_message_for_next_state,
+            verify_certificate_proof,
         },
         prover_setup::IvcProverInputVerificationContext,
-        rolling_state::IvcRollingState,
+        rolling_state::{IvcRollingState, IvcTransitionType},
     },
 };
 
@@ -41,8 +41,8 @@ impl IvcProverInput {
     /// Advances the chain state by one step and bundles the in-circuit witness, the
     /// next state, and the next folded accumulator.
     ///
-    /// First classifies the requested step via [`IvcTransitionType::try_compute_transition_type`], then
-    /// validates the epoch advance against the rolling chain state.
+    /// First classifies the requested step and validates it against the rolling chain state via
+    /// [`IvcRollingState::validate_transition`].
     /// The certificate proof is verifier-prepared, then the certificate and previous IVC accumulators are
     /// folded into the chain's accumulator.
     pub(crate) fn prepare<D: MembershipDigest>(
@@ -54,16 +54,10 @@ impl IvcProverInput {
         rolling_state: &IvcRollingState,
         verification_context: &IvcProverInputVerificationContext,
     ) -> StmResult<Self> {
-        let transition_type = IvcTransitionType::try_compute_transition_type(
-            rolling_state,
-            protocol_message_preimage,
-        )?;
-
-        rolling_state.assert_correct_parameters(
+        let transition_type = rolling_state.validate_transition(
             protocol_message_preimage,
             aggregate_verification_key_for_snark,
             message,
-            transition_type,
         )?;
 
         let certificate_dual_msm = verify_certificate_proof(
