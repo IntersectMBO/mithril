@@ -90,8 +90,7 @@ impl TryFrom<&AncillaryGenesisData> for IvcGenesisBootstrapInput {
 
         let genesis_protocol_message_preimage: [u8; PREIMAGE_SIZE] = ancillary_genesis_data
             .genesis_message_preimage()
-            .0
-            .as_slice()
+            .as_bytes()
             .try_into()?;
 
         Ok(Self {
