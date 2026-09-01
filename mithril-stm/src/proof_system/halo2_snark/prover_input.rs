@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// Prover input for the SNARK circuit, bundling public and private data.
-/// The **instance** carries the Merkle tree root and the signed message, the two public inputs
+/// The **instance** carries the Merkle tree commitment and the signed message, the two public inputs
 /// exposed to the verifier. The **witness** contains one entry per winning lottery index,
 /// each providing the Schnorr signature, Merkle leaf, and authentication path that the circuit
 /// checks privately.
@@ -176,7 +176,7 @@ impl SnarkProverInput {
             .collect()
     }
 
-    /// Return the public instance as a `(merkle_tree_root, message)` pair.
+    /// Return the public instance as a `(merkle_tree_commitment, message)` pair.
     pub fn get_instance(&self) -> CircuitInstance {
         self.instance
     }
@@ -349,11 +349,11 @@ mod tests {
         let expected_message =
             build_snark_message(&avk.get_merkle_tree_commitment().root, &message).unwrap();
 
-        let (instance_root, instance_msg) = prover_input.get_instance();
+        let (instance_merkle_tree_commitment, instance_msg) = prover_input.get_instance();
         assert_eq!(
-            instance_root,
+            instance_merkle_tree_commitment,
             expected_message[0].into(),
-            "Instance root mismatch"
+            "Instance merkle tree commitment mismatch"
         );
         assert_eq!(
             instance_msg,

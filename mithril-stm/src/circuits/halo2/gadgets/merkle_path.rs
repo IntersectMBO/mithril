@@ -14,7 +14,7 @@ pub(crate) struct MerklePathInputs<'a> {
     pub(crate) verification_key: &'a AssignedNativePoint<CircuitCurve>,
     /// Assigned lottery target value stored in the Merkle leaf.
     pub(crate) lottery_target_value: &'a AssignedNative<CircuitBase>,
-    /// Assigned public Merkle root committed by the statement.
+    /// Assigned public Merkle tree commitment carried by the statement.
     pub(crate) merkle_tree_commitment: &'a AssignedNative<CircuitBase>,
     /// Assigned sibling hashes for each Merkle path level.
     pub(crate) merkle_siblings: &'a [AssignedNative<CircuitBase>],
@@ -123,13 +123,13 @@ mod tests {
         sample_valid_circuit_witness_entry,
     };
     use crate::circuits::halo2::types::{CircuitBase, CircuitBaseField};
-    use crate::circuits::halo2::witness::{CircuitWitnessEntry, MerkleRoot};
+    use crate::circuits::halo2::witness::{CircuitWitnessEntry, MerkleTreeCommitment};
 
     use super::{MerklePathInputs, verify_merkle_path};
 
     impl_focused_test_relation!(
         MerkleRelation,
-        (CircuitWitnessEntry, MerkleRoot),
+        (CircuitWitnessEntry, MerkleTreeCommitment),
         error = CertificateCircuitError,
         jubjub_poseidon_used_chips(),
         |std_lib, layouter, witness| {
@@ -200,7 +200,7 @@ mod tests {
 
     impl_focused_test_relation!(
         MerklePathRelation,
-        (CircuitWitnessEntry, MerkleRoot),
+        (CircuitWitnessEntry, MerkleTreeCommitment),
         error = CertificateCircuitError,
         jubjub_poseidon_used_chips(),
         |std_lib, layouter, witness| {
@@ -289,7 +289,7 @@ mod tests {
         assert_relation_rejected(prove_and_verify_relation(
             &relation,
             &(),
-            (entry, MerkleRoot::from(999u64)),
+            (entry, MerkleTreeCommitment::from(999u64)),
         ));
     }
 
@@ -323,7 +323,7 @@ mod tests {
         assert_relation_rejected(prove_and_verify_relation(
             &relation,
             &(),
-            (entry, MerkleRoot::from(999u64)),
+            (entry, MerkleTreeCommitment::from(999u64)),
         ));
     }
 }

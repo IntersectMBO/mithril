@@ -85,13 +85,13 @@ pub enum CertificateCircuitError {
     #[error("Challenge endianness mismatch")]
     ChallengeEndiannessMismatch,
 
-    /// Merkle root digest has an invalid byte length.
-    #[error("Invalid merkle root digest length ({actual})")]
-    InvalidMerkleRootDigestLength { actual: u32 },
+    /// Merkle tree commitment digest has an invalid byte length.
+    #[error("Invalid merkle tree commitment digest length ({actual})")]
+    InvalidMerkleTreeCommitmentDigestLength { actual: u32 },
 
-    /// Merkle root digest is not a canonical base field element encoding.
-    #[error("Non-canonical merkle root digest")]
-    NonCanonicalMerkleRootDigest,
+    /// Merkle tree commitment digest is not a canonical base field element encoding.
+    #[error("Non-canonical merkle tree commitment digest")]
+    NonCanonicalMerkleTreeCommitmentDigest,
 
     /// STM Merkle-path verification failed for selected leaf.
     #[error("Merkle path verification failed")]
