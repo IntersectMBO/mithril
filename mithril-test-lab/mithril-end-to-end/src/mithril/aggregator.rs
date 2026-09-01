@@ -62,6 +62,7 @@ pub struct Aggregator {
     process: RwLock<Option<Child>>,
     chain_observer: Arc<dyn ChainObserver>,
     full_node: FullNode,
+    aggregate_signature_type: AggregateSignatureType,
 }
 
 impl Aggregator {
@@ -106,6 +107,8 @@ impl Aggregator {
         let public_server_url = format!("http://localhost:{server_port_parameter}/aggregator");
         let cardano_node_version = aggregator_config.cardano_node_version.to_string();
         let aggregate_signature_type = aggregator_config.aggregate_signature_type.to_string();
+        let circuit_verification_key_registry_path =
+            Self::circuit_verification_key_registry_path().display().to_string();
         let mut env = HashMap::from([
             ("NETWORK", "devnet"),
             ("NETWORK_MAGIC", &magic_id),
@@ -135,6 +138,10 @@ impl Aggregator {
             ),
             ("GENESIS_VERIFICATION_KEY", GENESIS_VERIFICATION_KEY),
             ("GENESIS_SECRET_KEY", GENESIS_SECRET_KEY),
+            (
+                "CIRCUIT_VERIFICATION_KEY_REGISTRY_PATH",
+                &circuit_verification_key_registry_path,
+            ),
             (
                 "ERA_READER_ADAPTER_TYPE",
                 aggregator_config.mithril_era_reader_adapter,
@@ -222,11 +229,16 @@ impl Aggregator {
             process: RwLock::new(None),
             chain_observer,
             full_node: aggregator_config.full_node.clone(),
+            aggregate_signature_type: aggregator_config.aggregate_signature_type,
         })
     }
 
     pub fn name_suffix(index: usize) -> String {
         format!("{}", index + 1)
+    }
+
+    pub fn circuit_verification_key_registry_path() -> PathBuf {
+        std::env::temp_dir().join("circuit-verification-key-registry.json")
     }
 
     pub fn copy_configuration(other: &Aggregator) -> Self {
@@ -241,6 +253,7 @@ impl Aggregator {
             process: RwLock::new(None),
             chain_observer: other.chain_observer.clone(),
             full_node: other.full_node.clone(),
+            aggregate_signature_type: other.aggregate_signature_type,
         }
     }
 
@@ -312,6 +325,13 @@ impl Aggregator {
             .with_context(|| "`mithril-aggregator genesis bootstrap` crashed")?;
 
         if exit_status.success() {
+            drop(command);
+            if matches!(
+                self.aggregate_signature_type,
+                AggregateSignatureType::Snark | AggregateSignatureType::IvcSnark
+            ) {
+                self.bootstrap_circuit_key_registry().await?;
+            }
             Ok(())
         } else {
             command.tail_logs(Some(command_name), 40).await?;
@@ -323,6 +343,43 @@ impl Aggregator {
                 None => {
                     anyhow!("`mithril-aggregator genesis bootstrap` was terminated with a signal")
                 }
+            })
+            .map_err(|e| anyhow!(RetryableDevnetError(e.to_string())))
+        }
+    }
+
+    async fn bootstrap_circuit_key_registry(&self) -> StdResult<()> {
+        let mut command = self.command.write().await;
+        let command_name = &format!(
+            "mithril-aggregator-genesis-circuit-key-registry-bootstrap-{}",
+            self.name_suffix,
+        );
+        command.set_log_name(command_name);
+
+        let args = vec![
+            "genesis".to_string(),
+            "circuit-key-registry".to_string(),
+            "bootstrap".to_string(),
+            "--target-registry-path".to_string(),
+            Self::circuit_verification_key_registry_path().display().to_string(),
+        ];
+
+        let exit_status = command.start(&args)?.wait().await.with_context(
+            || "`mithril-aggregator genesis circuit-key-registry bootstrap` crashed",
+        )?;
+
+        if exit_status.success() {
+            Ok(())
+        } else {
+            command.tail_logs(Some(command_name), 40).await?;
+
+            Err(match exit_status.code() {
+                Some(c) => anyhow!(
+                    "`mithril-aggregator genesis circuit-key-registry bootstrap` exited with code: {c}"
+                ),
+                None => anyhow!(
+                    "`mithril-aggregator genesis circuit-key-registry bootstrap` was terminated with a signal"
+                ),
             })
             .map_err(|e| anyhow!(RetryableDevnetError(e.to_string())))
         }
