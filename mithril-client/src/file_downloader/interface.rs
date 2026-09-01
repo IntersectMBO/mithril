@@ -259,6 +259,11 @@ pub trait FileDownloader: Sync + Send {
     ) -> StdResult<()>;
 }
 
+/// Error raised by [FileDownloader] when a location could not be reach
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{0} downloader unreachable, uri: '{1}'")]
+pub struct FileDownloaderUnreachable(pub &'static str, pub String);
+
 #[cfg(test)]
 mod tests {
     use super::*;

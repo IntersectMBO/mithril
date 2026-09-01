@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
@@ -11,10 +12,13 @@ use mithril_common::{StdError, StdResult, logging::LoggerExtensions};
 
 use crate::common::CompressionAlgorithm;
 use crate::feedback::FeedbackSender;
+use crate::file_downloader::interface::FileDownloaderUnreachable;
 use crate::utils::url;
 
 use super::streaming::{self, DownloadedStream};
 use super::{FileDownloader, FileDownloaderUri, interface::DownloadEvent};
+
+const EXISTENCE_CHECK_DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A file downloader that downloads content from IPFS through a Kubo node's RPC API.
 ///
@@ -27,6 +31,7 @@ pub struct IpfsFileDownloader {
     /// Base URL of the Kubo node's RPC API, e.g. `http://127.0.0.1:5001/`.
     rpc_base_url: Url,
     feedback_sender: FeedbackSender,
+    existence_check_timeout: Duration,
     logger: Logger,
 }
 
@@ -54,8 +59,15 @@ impl IpfsFileDownloader {
             http_client,
             rpc_base_url: url::enforce_trailing_slash(rpc_base_url),
             feedback_sender,
+            existence_check_timeout: EXISTENCE_CHECK_DEFAULT_TIMEOUT,
             logger: logger.new_with_component_name::<Self>(),
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_existence_check_timeout(mut self, timeout: Duration) -> Self {
+        self.existence_check_timeout = timeout;
+        self
     }
 
     fn endpoint(&self, route: &str) -> StdResult<Url> {
@@ -66,18 +78,30 @@ impl IpfsFileDownloader {
 
     /// POST to a Kubo RPC `route` with the given IPFS path (`<directory-CID>/<filename>`) as its
     /// `arg` query parameter.
-    async fn post(&self, route: &str, ipfs_path: &str) -> StdResult<Response> {
+    async fn post(
+        &self,
+        route: &str,
+        ipfs_path: &str,
+        timeout: Option<Duration>,
+    ) -> StdResult<Response> {
         let endpoint = self.endpoint(route)?;
         debug!(self.logger, "POST Kubo RPC"; "route" => route, "ipfs_path" => ipfs_path);
-        let response = self
-            .http_client
-            .post(endpoint)
-            .query(&[("arg", ipfs_path)])
-            .send()
-            .await
-            .with_context(|| {
-                format!("Cannot perform a POST to Kubo route '{route}' for arg='{ipfs_path}'")
-            })?;
+        let mut response_builder = self.http_client.post(endpoint).query(&[("arg", ipfs_path)]);
+
+        if let Some(timeout) = timeout {
+            response_builder = response_builder.timeout(timeout);
+        }
+
+        let response = response_builder.send().await.map_err(|err| {
+            if err.is_connect() || err.is_timeout() {
+                anyhow!(FileDownloaderUnreachable("IPFS", ipfs_path.to_string()))
+            } else {
+                anyhow!(err)
+            }
+            .context(format!(
+                "Cannot perform a POST to Kubo route '{route}' for arg='{ipfs_path}'"
+            ))
+        })?;
 
         if response.status().is_success() {
             Ok(response)
@@ -105,7 +129,13 @@ impl IpfsFileDownloader {
     }
 
     async fn block_size(&self, ipfs_path: &str) -> StdResult<u64> {
-        let response = self.post("api/v0/block/stat", ipfs_path).await?;
+        let response = self
+            .post(
+                "api/v0/block/stat",
+                ipfs_path,
+                Some(self.existence_check_timeout),
+            )
+            .await?;
         let stat: BlockStatResponse = response
             .json()
             .await
@@ -120,7 +150,7 @@ impl IpfsFileDownloader {
     /// header to rely on) and acts as the existence check.
     async fn open_stream(&self, ipfs_path: &str) -> StdResult<DownloadedStream> {
         let size = self.block_size(ipfs_path).await?;
-        let response = self.post("api/v0/block/get", ipfs_path).await?;
+        let response = self.post("api/v0/block/get", ipfs_path, None).await?;
         let stream = response
             .bytes_stream()
             .map(|item| item.map(|chunk| chunk.to_vec()).map_err(Into::into))
@@ -271,6 +301,75 @@ mod tests {
                 .contains(&format!("Location='{ipfs_path}' not found")),
             "unexpected error: {error:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn block_stat_timeout_raise_unreachable_file_downloader_error() {
+        let target_dir = temp_dir_create!();
+        let ipfs_path = "QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/00007.tar.zst";
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/v0/block/stat")
+                .query_param("arg", ipfs_path);
+            then.delay(Duration::from_millis(100));
+        });
+        let ipfs_file_downloader = downloader(&server, FeedbackSender::new(&[]))
+            .with_existence_check_timeout(Duration::from_millis(10));
+
+        let error = ipfs_file_downloader
+            .download_unpack(
+                &FileDownloaderUri::FileUri(FileUri(ipfs_path.to_string())),
+                0,
+                &target_dir,
+                None,
+                DownloadEvent::Digest {
+                    download_id: "id".to_string(),
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            Some(&FileDownloaderUnreachable("IPFS", ipfs_path.to_string())),
+            error.downcast_ref::<FileDownloaderUnreachable>()
+        );
+    }
+
+    #[tokio::test]
+    async fn block_get_does_not_apply_timeout() {
+        let target_dir = temp_dir_create!();
+        let ipfs_path = "QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/00007.tar.zst";
+
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/v0/block/stat")
+                .query_param("arg", ipfs_path);
+            then.status(200)
+                .json_body(serde_json::json!({"Key": "bafkreidummy", "Size": 1}));
+        });
+        server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/v0/block/get")
+                .query_param("arg", ipfs_path);
+            then.delay(Duration::from_millis(100)).body(b"Hello, world!");
+        });
+        let ipfs_file_downloader = downloader(&server, FeedbackSender::new(&[]))
+            .with_existence_check_timeout(Duration::from_millis(10));
+
+        ipfs_file_downloader
+            .download_unpack(
+                &FileDownloaderUri::FileUri(FileUri(ipfs_path.to_string())),
+                0,
+                &target_dir,
+                None,
+                DownloadEvent::Digest {
+                    download_id: "id".to_string(),
+                },
+            )
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
