@@ -22,12 +22,12 @@ use crate::{
         },
     },
     codec,
-    proof_system::{KZG_VERIFIER_PARAMS, ivc_halo2_snark::prover_setup::IvcSnarkProverSetup},
+    proof_system::{KZG_VERIFIER_PARAMS, ivc_halo2_snark::prover_setup::IvcProverSetup},
 };
 
 /// Minimal setup artifacts needed to verify IVC proofs without loading the full SRS.
 ///
-/// Unlike [`IvcSnarkProverSetup`], this struct does not hold a `ParamsKZG` (hundreds of MB). The KZG
+/// Unlike [`IvcProverSetup`], this struct does not hold a `ParamsKZG` (hundreds of MB). The KZG
 /// verifier parameters are embedded as a compile-time constant and deserialized on
 /// construction. The caller must supply the verifying keys because the certificate VK varies
 /// per deployment.
@@ -81,11 +81,11 @@ impl IvcVerifierSetup {
         })
     }
 
-    /// Derive from an already-built [`IvcSnarkProverSetup`], reusing its precomputed fixed bases.
+    /// Derive from an already-built [`IvcProverSetup`], reusing its precomputed fixed bases.
     ///
     /// Avoids recomputing fixed bases from scratch when a proving session is already running.
     #[allow(dead_code)]
-    pub(crate) fn from_ivc_setup(ivc_setup: &IvcSnarkProverSetup) -> StmResult<Self> {
+    pub(crate) fn from_ivc_setup(ivc_setup: &IvcProverSetup) -> StmResult<Self> {
         let verifier_params = Self::read_embedded_params()?;
         Ok(Self {
             verifier_params,
@@ -94,11 +94,11 @@ impl IvcVerifierSetup {
         })
     }
 
-    /// Derive from an already-built [`IvcSnarkProverSetup`], extracting verifier params directly
+    /// Derive from an already-built [`IvcProverSetup`], extracting verifier params directly
     /// from its SRS rather than the embedded constant. For tests and benchmarks only
     /// (`benchmark-internals`) — production code must not load the full SRS just to verify a proof.
     #[cfg(any(test, feature = "benchmark-internals"))]
-    pub(crate) fn from_ivc_setup_with_srs(ivc_setup: &IvcSnarkProverSetup) -> Self {
+    pub(crate) fn from_ivc_setup_with_srs(ivc_setup: &IvcProverSetup) -> Self {
         let verifier_params = ivc_setup.srs.verifier_params();
         Self {
             verifier_params,

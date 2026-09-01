@@ -15,4 +15,4 @@ pub(crate) use prover_input::IvcProverInput;
 #[cfg(all(test, feature = "future_snark"))]
 pub(crate) use prover_input_helpers::tests::build_standard_rolling_state;
 #[cfg(feature = "benchmark-internals")]
-pub(crate) use prover_setup::IvcSnarkProverSetup;
+pub(crate) use prover_setup::IvcProverSetup;
