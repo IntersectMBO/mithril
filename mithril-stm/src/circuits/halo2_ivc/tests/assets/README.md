@@ -98,6 +98,6 @@ Regenerate the assets when one of these changes:
 
 ## Certificate Circuit
 
-Asset generation uses `StmCertificateCircuit` from `circuits/halo2/circuit.rs` as the
+Asset generation uses `CertificateCircuit` from `circuits/halo2/circuit.rs` as the
 certificate relation. The temporary duplicate `test_certificate.rs` has been
 removed.

@@ -225,7 +225,7 @@ STM/Blake2b/Verification/k: 250, m: 1523, nr_parties: 2000
 
 ## Certificate Circuit Benchmarks
 
-Criterion benchmarks for the non-recursive `StmCertificateCircuit` (Halo2/KZG), gated behind the `future_snark` and `benchmark-internals` features.
+Criterion benchmarks for the non-recursive `CertificateCircuit` (Halo2/KZG), gated behind the `future_snark` and `benchmark-internals` features.
 
 Three metrics are measured per tier: VK/PK setup time, proof generation time, and proof verification time. Circuit cost and proof size are printed at startup.
 
@@ -267,7 +267,7 @@ cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --
 
 ## CI Parameter Benchmarks
 
-Single-run benchmarks for the `StmCertificateCircuit` across small `k` values, covering both the real prover and the mock prover (`MockProver` from `midnight_proofs`). Used to determine the optimal circuit parameters for CI and end-to-end tests.
+Single-run benchmarks for the `CertificateCircuit` across small `k` values, covering both the real prover and the mock prover (`MockProver` from `midnight_proofs`). Used to determine the optimal circuit parameters for CI and end-to-end tests.
 
 Gated behind the `future_snark` and `benchmark-internals` features.
 

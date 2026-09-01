@@ -21,7 +21,7 @@ use crate::{
     Parameters, StmResult,
     circuits::{
         halo2::{
-            circuit::StmCertificateCircuit,
+            circuit::CertificateCircuit,
             keys::{NonRecursiveCircuitProvingKey, NonRecursiveCircuitVerifyingKey},
         },
         key_provider::KeyProvider,
@@ -38,7 +38,7 @@ pub struct SnarkProverSetup {
     /// KZG Structured Reference String.
     pub(crate) srs: ParamsKZG<Bls12>,
     /// Compiled STM circuit.
-    pub(crate) circuit: StmCertificateCircuit,
+    pub(crate) circuit: CertificateCircuit,
     /// Verification key for the SNARK proof.
     pub(crate) verification_key: NonRecursiveCircuitVerifyingKey,
     /// Proving key for the SNARK proof.
@@ -62,7 +62,7 @@ impl SnarkProverSetup {
     /// derives the key pair through the key provider.
     pub(crate) fn load(
         trusted_setup_provider: &TrustedSetupProvider,
-        provider: &KeyProvider<StmCertificateCircuit>,
+        provider: &KeyProvider<CertificateCircuit>,
     ) -> StmResult<Self> {
         let mut srs = trusted_setup_provider.get_trusted_setup_parameters()?;
         let circuit = provider.generator().clone();
@@ -116,7 +116,7 @@ impl SnarkProverSetup {
 
         let trusted_setup_provider =
             TrustedSetupProvider::with_unsafe_srs(&cache_directory, unsafe_srs_degree);
-        let circuit = StmCertificateCircuit::try_new(parameters, merkle_tree_depth)?;
+        let circuit = CertificateCircuit::try_new(parameters, merkle_tree_depth)?;
         let provider = KeyProvider::new(cache_directory, "non-recursive", &[], circuit);
         Self::load(&trusted_setup_provider, &provider)
     }
@@ -178,7 +178,7 @@ mod test {
     use crate::{
         Parameters,
         circuits::{
-            halo2::circuit::StmCertificateCircuit, key_provider::KeyProvider,
+            halo2::circuit::CertificateCircuit, key_provider::KeyProvider,
             trusted_setup::TrustedSetupProvider,
         },
         codec::TryToBytes,
@@ -196,7 +196,7 @@ mod test {
     #[test]
     fn load_succeeds_with_valid_parameters() {
         let params = default_params();
-        let circuit = StmCertificateCircuit::try_new(&params, 4).unwrap();
+        let circuit = CertificateCircuit::try_new(&params, 4).unwrap();
         let degree = MidnightCircuit::from_relation(&circuit, None).k();
         let base_dir = std::env::temp_dir().join(current_function!());
         fs::remove_dir_all(&base_dir).ok();
@@ -210,7 +210,7 @@ mod test {
     #[test]
     fn load_returns_same_verification_key_for_same_parameters() {
         let params = default_params();
-        let circuit = StmCertificateCircuit::try_new(&params, 4).unwrap();
+        let circuit = CertificateCircuit::try_new(&params, 4).unwrap();
         let degree = MidnightCircuit::from_relation(&circuit, None).k();
         let base_dir = std::env::temp_dir().join(current_function!());
         fs::remove_dir_all(&base_dir).ok();

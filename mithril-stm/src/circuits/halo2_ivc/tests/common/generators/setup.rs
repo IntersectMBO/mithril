@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as Sha2Digest, Sha256};
 
 use crate::AggregateVerificationKeyForSnark;
-use crate::circuits::halo2::circuit::StmCertificateCircuit;
+use crate::circuits::halo2::circuit::CertificateCircuit;
 use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_DEGREE;
 use crate::circuits::halo2_ivc::accumulator::fixed_bases_and_names_from_verifying_key;
@@ -100,7 +100,7 @@ impl Default for AssetPaths {
 #[derive(Debug)]
 pub(crate) struct AssetGenerationSetup {
     /// Deterministic certificate relation used by the golden generators.
-    pub(crate) certificate_relation: StmCertificateCircuit,
+    pub(crate) certificate_relation: CertificateCircuit,
     /// Verification key for the trusted genesis signature.
     pub(crate) genesis_verification_key: SchnorrVerificationKey,
     /// Hash of the deterministic genesis protocol message.
@@ -614,7 +614,7 @@ fn assemble_asset_generation_setup(fixture: CachedSignerFixture) -> AssetGenerat
     let number_of_lotteries = QUORUM_SIZE * 10;
 
     // Rebuilt on every call: it is derived from constants, not from the random generator.
-    let certificate_relation = StmCertificateCircuit::try_new(
+    let certificate_relation = CertificateCircuit::try_new(
         &Parameters {
             k: QUORUM_SIZE as u64,
             m: number_of_lotteries as u64,

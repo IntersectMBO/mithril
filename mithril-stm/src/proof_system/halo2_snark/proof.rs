@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     MembershipDigest, Parameters, SingleSignature, StmResult,
     circuits::{
-        halo2::{circuit::StmCertificateCircuit, types::CircuitBase},
+        halo2::{circuit::CertificateCircuit, types::CircuitBase},
         halo2_ivc::{
             certificate_proof::verify_and_prepare_accumulator, types::CertificateProofBytes,
         },
@@ -93,7 +93,7 @@ impl<D: MembershipDigest> SnarkProof<D> {
         let proof_message = build_snark_message(merkle_root, message)?;
         let proof_instance = (proof_message[0].into(), proof_message[1].into());
 
-        let verify_result = zk::verify::<StmCertificateCircuit, PoseidonState<CircuitBase>>(
+        let verify_result = zk::verify::<CertificateCircuit, PoseidonState<CircuitBase>>(
             verifier_params,
             snark_verifier_data
                 .certificate_circuit_verification_key()
@@ -229,7 +229,7 @@ impl<D: MembershipDigest, R: RngCore + CryptoRng> SnarkAggregateSignatureProver<
         let instance = snark_prover_input.get_instance();
         let witness = snark_prover_input.into_witness();
 
-        let circuit_proof = zk::prove::<StmCertificateCircuit, PoseidonState<CircuitBase>>(
+        let circuit_proof = zk::prove::<CertificateCircuit, PoseidonState<CircuitBase>>(
             &self.setup.srs,
             self.setup.proving_key.midnight_pk(),
             &self.setup.circuit,

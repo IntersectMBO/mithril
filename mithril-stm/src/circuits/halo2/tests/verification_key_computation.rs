@@ -5,7 +5,7 @@ use crate::{
     MERKLE_TREE_DEPTH_FOR_SNARK, Parameters, StmResult,
     circuits::{
         halo2::{
-            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::StmCertificateCircuit,
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::CertificateCircuit,
         },
         trusted_setup::TrustedSetupProvider,
     },
@@ -27,7 +27,7 @@ fn compute_non_recursive_circuit_verification_key(
     params: &Parameters,
     merkle_tree_depth: u32,
 ) -> StmResult<Vec<u8>> {
-    let circuit = StmCertificateCircuit::try_new(params, merkle_tree_depth)?;
+    let circuit = CertificateCircuit::try_new(params, merkle_tree_depth)?;
     let srs = TrustedSetupProvider::default().get_trusted_setup_parameters()?;
     let non_recursive_circuit_verification_key = midnight_zk_stdlib::setup_vk(&srs, &circuit);
     let mut buffer_for_non_recursive_circuit_verification_key = vec![];
