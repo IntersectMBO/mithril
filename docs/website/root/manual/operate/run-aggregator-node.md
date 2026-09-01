@@ -269,6 +269,7 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
 - `CHAIN_OBSERVER_TYPE`: Type of chain observer (default: `pallas`)
 - `ERA_READER_ADAPTER_TYPE`: Type of era reader adapter to use (default: `bootstrap`, use `cardano-chain` for production networks as specified in [Network configurations](../getting-started/network-configurations.md))
 - `ERA_READER_ADAPTER_PARAMS`: JSON encoded parameters for the era reader adapter. For `cardano-chain` type, compute using: `jq -nc --arg address $(wget -q -O - **YOUR_ERA_READER_ADDRESS**) --arg verification_key $(wget -q -O - **YOUR_ERA_READER_VERIFICATION_KEY**) '{"address": $address, "verification_key": $verification_key}'` (URLs can be found in the [Network configurations](../getting-started/network-configurations.md))
+- `PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG`: JSON encoded parameters for the protocol configuration reader adapter. For `cardano-chain` type, compute using: `jq -nc --arg address $(wget -q -O - **YOUR_PROTOCOL_CONFIGURATION_READER_ADDRESS**) --arg verification_key $(wget -q -O - **YOUR_PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY**) '{"type": "cardano-chain", "address": $address, "verification_key": $verification_key}'` (URLs can be found in the [Network configurations](../getting-started/network-configurations.md))
 - `GENESIS_VERIFICATION_KEY`: Genesis verification key for the Mithril network. Fetch using: `wget -q -O - **YOUR_GENESIS_VERIFICATION_KEY**` (URL can be found in the [Network configurations](../getting-started/network-configurations.md))
 - `DMQ_NODE_SOCKET_PATH`: Path to the IPC file of the DMQ node
 - `CUSTOM_ORIGIN_TAG_WHITE_LIST`: Comma-separated list of custom origin tags to whitelist for client requests (default: `EXPLORER,BENCHMARK,CI,NA`).
@@ -318,6 +319,7 @@ Here is an **example** set of values for **release-mainnet** that will be used i
   - **CHAIN_OBSERVER_TYPE**: `pallas`
   - **ERA_READER_ADAPTER_TYPE**: `cardano-chain`
   - **ERA_READER_ADAPTER_PARAMS**: `$(jq -nc --arg address $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/era.addr) --arg verification_key $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/era.vkey) '{"address": $address, "verification_key": $verification_key}')`
+  - **PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG**: `$(jq -nc --arg address $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/protocol-config.addr) --arg verification_key $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/protocol-config.vkey) '{"type": "cardano-chain", "address": $address, "verification_key": $verification_key}')`
   - **GENESIS_VERIFICATION_KEY**: `$(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/genesis.vkey)`
   - **DMQ_NODE_SOCKET_PATH**: `/dmq/ipc/node.socket`
   - **CUSTOM_ORIGIN_TAG_WHITE_LIST**: `EXPLORER,BENCHMARK,CI,NA`
@@ -366,6 +368,7 @@ CARDANO_NODE_VERSION=**YOUR_CARDANO_IMAGE_ID**
 CHAIN_OBSERVER_TYPE=**YOUR_CHAIN_OBSERVER_TYPE**
 ERA_READER_ADAPTER_TYPE=**YOUR_ERA_READER_ADAPTER_TYPE**
 ERA_READER_ADAPTER_PARAMS=**YOUR_ERA_READER_ADAPTER_PARAMS**
+PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG=**YOUR_PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG**
 GENESIS_VERIFICATION_KEY=**YOUR_GENESIS_VERIFICATION_KEY**
 DMQ_NODE_SOCKET_PATH=**YOUR_DMQ_NODE_SOCKET_PATH**
 CUSTOM_ORIGIN_TAG_WHITE_LIST=**YOUR_CUSTOM_ORIGIN_TAG_WHITE_LIST**
@@ -432,6 +435,7 @@ CARDANO_NODE_VERSION=10.7.1
 CHAIN_OBSERVER_TYPE=pallas
 ERA_READER_ADAPTER_TYPE=cardano-chain
 ERA_READER_ADAPTER_PARAMS={"address": "addr1qy72kwgm6kypyc5maw0h8mfagwag8wjnx6emgfnsnhqaml6gx7gg4tzplw9l32nsgclqax7stc4u6c5dn0ctljwscm2sqv0teg", "verification_key": "5b31312c3133342c3231352c37362c3134312c3232302c3131312c3135342c36332c3233302c3131342c31322c38372c37342c39342c3137322c3133322c32372c39362c3138362c3132362c3137382c31392c3131342c33302c3234332c36342c3134312c3131302c38332c38362c31395d"}
+PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG={"type":"cardano-chain", "address": "**TO_COMPLETE**", "verification_key": "**TO_COMPLETE**"}
 DMQ_NODE_SOCKET_PATH=/dmq/ipc/node.socket
 CUSTOM_ORIGIN_TAG_WHITE_LIST=EXPLORER,BENCHMARK,CI,NA
 EOF'

@@ -129,6 +129,15 @@
               "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/era.vkey"
             }
           },
+          "protocol-configuration-reader": {
+            "adapter-type": "cardano-chain",
+            "address": {
+              "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/protocol-config.addr"
+            },
+            "verification-key": {
+              "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/protocol-config.vkey"
+            }
+          },
           "ancillary": {
             "verification-key": {
               "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/ancillary.vkey"
