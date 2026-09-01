@@ -11,9 +11,7 @@ use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
 #[cfg(all(test, feature = "future_snark"))]
-use crate::circuits::halo2_ivc::PREIMAGE_SIZE;
-#[cfg(all(test, feature = "future_snark"))]
-use crate::{BaseFieldElement, SchnorrSigningKey};
+use crate::{BaseFieldElement, SchnorrSigningKey, circuits::halo2_ivc::PREIMAGE_SIZE};
 #[cfg(feature = "future_snark")]
 use crate::{
     SchnorrVerificationKey, StandardSchnorrSignature,
@@ -57,7 +55,7 @@ impl AncillaryProverData {
         }
     }
 
-    /// Returns the wrapped IvcRollingState of an AncillaryProverData if it exists.
+    /// Returns a reference to the wrapped IvcRollingState of an AncillaryProverData if it exists.
     #[cfg(feature = "future_snark")]
     pub fn as_ivc_rolling_state(&self) -> Option<&IvcRollingState> {
         match self {
@@ -67,7 +65,7 @@ impl AncillaryProverData {
         }
     }
 
-    /// Returns the wrapped IvcRollingState of an AncillaryProverData if it exists.
+    /// Consumes self an returns the wrapped IvcRollingState of an AncillaryProverData if it exists.
     #[cfg(feature = "future_snark")]
     pub fn into_ivc_rolling_state(self) -> Option<IvcRollingState> {
         match self {
@@ -241,12 +239,12 @@ impl AncillaryProofInput {
         }
     }
 
-    /// Return the prover ancillary data carried from the previous certificate.
+    /// Returns a reference to the prover ancillary data carried from the previous certificate.
     pub fn prover_data(&self) -> Option<&AncillaryProverData> {
         self.prover_data.as_ref()
     }
 
-    /// Return the prover ancillary data carried from the previous certificate.
+    /// Consumes self and returns the prover ancillary data carried from the previous certificate.
     pub fn into_prover_data(self) -> Option<AncillaryProverData> {
         self.prover_data
     }

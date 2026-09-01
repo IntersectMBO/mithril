@@ -20,8 +20,8 @@ pub(crate) trait SnarkProverFactory<D: MembershipDigest>: Debug + Send + Sync {
         parameters: &Parameters,
     ) -> StmResult<Box<dyn SnarkAggregateSignatureProver<D>>>;
 
-    /// Builds the recursive SNARK prover that can take one step of the chain and generate a
-    /// proof that the chain is valid up to and including this step.
+    /// Builds the recursive SNARK prover that can advance one step of the chain and generate a
+    /// succinct proof that the chain is valid up to and including this step.
     fn ivc_chain_prover(&self, parameters: &Parameters) -> StmResult<Box<dyn IvcChainProver<D>>>;
 }
 

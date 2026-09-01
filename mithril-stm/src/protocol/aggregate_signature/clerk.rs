@@ -8,12 +8,6 @@ use anyhow::anyhow;
 
 #[cfg(all(feature = "future_snark", test))]
 use crate::proof_system::MockSnarkProverFactory;
-use crate::{
-    AggregateVerificationKey, ClosedKeyRegistration, LotteryIndex, MembershipDigest, Parameters,
-    Signer, SingleSignature, Stake, StmResult, VerificationKeyForConcatenation,
-    proof_system::{ConcatenationClerk, ConcatenationProof},
-};
-
 #[cfg(feature = "future_snark")]
 use crate::{
     AggregateSignatureError, AncillaryProverData, AncillaryVerifierData,
@@ -23,6 +17,11 @@ use crate::{
         ivc_halo2_snark::proof::{IvcChainInput, IvcChainProver},
         ivc_halo2_snark::verifier_setup::IvcVerifierData,
     },
+};
+use crate::{
+    AggregateVerificationKey, ClosedKeyRegistration, LotteryIndex, MembershipDigest, Parameters,
+    Signer, SingleSignature, Stake, StmResult, VerificationKeyForConcatenation,
+    proof_system::{ConcatenationClerk, ConcatenationProof},
 };
 
 use super::{
@@ -40,6 +39,7 @@ pub struct Clerk<D: MembershipDigest> {
     #[cfg(feature = "future_snark")]
     snark_proof_clerk: Option<SnarkClerk>,
     #[cfg(feature = "future_snark")]
+    /// A factory that returns the provers necessary to create the SNARK proofs
     snark_prover_factory: Arc<dyn SnarkProverFactory<D>>,
     phantom_data: PhantomData<D>,
 }
@@ -208,10 +208,10 @@ impl<D: MembershipDigest> Clerk<D> {
             &certificate_verifying_key,
             ivc_prover.verifying_key(),
         )?;
-        let genesis_message = chain_input.global.genesis_message;
+        let genesis_protocol_message_hash = chain_input.global.genesis_message;
         let (ivc_proof, next_rolling_state) = ivc_prover.advance_chain(chain_input)?;
         let verifier_data = IvcVerifierData::new(
-            genesis_message,
+            genesis_protocol_message_hash,
             certificate_verifying_key,
             ivc_prover.verifying_key().clone(),
         );
@@ -312,9 +312,9 @@ mod tests {
         },
     };
 
-    const MESSAGE: [u8; 0] = [];
+    const DUMMY_MESSAGE: [u8; 0] = [];
 
-    const PROTOCOL_MESSAGE_PREIMAGE: [u8; PREIMAGE_SIZE] = [0u8; PREIMAGE_SIZE];
+    const DUMMY_PROTOCOL_MESSAGE_PREIMAGE: [u8; PREIMAGE_SIZE] = [0u8; PREIMAGE_SIZE];
 
     fn certificate_verifying_key() -> NonRecursiveCircuitVerifyingKey {
         NonRecursiveCircuitVerifyingKey::try_from_bytes(
@@ -339,7 +339,7 @@ mod tests {
             prover_data,
             AncillaryGenesisData::dummy(),
             #[cfg(feature = "future_snark")]
-            PROTOCOL_MESSAGE_PREIMAGE.to_vec(),
+            DUMMY_PROTOCOL_MESSAGE_PREIMAGE.to_vec(),
         )
     }
 
@@ -400,7 +400,7 @@ mod tests {
             .expect_advance_chain()
             .once()
             .withf(|step_input| {
-                step_input.message == MESSAGE
+                step_input.message == DUMMY_MESSAGE
                     && step_input.rolling_state.as_ref().is_some_and(|rolling_state| {
                         rolling_state.state().step_counter == StepCounter::new(3)
                     })
@@ -415,7 +415,7 @@ mod tests {
         let (aggregate_signature, ancillary_output) = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::IvcSnark,
                 build_ancillary_input(Some(AncillaryProverData::IvcSnark(current_rolling_state))),
             )
@@ -439,7 +439,7 @@ mod tests {
             phi_f: 0.9,
         };
         let signers = setup_equal_parties(params, 1);
-        let signature = signers[0].create_single_signature(&MESSAGE).unwrap();
+        let signature = signers[0].create_single_signature(&DUMMY_MESSAGE).unwrap();
 
         let mut factory = MockSnarkProverFactory::new();
         factory.expect_snark_signature_prover().never();
@@ -450,7 +450,7 @@ mod tests {
         let (aggregate_signature, _ancillary_output) = clerk
             .aggregate_signatures_with_type(
                 &[signature],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::Concatenation,
                 build_ancillary_input(None),
             )
@@ -475,7 +475,7 @@ mod tests {
         let err = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::Snark,
                 build_ancillary_input(None),
             )
@@ -518,7 +518,7 @@ mod tests {
         let (aggregate_signature, _ancillary_output) = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::Snark,
                 build_ancillary_input(None),
             )
@@ -547,7 +547,7 @@ mod tests {
         let err = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::Snark,
                 build_ancillary_input(None),
             )
@@ -585,7 +585,7 @@ mod tests {
         let (aggregate_signature, ancillary_output) = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::Snark,
                 build_ancillary_input(None),
             )
@@ -637,7 +637,7 @@ mod tests {
         let err = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::Snark,
                 build_ancillary_input(None),
             )
@@ -659,7 +659,7 @@ mod tests {
         let err = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::IvcSnark,
                 build_ancillary_input(None),
             )
@@ -697,7 +697,7 @@ mod tests {
         let err = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::IvcSnark,
                 build_ancillary_input(None),
             )
@@ -736,13 +736,13 @@ mod tests {
         let invalid_ancillary_input = AncillaryProofInput::new(
             None,
             AncillaryGenesisData::new(vec![0u8; PREIMAGE_SIZE], None, None),
-            PROTOCOL_MESSAGE_PREIMAGE.to_vec(),
+            DUMMY_PROTOCOL_MESSAGE_PREIMAGE.to_vec(),
         );
 
         let err = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::IvcSnark,
                 invalid_ancillary_input,
             )
@@ -839,7 +839,7 @@ mod tests {
         let (_aggregate_signature, ancillary_output) = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::IvcSnark,
                 build_ancillary_input(None),
             )
@@ -900,7 +900,7 @@ mod tests {
         let (_aggregate_signature, ancillary_output) = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::IvcSnark,
                 build_ancillary_input(None),
             )
@@ -939,7 +939,7 @@ mod tests {
         let err = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::IvcSnark,
                 build_ancillary_input(None),
             )
@@ -984,7 +984,7 @@ mod tests {
         let err = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::IvcSnark,
                 build_ancillary_input(None),
             )
@@ -1023,7 +1023,7 @@ mod tests {
         let err = clerk
             .aggregate_signatures_with_type(
                 &[],
-                &MESSAGE,
+                &DUMMY_MESSAGE,
                 AggregateSignatureType::IvcSnark,
                 build_ancillary_input(Some(AncillaryProverData::Future)),
             )

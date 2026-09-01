@@ -8,6 +8,7 @@ pub(crate) mod verifier_setup;
 
 #[cfg(feature = "benchmark-internals")]
 pub(crate) use prover_input::IvcProverInput;
+#[cfg(feature = "benchmark-internals")]
 pub(crate) use prover_setup::IvcSnarkProverSetup;
 
 #[cfg(all(test, feature = "future_snark"))]
