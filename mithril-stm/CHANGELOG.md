@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.11 (08-31-2026)
+
+### Changed
+
+- Split the monolithic `prove_all_scenarios` slow test into a bootstrap test and a mature same-epoch test, and dropped the mature next-epoch proving, so that the IVC prover tier generates four real proofs instead of six while still covering every reachable transition type and transcript pair.
+- Moved the prover rejection scenarios to the fast tier as `IvcProverInput::prepare` tests asserting typed errors, and deleted the one duplicating an existing case, so that they run on every pull request rather than the nightly only.
+- Built the slow test context from the committed genesis benchmark fixture instead of the asset generation setup, so that the prover tests consume only the committed inputs they exercise.
+
 ## 0.12.10 (08-28-2026)
 
 ### Changed

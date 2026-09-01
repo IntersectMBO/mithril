@@ -977,10 +977,7 @@ mod tests {
         use std::sync::Arc;
         use std::time::Instant;
 
-        use midnight_circuits::{
-            hash::poseidon::PoseidonState, verifier::Accumulator, verifier::BlstrsEmulation,
-        };
-        use midnight_proofs::utils::SerdeFormat;
+        use midnight_circuits::hash::poseidon::PoseidonState;
         use rand_core::OsRng;
 
         use crate::{
@@ -988,31 +985,25 @@ mod tests {
             circuits::{
                 halo2::types::CircuitBase,
                 halo2_ivc::{
-                    io::Write as IvcWrite,
                     state::Global,
                     tests::common::{
                         asset_readers::{
                             RecursiveChainStateAsset,
                             load_embedded_first_certificate_in_epoch_asset,
                             load_embedded_following_certificate_in_epoch_asset,
-                            load_embedded_next_epoch_step_output_asset,
+                            load_embedded_genesis_benchmark_fixture,
                             load_embedded_recursive_chain_state_asset,
                             load_embedded_verification_context_asset,
                         },
-                        generators::{
-                            build_asset_generation_setup_from_cache,
-                            build_genesis_protocol_message_preimage, build_recursive_global,
-                            setup::{AssetGenerationSetup, QUORUM_SIZE, SIGNER_COUNT, TOTAL_STAKE},
-                        },
+                        generators::setup::{QUORUM_SIZE, SIGNER_COUNT, TOTAL_STAKE},
                     },
-                    types::{IvcProofBytes, MessageHash, ProtocolMessagePreimage},
+                    types::ProtocolMessagePreimage,
                 },
             },
             proof_system::ivc_halo2_snark::{
                 prover_setup::IvcSnarkProverSetup, rolling_state::IvcRollingState,
                 verifier_setup::IvcVerifierSetup,
             },
-            signature_scheme::BaseFieldElement,
         };
 
         use super::super::{IvcGenesisBootstrapInput, IvcProof, IvcProver};
@@ -1021,7 +1012,7 @@ mod tests {
             ivc_setup: Arc<IvcSnarkProverSetup>,
             global: Global,
             verifier_setup: IvcVerifierSetup,
-            asset_setup: AssetGenerationSetup,
+            genesis_bootstrap: IvcGenesisBootstrapInput,
         }
 
         fn wrap_snark_proof(
@@ -1044,24 +1035,6 @@ mod tests {
                 .expect("AVK should decode from bytes")
         }
 
-        fn wrap_protocol_message_preimage(preimage: &[u8]) -> ProtocolMessagePreimage {
-            use crate::circuits::halo2_ivc::PREIMAGE_SIZE;
-            let preimage_array: [u8; PREIMAGE_SIZE] = preimage
-                .try_into()
-                .expect("preimage should be exactly PREIMAGE_SIZE bytes");
-            ProtocolMessagePreimage::new(preimage_array)
-        }
-
-        fn genesis_bootstrap(asset_setup: &AssetGenerationSetup) -> IvcGenesisBootstrapInput {
-            let genesis_preimage_bytes = build_genesis_protocol_message_preimage(asset_setup);
-            IvcGenesisBootstrapInput {
-                genesis_signature: asset_setup.genesis_signature,
-                genesis_protocol_message_preimage: wrap_protocol_message_preimage(
-                    &genesis_preimage_bytes,
-                ),
-            }
-        }
-
         fn rolling_state_from_asset(asset: RecursiveChainStateAsset) -> IvcRollingState {
             IvcRollingState::new(
                 asset.state,
@@ -1071,22 +1044,78 @@ mod tests {
             )
         }
 
-        fn accumulator_bytes(accumulator: &Accumulator<BlstrsEmulation>) -> Vec<u8> {
-            let mut bytes = Vec::new();
-            accumulator
-                .write(&mut bytes, SerdeFormat::RawBytesUnchecked)
-                .expect("accumulator serialization should succeed");
-            bytes
+        fn build_slow_test_context() -> SlowTestContext {
+            let t_setup = Instant::now();
+            let parameters = Parameters {
+                k: QUORUM_SIZE as u64,
+                m: (QUORUM_SIZE * 10) as u64,
+                phi_f: 0.2,
+            };
+            let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
+            let ivc_setup = Arc::new(
+                IvcSnarkProverSetup::build_for_test(&parameters, merkle_tree_depth)
+                    .expect("IvcSnarkProverSetup::build_for_test should succeed"),
+            );
+
+            let verification_context = load_embedded_verification_context_asset()
+                .expect("verification context asset should load");
+            let genesis_fixture = load_embedded_genesis_benchmark_fixture()
+                .expect("genesis benchmark fixture should load");
+
+            assert_eq!(
+                verification_context
+                    .certificate_verifying_key
+                    .midnight_vk()
+                    .vk()
+                    .transcript_repr(),
+                ivc_setup
+                    .certificate_verifying_key
+                    .midnight_vk()
+                    .vk()
+                    .transcript_repr(),
+                "stored verification context cert VK must match freshly generated cert VK"
+            );
+            assert_eq!(
+                verification_context
+                    .recursive_verifying_key
+                    .verifying_key()
+                    .transcript_repr(),
+                ivc_setup.ivc_verifying_key.verifying_key().transcript_repr(),
+                "stored verification context IVC VK must match freshly generated IVC VK"
+            );
+
+            let global = Global::new(
+                genesis_fixture.genesis_message_hash(),
+                genesis_fixture.genesis_verification_key,
+                &verification_context.certificate_verifying_key,
+                &verification_context.recursive_verifying_key,
+            );
+            let genesis_bootstrap = IvcGenesisBootstrapInput {
+                genesis_signature: genesis_fixture.genesis_signature,
+                genesis_protocol_message_preimage: ProtocolMessagePreimage::new(
+                    genesis_fixture.genesis_protocol_message_preimage,
+                ),
+            };
+            let verifier_setup = IvcVerifierSetup::from_ivc_setup_with_srs(&ivc_setup);
+            println!("[setup] {:.1}s", t_setup.elapsed().as_secs_f64());
+
+            SlowTestContext {
+                ivc_setup,
+                global,
+                verifier_setup,
+                genesis_bootstrap,
+            }
         }
 
-        fn run_bootstrap_path(ctx: &SlowTestContext) {
-            let t = Instant::now();
+        #[test]
+        fn prove_bootstrap_produces_first_epoch_proof_and_rolling_state() {
+            let ctx = build_slow_test_context();
+
             let first_step = load_embedded_first_certificate_in_epoch_asset()
                 .expect("first-step certificate asset should load");
             let avk = wrap_avk(&first_step.aggregate_verification_key_merkle_root);
             let snark_proof = wrap_snark_proof(first_step.certificate_proof.clone().into_vec());
-            let epoch1_preimage = wrap_protocol_message_preimage(&first_step.message_preimage);
-            let bootstrap = genesis_bootstrap(&ctx.asset_setup);
+            let epoch1_preimage = ProtocolMessagePreimage::new(first_step.message_preimage);
 
             let mut prover = IvcProver {
                 ivc_setup: Arc::clone(&ctx.ivc_setup),
@@ -1100,7 +1129,7 @@ mod tests {
                     &avk,
                     &ctx.global,
                     &epoch1_preimage,
-                    &bootstrap,
+                    &ctx.genesis_bootstrap,
                     None,
                 )
                 .expect("bootstrap prove should succeed");
@@ -1136,73 +1165,12 @@ mod tests {
                 &ctx.verifier_setup,
             )
             .expect("bootstrap Poseidon proof must verify");
-
-            println!("[bootstrap] {:.1}s", t.elapsed().as_secs_f64());
         }
 
-        fn run_next_epoch_path(ctx: &SlowTestContext) {
-            let t = Instant::now();
-            let rolling_state = rolling_state_from_asset(
-                load_embedded_recursive_chain_state_asset()
-                    .expect("recursive chain state asset should load"),
-            );
-            let step = load_embedded_next_epoch_step_output_asset()
-                .expect("next-epoch step output asset should load");
+        #[test]
+        fn prove_same_epoch_produces_proof_without_rolling_state() {
+            let ctx = build_slow_test_context();
 
-            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
-            let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let preimage = wrap_protocol_message_preimage(&step.message_preimage);
-
-            let mut prover = IvcProver {
-                ivc_setup: Arc::clone(&ctx.ivc_setup),
-                rng: OsRng,
-            };
-            let (blake2b_proof, rolling) = prover
-                .prove(
-                    snark_proof,
-                    step.message.as_ref(),
-                    &avk,
-                    &ctx.global,
-                    &preimage,
-                    &genesis_bootstrap(&ctx.asset_setup),
-                    Some(&rolling_state),
-                )
-                .expect("next-epoch prove should succeed");
-
-            let next_rolling = rolling.expect("next-epoch must return a rolling state");
-
-            assert_eq!(
-                &blake2b_proof.state, &step.next_state,
-                "next-epoch Blake2b proof state must match embedded asset output"
-            );
-            assert_eq!(
-                next_rolling.state(),
-                &step.next_state,
-                "next-epoch rolling state must match embedded asset output"
-            );
-            assert_eq!(
-                accumulator_bytes(next_rolling.accumulator()),
-                accumulator_bytes(&step.next_accumulator),
-                "next-epoch rolling accumulator must match embedded asset output"
-            );
-
-            blake2b_proof
-                .verify(step.message.as_ref(), &ctx.global, &ctx.verifier_setup)
-                .expect("next-epoch Blake2b proof must verify");
-
-            IvcProof::<PoseidonState<CircuitBase>>::new(
-                next_rolling.ivc_proof().clone(),
-                next_rolling.state().clone(),
-                next_rolling.accumulator().clone(),
-            )
-            .verify(step.message.as_ref(), &ctx.global, &ctx.verifier_setup)
-            .expect("next-epoch Poseidon proof must verify");
-
-            println!("[next-epoch] {:.1}s", t.elapsed().as_secs_f64());
-        }
-
-        fn run_same_epoch_path(ctx: &SlowTestContext) {
-            let t = Instant::now();
             let rolling_state = rolling_state_from_asset(
                 load_embedded_recursive_chain_state_asset()
                     .expect("recursive chain state asset should load"),
@@ -1212,7 +1180,7 @@ mod tests {
 
             let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
             let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let preimage = wrap_protocol_message_preimage(&step.message_preimage);
+            let preimage = ProtocolMessagePreimage::new(step.message_preimage);
 
             let mut prover = IvcProver {
                 ivc_setup: Arc::clone(&ctx.ivc_setup),
@@ -1225,7 +1193,8 @@ mod tests {
                     &avk,
                     &ctx.global,
                     &preimage,
-                    &genesis_bootstrap(&ctx.asset_setup),
+                    // Ignored when continuing from an existing rolling state.
+                    &ctx.genesis_bootstrap,
                     Some(&rolling_state),
                 )
                 .expect("same-epoch prove should succeed");
@@ -1243,273 +1212,6 @@ mod tests {
             blake2b_proof
                 .verify(step.message.as_ref(), &ctx.global, &ctx.verifier_setup)
                 .expect("same-epoch Blake2b proof must verify");
-
-            println!("[same-epoch] {:.1}s", t.elapsed().as_secs_f64());
-        }
-
-        fn run_rejects_corrupted_cert_proof_path(ctx: &SlowTestContext) {
-            let t = Instant::now();
-            let rolling_state = rolling_state_from_asset(
-                load_embedded_recursive_chain_state_asset()
-                    .expect("recursive chain state asset should load"),
-            );
-            let step = load_embedded_following_certificate_in_epoch_asset()
-                .expect("same-epoch step output asset should load");
-
-            let mut corrupted = step.certificate_proof.clone().into_vec();
-            corrupted[0] ^= 0xFF;
-            let snark_proof = wrap_snark_proof(corrupted);
-            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
-            let preimage = wrap_protocol_message_preimage(&step.message_preimage);
-
-            let mut prover = IvcProver {
-                ivc_setup: Arc::clone(&ctx.ivc_setup),
-                rng: OsRng,
-            };
-            let result = prover.prove(
-                snark_proof,
-                step.message.as_ref(),
-                &avk,
-                &ctx.global,
-                &preimage,
-                &genesis_bootstrap(&ctx.asset_setup),
-                Some(&rolling_state),
-            );
-            assert!(
-                result.is_err(),
-                "prove should reject a corrupted certificate proof"
-            );
-
-            println!(
-                "[rejects-corrupted-cert-proof] {:.1}s",
-                t.elapsed().as_secs_f64()
-            );
-        }
-
-        fn run_rejects_mismatched_cert_message_path(ctx: &SlowTestContext) {
-            let t = Instant::now();
-            let rolling_state = rolling_state_from_asset(
-                load_embedded_recursive_chain_state_asset()
-                    .expect("recursive chain state asset should load"),
-            );
-            let step = load_embedded_following_certificate_in_epoch_asset()
-                .expect("same-epoch step output asset should load");
-
-            let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
-            let preimage = wrap_protocol_message_preimage(&step.message_preimage);
-
-            let mut tampered_message = step.message;
-            tampered_message[0] ^= 0xFF;
-
-            let mut prover = IvcProver {
-                ivc_setup: Arc::clone(&ctx.ivc_setup),
-                rng: OsRng,
-            };
-            let result = prover.prove(
-                snark_proof,
-                tampered_message.as_ref(),
-                &avk,
-                &ctx.global,
-                &preimage,
-                &genesis_bootstrap(&ctx.asset_setup),
-                Some(&rolling_state),
-            );
-            assert!(
-                result.is_err(),
-                "prove should reject a tampered certificate message"
-            );
-
-            println!(
-                "[rejects-mismatched-cert-message] {:.1}s",
-                t.elapsed().as_secs_f64()
-            );
-        }
-
-        fn run_rejects_mismatched_avk_path(ctx: &SlowTestContext) {
-            let t = Instant::now();
-            let rolling_state = rolling_state_from_asset(
-                load_embedded_recursive_chain_state_asset()
-                    .expect("recursive chain state asset should load"),
-            );
-            let step = load_embedded_following_certificate_in_epoch_asset()
-                .expect("same-epoch step output asset should load");
-
-            let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let mut tampered_root = step.aggregate_verification_key_merkle_root;
-            tampered_root[0] ^= 0xFF;
-            let wrong_avk = wrap_avk(&tampered_root);
-            let preimage = wrap_protocol_message_preimage(&step.message_preimage);
-
-            let mut prover = IvcProver {
-                ivc_setup: Arc::clone(&ctx.ivc_setup),
-                rng: OsRng,
-            };
-            let result = prover.prove(
-                snark_proof,
-                step.message.as_ref(),
-                &wrong_avk,
-                &ctx.global,
-                &preimage,
-                &genesis_bootstrap(&ctx.asset_setup),
-                Some(&rolling_state),
-            );
-            assert!(
-                result.is_err(),
-                "prove should reject an AVK that does not match the one the proof committed to"
-            );
-
-            println!("[rejects-mismatched-avk] {:.1}s", t.elapsed().as_secs_f64());
-        }
-
-        fn run_rejects_corrupted_previous_ivc_proof_path(ctx: &SlowTestContext) {
-            let t = Instant::now();
-            let chain_state = load_embedded_recursive_chain_state_asset()
-                .expect("recursive chain state asset should load");
-            let step = load_embedded_following_certificate_in_epoch_asset()
-                .expect("same-epoch step output asset should load");
-
-            let mut corrupted = chain_state.ivc_proof.into_vec();
-            corrupted[0] ^= 0xFF;
-            let rolling_state = IvcRollingState::new(
-                chain_state.state,
-                IvcProofBytes::new(corrupted),
-                chain_state.accumulator,
-                chain_state.genesis_signature,
-            );
-
-            let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
-            let preimage = wrap_protocol_message_preimage(&step.message_preimage);
-
-            let mut prover = IvcProver {
-                ivc_setup: Arc::clone(&ctx.ivc_setup),
-                rng: OsRng,
-            };
-            let result = prover.prove(
-                snark_proof,
-                step.message.as_ref(),
-                &avk,
-                &ctx.global,
-                &preimage,
-                &genesis_bootstrap(&ctx.asset_setup),
-                Some(&rolling_state),
-            );
-            assert!(
-                result.is_err(),
-                "prove should reject a corrupted previous IVC proof"
-            );
-
-            println!(
-                "[rejects-corrupted-prev-ivc-proof] {:.1}s",
-                t.elapsed().as_secs_f64()
-            );
-        }
-
-        fn run_rejects_mismatched_global_path(ctx: &SlowTestContext) {
-            let t = Instant::now();
-            let rolling_state = rolling_state_from_asset(
-                load_embedded_recursive_chain_state_asset()
-                    .expect("recursive chain state asset should load"),
-            );
-            let step = load_embedded_following_certificate_in_epoch_asset()
-                .expect("same-epoch step output asset should load");
-
-            let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
-            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
-            let preimage = wrap_protocol_message_preimage(&step.message_preimage);
-
-            let mut wrong_global = ctx.global.clone();
-            wrong_global.genesis_message =
-                MessageHash::from_field(BaseFieldElement::from(0xDEAD_BEEFu64).0);
-
-            let mut prover = IvcProver {
-                ivc_setup: Arc::clone(&ctx.ivc_setup),
-                rng: OsRng,
-            };
-            let result = prover.prove(
-                snark_proof,
-                step.message.as_ref(),
-                &avk,
-                &wrong_global,
-                &preimage,
-                &genesis_bootstrap(&ctx.asset_setup),
-                Some(&rolling_state),
-            );
-            assert!(
-                result.is_err(),
-                "prove should reject a global whose public inputs do not match the previous IVC proof"
-            );
-
-            println!(
-                "[rejects-mismatched-global] {:.1}s",
-                t.elapsed().as_secs_f64()
-            );
-        }
-
-        #[test]
-        fn prove_all_scenarios() {
-            let t_setup = Instant::now();
-            let parameters = Parameters {
-                k: QUORUM_SIZE as u64,
-                m: (QUORUM_SIZE * 10) as u64,
-                phi_f: 0.2,
-            };
-            let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
-            let ivc_setup = Arc::new(
-                IvcSnarkProverSetup::build_for_test(&parameters, merkle_tree_depth)
-                    .expect("IvcSnarkProverSetup::load should succeed"),
-            );
-
-            let verification_context = load_embedded_verification_context_asset()
-                .expect("verification context asset should load");
-            let asset_setup = build_asset_generation_setup_from_cache();
-
-            assert_eq!(
-                verification_context
-                    .certificate_verifying_key
-                    .midnight_vk()
-                    .vk()
-                    .transcript_repr(),
-                ivc_setup
-                    .certificate_verifying_key
-                    .midnight_vk()
-                    .vk()
-                    .transcript_repr(),
-                "stored verification context cert VK must match freshly generated cert VK"
-            );
-            assert_eq!(
-                verification_context
-                    .recursive_verifying_key
-                    .verifying_key()
-                    .transcript_repr(),
-                ivc_setup.ivc_verifying_key.verifying_key().transcript_repr(),
-                "stored verification context IVC VK must match freshly generated IVC VK"
-            );
-
-            let global = build_recursive_global(
-                &asset_setup,
-                &verification_context.certificate_verifying_key,
-                &verification_context.recursive_verifying_key,
-            );
-            let verifier_setup = IvcVerifierSetup::from_ivc_setup_with_srs(&ivc_setup);
-            println!("[setup] {:.1}s", t_setup.elapsed().as_secs_f64());
-
-            let ctx = SlowTestContext {
-                ivc_setup,
-                global,
-                verifier_setup,
-                asset_setup,
-            };
-
-            run_bootstrap_path(&ctx);
-            run_next_epoch_path(&ctx);
-            run_same_epoch_path(&ctx);
-            run_rejects_corrupted_cert_proof_path(&ctx);
-            run_rejects_mismatched_cert_message_path(&ctx);
-            run_rejects_mismatched_avk_path(&ctx);
-            run_rejects_corrupted_previous_ivc_proof_path(&ctx);
-            run_rejects_mismatched_global_path(&ctx);
         }
     }
 

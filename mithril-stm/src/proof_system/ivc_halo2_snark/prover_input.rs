@@ -170,7 +170,7 @@ mod tests {
             },
             types::{
                 CertificateCircuitVerificationKeyRepresentation, EpochNumber,
-                IvcCircuitVerificationKeyRepresentation, StepCounter,
+                IvcCircuitVerificationKeyRepresentation, IvcProofBytes, StepCounter,
             },
         },
         proof_system::ivc_halo2_snark::prover_setup::IvcProverInputVerificationContext,
@@ -480,6 +480,173 @@ mod tests {
 
         let err = result
             .expect_err("prepare should reject a corrupted certificate proof")
+            .downcast::<IvcCircuitError>()
+            .expect("error should downcast to IvcCircuitError");
+        assert!(matches!(err, IvcCircuitError::CertificateProofRejected(..)));
+    }
+
+    #[test]
+    fn prepare_rejects_tampered_certificate_message() {
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let step = load_embedded_following_certificate_in_epoch_asset()
+            .expect("same-epoch step output asset should load");
+
+        let (global, verification_context) = build_preparation_context();
+        let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
+        let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+        let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
+        let rolling_state = IvcRollingState::new(
+            chain_state.state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+
+        let mut tampered_message = step.message;
+        tampered_message[0] ^= 0xFF;
+
+        let result = IvcProverInput::prepare(
+            &snark_proof,
+            &tampered_message,
+            &avk,
+            &global,
+            &protocol_message_preimage,
+            &rolling_state,
+            &verification_context,
+        );
+
+        let err = result
+            .expect_err("prepare should reject a tampered certificate message")
+            .downcast::<IvcCircuitError>()
+            .expect("error should downcast to IvcCircuitError");
+        assert!(matches!(err, IvcCircuitError::CertificateProofRejected(..)));
+    }
+
+    #[test]
+    fn prepare_rejects_mismatched_aggregate_verification_key() {
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let step = load_embedded_following_certificate_in_epoch_asset()
+            .expect("same-epoch step output asset should load");
+
+        let (global, verification_context) = build_preparation_context();
+        let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
+        let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
+        let rolling_state = IvcRollingState::new(
+            chain_state.state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+
+        let mut tampered_root = step.aggregate_verification_key_merkle_root;
+        tampered_root[0] ^= 0xFF;
+
+        let result = IvcProverInput::prepare(
+            &snark_proof,
+            &step.message,
+            &wrap_avk(&tampered_root),
+            &global,
+            &protocol_message_preimage,
+            &rolling_state,
+            &verification_context,
+        );
+
+        // The step's Merkle-tree commitment is derived from the AVK root, so a tampered root is
+        // caught by the carry check against the rolling state, before the certificate proof is
+        // verified.
+        let err = result
+            .expect_err("prepare should reject an AVK the proof did not commit to")
+            .downcast::<IvcCircuitError>()
+            .expect("error should downcast to IvcCircuitError");
+        assert!(
+            matches!(
+                err,
+                IvcCircuitError::InvalidEpochTransition {
+                    kind:
+                        EpochTransitionErrorKind::RollingStateParametersDoesNotMatchProtocolMessage,
+                    ..
+                }
+            ),
+            "expected InvalidEpochTransition with RollingStateParametersDoesNotMatchProtocolMessage kind, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn prepare_rejects_corrupted_previous_ivc_proof() {
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let step = load_embedded_following_certificate_in_epoch_asset()
+            .expect("same-epoch step output asset should load");
+
+        let (global, verification_context) = build_preparation_context();
+        let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
+        let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+        let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
+
+        let mut corrupted = chain_state.ivc_proof.into_vec();
+        corrupted[0] ^= 0xFF;
+        let rolling_state = IvcRollingState::new(
+            chain_state.state,
+            IvcProofBytes::new(corrupted),
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+
+        let result = IvcProverInput::prepare(
+            &snark_proof,
+            &step.message,
+            &avk,
+            &global,
+            &protocol_message_preimage,
+            &rolling_state,
+            &verification_context,
+        );
+
+        let err = result
+            .expect_err("prepare should reject a corrupted previous IVC proof")
+            .downcast::<IvcCircuitError>()
+            .expect("error should downcast to IvcCircuitError");
+        assert!(matches!(err, IvcCircuitError::CertificateProofRejected(..)));
+    }
+
+    #[test]
+    fn prepare_rejects_mismatched_global() {
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let step = load_embedded_following_certificate_in_epoch_asset()
+            .expect("same-epoch step output asset should load");
+
+        let (global, verification_context) = build_preparation_context();
+        let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
+        let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+        let protocol_message_preimage = wrap_protocol_message_preimage(&step.message_preimage);
+        let rolling_state = IvcRollingState::new(
+            chain_state.state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+
+        // `Global` is part of the previous IVC proof's public inputs, so a chain whose genesis
+        // message differs from the one the proof committed to must not verify.
+        let mut mismatched_global = global.clone();
+        mismatched_global.genesis_message =
+            MessageHash::from_field(BaseFieldElement::from(0xDEAD_BEEFu64).0);
+
+        let result = IvcProverInput::prepare(
+            &snark_proof,
+            &step.message,
+            &avk,
+            &mismatched_global,
+            &protocol_message_preimage,
+            &rolling_state,
+            &verification_context,
+        );
+
+        let err = result
+            .expect_err("prepare should reject a global the previous IVC proof did not commit to")
             .downcast::<IvcCircuitError>()
             .expect("error should downcast to IvcCircuitError");
         assert!(matches!(err, IvcCircuitError::CertificateProofRejected(..)));
