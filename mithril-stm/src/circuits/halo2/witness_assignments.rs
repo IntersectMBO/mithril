@@ -12,7 +12,7 @@ use midnight_proofs::plonk::Error;
 use midnight_zk_stdlib::ZkStdLib;
 
 use crate::circuits::halo2::circuit::CertificateCircuit;
-use crate::circuits::halo2::errors::StmCircuitError;
+use crate::circuits::halo2::errors::CertificateCircuitError;
 use crate::circuits::halo2::types::{CircuitBase, CircuitCurve};
 use crate::circuits::halo2::witness::CircuitWitnessEntry;
 use crate::signature_scheme::PrimeOrderProjectivePoint;
@@ -55,7 +55,7 @@ pub(crate) fn assign_witness_entry(
     std_lib: &ZkStdLib,
     layouter: &mut impl Layouter<CircuitBase>,
     witness_entry: Value<CircuitWitnessEntry>,
-) -> Result<AssignedWitnessEntry, StmCircuitError> {
+) -> Result<AssignedWitnessEntry, CertificateCircuitError> {
     let verification_key = assign_verification_key(std_lib, layouter, witness_entry.clone())?;
 
     let lottery_target_value = std_lib.assign(
@@ -84,14 +84,14 @@ fn assign_verification_key(
     std_lib: &ZkStdLib,
     layouter: &mut impl Layouter<CircuitBase>,
     witness_entry: Value<CircuitWitnessEntry>,
-) -> Result<AssignedNativePoint<CircuitCurve>, StmCircuitError> {
+) -> Result<AssignedNativePoint<CircuitCurve>, CertificateCircuitError> {
     std_lib
         .jubjub()
         .assign(
             layouter,
             witness_entry.map(|entry| entry.leaf.verification_key_point().0),
         )
-        .map_err(StmCircuitError::from)
+        .map_err(CertificateCircuitError::from)
 }
 
 /// Assigns and validates the Merkle authentication path carried by one witness entry.
@@ -100,12 +100,12 @@ fn assign_merkle_path(
     std_lib: &ZkStdLib,
     layouter: &mut impl Layouter<CircuitBase>,
     witness_entry: Value<CircuitWitnessEntry>,
-) -> Result<AssignedMerklePath, StmCircuitError> {
+) -> Result<AssignedMerklePath, CertificateCircuitError> {
     let siblings = std_lib.assign_many(
         layouter,
         witness_entry
             .clone()
-            .map_with_result(|entry| -> Result<_, StmCircuitError> {
+            .map_with_result(|entry| -> Result<_, CertificateCircuitError> {
                 let merkle_path = entry.merkle_path;
                 circuit.validate_merkle_sibling_length(merkle_path.siblings.len())?;
                 Ok(merkle_path
@@ -122,7 +122,7 @@ fn assign_merkle_path(
         layouter,
         witness_entry
             .clone()
-            .map_with_result(|entry| -> Result<_, StmCircuitError> {
+            .map_with_result(|entry| -> Result<_, CertificateCircuitError> {
                 let merkle_path = entry.merkle_path;
                 circuit.validate_merkle_position_length(merkle_path.siblings.len())?;
                 Ok(merkle_path
@@ -151,7 +151,7 @@ pub(crate) fn assign_signature_components(
     std_lib: &ZkStdLib,
     layouter: &mut impl Layouter<CircuitBase>,
     witness_entry: Value<CircuitWitnessEntry>,
-) -> Result<AssignedSignatureComponents, StmCircuitError> {
+) -> Result<AssignedSignatureComponents, CertificateCircuitError> {
     let commitment_point_value = witness_entry
         .clone()
         .map_with_result(|entry| {
@@ -159,7 +159,7 @@ pub(crate) fn assign_signature_components(
             let (u, v) = signature.commitment_point.get_coordinates();
             PrimeOrderProjectivePoint::from_coordinates(u, v).map(|point| point.0)
         })
-        .map_err(|error| StmCircuitError::Backend(error.to_string()))?;
+        .map_err(|error| CertificateCircuitError::Backend(error.to_string()))?;
     let commitment_point = std_lib.jubjub().assign(layouter, commitment_point_value)?;
     let response = std_lib.jubjub().assign(
         layouter,

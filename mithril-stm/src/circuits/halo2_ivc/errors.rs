@@ -10,43 +10,41 @@ pub enum IvcCircuitError {
 
     /// IVC verification key degree does not match the IVC circuit degree constant RECURSIVE_CIRCUIT_DEGREE.
     #[error(
-        "IvcCircuitData::validate_ivc_verification_key_degree failed: expected k={expected}, got k={actual}"
+        "IVC verification key degree does not match the IVC circuit: expected k={expected}, got k={actual}"
     )]
     IvcVerificationKeyDegreeMismatch { expected: u32, actual: u32 },
 
     /// `assign_many` returned a different number of values than expected.
-    #[error("IvcConstraintBuilder: expected {expected} assigned values, got {actual}")]
+    #[error("Circuit assignment produced {actual} values, expected {expected}")]
     AssignedValueCountMismatch { expected: usize, actual: usize },
 
     /// `combine_bytes` received more bytes than base weights, which would silently truncate.
-    #[error("combine_bytes received {bytes} bytes but only {bases} base weights")]
+    #[error("Byte-to-field conversion received {bytes} bytes but only {bases} base weights")]
     ByteCountExceedsBaseCount { bytes: usize, bases: usize },
 
     /// Not enough advice columns were allocated to satisfy chip requirements.
     #[error(
-        "IvcCircuitData::validate_column_counts failed: need {needed} advice columns, only {available} allocated"
+        "Too few advice columns allocated for the IVC circuit: need {needed}, only {available} allocated"
     )]
     InsufficientAdviceColumns { needed: usize, available: usize },
 
     /// Not enough fixed columns were allocated to satisfy chip requirements.
     #[error(
-        "IvcCircuitData::validate_column_counts failed: need {needed} fixed columns, only {available} allocated"
+        "Too few fixed columns allocated for the IVC circuit: need {needed}, only {available} allocated"
     )]
     InsufficientFixedColumns { needed: usize, available: usize },
 
     /// Off-circuit step transition: the incoming certificate's epoch does not advance the
     /// chain correctly. The `kind` field carries an `EpochTransitionErrorKind` with the
     /// specific violation.
-    #[error(
-        "IvcProverInput::prepare: invalid epoch transition at last committed epoch {last_committed_epoch}: {kind}"
-    )]
+    #[error("Invalid epoch transition at last committed epoch {last_committed_epoch}: {kind}")]
     InvalidEpochTransition {
         kind: EpochTransitionErrorKind,
         last_committed_epoch: u64,
     },
 
     /// Off-circuit step transition: the chain's step counter would overflow u64.
-    #[error("IvcProverInput::prepare: step counter overflow advancing past {current}")]
+    #[error("Step counter overflow advancing past {current}")]
     StepCounterOverflow { current: u64 },
 
     /// Off-circuit accumulator check: the msm does not match the provided the fixed bases
@@ -75,9 +73,7 @@ pub enum EpochTransitionErrorKind {
     RollingStateParametersDoesNotMatchProtocolMessage,
 
     /// Off-circuit step transition: the chain's epoch would overflow u64.
-    #[error(
-        "IvcTransitionType::try_compute_transition_type: epoch overflow advancing past the last committed epoch"
-    )]
+    #[error("Epoch overflow advancing past the last committed epoch")]
     EpochOverflow,
 }
 

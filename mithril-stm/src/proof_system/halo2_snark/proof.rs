@@ -24,7 +24,7 @@ use crate::{
     proof_system::{
         AggregateVerificationKeyForSnark,
         halo2_snark::{
-            SnarkError, build_snark_message, interface::SnarkAggregateSignatureProver,
+            SnarkProofError, build_snark_message, interface::SnarkAggregateSignatureProver,
             prover_input::SnarkProverInput,
         },
     },
@@ -103,7 +103,7 @@ impl<D: MembershipDigest> SnarkProof<D> {
             &self.circuit_proof,
         );
 
-        verify_result.map_err(|_| SnarkError::VerifyProofFail.into())
+        verify_result.map_err(|_| SnarkProofError::VerifyProofFail.into())
     }
 
     /// Runs the off-circuit SNARK verifier and returns the verifier's intermediate
@@ -153,7 +153,7 @@ impl<D: MembershipDigest> SnarkProof<D> {
         if codec::has_cbor_v1_prefix(bytes) {
             codec::from_cbor_bytes(&bytes[1..])
         } else {
-            Err(SnarkError::SerializationError.into())
+            Err(SnarkProofError::SerializationError.into())
         }
     }
 }
