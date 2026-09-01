@@ -9,7 +9,7 @@ use midnight_proofs::poly::kzg::params::ParamsKZG;
 use serde::{Deserialize, Serialize};
 
 use crate::StmResult;
-use crate::circuits::halo2::circuit::StmCertificateCircuit;
+use crate::circuits::halo2::circuit::CertificateCircuit;
 use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 use crate::circuits::key_generator::KeyGenerator;
 use crate::circuits::key_provider::KeyProvider;
@@ -170,12 +170,12 @@ impl KeyGenerator for IvcCircuitData {
 /// derived through the same [`KeyProvider`] machinery (and its on-disk cache) as any other circuit,
 /// rather than through a caller-supplied closure.
 pub(crate) struct RecursiveCircuitKeyGenerator {
-    non_recursive_key_provider: KeyProvider<StmCertificateCircuit>,
+    non_recursive_key_provider: KeyProvider<CertificateCircuit>,
 }
 
 impl RecursiveCircuitKeyGenerator {
     /// Wraps the non-recursive key provider the recursive circuit is built from.
-    pub(crate) fn new(non_recursive_key_provider: KeyProvider<StmCertificateCircuit>) -> Self {
+    pub(crate) fn new(non_recursive_key_provider: KeyProvider<CertificateCircuit>) -> Self {
         Self {
             non_recursive_key_provider,
         }

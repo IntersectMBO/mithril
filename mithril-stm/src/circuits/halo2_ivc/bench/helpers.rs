@@ -34,7 +34,7 @@ use rand_core::OsRng;
 use crate::{
     AggregateVerificationKeyForSnark, MithrilMembershipDigest, Parameters, SnarkProof, StmResult,
     circuits::{
-        halo2::{circuit::StmCertificateCircuit, types::CircuitBase},
+        halo2::{circuit::CertificateCircuit, types::CircuitBase},
         halo2_ivc::{
             PREIMAGE_SIZE, RECURSIVE_CIRCUIT_DEGREE,
             circuit::IvcCircuitData,
@@ -187,7 +187,7 @@ fn recursive_key_provider(
         cache_dir.join("certificate"),
         "non-recursive",
         &[],
-        StmCertificateCircuit::try_new(&benchmark_parameters(), merkle_tree_depth())?,
+        CertificateCircuit::try_new(&benchmark_parameters(), merkle_tree_depth())?,
     );
     Ok(KeyProvider::new(
         cache_dir.join("recursive"),

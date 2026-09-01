@@ -7,7 +7,7 @@ use rand_core::{CryptoRng, RngCore};
 use sha2::{Digest as Sha2Digest, Sha256};
 
 use crate::circuits::common::merkle::MerklePath;
-use crate::circuits::halo2::circuit::StmCertificateCircuit;
+use crate::circuits::halo2::circuit::CertificateCircuit;
 use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 use crate::circuits::halo2::types::CircuitBaseField;
 use crate::circuits::halo2::witness::{CircuitMerkleTreeLeaf, CircuitWitnessEntry};
@@ -100,7 +100,7 @@ pub(crate) fn build_genesis_base_case_next_state(
 pub(crate) fn build_next_certificate_asset_data(
     setup: &AssetGenerationSetup,
     certificate_commitment_parameters: &ParamsKZG<Bls12>,
-    certificate_relation: &StmCertificateCircuit,
+    certificate_relation: &CertificateCircuit,
     certificate_verifying_key: &NonRecursiveCircuitVerifyingKey,
     recursive_chain_state: &State,
     random_generator: &mut (impl RngCore + CryptoRng),
@@ -131,7 +131,7 @@ pub(crate) fn build_next_certificate_asset_data(
 pub(crate) fn build_same_epoch_certificate_asset_data(
     setup: &AssetGenerationSetup,
     certificate_commitment_parameters: &ParamsKZG<Bls12>,
-    certificate_relation: &StmCertificateCircuit,
+    certificate_relation: &CertificateCircuit,
     certificate_verifying_key: &NonRecursiveCircuitVerifyingKey,
     recursive_chain_state: &State,
     random_generator: &mut (impl RngCore + CryptoRng),
@@ -167,7 +167,7 @@ pub(crate) fn build_same_epoch_certificate_asset_data(
 fn build_certificate_asset_data_inner(
     setup: &AssetGenerationSetup,
     certificate_commitment_parameters: &ParamsKZG<Bls12>,
-    certificate_relation: &StmCertificateCircuit,
+    certificate_relation: &CertificateCircuit,
     certificate_verifying_key: &NonRecursiveCircuitVerifyingKey,
     merkle_tree_commitment: NativeField,
     message: NativeField,
@@ -244,7 +244,7 @@ fn build_certificate_asset_data_inner(
         certificate_public_inputs(merkle_tree_commitment, next_state.message.as_field());
 
     let certificate_proof = CertificateProofBytes::from_certificate_circuit_proof_bytes(
-        zk_lib::prove::<StmCertificateCircuit, PoseidonState<NativeField>>(
+        zk_lib::prove::<CertificateCircuit, PoseidonState<NativeField>>(
             certificate_commitment_parameters,
             &certificate_proving_key,
             certificate_relation,
@@ -296,7 +296,7 @@ pub(super) fn certificate_public_inputs(
     merkle_tree_commitment: NativeField,
     message: NativeField,
 ) -> Vec<NativeField> {
-    StmCertificateCircuit::format_instance(&(
+    CertificateCircuit::format_instance(&(
         CircuitBaseField::from(merkle_tree_commitment),
         CircuitBaseField::from(message),
     ))

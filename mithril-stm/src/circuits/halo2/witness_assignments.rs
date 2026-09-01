@@ -11,7 +11,7 @@ use midnight_proofs::circuit::{Layouter, Value};
 use midnight_proofs::plonk::Error;
 use midnight_zk_stdlib::ZkStdLib;
 
-use crate::circuits::halo2::circuit::StmCertificateCircuit;
+use crate::circuits::halo2::circuit::CertificateCircuit;
 use crate::circuits::halo2::errors::StmCircuitError;
 use crate::circuits::halo2::types::{CircuitBase, CircuitCurve};
 use crate::circuits::halo2::witness::CircuitWitnessEntry;
@@ -51,7 +51,7 @@ pub(crate) struct AssignedSignatureComponents {
 
 /// Assigns one witness entry into the Halo2 value layer consumed by circuit gadgets.
 pub(crate) fn assign_witness_entry(
-    circuit: &StmCertificateCircuit,
+    circuit: &CertificateCircuit,
     std_lib: &ZkStdLib,
     layouter: &mut impl Layouter<CircuitBase>,
     witness_entry: Value<CircuitWitnessEntry>,
@@ -96,7 +96,7 @@ fn assign_verification_key(
 
 /// Assigns and validates the Merkle authentication path carried by one witness entry.
 fn assign_merkle_path(
-    circuit: &StmCertificateCircuit,
+    circuit: &CertificateCircuit,
     std_lib: &ZkStdLib,
     layouter: &mut impl Layouter<CircuitBase>,
     witness_entry: Value<CircuitWitnessEntry>,

@@ -14,7 +14,7 @@ use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
 use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
-use crate::circuits::halo2::circuit::StmCertificateCircuit;
+use crate::circuits::halo2::circuit::CertificateCircuit;
 use crate::circuits::halo2::errors::StmCircuitError;
 use crate::circuits::halo2::keys::{
     NonRecursiveCircuitProvingKey, NonRecursiveCircuitVerifyingKey,
@@ -87,7 +87,7 @@ pub(crate) fn assert_proving_circuit_error<T>(result: StmResult<T>) -> StmCircui
     }
 }
 
-fn validate_relation_for_setup(relation: &StmCertificateCircuit) -> StmResult<()> {
+fn validate_relation_for_setup(relation: &CertificateCircuit) -> StmResult<()> {
     relation
         .validate_parameters()
         .with_context(|| "Circuit parameter validation failed before setup")
@@ -101,7 +101,7 @@ pub(crate) struct StmCircuitEnv {
     srs: ParamsKZG<Bls12>,
 
     /// The STM circuit relation defining all constraints enforced in-circuit.
-    relation: StmCertificateCircuit,
+    relation: CertificateCircuit,
 
     /// Verification key corresponding to `relation` and `srs`.
     vk: NonRecursiveCircuitVerifyingKey,
@@ -532,7 +532,7 @@ pub(crate) fn setup_stm_circuit_env(
         m: m as u64,
         phi_f: 0.2,
     };
-    let relation = StmCertificateCircuit::try_new(&stm_params, depth).unwrap();
+    let relation = CertificateCircuit::try_new(&stm_params, depth).unwrap();
     validate_relation_for_setup(&relation)?;
 
     {
@@ -565,7 +565,7 @@ pub(crate) fn prove_and_verify_result(
 
     let start = Instant::now();
     let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-    let proof = zk::prove::<StmCertificateCircuit, PoseidonState<CircuitBase>>(
+    let proof = zk::prove::<CertificateCircuit, PoseidonState<CircuitBase>>(
         &env.srs,
         env.pk.midnight_pk(),
         &env.relation,
@@ -579,7 +579,7 @@ pub(crate) fn prove_and_verify_result(
     println!("Proof size: {:?}", proof.len());
 
     let start = Instant::now();
-    let verify_result = zk::verify::<StmCertificateCircuit, PoseidonState<CircuitBase>>(
+    let verify_result = zk::verify::<CertificateCircuit, PoseidonState<CircuitBase>>(
         &env.srs.verifier_params(),
         env.vk.midnight_vk(),
         &instance,
@@ -694,7 +694,7 @@ fn get_or_build_circuit_keys(
     parameters: &Parameters,
     merkle_tree_depth: u32,
     circuit_degree: u32,
-    relation: &StmCertificateCircuit,
+    relation: &CertificateCircuit,
     srs: &ParamsKZG<Bls12>,
 ) -> StmResult<CircuitVerificationAndProvingKeyPair> {
     let key_cache = certificate_golden_key_cache(
@@ -737,7 +737,7 @@ pub(crate) fn compute_unsafe_circuit_verification_key(
     merkle_tree_depth: u32,
 ) -> Vec<u8> {
     const RNG_SEED: u64 = 42;
-    let circuit = StmCertificateCircuit::try_new(params, merkle_tree_depth).unwrap();
+    let circuit = CertificateCircuit::try_new(params, merkle_tree_depth).unwrap();
     let circuit_degree = MidnightCircuit::from_relation(&circuit, None).k();
     let srs: ParamsKZG<Bls12> =
         ParamsKZG::unsafe_setup(circuit_degree, ChaCha20Rng::seed_from_u64(RNG_SEED));

@@ -24,8 +24,13 @@ use crate::signature_scheme::{
 use crate::{LotteryIndex, Parameters, StmResult};
 
 /// Halo2 relation implementing the non-recursive STM verification circuit.
+///
+/// Carries only the parameters that fix the constraint system; the instance and witness are
+/// supplied separately to `Relation::circuit`. `IvcCircuitData` on the recursive side is named
+/// for its contents instead: it bundles a concrete step's values with the verifier metadata
+/// required during synthesis.
 #[derive(Clone, Default, Debug)]
-pub struct StmCertificateCircuit {
+pub struct CertificateCircuit {
     // k in mithril: the required number of distinct lottery index slots needed to create a valid multi-signature
     k: u32,
     // m in mithril: the number of lotteries that a signer can participate in for a message
@@ -33,7 +38,7 @@ pub struct StmCertificateCircuit {
     merkle_tree_depth: u32,
 }
 
-impl StmCertificateCircuit {
+impl CertificateCircuit {
     fn checked_len_u32(actual: usize) -> u32 {
         u32::try_from(actual).unwrap_or(u32::MAX)
     }
@@ -136,7 +141,7 @@ impl StmCertificateCircuit {
         Ok(())
     }
 
-    /// Constructs a new `StmCertificateCircuit` from Mithril `Parameters`.  
+    /// Constructs a new `CertificateCircuit` from Mithril `Parameters`.
     ///  
     /// This constructor only validates that `k` and `m`
     /// fit into a `u32` by performing fallible `u64 -> u32` conversions. If either value  
@@ -164,7 +169,7 @@ impl StmCertificateCircuit {
     }
 }
 
-impl Relation for StmCertificateCircuit {
+impl Relation for CertificateCircuit {
     type Error = StmCircuitError;
     type Instance = CircuitInstance;
     type Witness = CircuitWitness;
@@ -326,7 +331,6 @@ impl Relation for StmCertificateCircuit {
         let m = u32::from_le_bytes(m_bytes);
         let merkle_tree_depth = u32::from_le_bytes(merkle_tree_depth_bytes);
 
-        // Construct and return the `StmCertificateCircuit` instance.
         Ok(Self {
             k,
             m,
@@ -416,7 +420,7 @@ mod dst_alignment_tests {
 
 #[cfg(test)]
 mod circuit_creation_tests {
-    use crate::circuits::halo2::circuit::StmCertificateCircuit;
+    use crate::circuits::halo2::circuit::CertificateCircuit;
 
     #[test]
     fn correct_circuit_creation() {
@@ -427,7 +431,7 @@ mod circuit_creation_tests {
         };
         let merkle_tree_depth = 13;
 
-        StmCertificateCircuit::try_new(&stm_params, merkle_tree_depth).unwrap();
+        CertificateCircuit::try_new(&stm_params, merkle_tree_depth).unwrap();
     }
 
     #[test]
@@ -439,7 +443,7 @@ mod circuit_creation_tests {
         };
         let merkle_tree_depth = 13;
 
-        let circuit = StmCertificateCircuit::try_new(&stm_params, merkle_tree_depth);
+        let circuit = CertificateCircuit::try_new(&stm_params, merkle_tree_depth);
 
         circuit.expect_err("Creation should have failed with number of lotteries too large.");
     }
@@ -453,7 +457,7 @@ mod circuit_creation_tests {
         };
         let merkle_tree_depth = 13;
 
-        let circuit = StmCertificateCircuit::try_new(&stm_params, merkle_tree_depth);
+        let circuit = CertificateCircuit::try_new(&stm_params, merkle_tree_depth);
 
         circuit.expect_err("Creation should have failed with k too large.");
     }
@@ -466,7 +470,7 @@ mod non_recursive_circuit_degree_correctness {
     use crate::{
         Parameters,
         circuits::halo2::{
-            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::StmCertificateCircuit,
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::CertificateCircuit,
             keys::NonRecursiveCircuitVerifyingKey,
         },
         codec::TryFromBytes,
@@ -487,11 +491,11 @@ mod non_recursive_circuit_degree_correctness {
         };
         let merkle_tree_depth = 11;
 
-        let circuit = StmCertificateCircuit::try_new(&parameters, merkle_tree_depth).unwrap();
+        let circuit = CertificateCircuit::try_new(&parameters, merkle_tree_depth).unwrap();
         let circuit_cost = zk::cost_model(&circuit, None);
         assert_eq!(circuit_cost.k, SMALL_CERTIFICATE_CIRCUIT_DEGREE);
 
-        let circuit = StmCertificateCircuit::try_new(&parameters, merkle_tree_depth + 1).unwrap();
+        let circuit = CertificateCircuit::try_new(&parameters, merkle_tree_depth + 1).unwrap();
         let circuit_cost = zk::cost_model(&circuit, None);
         assert_eq!(circuit_cost.k, SMALL_CERTIFICATE_CIRCUIT_DEGREE + 1);
     }

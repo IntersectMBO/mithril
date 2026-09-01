@@ -10,7 +10,7 @@ use midnight_zk_stdlib::MidnightCircuit;
 use crate::{
     Parameters,
     circuits::{
-        halo2::circuit::StmCertificateCircuit,
+        halo2::circuit::CertificateCircuit,
         halo2::keys::NonRecursiveCircuitVerifyingKey,
         halo2_ivc::{
             NativeField, PairingEngine, RECURSIVE_CIRCUIT_DEGREE, circuit::IvcCircuitData,
@@ -27,7 +27,7 @@ pub(crate) fn golden_recursive_circuit_verification_key_bytes() -> Vec<u8> {
         phi_f: 0.2,
     };
     let merkle_tree_depth = 3;
-    let circuit = StmCertificateCircuit::try_new(&small_parameters, merkle_tree_depth).unwrap();
+    let circuit = CertificateCircuit::try_new(&small_parameters, merkle_tree_depth).unwrap();
     let circuit_degree = MidnightCircuit::from_relation(&circuit, None).k();
 
     let srs_for_non_recursive_circuit = build_deterministic_params(circuit_degree);

@@ -15,7 +15,7 @@ use crate::{
     Parameters,
     circuits::{
         halo2::{
-            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::StmCertificateCircuit,
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::CertificateCircuit,
         },
         halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
         test_utils::file_mutex::FileMutex,
@@ -178,7 +178,7 @@ impl IvcSnarkProverSetup {
             cache_directory.join("certificate"),
             "non-recursive",
             &[],
-            StmCertificateCircuit::try_new(parameters, merkle_tree_depth)?,
+            CertificateCircuit::try_new(parameters, merkle_tree_depth)?,
         );
         let recursive_key_provider = KeyProvider::new(
             cache_directory.join("recursive"),
