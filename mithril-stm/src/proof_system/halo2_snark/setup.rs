@@ -33,7 +33,9 @@ use crate::{
 /// Bundles the one-time setup artifacts needed to prove and verify SNARK proofs.
 ///
 /// This includes the Structured Reference String (SRS), the compiled circuit, and the
-/// proving and verification keys derived from them.
+/// proving and verification keys derived from them. `IvcProverSetup` on the recursive side carries
+/// more, because a recursive step verifies both the incoming certificate proof and the previous IVC
+/// proof; see its documentation.
 pub struct SnarkProverSetup {
     /// KZG Structured Reference String.
     pub(crate) srs: ParamsKZG<Bls12>,
@@ -55,7 +57,7 @@ impl SnarkProverSetup {
     }
 
     /// Derives the certificate setup from a trusted setup provider and a certificate key provider,
-    /// mirroring `IvcSnarkProverSetup::load` on the recursive side.
+    /// mirroring `IvcProverSetup::load` on the recursive side.
     ///
     /// Loads the SRS from the trusted setup provider, takes the circuit from the key provider (single
     /// source), downsizes the SRS to that circuit's degree and stores it for proving, and reads or

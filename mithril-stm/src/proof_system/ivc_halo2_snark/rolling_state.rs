@@ -60,7 +60,7 @@ impl IvcRollingState {
     /// trivial accumulator over the supplied fixed-base names, and the
     /// caller-supplied genesis signature.
     ///
-    /// `fixed_base_names` must be the keys of `IvcSnarkProverSetup::combined_fixed_bases`.
+    /// `fixed_base_names` must be the keys of `IvcProverSetup::combined_fixed_bases`.
     /// Passing any other list produces a genesis accumulator that does not match
     /// what the in-circuit verifier expects, and the first proving step will fail.
     pub(crate) fn genesis(

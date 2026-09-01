@@ -185,7 +185,7 @@ pub(crate) fn build_deterministic_params(circuit_degree: u32) -> ParamsKZG<Bls12
 /// Loads the shared unsafe SRS of degree `circuit_degree` from the content-keyed test cache,
 /// generating and persisting it on a miss.
 ///
-/// This is the entry [`IvcSnarkProverSetup::build_for_test`] writes: both derive from the same
+/// This is the entry [`IvcProverSetup::build_for_test`] writes: both derive from the same
 /// seed, so the generation cost is paid once per degree across the whole suite.
 fn load_shared_unsafe_srs(circuit_degree: u32) -> ParamsKZG<Bls12> {
     let srs_cache = FileMutex::for_shared_cache("unsafe-srs", &[&UNSAFE_SRS_SEED.to_le_bytes()]);

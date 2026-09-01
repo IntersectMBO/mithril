@@ -48,7 +48,7 @@ use crate::{
         interface::IvcChainProver,
         prover_input::IvcProverInput,
         prover_input_helpers::IvcTransitionType,
-        prover_setup::IvcSnarkProverSetup,
+        prover_setup::IvcProverSetup,
         rolling_state::{IvcRollingState, midnight_accumulator_serde},
         verifier_setup::IvcVerifierSetup,
     },
@@ -58,7 +58,7 @@ use crate::{
 /// Per-session IVC prover handle.
 pub(crate) struct IvcProver<R: RngCore + CryptoRng> {
     /// Shared, cached setup (SRS, verifying keys, proving key, fixed-base maps).
-    pub(crate) ivc_setup: Arc<IvcSnarkProverSetup>,
+    pub(crate) ivc_setup: Arc<IvcProverSetup>,
     /// Randomness source used during proof generation.
     pub(crate) rng: R,
 }
@@ -570,8 +570,7 @@ impl IvcProver<OsRng> {
         let certificate_key_provider =
             KeyProvider::for_non_recursive_circuit(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?;
         let recursive_key_provider = KeyProvider::for_recursive_circuit(certificate_key_provider);
-        let ivc_setup =
-            IvcSnarkProverSetup::load(&trusted_setup_provider, &recursive_key_provider)?;
+        let ivc_setup = IvcProverSetup::load(&trusted_setup_provider, &recursive_key_provider)?;
 
         Ok(Self {
             ivc_setup: Arc::new(ivc_setup),
@@ -1069,7 +1068,7 @@ mod tests {
 
     // The context guard is the first thing `IvcProver::prove` runs. It is tested directly here
     // rather than through `prove` so the test stays fast: reaching `prove` would require building
-    // an `IvcSnarkProverSetup` (full keygen). With `genesis_bootstrap` now always supplied, a genesis
+    // an `IvcProverSetup` (full keygen). With `genesis_bootstrap` now always supplied, a genesis
     // `rolling_state` is the only remaining invalid context; both-`Some`/both-`None` are
     // unrepresentable.
     #[test]
@@ -1397,7 +1396,7 @@ mod tests {
                 },
             },
             proof_system::ivc_halo2_snark::{
-                prover_setup::IvcSnarkProverSetup, rolling_state::IvcRollingState,
+                prover_setup::IvcProverSetup, rolling_state::IvcRollingState,
                 verifier_setup::IvcVerifierSetup,
             },
         };
@@ -1405,7 +1404,7 @@ mod tests {
         use super::super::{IvcGenesisBootstrapInput, IvcProof, IvcProver};
 
         struct SlowTestContext {
-            ivc_setup: Arc<IvcSnarkProverSetup>,
+            ivc_setup: Arc<IvcProverSetup>,
             global: Global,
             verifier_setup: IvcVerifierSetup,
             genesis_bootstrap: IvcGenesisBootstrapInput,
@@ -1449,8 +1448,8 @@ mod tests {
             };
             let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
             let ivc_setup = Arc::new(
-                IvcSnarkProverSetup::build_for_test(&parameters, merkle_tree_depth)
-                    .expect("IvcSnarkProverSetup::build_for_test should succeed"),
+                IvcProverSetup::build_for_test(&parameters, merkle_tree_depth)
+                    .expect("IvcProverSetup::build_for_test should succeed"),
             );
 
             let verification_context = load_embedded_verification_context_asset()

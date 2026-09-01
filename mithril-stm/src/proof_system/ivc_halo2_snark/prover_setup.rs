@@ -44,6 +44,14 @@ use crate::{
 
 /// Load-once, deployment-constant artifacts shared by every step of an IVC proving session.
 ///
+/// Carries additional verification artifacts because a non-genesis recursive step verifies both the
+/// incoming certificate proof and the previous IVC proof before folding their accumulators. The two
+/// verifying keys configure those verifiers; the per-proof fixed-base maps cache the data needed to
+/// normalize their accumulators, and their union supplies the fixed-base set carried by the rolling
+/// accumulator. This setup therefore exposes a verification-side view through
+/// [`Self::prover_input_verification_context`]. The non-recursive prover has no preparation phase
+/// that verifies an existing proof, so it needs no equivalent.
+///
 /// # Invariants
 ///
 /// The three fixed-base maps are not independent. The constructor must enforce:
@@ -53,7 +61,7 @@ use crate::{
 /// and values must agree across the three maps for any shared key. The in-circuit IVC
 /// verifier gadget builds a single merged fixed-base list from these names; any mismatch
 /// here produces folded accumulators the circuit will reject.
-pub(crate) struct IvcSnarkProverSetup {
+pub(crate) struct IvcProverSetup {
     /// KZG parameters used during proof generation, downsized to `RECURSIVE_CIRCUIT_DEGREE`.
     ///
     /// `create_proof` commits in the Lagrange basis of the circuit domain, so the SRS must match
@@ -75,7 +83,7 @@ pub(crate) struct IvcSnarkProverSetup {
     pub(crate) combined_fixed_bases: BTreeMap<String, G1Projective>,
 }
 
-impl IvcSnarkProverSetup {
+impl IvcProverSetup {
     /// Derives the full IVC setup around a single SRS loaded once.
     ///
     /// Loads the SRS and downsizes it in place to [`RECURSIVE_CIRCUIT_DEGREE`] (stored for
@@ -129,7 +137,7 @@ impl IvcSnarkProverSetup {
         }
     }
 
-    /// Builds an [`IvcSnarkProverSetup`] from a deterministic unsafe SRS with degree `RECURSIVE_CIRCUIT_DEGREE`
+    /// Builds an [`IvcProverSetup`] from a deterministic unsafe SRS with degree `RECURSIVE_CIRCUIT_DEGREE`
     /// using [`Self::build_for_test_degree`].
     #[cfg(test)]
     pub(crate) fn build_for_test(
@@ -139,7 +147,7 @@ impl IvcSnarkProverSetup {
         Self::build_for_test_degree(parameters, merkle_tree_depth, RECURSIVE_CIRCUIT_DEGREE)
     }
 
-    /// Builds an [`IvcSnarkProverSetup`] from a deterministic unsafe SRS with degree determined by the input
+    /// Builds an [`IvcProverSetup`] from a deterministic unsafe SRS with degree determined by the input
     /// `unsafe_srs_degree`.
     /// Uses a cache for the unsafe SRS to avoid regenerating it when a SRS of the correct degree already exists
     /// and also uses a separate cache for the circuit keys
@@ -201,7 +209,7 @@ impl IvcSnarkProverSetup {
 ///
 /// Each fixed-base map must match its corresponding verifying key. `from_verifying_keys` derives the maps
 /// directly, while `prover_input_verification_context` inherits the invariant established by
-/// [`IvcSnarkProverSetup::load`].
+/// [`IvcProverSetup::load`].
 pub(crate) struct IvcProverInputVerificationContext {
     /// KZG verifier parameters of the SRS the proofs were produced under.
     verifier_params: ParamsVerifierKZG<Bls12>,
@@ -349,7 +357,7 @@ mod tests {
         // Runs the real `load` path against an oversized unsafe SRS; runs in the `slow` tier.
         #[test]
         fn load_succeeds_with_unsafe_srs() {
-            let setup = IvcSnarkProverSetup::build_for_test(
+            let setup = IvcProverSetup::build_for_test(
                 &Parameters {
                     k: 3,
                     m: 10,
@@ -357,7 +365,7 @@ mod tests {
                 },
                 4,
             )
-            .expect("IvcSnarkProverSetup::build_for_test should succeed");
+            .expect("IvcProverSetup::build_for_test should succeed");
 
             assert!(
                 !setup.certificate_fixed_bases.is_empty(),
@@ -384,7 +392,7 @@ mod tests {
             }
         }
 
-        // `IvcSnarkProverSetup::build_for_test` loads from an oversized unsafe SRS that shares the production
+        // `IvcProverSetup::build_for_test` loads from an oversized unsafe SRS that shares the production
         // SRS's tau, so the keys and stored SRS must both downsize to `RECURSIVE_CIRCUIT_DEGREE` to
         // reproduce the embedded production assets exactly.
         #[test]
@@ -395,12 +403,12 @@ mod tests {
                 phi_f: 0.2,
             };
             let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
-            let ivc_setup = IvcSnarkProverSetup::build_for_test_degree(
+            let ivc_setup = IvcProverSetup::build_for_test_degree(
                 &parameters,
                 merkle_tree_depth,
                 RECURSIVE_CIRCUIT_DEGREE + 1,
             )
-            .expect("IvcSnarkProverSetup::build_for_test should succeed");
+            .expect("IvcProverSetup::build_for_test should succeed");
 
             let verification_context = load_embedded_verification_context_asset()
                 .expect("verification context asset should load");
@@ -429,7 +437,7 @@ mod tests {
             assert_eq!(
                 ivc_setup.srs.max_k(),
                 RECURSIVE_CIRCUIT_DEGREE,
-                "the proving SRS stored in IvcSnarkProverSetup must be downsized to the IVC circuit degree"
+                "the proving SRS stored in IvcProverSetup must be downsized to the IVC circuit degree"
             );
         }
     }

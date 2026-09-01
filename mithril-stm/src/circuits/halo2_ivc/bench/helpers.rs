@@ -2,7 +2,7 @@
 //!
 //! Exposes `IvcBenchEnv`, a thin `benchmark-internals`-gated wrapper that delegates to the
 //! production IVC proof-system code so the benchmarks measure the same code paths run in
-//! production: setup (`IvcSnarkProverSetup::load`), preparation (`IvcProverInput`), recursive
+//! production: setup (`IvcProverSetup::load`), preparation (`IvcProverInput`), recursive
 //! proving (`IvcProof::prove_with_transcript`), verification (`IvcProof::verify` and the KZG
 //! opening), and off-circuit accumulator folding.
 //!
@@ -53,14 +53,14 @@ use crate::{
         trusted_setup::TrustedSetupProvider,
     },
     proof_system::ivc_halo2_snark::{
-        IvcProverInput, IvcSnarkProverSetup, proof::IvcProof, rolling_state::IvcRollingState,
+        IvcProverInput, IvcProverSetup, proof::IvcProof, rolling_state::IvcRollingState,
         verifier_setup::IvcVerifierSetup,
     },
 };
 
 /// Deterministic certificate parameters matching the committed golden assets
 /// (`tests::common::generators::setup` + `tests::common::CERTIFICATE_CIRCUIT_DEGREE`). If these
-/// drift from the asset generators, `IvcSnarkProverSetup::load` derives a certificate verifying
+/// drift from the asset generators, `IvcProverSetup::load` derives a certificate verifying
 /// key that does not match the committed certificate proofs, and fixture preparation fails its
 /// validity assert — so a mismatch surfaces loudly rather than producing bogus numbers.
 const QUORUM_SIZE: u64 = 2;
@@ -199,7 +199,7 @@ fn recursive_key_provider(
 
 /// Shared benchmark environment delegating to the production IVC proof-system code.
 pub struct IvcBenchEnv {
-    setup: IvcSnarkProverSetup,
+    setup: IvcProverSetup,
     verifier_setup: IvcVerifierSetup,
     global: Global,
 }
@@ -209,7 +209,7 @@ impl IvcBenchEnv {
     /// fixed bases), the verifier setup derived from the same unsafe SRS, and the `Global` built
     /// from the committed genesis fixture. Rooted at `cache_dir` (a caller-managed directory).
     pub fn new(cache_dir: &Path) -> StmResult<Self> {
-        let setup = IvcSnarkProverSetup::load(
+        let setup = IvcProverSetup::load(
             &trusted_setup_provider(cache_dir),
             &recursive_key_provider(cache_dir)?,
         )?;
@@ -537,7 +537,7 @@ impl IvcBenchEnv {
 
     /// Cold-start SRS: generates and stores the unsafe SRS at `cache_dir`, reads it back, and downsizes
     /// it to `RECURSIVE_CIRCUIT_DEGREE` — the same downsized end state as production
-    /// `IvcSnarkProverSetup::load`. Paired with [`Self::measure_srs_warm_start`].
+    /// `IvcProverSetup::load`. Paired with [`Self::measure_srs_warm_start`].
     pub fn measure_srs_cold_start(cache_dir: &Path) -> StmResult<ParamsKZG<Bls12>> {
         let mut srs = trusted_setup_provider(cache_dir).get_trusted_setup_parameters()?;
         srs.downsize(RECURSIVE_CIRCUIT_DEGREE);
@@ -546,7 +546,7 @@ impl IvcBenchEnv {
 
     /// Warm-start SRS: reads an already-generated SRS from `cache_dir` through the production cached read
     /// path (skips download + hash verification, only deserializes), then downsizes it exactly as
-    /// [`Self::measure_srs_cold_start`] and `IvcSnarkProverSetup::load` do — so cold and warm measure the
+    /// [`Self::measure_srs_cold_start`] and `IvcProverSetup::load` do — so cold and warm measure the
     /// same downsized end state, with no network dependency. Precondition: a prior `measure_srs_cold_start`
     /// (or any generation) has populated `cache_dir`.
     pub fn measure_srs_warm_start(cache_dir: &Path) -> StmResult<ParamsKZG<Bls12>> {
@@ -557,7 +557,7 @@ impl IvcBenchEnv {
         Ok(srs)
     }
 
-    /// Certificate **and** recursive circuit keys from `cache_dir`, mirroring `IvcSnarkProverSetup::load`:
+    /// Certificate **and** recursive circuit keys from `cache_dir`, mirroring `IvcProverSetup::load`:
     /// the certificate verifying key is accessed explicitly before the recursive key pair, so a
     /// **cold-start** (empty cache) derives both layers and a **warm-start** (populated cache) loads both.
     /// Without the explicit certificate access, only the cold path would touch the certificate cache (the
