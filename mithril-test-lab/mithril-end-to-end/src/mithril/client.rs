@@ -8,7 +8,7 @@ use mithril_common::StdResult;
 use mithril_common::entities::{BlockHash, EpochSpecifier, TransactionHash};
 
 use crate::utils::{MithrilCommand, NodeVersion};
-use crate::{ANCILLARY_MANIFEST_VERIFICATION_KEY, GenesisKeys};
+use crate::{ANCILLARY_MANIFEST_VERIFICATION_KEY, Aggregator, GenesisKeys};
 
 #[derive(Debug)]
 pub struct Client {
@@ -435,12 +435,19 @@ impl Client {
         bin_dir: &Path,
         genesis_keys: GenesisKeys,
     ) -> StdResult<Self> {
+        let registry_file_path = Aggregator::circuit_verification_key_registry_path()
+            .display()
+            .to_string();
         let env = HashMap::from([
             ("GENESIS_VERIFICATION_KEY", genesis_keys.verification_key),
             ("AGGREGATOR_ENDPOINT", &aggregator_endpoint),
             (
                 "ANCILLARY_VERIFICATION_KEY",
                 ANCILLARY_MANIFEST_VERIFICATION_KEY,
+            ),
+            (
+                "CIRCUIT_VERIFICATION_KEY_REGISTRY_PATH",
+                registry_file_path.as_str(),
             ),
         ]);
         let version = NodeVersion::fetch(Self::BIN_NAME, bin_dir)?;
