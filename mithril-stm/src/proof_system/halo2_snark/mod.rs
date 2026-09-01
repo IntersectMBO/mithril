@@ -1,6 +1,7 @@
 mod aggregate_key;
 mod clerk;
 mod eligibility;
+mod errors;
 mod interface;
 mod message;
 mod proof;
@@ -16,6 +17,7 @@ pub(crate) use clerk::SnarkClerk;
 pub(crate) use eligibility::{
     compute_target_value_for_snark_lottery, compute_winning_lottery_indices,
 };
+pub use errors::SnarkProofError;
 #[cfg(test)]
 pub(crate) use interface::MockSnarkAggregateSignatureProver;
 pub(crate) use interface::SnarkAggregateSignatureProver;
@@ -35,19 +37,6 @@ pub(crate) use single_signature::SingleSignatureForSnark;
 ///
 /// For now set to 13 to allow for 2^13 = 8192 signers
 pub const MERKLE_TREE_DEPTH_FOR_SNARK: u32 = 13;
-
-/// Errors which can be outputted by the snark proof creation or verification.
-#[cfg(feature = "future_snark")]
-#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
-pub enum SnarkError {
-    /// Serialization error
-    #[error("Serialization error")]
-    SerializationError,
-
-    /// The SNARK proof failed to verify
-    #[error("The SNARK proof failed to verify.")]
-    VerifyProofFail,
-}
 
 #[cfg(test)]
 mod tests {

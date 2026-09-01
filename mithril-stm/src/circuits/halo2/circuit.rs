@@ -7,7 +7,7 @@ use midnight_circuits::types::{AssignedNative, AssignedNativePoint};
 use midnight_proofs::circuit::{Layouter, Value};
 use midnight_zk_stdlib::{Relation, ZkStdLib, ZkStdLibArch};
 
-use crate::circuits::halo2::errors::StmCircuitError;
+use crate::circuits::halo2::errors::CertificateCircuitError;
 use crate::circuits::halo2::gadgets::{
     LOTTERY_BIT_BOUND, MerklePathInputs, UniqueSchnorrSignatureInputs,
     assert_lottery_index_in_bounds, assert_lottery_won, assert_strictly_increasing_lottery_index,
@@ -51,11 +51,11 @@ impl CertificateCircuit {
     /// Validates global circuit parameters before synthesis.
     ///
     /// Enforces `k < m <= 2^LOTTERY_BIT_BOUND - 1`, returning
-    /// `StmCircuitError::InvalidCircuitParameters` when violated.
-    pub(crate) fn validate_parameters(&self) -> Result<(), StmCircuitError> {
+    /// `CertificateCircuitError::InvalidCircuitParameters` when violated.
+    pub(crate) fn validate_parameters(&self) -> Result<(), CertificateCircuitError> {
         let max_m = (1u32 << LOTTERY_BIT_BOUND) - 1;
         if self.k >= self.m || self.m > max_m {
-            return Err(StmCircuitError::InvalidCircuitParameters {
+            return Err(CertificateCircuitError::InvalidCircuitParameters {
                 k: self.k,
                 m: self.m,
             });
@@ -67,11 +67,14 @@ impl CertificateCircuit {
     /// Validates that witness vector length matches the configured k.
     ///
     /// This precondition prevents shape mismatches; failures return
-    /// `StmCircuitError::WitnessLengthMismatch`.
-    pub(crate) fn validate_witness_length(&self, actual: usize) -> Result<(), StmCircuitError> {
+    /// `CertificateCircuitError::WitnessLengthMismatch`.
+    pub(crate) fn validate_witness_length(
+        &self,
+        actual: usize,
+    ) -> Result<(), CertificateCircuitError> {
         let expected_k = self.k as usize;
         if actual != expected_k {
-            return Err(StmCircuitError::WitnessLengthMismatch {
+            return Err(CertificateCircuitError::WitnessLengthMismatch {
                 expected_k: self.k,
                 actual: Self::checked_len_u32(actual),
             });
@@ -87,17 +90,17 @@ impl CertificateCircuit {
     pub(crate) fn validate_lottery_index(
         &self,
         index: LotteryIndex,
-    ) -> Result<(), StmCircuitError> {
+    ) -> Result<(), CertificateCircuitError> {
         let max_supported = ((1u64 << LOTTERY_BIT_BOUND) - 1) as LotteryIndex;
         if index > max_supported {
-            return Err(StmCircuitError::LotteryIndexTooLarge {
+            return Err(CertificateCircuitError::LotteryIndexTooLarge {
                 index,
                 max_supported,
             });
         }
 
         if index >= self.m as LotteryIndex {
-            return Err(StmCircuitError::LotteryIndexOutOfBounds { index, m: self.m });
+            return Err(CertificateCircuitError::LotteryIndexOutOfBounds { index, m: self.m });
         }
 
         Ok(())
@@ -106,14 +109,14 @@ impl CertificateCircuit {
     /// Validates Merkle sibling path length against `merkle_tree_depth`.
     ///
     /// This guards against inconsistent witness paths and returns
-    /// `StmCircuitError::MerkleSiblingLengthMismatch` on mismatch.
+    /// `CertificateCircuitError::MerkleSiblingLengthMismatch` on mismatch.
     pub(crate) fn validate_merkle_sibling_length(
         &self,
         actual: usize,
-    ) -> Result<(), StmCircuitError> {
+    ) -> Result<(), CertificateCircuitError> {
         let expected_depth = self.merkle_tree_depth as usize;
         if actual != expected_depth {
-            return Err(StmCircuitError::MerkleSiblingLengthMismatch {
+            return Err(CertificateCircuitError::MerkleSiblingLengthMismatch {
                 expected_depth: self.merkle_tree_depth,
                 actual: Self::checked_len_u32(actual),
             });
@@ -125,14 +128,14 @@ impl CertificateCircuit {
     /// Validates Merkle position bits length against `merkle_tree_depth`.
     ///
     /// Under the current witness shape, this cannot fail independently from sibling-length
-    /// validation because both lengths derive from `x.siblings`; returns `StmCircuitError::MerklePositionLengthMismatch`.
+    /// validation because both lengths derive from `x.siblings`; returns `CertificateCircuitError::MerklePositionLengthMismatch`.
     pub(crate) fn validate_merkle_position_length(
         &self,
         actual: usize,
-    ) -> Result<(), StmCircuitError> {
+    ) -> Result<(), CertificateCircuitError> {
         let expected_depth = self.merkle_tree_depth as usize;
         if actual != expected_depth {
-            return Err(StmCircuitError::MerklePositionLengthMismatch {
+            return Err(CertificateCircuitError::MerklePositionLengthMismatch {
                 expected_depth: self.merkle_tree_depth,
                 actual: Self::checked_len_u32(actual),
             });
@@ -170,11 +173,13 @@ impl CertificateCircuit {
 }
 
 impl Relation for CertificateCircuit {
-    type Error = StmCircuitError;
+    type Error = CertificateCircuitError;
     type Instance = CircuitInstance;
     type Witness = CircuitWitness;
 
-    fn format_instance(instance: &Self::Instance) -> Result<Vec<CircuitBase>, StmCircuitError> {
+    fn format_instance(
+        instance: &Self::Instance,
+    ) -> Result<Vec<CircuitBase>, CertificateCircuitError> {
         Ok(vec![instance.0.into(), instance.1.into()])
     }
 
@@ -184,10 +189,10 @@ impl Relation for CertificateCircuit {
         layouter: &mut impl Layouter<CircuitBase>,
         instance: Value<Self::Instance>,
         witness: Value<Self::Witness>,
-    ) -> Result<(), StmCircuitError> {
+    ) -> Result<(), CertificateCircuitError> {
         self.validate_parameters()?;
         let witness = witness
-            .map_with_result(|witness| -> Result<_, StmCircuitError> {
+            .map_with_result(|witness| -> Result<_, CertificateCircuitError> {
                 self.validate_witness_length(witness.len())?;
                 witness
                     .iter()
@@ -287,7 +292,7 @@ impl Relation for CertificateCircuit {
         // m can be put as a public instance or a constant
         let m = std_lib.assign_fixed(layouter, CircuitBase::from(self.m as u64))?;
         assert_lottery_index_in_bounds(std_lib, layouter, &previous_lottery_index, &m)
-            .map_err(StmCircuitError::from)
+            .map_err(CertificateCircuitError::from)
     }
 
     fn used_chips(&self) -> ZkStdLibArch {

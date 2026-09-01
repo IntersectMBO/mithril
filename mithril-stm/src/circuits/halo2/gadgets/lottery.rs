@@ -4,7 +4,7 @@ use midnight_proofs::circuit::Layouter;
 use midnight_proofs::plonk::Error;
 use midnight_zk_stdlib::ZkStdLib;
 
-use crate::circuits::halo2::errors::StmCircuitError;
+use crate::circuits::halo2::errors::CertificateCircuitError;
 use crate::circuits::halo2::gadgets::comparison::lower_than_native;
 use crate::circuits::halo2::types::{CircuitBase, CircuitCurve};
 
@@ -18,7 +18,7 @@ pub(crate) fn assert_lottery_won(
     commitment_point: &AssignedNativePoint<CircuitCurve>,
     lottery_index: &AssignedNative<CircuitBase>,
     lottery_target_value: &AssignedNative<CircuitBase>,
-) -> Result<(), StmCircuitError> {
+) -> Result<(), CertificateCircuitError> {
     let commitment_point_x = std_lib.jubjub().x_coordinate(commitment_point);
     let commitment_point_y = std_lib.jubjub().y_coordinate(commitment_point);
     let lottery_evaluation_value = std_lib.poseidon(
@@ -38,7 +38,7 @@ pub(crate) fn assert_lottery_won(
     )?;
     std_lib
         .assert_false(layouter, &is_less)
-        .map_err(StmCircuitError::from)
+        .map_err(CertificateCircuitError::from)
 }
 
 /// Constrains the current lottery index to be strictly greater than the previous one.
@@ -74,7 +74,7 @@ mod tests {
     use midnight_proofs::plonk::Error;
 
     use crate::LotteryIndex;
-    use crate::circuits::halo2::errors::StmCircuitError;
+    use crate::circuits::halo2::errors::CertificateCircuitError;
     use crate::circuits::halo2::tests::test_helpers::{
         assert_relation_rejected, comparison_used_chips, impl_focused_test_relation,
         jubjub_poseidon_used_chips, prove_and_verify_relation,
@@ -98,7 +98,7 @@ mod tests {
     impl_focused_test_relation!(
         LotteryWonRelation,
         LotteryWonWitness,
-        error = StmCircuitError,
+        error = CertificateCircuitError,
         jubjub_poseidon_used_chips(),
         |std_lib, layouter, witness| {
             let lottery_prefix =
