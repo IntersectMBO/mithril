@@ -389,18 +389,17 @@ impl ClientBuilder {
             if let Some(ipfs_file_downloader) = self.ipfs_file_downloader {
                 Some(ipfs_file_downloader)
             } else if let Some(ipfs_rpc_base_url) = self.ipfs_rpc_base_url {
-                Some(Arc::new(RetryDownloader::new(
-                    Arc::new(
-                        IpfsFileDownloader::new(
-                            reqwest::Url::parse(&ipfs_rpc_base_url)
-                                .with_context(|| "Parsing IPFS rpc base url failed")?,
-                            feedback_sender.clone(),
-                            logger.clone(),
-                        )
-                        .with_context(|| "Building IPFS file downloader failed")?,
-                    ),
-                    FileDownloadRetryPolicy::default(),
-                )))
+                // Note: no retry for IPFS downloads: retrying here would delay tripping the circuit breaker
+                // on the first unreachable file and waste time on every file after it's already tripped.
+                Some(Arc::new(
+                    IpfsFileDownloader::new(
+                        reqwest::Url::parse(&ipfs_rpc_base_url)
+                            .with_context(|| "Parsing IPFS rpc base url failed")?,
+                        feedback_sender.clone(),
+                        logger.clone(),
+                    )
+                    .with_context(|| "Building IPFS file downloader failed")?,
+                ))
             } else {
                 None
             };
