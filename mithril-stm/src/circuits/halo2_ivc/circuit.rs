@@ -47,8 +47,6 @@ pub struct IvcCircuitData {
 
 impl IvcCircuitData {
     /// Validates that the IVC verification key degree matches the IVC circuit degree constant RECURSIVE_CIRCUIT_DEGREE.
-    // Kept until the IVC prover validates recursive circuit keys.
-    #[allow(dead_code)]
     pub(crate) fn validate_ivc_verification_key_degree(
         ivc_verification_key: &RecursiveCircuitVerifyingKey,
     ) -> StmResult<()> {
@@ -104,8 +102,6 @@ impl IvcCircuitData {
     /// [`IvcCircuitError::IvcVerificationKeyDegreeMismatch`] or
     /// [`IvcCircuitError::InsufficientAdviceColumns`] /
     /// [`IvcCircuitError::InsufficientFixedColumns`] if either check fails.
-    // Kept until the IVC prover constructs recursive circuit instances.
-    #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn try_new(
         global: Global,
