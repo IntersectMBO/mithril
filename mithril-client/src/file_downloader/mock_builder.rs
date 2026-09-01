@@ -13,7 +13,7 @@ use mithril_common::{
     entities::{CompressionAlgorithm, FileUri},
 };
 
-use super::{DownloadEvent, FileDownloaderUri, MockFileDownloader};
+use super::{DownloadEvent, FileDownloaderUnreachable, FileDownloaderUri, MockFileDownloader};
 
 type MockFileDownloaderBuilderReturningFunc = Box<
     dyn FnMut(
@@ -80,6 +80,16 @@ impl MockFileDownloaderBuilder {
     pub fn with_failure(self) -> Self {
         self.with_returning(Box::new(|_, _, _, _, _| {
             Err(anyhow!("Download unpack failed"))
+        }))
+    }
+
+    /// The MockFileDownloader will fail with a [FileDownloaderUnreachable]
+    pub fn with_unreachable_downloader_failure(self, src: &'static str) -> Self {
+        self.with_returning(Box::new(move |location, _, _, _, _| {
+            Err(anyhow!(FileDownloaderUnreachable(
+                src,
+                location.as_str().to_string()
+            )))
         }))
     }
 
