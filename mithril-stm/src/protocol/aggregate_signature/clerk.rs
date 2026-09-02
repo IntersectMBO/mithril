@@ -311,6 +311,8 @@ mod tests {
 
     type D = MithrilMembershipDigest;
 
+    type ChainInputPredicate = Box<dyn Fn(&IvcChainInput<D>) -> bool + Send>;
+
     const PARAMS: Parameters = Parameters {
         k: 1,
         m: 10,
@@ -331,11 +333,9 @@ mod tests {
     enum IvcProverBehavior {
         /// Advances the chain and returns the given next rolling state.
         AdvancesChain(Option<IvcRollingState>),
-        /// Advances the chain and returns the given next rolling state.
-        AdvancesChainWithFunction(
-            Box<dyn Fn(&IvcChainInput<D>) -> bool + Send>,
-            Option<IvcRollingState>,
-        ),
+        /// Advances the chain only if the given predicate holds for the built `IvcChainInput`,
+        /// then returns the given next rolling state.
+        AdvancesChainWithFunction(ChainInputPredicate, Option<IvcRollingState>),
         /// The factory fails to build it, with the given root cause.
         FailsToBuild(&'static str),
         /// It is built but fails to advance the chain, with the given root cause.
@@ -351,10 +351,10 @@ mod tests {
     /// Defaults to the happy path: the SNARK prover returns a dummy certificate proof and the IVC
     /// prover advances the chain without producing a next rolling state.
     struct MockProverFactory {
-        /* the two behaviors plus an optional chain-input check */
+        /// The snark prover behavior
         snark_behavior: SnarkProverBehavior,
+        /// The ivc prover behavior
         ivc_behavior: IvcProverBehavior,
-        chain_input_check: Option<()>,
     }
 
     impl MockProverFactory {
@@ -362,7 +362,6 @@ mod tests {
             Self {
                 snark_behavior: SnarkProverBehavior::AggregatesSignatures,
                 ivc_behavior: IvcProverBehavior::AdvancesChain(None),
-                chain_input_check: None,
             }
         }
 
@@ -379,11 +378,6 @@ mod tests {
             self.ivc_behavior = IvcProverBehavior::NeverCalled;
             self
         }
-
-        // fn expecting_chain_input(
-        //     self,
-        //     check: impl Fn(&IvcChainInput<D>) -> bool + Send + 'static,
-        // ) -> Self;
 
         fn build_clerk(self, signer: &Signer<D>) -> Clerk<D> {
             let mut factory = MockSnarkProverFactory::new();
@@ -493,7 +487,7 @@ mod tests {
         )
     }
 
-    fn aggregate_ivc(
+    fn aggregate_ivc_with_dummy_message(
         clerk: Clerk<D>,
         ancillary_input: AncillaryProofInput,
     ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
@@ -556,41 +550,11 @@ mod tests {
         setup_equal_parties(params, 1).into_iter().next().unwrap()
     }
 
-    /// A SNARK prover stub that always succeeds, returning `dummy_snark_proof(params)`.
-    fn successful_snark_prover(params: Parameters) -> MockSnarkAggregateSignatureProver<D> {
-        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
-        snark_prover
-            .expect_verification_key()
-            .return_const(certificate_verifying_key());
-        snark_prover
-            .expect_aggregate_signatures()
-            .once()
-            .return_once(move |_, _, _| Ok(dummy_snark_proof(params)));
-        snark_prover
-    }
-
     /// An IVC chain prover stub with only its verifying key set
     fn ivc_prover_with_verifying_key() -> MockIvcChainProver<D> {
         let mut ivc_prover = MockIvcChainProver::new();
         ivc_prover.expect_verifying_key().return_const(ivc_verifying_key());
         ivc_prover
-    }
-
-    fn clerk_with_both_provers(
-        signer: &Signer<D>,
-        snark_prover: MockSnarkAggregateSignatureProver<D>,
-        ivc_prover: MockIvcChainProver<D>,
-    ) -> Clerk<D> {
-        let mut factory = MockSnarkProverFactory::new();
-        factory
-            .expect_snark_aggregate_signature_prover()
-            .once()
-            .return_once(move |_| Ok(Box::new(snark_prover)));
-        factory
-            .expect_ivc_chain_prover()
-            .once()
-            .return_once(move |_| Ok(Box::new(ivc_prover)));
-        Clerk::new_clerk_from_signer_with_mock_prover_factory(signer, factory)
     }
 
     #[test]
@@ -604,21 +568,19 @@ mod tests {
             .to_bytes()
             .unwrap();
 
-        let mut ivc_prover = ivc_prover_with_verifying_key();
-        ivc_prover
-            .expect_advance_chain()
-            .once()
-            .withf(|step_input| {
-                step_input.message == DUMMY_MESSAGE
-                    && step_input.rolling_state.as_ref().is_some_and(|rolling_state| {
-                        rolling_state.state().step_counter == StepCounter::new(3)
-                    })
-            })
-            .return_once(move |_| Ok((dummy_ivc_proof(), Some(next_rolling_state))));
+        let clerk = MockProverFactory::new()
+            .ivc_prover(IvcProverBehavior::AdvancesChainWithFunction(
+                Box::new(|step_input| {
+                    step_input.message == DUMMY_MESSAGE
+                        && step_input.rolling_state.as_ref().is_some_and(|rolling_state| {
+                            rolling_state.state().step_counter == StepCounter::new(3)
+                        })
+                }),
+                Some(next_rolling_state),
+            ))
+            .build_clerk(&signer);
 
-        let clerk = clerk_with_both_provers(&signer, successful_snark_prover(PARAMS), ivc_prover);
-
-        let (aggregate_signature, ancillary_output) = aggregate_ivc(
+        let (aggregate_signature, ancillary_output) = aggregate_ivc_with_dummy_message(
             clerk,
             build_ancillary_input(Some(AncillaryProverData::IvcSnark(current_rolling_state))),
         )
@@ -678,7 +640,7 @@ mod tests {
     #[test]
     fn snark_aggregation_builds_snark_prover_with_clerk_parameters() {
         let signer = setup_single_party(PARAMS);
-        let snark_prover = successful_snark_prover(PARAMS);
+        let snark_prover = snark_prover_returning(Ok(dummy_snark_proof(PARAMS)));
 
         let mut factory = MockSnarkProverFactory::new();
         factory
@@ -775,14 +737,14 @@ mod tests {
     }
 
     #[test]
-    fn ivc_aggregation_propagates_prover_factory_error() {
+    fn ivc_aggregation_propagates_ivc_chain_prover_factory_error() {
         let signer = setup_single_party(PARAMS);
 
         let clerk = MockProverFactory::new()
             .ivc_prover(IvcProverBehavior::FailsToBuild("ivc factory error"))
             .build_clerk(&signer);
 
-        let err = aggregate_ivc(clerk, build_ancillary_input(None))
+        let err = aggregate_ivc_with_dummy_message(clerk, build_ancillary_input(None))
             .expect_err("ivc factory error should propagate");
 
         assert_eq!(err.to_string(), "ivc factory error");
@@ -802,7 +764,7 @@ mod tests {
             DUMMY_PROTOCOL_MESSAGE_PREIMAGE.to_vec(),
         );
 
-        let err = aggregate_ivc(clerk, invalid_ancillary_input)
+        let err = aggregate_ivc_with_dummy_message(clerk, invalid_ancillary_input)
             .expect_err("Should fail without genesis verification key.");
 
         assert_eq!(
@@ -843,7 +805,7 @@ mod tests {
         let clerk = MockProverFactory::new().build_clerk(&signer);
 
         let (_aggregate_signature, ancillary_output) =
-            aggregate_ivc(clerk, build_ancillary_input(None))
+            aggregate_ivc_with_dummy_message(clerk, build_ancillary_input(None))
                 .expect("aggregation with mocked provers should succeed");
 
         let verifier_data = ancillary_output
@@ -875,7 +837,7 @@ mod tests {
         let clerk = MockProverFactory::new().build_clerk(&signer);
 
         let (_aggregate_signature, ancillary_output) =
-            aggregate_ivc(clerk, build_ancillary_input(None))
+            aggregate_ivc_with_dummy_message(clerk, build_ancillary_input(None))
                 .expect("aggregation with mocked provers should succeed");
 
         assert!(ancillary_output.prover_data().is_none());
@@ -886,11 +848,11 @@ mod tests {
         let signer = setup_single_party(PARAMS);
 
         let clerk = MockProverFactory::new()
-            .snark_prover(SnarkProverBehavior::FailsToBuild("SNARK prover error"))
+            .snark_prover(SnarkProverBehavior::FailsToAggregate("SNARK prover error"))
             .without_ivc_prover()
             .build_clerk(&signer);
 
-        let err = aggregate_ivc(clerk, build_ancillary_input(None))
+        let err = aggregate_ivc_with_dummy_message(clerk, build_ancillary_input(None))
             .expect_err("SNARK prover error should propagate");
 
         assert_eq!(err.root_cause().to_string(), "SNARK prover error");
@@ -904,7 +866,7 @@ mod tests {
             .ivc_prover(IvcProverBehavior::FailsToAdvanceChain("ivc prover error"))
             .build_clerk(&signer);
 
-        let err = aggregate_ivc(clerk, build_ancillary_input(None))
+        let err = aggregate_ivc_with_dummy_message(clerk, build_ancillary_input(None))
             .expect_err("ivc prover error should propagate");
 
         assert_eq!(err.root_cause().to_string(), "ivc prover error");
@@ -918,7 +880,7 @@ mod tests {
             .ivc_prover(IvcProverBehavior::NeverAdvancesChain)
             .build_clerk(&signer);
 
-        let err = aggregate_ivc(
+        let err = aggregate_ivc_with_dummy_message(
             clerk,
             build_ancillary_input(Some(AncillaryProverData::Future)),
         )
