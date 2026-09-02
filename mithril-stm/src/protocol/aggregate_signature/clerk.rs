@@ -313,6 +313,8 @@ mod tests {
 
     type ChainInputPredicate = Box<dyn Fn(&IvcChainInput<D>) -> bool + Send>;
 
+    type ParametersPredicate = Box<dyn Fn(&Parameters) -> bool + Send>;
+
     const PARAMS: Parameters = Parameters {
         k: 1,
         m: 10,
@@ -323,10 +325,15 @@ mod tests {
     enum SnarkProverBehavior {
         /// Returns a dummy certificate proof.
         AggregatesSignatures,
+        /// Returns a dummy certificate proof only if the given predicate holds for the
+        /// parameters passed to the factory.
+        AggregatesSignaturesWithFunction(ParametersPredicate),
         /// The factory fails to build it, with the given root cause.
         FailsToBuild(&'static str),
         /// It is built but fails to aggregate, with the given root cause.
         FailsToAggregate(&'static str),
+        /// The SNARK prover is never called.
+        NeverCalled,
     }
 
     /// How the mocked IVC chain prover behaves.
@@ -374,6 +381,11 @@ mod tests {
             self
         }
 
+        fn without_snark_prover(mut self) -> Self {
+            self.snark_behavior = SnarkProverBehavior::NeverCalled;
+            self
+        }
+
         fn without_ivc_prover(mut self) -> Self {
             self.ivc_behavior = IvcProverBehavior::NeverCalled;
             self
@@ -389,6 +401,14 @@ mod tests {
                         snark_prover_returning(Ok(dummy_snark_proof(PARAMS))),
                     );
                 }
+                SnarkProverBehavior::AggregatesSignaturesWithFunction(predicate) => {
+                    let snark_prover = snark_prover_returning(Ok(dummy_snark_proof(PARAMS)));
+                    factory
+                        .expect_snark_aggregate_signature_prover()
+                        .once()
+                        .withf(move |actual_params| predicate(actual_params))
+                        .return_once(move |_| Ok(Box::new(snark_prover)));
+                }
                 SnarkProverBehavior::FailsToBuild(message) => {
                     factory
                         .expect_snark_aggregate_signature_prover()
@@ -398,6 +418,7 @@ mod tests {
                 SnarkProverBehavior::FailsToAggregate(message) => {
                     wire_snark_prover(&mut factory, snark_prover_returning(Err(message)));
                 }
+                SnarkProverBehavior::NeverCalled => {}
             }
 
             match self.ivc_behavior {
@@ -601,11 +622,10 @@ mod tests {
         let signer = setup_single_party(PARAMS);
         let signature = signer.create_single_signature(&DUMMY_MESSAGE).unwrap();
 
-        let mut factory = MockSnarkProverFactory::new();
-        factory.expect_snark_aggregate_signature_prover().never();
-        factory.expect_ivc_chain_prover().never();
-
-        let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(&signer, factory);
+        let clerk = MockProverFactory::new()
+            .without_snark_prover()
+            .without_ivc_prover()
+            .build_clerk(&signer);
 
         let (aggregate_signature, _ancillary_output) = clerk
             .aggregate_signatures_with_type(
@@ -640,16 +660,13 @@ mod tests {
     #[test]
     fn snark_aggregation_builds_snark_prover_with_clerk_parameters() {
         let signer = setup_single_party(PARAMS);
-        let snark_prover = snark_prover_returning(Ok(dummy_snark_proof(PARAMS)));
 
-        let mut factory = MockSnarkProverFactory::new();
-        factory
-            .expect_snark_aggregate_signature_prover()
-            .once()
-            .withf(move |actual_params| *actual_params == PARAMS)
-            .return_once(move |_| Ok(Box::new(snark_prover)));
-
-        let clerk = Clerk::new_clerk_from_signer_with_mock_prover_factory(&signer, factory);
+        let clerk = MockProverFactory::new()
+            .without_ivc_prover()
+            .snark_prover(SnarkProverBehavior::AggregatesSignaturesWithFunction(
+                Box::new(|actual_params| *actual_params == PARAMS),
+            ))
+            .build_clerk(&signer);
 
         let (aggregate_signature, _ancillary_output) =
             aggregate_snark(clerk, build_ancillary_input(None))
