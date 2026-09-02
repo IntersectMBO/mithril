@@ -15,7 +15,7 @@ use crate::{
             accumulator::trivial_accumulator,
             errors::{EpochTransitionErrorKind, IvcCircuitError},
             state::{Global, State},
-            types::{IvcProofBytes, StepCounter},
+            types::{IvcProofBytes, MerkleTreeCommitment, MessageHash, StepCounter},
         },
     },
     proof_system::ivc_halo2_snark::prover_input_helpers::create_snark_message_for_next_state,
@@ -141,6 +141,10 @@ impl IvcRollingState {
     /// state agrees with the protocol message for that transition. Rejecting a mismatch here
     /// avoids computing a proof that could not verify.
     ///
+    /// Returns the transition type together with the derived certificate message hash and Merkle
+    /// tree commitment, which the commitment check builds here and the caller needs to assemble
+    /// the next state.
+    ///
     /// Returns `IvcCircuitError::InvalidEpochTransition` with the specific
     /// `EpochTransitionErrorKind` when the incoming certificate's epoch is out of range or the
     /// state does not match the protocol message.
@@ -149,7 +153,7 @@ impl IvcRollingState {
         protocol_message_preimage: &ProtocolMessagePreimage,
         aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
         message: &[u8],
-    ) -> StmResult<IvcTransitionType> {
+    ) -> StmResult<(IvcTransitionType, MessageHash, MerkleTreeCommitment)> {
         let last_committed_epoch = self.state.current_epoch;
         let next_last_committed_epoch =
             last_committed_epoch
@@ -175,12 +179,12 @@ impl IvcRollingState {
             .into());
         };
 
-        let (_, merkle_tree_commitment) =
+        let (certificate_message_hash, certificate_merkle_tree_commitment) =
             create_snark_message_for_next_state(aggregate_verification_key, message)?;
 
         let parameters_match = match transition_type {
             IvcTransitionType::SameEpoch => {
-                self.state.merkle_tree_commitment == merkle_tree_commitment
+                self.state.merkle_tree_commitment == certificate_merkle_tree_commitment
                     && self.state.next_merkle_tree_commitment
                         == protocol_message_preimage.next_merkle_tree_commitment()
                     && self.state.next_protocol_parameters
@@ -188,7 +192,7 @@ impl IvcRollingState {
                     && self.state.step_counter.is_not_first_step()
             }
             IvcTransitionType::NextEpoch => {
-                self.state.next_merkle_tree_commitment == merkle_tree_commitment
+                self.state.next_merkle_tree_commitment == certificate_merkle_tree_commitment
             }
             // The classification above never yields `Genesis`: the genesis step is built by
             // `IvcProverInput::prepare_genesis`, which never validates a transition.
@@ -203,7 +207,11 @@ impl IvcRollingState {
             .into());
         }
 
-        Ok(transition_type)
+        Ok((
+            transition_type,
+            certificate_message_hash,
+            certificate_merkle_tree_commitment,
+        ))
     }
 }
 
@@ -334,7 +342,7 @@ mod tests {
                 build_standard_rolling_state(StepCounter::new(5), EpochNumber::new(3));
             let preimage = build_standard_preimage(EpochNumber::new(3));
 
-            let transition_type = rolling_state
+            let (transition_type, _, _) = rolling_state
                 .validate_transition(&preimage, &avk_with_zero_root(), &[0u8; 32])
                 .unwrap();
 
@@ -437,7 +445,7 @@ mod tests {
             );
             let preimage = build_preimage(EpochNumber::new(4), [0u8; 32], [0u8; 32]);
 
-            let transition_type = rolling_state
+            let (transition_type, _, _) = rolling_state
                 .validate_transition(&preimage, &non_zero_merkle_tree_commitment_avk, &[0u8; 32])
                 .unwrap();
 

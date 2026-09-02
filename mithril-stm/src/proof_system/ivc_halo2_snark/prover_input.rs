@@ -15,8 +15,7 @@ use crate::{
     },
     proof_system::ivc_halo2_snark::{
         prover_input_helpers::{
-            build_next_accumulator, build_next_state, create_snark_message_for_next_state,
-            verify_certificate_proof,
+            build_next_accumulator, build_next_state, verify_certificate_proof,
         },
         prover_setup::IvcProverInputVerificationContext,
         rolling_state::{IvcRollingState, IvcTransitionType},
@@ -54,11 +53,12 @@ impl IvcProverInput {
         rolling_state: &IvcRollingState,
         verification_context: &IvcProverInputVerificationContext,
     ) -> StmResult<Self> {
-        let transition_type = rolling_state.validate_transition(
-            protocol_message_preimage,
-            aggregate_verification_key_for_snark,
-            message,
-        )?;
+        let (transition_type, certificate_message_hash, certificate_merkle_tree_commitment) =
+            rolling_state.validate_transition(
+                protocol_message_preimage,
+                aggregate_verification_key_for_snark,
+                message,
+            )?;
 
         let certificate_dual_msm = verify_certificate_proof(
             certificate_proof,
@@ -66,9 +66,6 @@ impl IvcProverInput {
             aggregate_verification_key_for_snark,
             verification_context,
         )?;
-
-        let (certificate_message_hash, certificate_merkle_tree_commitment) =
-            create_snark_message_for_next_state(aggregate_verification_key_for_snark, message)?;
 
         let next_state = build_next_state(
             transition_type,
