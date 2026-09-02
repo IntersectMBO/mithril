@@ -39,6 +39,18 @@ pub struct CardanoDbDownloadCommand {
     #[clap(long, env = "GENESIS_VERIFICATION_KEY")]
     genesis_verification_key: Option<String>,
 
+    /// `unstable` Set the base URL of a Kubo node's RPC API.
+    ///
+    /// When set, downloads can use IPFS locations advertised for an artifact. If an IPFS
+    /// download fails, the client tries the artifact's other available locations.
+    ///
+    /// The URL must point to a running and reachable Kubo node, for example, `http://127.0.0.1:5001/`.
+    ///
+    /// Reminder: The Kubo RPC API provides admin-level access and must never be exposed to the
+    /// public internet.
+    #[clap(long, env = "IPFS_RPC_URL")]
+    ipfs_rpc_url: Option<String>,
+
     /// Include ancillary files in the download, if set the `ancillary_verification_key` is required
     /// in order to verify the ancillary files.
     ///
@@ -97,6 +109,7 @@ impl CardanoDbDownloadCommand {
             end: self.end,
             include_ancillary: self.include_ancillary,
             ancillary_verification_key,
+            ipfs_rpc_url: self.ipfs_rpc_url.clone(),
             allow_override: self.allow_override,
         })
     }
@@ -181,6 +194,7 @@ mod tests {
             digest: "whatever_digest".to_string(),
             download_dir: Some(std::path::PathBuf::from("whatever_dir")),
             genesis_verification_key: "whatever".to_string().into(),
+            ipfs_rpc_url: None,
             include_ancillary: true,
             ancillary_verification_key: "whatever".to_string().into(),
             start: None,
