@@ -15,7 +15,7 @@ use mithril_stm::MidnightPoseidonDigest;
 
 fn size<D>(k: u64, m: u64, nparties: usize, hash_name: &str)
 where
-    D: MembershipDigest + Send + Sync,
+    D: MembershipDigest,
 {
     println!("+-------------------+");
     println!("| Hash: {hash_name} |");

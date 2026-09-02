@@ -39,16 +39,13 @@ pub struct Clerk<D: MembershipDigest> {
     snark_proof_clerk: Option<SnarkClerk>,
     /// A factory that returns the provers necessary to create the SNARK proofs
     #[cfg(feature = "future_snark")]
-    snark_prover_factory: Arc<dyn SnarkProverFactory<D>>,
+    snark_prover_factory: Arc<dyn SnarkProverFactory<D> + Send + Sync>,
     phantom_data: PhantomData<D>,
 }
 
 impl<D: MembershipDigest> Clerk<D> {
     /// Create a Clerk from a signer.
-    pub fn new_clerk_from_signer(signer: &Signer<D>) -> Self
-    where
-        D: Send + Sync,
-    {
+    pub fn new_clerk_from_signer(signer: &Signer<D>) -> Self {
         Self {
             concatenation_proof_clerk: ConcatenationClerk::new_clerk_from_signer(signer),
             #[cfg(feature = "future_snark")]
@@ -66,10 +63,7 @@ impl<D: MembershipDigest> Clerk<D> {
     pub fn new_clerk_from_closed_key_registration(
         parameters: &Parameters,
         closed_registration: &ClosedKeyRegistration,
-    ) -> Self
-    where
-        D: Send + Sync,
-    {
+    ) -> Self {
         Self {
             concatenation_proof_clerk: ConcatenationClerk::new_clerk_from_closed_key_registration(
                 parameters,
@@ -107,10 +101,7 @@ impl<D: MembershipDigest> Clerk<D> {
         msg: &[u8],
         aggregate_signature_type: AggregateSignatureType,
         ancillary_input: AncillaryProofInput,
-    ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)>
-    where
-        D: Send + Sync,
-    {
+    ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
         let _ = &ancillary_input;
         match aggregate_signature_type {
             AggregateSignatureType::Concatenation => {
@@ -185,10 +176,7 @@ impl<D: MembershipDigest> Clerk<D> {
         sigs: &[SingleSignature],
         msg: &[u8],
         ancillary_input: AncillaryProofInput,
-    ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)>
-    where
-        D: Send + Sync,
-    {
+    ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
         let mut snark_prover = self
             .snark_prover_factory
             .snark_aggregate_signature_prover(&snark_clerk.parameters)?;
