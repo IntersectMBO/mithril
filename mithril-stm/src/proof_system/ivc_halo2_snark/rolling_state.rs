@@ -212,7 +212,7 @@ pub(crate) mod midnight_accumulator_serde {
     use midnight_proofs::utils::SerdeFormat;
     use serde::{Deserializer, Serializer};
 
-    use crate::circuits::halo2_ivc::io::{Read, Write};
+    use crate::circuits::halo2_ivc::io::{ReadWithFormat, WriteWithFormat};
 
     /// Serialization function based on the write function of Midnight's Accumulator
     pub fn serialize<S: Serializer>(

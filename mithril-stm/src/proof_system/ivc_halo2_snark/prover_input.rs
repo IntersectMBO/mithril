@@ -151,7 +151,7 @@ mod tests {
             PREIMAGE_CURRENT_EPOCH_BYTES, PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
             PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, PREIMAGE_SIZE,
             errors::{EpochTransitionErrorKind, IvcCircuitError},
-            io::Write as IvcWrite,
+            io::WriteWithFormat,
             tests::common::{
                 asset_readers::{
                     load_embedded_following_certificate_in_epoch_asset,
