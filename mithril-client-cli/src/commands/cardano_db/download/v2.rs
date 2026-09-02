@@ -41,11 +41,16 @@ pub(super) struct PreparedCardanoDbV2Download {
     pub(super) end: Option<ImmutableFileNumber>,
     pub(super) include_ancillary: bool,
     pub(super) ancillary_verification_key: Option<String>,
+    pub(super) ipfs_rpc_url: Option<String>,
     pub(super) allow_override: bool,
 }
 
 impl PreparedCardanoDbV2Download {
     pub async fn execute(&self, context: &CommandContext) -> MithrilResult<()> {
+        if self.ipfs_rpc_url.is_some() {
+            context.require_unstable("cardano-db download --ipfs-rpc-url <url>", None)?;
+        }
+
         let restoration_options = RestorationOptions {
             db_dir: Path::new(&self.download_dir).join(DB_DIRECTORY_NAME),
             immutable_file_range: shared_steps::immutable_file_range(self.start, self.end),
@@ -71,6 +76,7 @@ impl PreparedCardanoDbV2Download {
                 context.logger().clone(),
             )))
             .set_ancillary_verification_key(self.ancillary_verification_key.clone())
+            .with_ipfs_rpc_url(self.ipfs_rpc_url.clone())
             .build()?;
 
         let get_list_of_artifact_ids = || async {
