@@ -330,18 +330,6 @@ variable "mithril_aggregator_cardano_blocks_transactions_database_connection_poo
   default     = 10
 }
 
-variable "mithril_aggregator_cardano_blocks_transactions_signing_config_security_parameter" {
-  type        = number
-  description = "Number of blocks to discard from the tip of the chain when importing Cardano blocks and transactions"
-  default     = 100
-}
-
-variable "mithril_aggregator_cardano_blocks_transactions_signing_config_step" {
-  type        = number
-  description = "Number of blocks between signature of the Cardano blocks and transactions"
-  default     = 30
-}
-
 
 variable "mithril_aggregator_cardano_transactions_prover_cache_pool_size" {
   type        = number
@@ -353,18 +341,6 @@ variable "mithril_aggregator_cardano_transactions_database_connection_pool_size"
   type        = number
   description = "Cardano transactions database connection pool size"
   default     = 10
-}
-
-variable "mithril_aggregator_cardano_transactions_signing_config_security_parameter" {
-  type        = number
-  description = "Number of blocks to discard from the tip of the chain when importing Cardano transactions"
-  default     = 100
-}
-
-variable "mithril_aggregator_cardano_transactions_signing_config_step" {
-  type        = number
-  description = "Number of blocks between signature of the Cardano transactions"
-  default     = 30
 }
 
 variable "mithril_aggregator_cdn_cname" {
@@ -520,20 +496,6 @@ variable "mithril_genesis_secret_key" {
   type        = string
   description = "The Mithril genesis secret key used by the aggregator to bootstrap a genesis certificate (test only)"
   sensitive   = true
-}
-
-variable "mithril_protocol_parameters" {
-  type = object({
-    k     = number,
-    m     = number,
-    phi_f = number
-  })
-  description = "The Mithril protocol parameters used to aggregate multi signatures"
-  default = {
-    k     = 5
-    m     = 100
-    phi_f = 0.65
-  }
 }
 
 variable "mithril_era_reader_adapter_type" {
