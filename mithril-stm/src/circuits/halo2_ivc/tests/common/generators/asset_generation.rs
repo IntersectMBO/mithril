@@ -942,7 +942,7 @@ fn generate_genesis_benchmark_fixture_only() {
 #[ignore]
 fn generate_recursive_step_output_accumulator_bytes_only() {
     use crate::circuits::halo2_ivc::{
-        io::Write as IvcWrite,
+        io::WriteWithFormat,
         tests::common::asset_readers::load_embedded_next_epoch_step_output_asset,
     };
     use midnight_proofs::utils::SerdeFormat;
@@ -965,8 +965,7 @@ fn generate_recursive_step_output_accumulator_bytes_only() {
 #[ignore]
 fn generate_recursive_proof_accumulator_bytes_only() {
     use crate::circuits::halo2_ivc::{
-        io::Write as IvcWrite,
-        tests::common::helpers::build_recursive_proof_accumulator_from_assets,
+        io::WriteWithFormat, tests::common::helpers::build_recursive_proof_accumulator_from_assets,
     };
     use midnight_proofs::utils::SerdeFormat;
 

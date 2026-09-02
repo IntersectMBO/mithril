@@ -28,7 +28,7 @@ use crate::circuits::halo2_ivc::{
     Accumulator, EmulatedCurve, KZGCommitmentScheme, NativeField, PREIMAGE_SIZE, PairingEngine,
     RecursiveEmulation, VerifyingKey,
     circuit::IvcCircuitData,
-    io::Read as IvcRead,
+    io::ReadWithFormat,
     state::State,
     types::{
         CertificateProofBytes, EpochNumber, IvcProofBytes, MerkleTreeCommitment, MessageHash,

@@ -10,7 +10,7 @@ use crate::circuits::halo2_ivc::{
     PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES, PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES,
     PREIMAGE_SIZE, PairingEngine, RecursiveEmulation, VerifyingKey,
     circuit::IvcCircuitData,
-    io::{Read as IvcRead, Write as IvcWrite},
+    io::{ReadWithFormat, WriteWithFormat},
     protocol_message::{DynamicProtocolMessagePartKey, ProtocolMessage},
     state::State,
     tests::common::{

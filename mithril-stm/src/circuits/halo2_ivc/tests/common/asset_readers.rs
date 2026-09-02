@@ -19,7 +19,7 @@ use midnight_proofs::utils::{SerdeFormat, helpers::ProcessedSerdeObject};
 use crate::StmResult;
 use crate::circuits::halo2_ivc::{
     Accumulator, EmulatedCurve, NativeField, PREIMAGE_SIZE, RecursiveEmulation,
-    io::Write as IvcWrite,
+    io::WriteWithFormat,
     state::State,
     types::{CertificateProofBytes, IvcProofBytes},
 };
