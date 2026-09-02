@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.12 (09-02-2026)
+
+### Added
+
+- Added `AncillaryProverData::into_ivc_rolling_state` and `AncillaryProofInput::into_prover_data`, consuming counterparts to the existing borrowing accessors.
+- Added behavior tests for the `Clerk`'s SNARK and IVC SNARK aggregation wiring (missing SNARK clerk, prover factory and prover failures, and verifier/prover data propagation) and for the IVC chain input's validation of genesis and ancillary data, exercised against mocked provers instead of the real proof system.
+
 ## 0.12.11 (08-31-2026)
 
 ### Changed
