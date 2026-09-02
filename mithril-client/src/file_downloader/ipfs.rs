@@ -94,7 +94,10 @@ impl IpfsFileDownloader {
 
         let response = response_builder.send().await.map_err(|err| {
             if err.is_connect() || err.is_timeout() {
-                anyhow!(FileDownloaderUnreachable("IPFS", ipfs_path.to_string()))
+                anyhow!(FileDownloaderUnreachable {
+                    source: "IPFS",
+                    uri: ipfs_path.to_string()
+                })
             } else {
                 anyhow!(err)
             }
@@ -336,10 +339,10 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(
-            Some(&FileDownloaderUnreachable(
-                "IPFS",
-                with_ipfs_namespace_prefix(ipfs_path)
-            )),
+            Some(&FileDownloaderUnreachable {
+                source: "IPFS",
+                uri: with_ipfs_namespace_prefix(ipfs_path)
+            }),
             error.downcast_ref::<FileDownloaderUnreachable>()
         );
     }
