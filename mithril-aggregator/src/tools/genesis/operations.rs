@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use slog::Logger;
 
 use mithril_common::{
@@ -29,8 +29,11 @@ use crate::{
 };
 #[cfg(feature = "future_snark")]
 use mithril_common::crypto_helper::{
-    GenesisBundleError, GenesisEd25519SecretKey, GenesisSchnorrSigner, GenesisSigningKeyBundle,
-    GenesisVerificationKeyBundle, ProtocolKey, sha256_digest, signed_message_from_digest,
+    CircuitVerificationKeyDigest, CircuitVerificationKeyEntry, CircuitVerificationKeyRegistry,
+    CircuitVerificationKeyStatus, GenesisBundleError, GenesisEd25519SecretKey,
+    GenesisSchnorrSigner, GenesisSigningKeyBundle, GenesisVerificationKeyBundle,
+    MINIMUM_REGISTRY_VERSION, ProtocolKey, SignedCircuitVerificationKeyRegistry, sha256_digest,
+    signed_message_from_digest,
 };
 
 /// Configuration for the genesis tools.
@@ -82,6 +85,8 @@ impl GenesisTools {
             self.logger.clone(),
             self.certificate_repository.clone(),
             Arc::new(genesis_verifier.clone()),
+            #[cfg(feature = "future_snark")]
+            None,
         )
     }
 
@@ -214,7 +219,7 @@ impl GenesisTools {
         if matches!(self.configuration.mithril_era, SupportedEra::Lagrange)
             && genesis_signer.schnorr.is_none()
         {
-            return Err(anyhow::anyhow!(
+            return Err(anyhow!(
                 "Lagrange genesis bootstrap requires a dual signing key (Ed25519 + Schnorr), but the provided `GENESIS_SECRET_KEY` is a legacy single-Ed25519 key; generate a dual keypair with `mithril-aggregator genesis generate-keypair --mithril-era lagrange`"
             ));
         }
@@ -323,6 +328,133 @@ impl GenesisTools {
         Ok(())
     }
 
+    /// Create and sign the circuit verification key registry whitelisting the production circuit
+    /// keys from epoch 0, and write the signed registry JSON. For test only.
+    #[cfg(feature = "future_snark")]
+    pub fn bootstrap_circuit_verification_key_registry(
+        genesis_secret_key: &str,
+        target_registry_path: &Path,
+    ) -> StdResult<()> {
+        let genesis_signer = GenesisSigner::try_from_hex(genesis_secret_key)
+            .with_context(|| "hex decode of genesis secret key failure")?;
+        let (certificate_circuit_digest, ivc_circuit_digest) =
+            CircuitVerificationKeyDigest::compute_for_production_circuits();
+        let registry = CircuitVerificationKeyRegistry {
+            version: 1,
+            entries: vec![
+                Self::allowed_circuit_key_entry(certificate_circuit_digest, "certificate-circuit"),
+                Self::allowed_circuit_key_entry(ivc_circuit_digest, "ivc-circuit"),
+            ],
+        };
+
+        let signed_registry =
+            SignedCircuitVerificationKeyRegistry::try_new(registry, &genesis_signer)?;
+        signed_registry
+            .verify(&genesis_signer.create_verifier())
+            .with_context(|| "The produced registry signature does not verify")?;
+
+        std::fs::write(
+            target_registry_path,
+            serde_json::to_string_pretty(&signed_registry)?,
+        )
+        .with_context(|| {
+            format!(
+                "Failed to write signed registry file at '{}'",
+                target_registry_path.display()
+            )
+        })?;
+
+        Ok(())
+    }
+
+    /// Check that a registry is well formed before signing it: the version reaches the minimum
+    /// accepted by the nodes, and no entry has an inverted epoch range (which would silently
+    /// never match).
+    #[cfg(feature = "future_snark")]
+    fn check_registry_can_be_signed(registry: &CircuitVerificationKeyRegistry) -> StdResult<()> {
+        if registry.version < MINIMUM_REGISTRY_VERSION {
+            return Err(anyhow!(
+                "The registry version {} is below the minimum accepted version {MINIMUM_REGISTRY_VERSION}",
+                registry.version
+            ));
+        }
+        for entry in &registry.entries {
+            if let Some(end_epoch) = entry.end_epoch
+                && entry.start_epoch > end_epoch
+            {
+                return Err(anyhow!(
+                    "The entry '{}' has an inverted epoch range ({} > {}), it would never match",
+                    entry.name,
+                    entry.start_epoch,
+                    end_epoch
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Build a registry entry allowing the given circuit verification key digest from epoch 0.
+    #[cfg(feature = "future_snark")]
+    fn allowed_circuit_key_entry(
+        digest: CircuitVerificationKeyDigest,
+        name: &str,
+    ) -> CircuitVerificationKeyEntry {
+        CircuitVerificationKeyEntry {
+            digest,
+            name: name.to_string(),
+            status: CircuitVerificationKeyStatus::Allowed,
+            start_epoch: Epoch(0),
+            end_epoch: None,
+            comment: None,
+        }
+    }
+
+    /// Sign a circuit verification key registry with the Ed25519 half of the genesis signing key
+    /// and write the signed registry JSON, after verifying the produced signature.
+    #[cfg(feature = "future_snark")]
+    pub fn sign_circuit_verification_key_registry(
+        to_sign_registry_path: &Path,
+        target_signed_registry_path: &Path,
+        genesis_secret_key_path: &Path,
+    ) -> StdResult<()> {
+        let genesis_signer = GenesisSigner::read_from_file(genesis_secret_key_path)?;
+
+        let registry_json = std::fs::read_to_string(to_sign_registry_path).with_context(|| {
+            format!(
+                "Failed to read registry file at '{}'",
+                to_sign_registry_path.display()
+            )
+        })?;
+        let registry: CircuitVerificationKeyRegistry = serde_json::from_str(&registry_json)
+            .with_context(|| {
+                format!(
+                    "Failed to parse registry file at '{}'",
+                    to_sign_registry_path.display()
+                )
+            })?;
+        Self::check_registry_can_be_signed(&registry)?;
+
+        let signed_registry =
+            SignedCircuitVerificationKeyRegistry::try_new(registry, &genesis_signer)?;
+        signed_registry
+            .verify(&genesis_signer.create_verifier())
+            .with_context(|| "The produced registry signature does not verify")?;
+
+        std::fs::write(
+            target_signed_registry_path,
+            serde_json::to_string_pretty(&signed_registry)?,
+        )
+        .with_context(|| {
+            format!(
+                "Failed to write signed registry file at '{}'",
+                target_signed_registry_path.display()
+            )
+        })?;
+
+        Ok(())
+    }
+
     async fn create_and_save_genesis_certificate(
         &self,
         genesis_signature: GenesisEd25519Signature,
@@ -392,7 +524,7 @@ impl GenesisTools {
             }
             #[cfg(not(feature = "future_snark"))]
             SupportedEra::Lagrange => {
-                return Err(anyhow::anyhow!(
+                return Err(anyhow!(
                     "Lagrange genesis keypair generation requires the 'future_snark' build feature"
                 ));
             }
@@ -417,7 +549,7 @@ impl GenesisTools {
         let target_verification_key_path = target_path.join("genesis.vk");
         for path in [&target_secret_key_path, &target_verification_key_path] {
             if path.exists() {
-                return Err(anyhow::anyhow!(
+                return Err(anyhow!(
                     "refusing to overwrite existing genesis key file at {}; choose an empty target directory",
                     path.display()
                 ));
@@ -512,6 +644,8 @@ mod tests {
             TestLogger::stdout(),
             certificate_store.clone(),
             genesis_verifier.clone(),
+            #[cfg(feature = "future_snark")]
+            None,
         ));
         let configuration = GenesisToolsConfiguration {
             network: fake_data::network(),
@@ -1102,6 +1236,162 @@ mod tests {
                 .expect(
                     "original verification key must verify a signature produced by the upgraded signing key",
                 );
+        }
+    }
+
+    #[cfg(feature = "future_snark")]
+    mod bootstrap_circuit_verification_key_registry {
+        use super::*;
+
+        #[test]
+        fn bootstraps_a_verifiable_registry_whitelisting_the_production_circuit_keys() {
+            let temp_dir = get_temp_dir("bootstrap_circuit_verification_key_registry");
+            let genesis_secret_key_hex = GenesisEd25519Signer::create_deterministic_signer()
+                .secret_key()
+                .to_json_hex()
+                .unwrap();
+            let target_registry_path = temp_dir.join("registry.json");
+
+            GenesisTools::bootstrap_circuit_verification_key_registry(
+                &genesis_secret_key_hex,
+                &target_registry_path,
+            )
+            .unwrap();
+
+            let signed_registry: SignedCircuitVerificationKeyRegistry =
+                serde_json::from_str(&read_to_string(&target_registry_path).unwrap()).unwrap();
+            let (certificate_circuit_digest, ivc_circuit_digest) =
+                CircuitVerificationKeyDigest::compute_for_production_circuits();
+            let verified_registry = signed_registry
+                .verify(
+                    &GenesisSigner::from_ed25519(
+                        GenesisEd25519Signer::create_deterministic_signer(),
+                    )
+                    .create_verifier(),
+                )
+                .expect("the bootstrapped registry must carry a valid genesis signature");
+            assert_eq!(1, verified_registry.version);
+            assert_eq!(
+                vec![certificate_circuit_digest, ivc_circuit_digest],
+                verified_registry
+                    .entries
+                    .iter()
+                    .map(|entry| entry.digest)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[cfg(feature = "future_snark")]
+    mod sign_circuit_verification_key_registry {
+        use super::*;
+
+        fn write_genesis_secret_key(temp_dir: &Path) -> (PathBuf, GenesisSigner) {
+            let genesis_signer = GenesisSigner::create_deterministic_signer();
+            let genesis_secret_key_path = temp_dir.join("genesis.sk");
+            genesis_signer.write_to_file(&genesis_secret_key_path).unwrap();
+
+            (genesis_secret_key_path, genesis_signer)
+        }
+
+        #[test]
+        fn signs_a_registry_and_writes_a_verifiable_signed_registry() {
+            let temp_dir = get_temp_dir("sign_circuit_verification_key_registry");
+            let (genesis_secret_key_path, genesis_signer) = write_genesis_secret_key(&temp_dir);
+            let registry = CircuitVerificationKeyRegistry {
+                version: 1,
+                entries: vec![],
+            };
+            let to_sign_registry_path = temp_dir.join("registry.json");
+            let target_signed_registry_path = temp_dir.join("signed-registry.json");
+            std::fs::write(
+                &to_sign_registry_path,
+                serde_json::to_string(&registry).unwrap(),
+            )
+            .unwrap();
+
+            GenesisTools::sign_circuit_verification_key_registry(
+                &to_sign_registry_path,
+                &target_signed_registry_path,
+                &genesis_secret_key_path,
+            )
+            .unwrap();
+
+            let signed_registry: SignedCircuitVerificationKeyRegistry =
+                serde_json::from_str(&read_to_string(&target_signed_registry_path).unwrap())
+                    .unwrap();
+            let verified_registry = signed_registry
+                .verify(&genesis_signer.create_verifier())
+                .expect("the written signed registry must carry a valid genesis signature");
+            assert_eq!(registry, verified_registry);
+        }
+
+        #[test]
+        fn fails_on_a_registry_with_an_inverted_epoch_range() {
+            let temp_dir = get_temp_dir("sign_circuit_verification_key_registry_inverted");
+            let (genesis_secret_key_path, _) = write_genesis_secret_key(&temp_dir);
+            let registry = CircuitVerificationKeyRegistry {
+                version: 1,
+                entries: vec![CircuitVerificationKeyEntry {
+                    digest: hex::encode([1u8; 32]).parse().unwrap(),
+                    name: "circuit".to_string(),
+                    status: CircuitVerificationKeyStatus::Allowed,
+                    start_epoch: Epoch(20),
+                    end_epoch: Some(Epoch(10)),
+                    comment: None,
+                }],
+            };
+            let to_sign_registry_path = temp_dir.join("registry.json");
+            std::fs::write(
+                &to_sign_registry_path,
+                serde_json::to_string(&registry).unwrap(),
+            )
+            .unwrap();
+
+            GenesisTools::sign_circuit_verification_key_registry(
+                &to_sign_registry_path,
+                &temp_dir.join("signed-registry.json"),
+                &genesis_secret_key_path,
+            )
+            .expect_err("a registry with an inverted epoch range must fail signing");
+        }
+
+        #[test]
+        fn fails_on_a_registry_version_below_the_minimum() {
+            let temp_dir = get_temp_dir("sign_circuit_verification_key_registry_version");
+            let (genesis_secret_key_path, _) = write_genesis_secret_key(&temp_dir);
+            let registry = CircuitVerificationKeyRegistry {
+                version: MINIMUM_REGISTRY_VERSION - 1,
+                entries: vec![],
+            };
+            let to_sign_registry_path = temp_dir.join("registry.json");
+            std::fs::write(
+                &to_sign_registry_path,
+                serde_json::to_string(&registry).unwrap(),
+            )
+            .unwrap();
+
+            GenesisTools::sign_circuit_verification_key_registry(
+                &to_sign_registry_path,
+                &temp_dir.join("signed-registry.json"),
+                &genesis_secret_key_path,
+            )
+            .expect_err("a registry version below the minimum must fail signing");
+        }
+
+        #[test]
+        fn fails_on_an_invalid_registry_file() {
+            let temp_dir = get_temp_dir("sign_circuit_verification_key_registry_invalid");
+            let (genesis_secret_key_path, _) = write_genesis_secret_key(&temp_dir);
+            let to_sign_registry_path = temp_dir.join("registry.json");
+            std::fs::write(&to_sign_registry_path, "not a registry").unwrap();
+
+            GenesisTools::sign_circuit_verification_key_registry(
+                &to_sign_registry_path,
+                &temp_dir.join("signed-registry.json"),
+                &genesis_secret_key_path,
+            )
+            .expect_err("an invalid registry file must fail signing");
         }
     }
 }

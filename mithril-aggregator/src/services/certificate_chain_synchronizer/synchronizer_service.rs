@@ -368,6 +368,8 @@ mod tests {
                 remote_certificate_chain,
             )),
             genesis_verifier,
+            #[cfg(feature = "future_snark")]
+            None,
         );
         Arc::new(verifier)
     }

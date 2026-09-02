@@ -30,3 +30,4 @@ This page gathers the available guides to operate a Mithril network.
 | **Prepare Cardano node artifacts**           | [prepare-cardano-node-artifacts](./prepare-cardano-node-artifacts/README.md)             | Prepare and publish artifacts for an unreleased Cardano node version.            |
 | **Cardano Docker bundle**                    | [cardano-docker-bundle](./cardano-docker-bundle/README.md)                               | Build and publish a Docker image bundling Cardano node with Mithril.             |
 | **Update circuits verification keys**        | [update-circuit-keys](./update-circuit-keys/README.md)                                   | Update the circuits verification keys after an intentional circuit modification. |
+| **Circuit verification key registry**        | [circuit-key-registry](./circuit-key-registry/README.md)                                 | Publish, rotate and revoke circuit verification keys in the genesis-signed registry. |

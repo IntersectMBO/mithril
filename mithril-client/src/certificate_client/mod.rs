@@ -136,6 +136,8 @@ pub(crate) mod tests_utils {
                             FeedbackSender::new(&self.feedback_receivers),
                             #[cfg(feature = "unstable")]
                             self.verifier_cache,
+                            #[cfg(feature = "future_snark")]
+                            None,
                             logger.clone(),
                         )
                         .unwrap(),

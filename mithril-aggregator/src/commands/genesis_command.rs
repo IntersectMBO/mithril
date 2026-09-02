@@ -143,6 +143,7 @@ impl GenesisCommand {
                 Bootstrap = { BootstrapGenesisSubCommand },
                 GenerateKeypair = { GenerateKeypairGenesisSubCommand },
                 UpgradeKeyToDual = { UpgradeKeyToDualGenesisSubCommand },
+                CircuitKeyRegistry = { CircuitKeyRegistryGenesisCommand },
             )
         }
         #[cfg(not(feature = "future_snark"))]
@@ -181,6 +182,10 @@ pub enum GenesisSubCommand {
     /// Upgrade a legacy single-Ed25519 genesis keypair into a dual signing/verification bundle.
     #[cfg(feature = "future_snark")]
     UpgradeKeyToDual(UpgradeKeyToDualGenesisSubCommand),
+
+    /// Circuit verification key registry commands.
+    #[cfg(feature = "future_snark")]
+    CircuitKeyRegistry(CircuitKeyRegistryGenesisCommand),
 }
 
 impl GenesisSubCommand {
@@ -197,6 +202,8 @@ impl GenesisSubCommand {
             Self::GenerateKeypair(cmd) => cmd.execute(root_logger).await,
             #[cfg(feature = "future_snark")]
             Self::UpgradeKeyToDual(cmd) => cmd.execute(root_logger).await,
+            #[cfg(feature = "future_snark")]
+            Self::CircuitKeyRegistry(cmd) => cmd.execute(root_logger).await,
         }
     }
 }
@@ -503,6 +510,134 @@ impl UpgradeKeyToDualGenesisSubCommand {
             &self.target_path,
         )
         .with_context(|| "genesis-tools: upgrade-key-to-dual error")?;
+
+        Ok(())
+    }
+
+    pub fn extract_config(_parent: String) -> HashMap<String, StructDoc> {
+        HashMap::new()
+    }
+}
+
+/// Circuit verification key registry commands.
+#[cfg(feature = "future_snark")]
+#[derive(Parser, Debug, Clone)]
+pub struct CircuitKeyRegistryGenesisCommand {
+    /// commands
+    #[clap(subcommand)]
+    pub circuit_key_registry_subcommand: CircuitKeyRegistryGenesisSubCommand,
+}
+
+#[cfg(feature = "future_snark")]
+impl CircuitKeyRegistryGenesisCommand {
+    pub async fn execute(&self, root_logger: Logger) -> StdResult<()> {
+        self.circuit_key_registry_subcommand.execute(root_logger).await
+    }
+
+    pub fn extract_config(command_path: String) -> HashMap<String, StructDoc> {
+        extract_all!(
+            command_path,
+            CircuitKeyRegistryGenesisSubCommand,
+            Sign = { SignCircuitKeyRegistrySubCommand },
+            Bootstrap = { BootstrapCircuitKeyRegistrySubCommand },
+        )
+    }
+}
+
+/// Circuit verification key registry commands.
+#[cfg(feature = "future_snark")]
+#[derive(Debug, Clone, Subcommand)]
+pub enum CircuitKeyRegistryGenesisSubCommand {
+    /// Circuit verification key registry sign command.
+    Sign(SignCircuitKeyRegistrySubCommand),
+
+    /// Circuit verification key registry bootstrap command.
+    Bootstrap(BootstrapCircuitKeyRegistrySubCommand),
+}
+
+#[cfg(feature = "future_snark")]
+impl CircuitKeyRegistryGenesisSubCommand {
+    pub async fn execute(&self, root_logger: Logger) -> StdResult<()> {
+        match self {
+            Self::Sign(cmd) => cmd.execute(root_logger).await,
+            Self::Bootstrap(cmd) => cmd.execute(root_logger).await,
+        }
+    }
+}
+
+/// Circuit verification key registry sign command.
+#[cfg(feature = "future_snark")]
+#[derive(Parser, Debug, Clone)]
+pub struct SignCircuitKeyRegistrySubCommand {
+    /// To Sign Registry Path
+    #[clap(long)]
+    to_sign_registry_path: PathBuf,
+
+    /// Target Signed Registry Path
+    #[clap(long)]
+    target_signed_registry_path: PathBuf,
+
+    /// Genesis Secret Key Path
+    #[clap(long)]
+    genesis_secret_key_path: PathBuf,
+}
+
+#[cfg(feature = "future_snark")]
+impl SignCircuitKeyRegistrySubCommand {
+    pub async fn execute(&self, root_logger: Logger) -> StdResult<()> {
+        debug!(root_logger, "SIGN CIRCUIT KEY REGISTRY GENESIS command");
+        println!(
+            "Sign circuit verification key registry from {} to {}",
+            self.to_sign_registry_path.display(),
+            self.target_signed_registry_path.display()
+        );
+
+        GenesisTools::sign_circuit_verification_key_registry(
+            &self.to_sign_registry_path,
+            &self.target_signed_registry_path,
+            &self.genesis_secret_key_path,
+        )
+        .with_context(|| "genesis-tools: sign circuit key registry error")?;
+
+        Ok(())
+    }
+
+    pub fn extract_config(_parent: String) -> HashMap<String, StructDoc> {
+        HashMap::new()
+    }
+}
+
+/// Circuit verification key registry bootstrap command (test only): create and sign the registry
+/// whitelisting the production circuit keys from epoch 0.
+#[cfg(feature = "future_snark")]
+#[derive(Parser, Debug, Clone)]
+pub struct BootstrapCircuitKeyRegistrySubCommand {
+    /// Genesis Secret Key (test only)
+    #[clap(long, env = "GENESIS_SECRET_KEY")]
+    genesis_secret_key: HexEncodedGenesisSecretKey,
+
+    /// Target Registry Path
+    #[clap(long)]
+    target_registry_path: PathBuf,
+}
+
+#[cfg(feature = "future_snark")]
+impl BootstrapCircuitKeyRegistrySubCommand {
+    pub async fn execute(&self, root_logger: Logger) -> StdResult<()> {
+        debug!(
+            root_logger,
+            "BOOTSTRAP CIRCUIT KEY REGISTRY GENESIS command"
+        );
+        println!(
+            "Circuit verification key registry bootstrap for test only, to {}",
+            self.target_registry_path.display()
+        );
+
+        GenesisTools::bootstrap_circuit_verification_key_registry(
+            &self.genesis_secret_key,
+            &self.target_registry_path,
+        )
+        .with_context(|| "genesis-tools: bootstrap circuit key registry error")?;
 
         Ok(())
     }
