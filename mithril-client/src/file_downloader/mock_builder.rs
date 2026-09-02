@@ -86,10 +86,10 @@ impl MockFileDownloaderBuilder {
     /// The MockFileDownloader will fail with a [FileDownloaderUnreachable]
     pub fn with_unreachable_downloader_failure(self, src: &'static str) -> Self {
         self.with_returning(Box::new(move |location, _, _, _, _| {
-            Err(anyhow!(FileDownloaderUnreachable(
-                src,
-                location.as_str().to_string()
-            )))
+            Err(anyhow!(FileDownloaderUnreachable {
+                source: src,
+                uri: location.as_str().to_string()
+            }))
         }))
     }
 
