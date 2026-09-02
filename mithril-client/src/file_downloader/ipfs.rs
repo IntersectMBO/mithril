@@ -35,12 +35,12 @@ pub struct IpfsFileDownloader {
     logger: Logger,
 }
 
-/// Response body of a Kubo `block/stat` call.
+/// Response body of a Kubo `files/stat` call.
 ///
-/// See: https://docs.ipfs.tech/reference/kubo/rpc/#api-v0-block-stat
+/// See: https://docs.ipfs.tech/reference/kubo/rpc/#api-v0-files-stat
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct BlockStatResponse {
+struct FilesStatResponse {
     size: u64,
 }
 
@@ -128,29 +128,29 @@ impl IpfsFileDownloader {
         }
     }
 
-    async fn block_size(&self, ipfs_path: &str) -> StdResult<u64> {
+    async fn file_size(&self, ipfs_path: &str) -> StdResult<u64> {
         let response = self
             .post(
-                "api/v0/block/stat",
-                ipfs_path,
+                "api/v0/files/stat",
+                &with_ipfs_namespace_prefix(ipfs_path),
                 Some(self.existence_check_timeout),
             )
             .await?;
-        let stat: BlockStatResponse = response
+        let stat: FilesStatResponse = response
             .json()
             .await
-            .with_context(|| "Failed to deserialize Kubo block/stat response")?;
+            .with_context(|| "Failed to deserialize Kubo files/stat response")?;
 
         Ok(stat.size)
     }
 
     /// Open the `ipfs_path` as a byte stream fetched from Kubo.
     ///
-    /// The preliminary `block/stat` call both resolves the size (there is no `content-length`
+    /// The preliminary `files/stat` call both resolves the size (there is no `content-length`
     /// header to rely on) and acts as the existence check.
     async fn open_stream(&self, ipfs_path: &str) -> StdResult<DownloadedStream> {
-        let size = self.block_size(ipfs_path).await?;
-        let response = self.post("api/v0/block/get", ipfs_path, None).await?;
+        let size = self.file_size(ipfs_path).await?;
+        let response = self.post("api/v0/cat", ipfs_path, None).await?;
         let stream = response
             .bytes_stream()
             .map(|item| item.map(|chunk| chunk.to_vec()).map_err(Into::into))
@@ -158,6 +158,11 @@ impl IpfsFileDownloader {
 
         Ok(DownloadedStream { stream, size })
     }
+}
+
+// files/stat does not work against directory CID without the `/ipfs/` prefix
+fn with_ipfs_namespace_prefix(cid: &str) -> String {
+    format!("/ipfs/{cid}")
 }
 
 #[async_trait]
@@ -171,7 +176,8 @@ impl FileDownloader for IpfsFileDownloader {
         download_event_type: DownloadEvent,
     ) -> StdResult<()> {
         // `location` is a path in the form `<directory-CID>/<filename>` (confirmed against a live
-        // Kubo node), which is exactly the `arg` shape `block/stat`/`block/get` expect.
+        // Kubo node), which is exactly the `arg` shape `cat` expect and only need to be prefixed
+        // with `/ipfs/` for `files/stat`.
         let ipfs_path = location.as_str();
         let downloaded = self.open_stream(ipfs_path).await?;
 
@@ -220,15 +226,13 @@ mod tests {
         let server = MockServer::start();
         server.mock(|when, then| {
             when.method(POST)
-                .path("/api/v0/block/stat")
-                .query_param("arg", ipfs_path);
+                .path("/api/v0/files/stat")
+                .query_param("arg", with_ipfs_namespace_prefix(ipfs_path));
             then.status(200)
                 .json_body(serde_json::json!({"Key": "bafkreidummy", "Size": size}));
         });
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/v0/block/get")
-                .query_param("arg", ipfs_path);
+            when.method(POST).path("/api/v0/cat").query_param("arg", ipfs_path);
             then.status(200).body(content);
         });
         let feedback_receiver = Arc::new(StackFeedbackReceiver::new());
@@ -273,7 +277,7 @@ mod tests {
         let ipfs_path = "QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/00007.tar.zst";
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(POST).path("/api/v0/block/stat").query_param("arg", ipfs_path);
+            when.method(POST).path("/api/v0/files/stat").query_param("arg", with_ipfs_namespace_prefix(ipfs_path));
             then.status(500).json_body(serde_json::json!({
                 "Message": "no link named \"00007.tar.zst\" under QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2",
                 "Code": 0,
@@ -296,22 +300,23 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            error
-                .to_string()
-                .contains(&format!("Location='{ipfs_path}' not found")),
+            error.to_string().contains(&format!(
+                "Location='{}' not found",
+                with_ipfs_namespace_prefix(ipfs_path)
+            )),
             "unexpected error: {error:?}"
         );
     }
 
     #[tokio::test]
-    async fn block_stat_timeout_raise_unreachable_file_downloader_error() {
+    async fn files_stat_timeout_raise_unreachable_file_downloader_error() {
         let target_dir = temp_dir_create!();
         let ipfs_path = "QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/00007.tar.zst";
         let server = MockServer::start();
         server.mock(|when, then| {
             when.method(POST)
-                .path("/api/v0/block/stat")
-                .query_param("arg", ipfs_path);
+                .path("/api/v0/files/stat")
+                .query_param("arg", with_ipfs_namespace_prefix(ipfs_path));
             then.delay(Duration::from_millis(100));
         });
         let ipfs_file_downloader = downloader(&server, FeedbackSender::new(&[]))
@@ -331,28 +336,29 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(
-            Some(&FileDownloaderUnreachable("IPFS", ipfs_path.to_string())),
+            Some(&FileDownloaderUnreachable(
+                "IPFS",
+                with_ipfs_namespace_prefix(ipfs_path)
+            )),
             error.downcast_ref::<FileDownloaderUnreachable>()
         );
     }
 
     #[tokio::test]
-    async fn block_get_does_not_apply_timeout() {
+    async fn cat_does_not_apply_timeout() {
         let target_dir = temp_dir_create!();
         let ipfs_path = "QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/00007.tar.zst";
 
         let server = MockServer::start();
         server.mock(|when, then| {
             when.method(POST)
-                .path("/api/v0/block/stat")
-                .query_param("arg", ipfs_path);
+                .path("/api/v0/files/stat")
+                .query_param("arg", with_ipfs_namespace_prefix(ipfs_path));
             then.status(200)
                 .json_body(serde_json::json!({"Key": "bafkreidummy", "Size": 1}));
         });
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/v0/block/get")
-                .query_param("arg", ipfs_path);
+            when.method(POST).path("/api/v0/cat").query_param("arg", ipfs_path);
             then.delay(Duration::from_millis(100)).body(b"Hello, world!");
         });
         let ipfs_file_downloader = downloader(&server, FeedbackSender::new(&[]))
@@ -373,14 +379,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn context_deadline_exceeded_is_not_mistaken_for_a_missing_block() {
+    async fn context_deadline_exceeded_is_not_mistaken_for_a_missing_file() {
         let target_dir = temp_dir_create!();
         let ipfs_path = "QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/fake-cardano-cli.sh";
         let server = MockServer::start();
         server.mock(|when, then| {
             when.method(POST)
-                .path("/api/v0/block/stat")
-                .query_param("arg", ipfs_path);
+                .path("/api/v0/files/stat")
+                .query_param("arg", with_ipfs_namespace_prefix(ipfs_path));
             then.status(500).json_body(serde_json::json!({
                 "Message": "context deadline exceeded",
                 "Code": 0,
