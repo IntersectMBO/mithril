@@ -720,13 +720,7 @@ mod tests {
         let signer = setup_party_without_snark_keys(PARAMS, 1);
         let clerk = Clerk::new_clerk_from_signer(&signer);
 
-        let err = clerk
-            .aggregate_signatures_with_type(
-                &[],
-                &DUMMY_MESSAGE,
-                AggregateSignatureType::IvcSnark,
-                build_ancillary_input(None),
-            )
+        let err = aggregate_snark(clerk, build_ancillary_input(None))
             .expect_err("Should fail without Snark clerk.");
 
         assert_eq!(
