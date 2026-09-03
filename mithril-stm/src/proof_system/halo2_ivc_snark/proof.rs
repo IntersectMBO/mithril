@@ -317,10 +317,10 @@ fn ensure_advanceable_rolling_state(rolling_state: Option<&IvcRollingState>) -> 
     Ok(())
 }
 
-/// A struct used exclusively by the IVC prover that stores all the information needed
-/// to advance the chain by one step
+/// Everything the IVC prover needs to add one certificate to the chain, assembled by the clerk.
+/// The bootstrap path runs an internal genesis step before that certificate's own step.
 #[derive(Debug)]
-pub(crate) struct IvcChainInput<D: MembershipDigest> {
+pub(crate) struct IvcChainStepBundle<D: MembershipDigest> {
     /// The current certificate proof that will be verified by the next step
     pub(crate) certificate_proof: SnarkProof<D>,
     /// The message certified in the certificate proof
@@ -337,8 +337,8 @@ pub(crate) struct IvcChainInput<D: MembershipDigest> {
     pub(crate) rolling_state: Option<IvcRollingState>,
 }
 
-impl<D: MembershipDigest> IvcChainInput<D> {
-    /// Factory of IvcChainInput
+impl<D: MembershipDigest> IvcChainStepBundle<D> {
+    /// Factory of IvcChainStepBundle
     ///
     /// Fails on a missing genesis verifying key, a prover data without IVC rolling state,
     /// a missing genesis Schnorr signature or a preimage that is not PREIMAGE_SIZE bytes.
@@ -584,9 +584,9 @@ impl<D: MembershipDigest, R: RngCore + CryptoRng> IvcChainProver<D> for IvcProve
 
     fn advance_chain(
         &mut self,
-        chain_input: IvcChainInput<D>,
+        step_bundle: IvcChainStepBundle<D>,
     ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)> {
-        let IvcChainInput {
+        let IvcChainStepBundle {
             certificate_proof,
             message,
             aggregate_verification_key,
@@ -594,7 +594,7 @@ impl<D: MembershipDigest, R: RngCore + CryptoRng> IvcChainProver<D> for IvcProve
             protocol_message_preimage,
             genesis_bootstrap,
             rolling_state,
-        } = chain_input;
+        } = step_bundle;
         self.prove(
             certificate_proof,
             message.as_slice(),
@@ -651,7 +651,7 @@ mod tests {
         signature_scheme::{BaseFieldElement, SchnorrSigningKey, SchnorrVerificationKey},
     };
 
-    use super::{IvcChainInput, IvcProof, ensure_advanceable_rolling_state};
+    use super::{IvcChainStepBundle, IvcProof, ensure_advanceable_rolling_state};
 
     const STEP_OUTPUT_MSG: [u8; 32] = [
         22, 148, 87, 37, 149, 0, 124, 10, 156, 94, 108, 6, 78, 59, 239, 80, 126, 213, 158, 211,
@@ -1107,11 +1107,11 @@ mod tests {
             .expect("a non-genesis rolling state must be accepted");
     }
 
-    /// Cheapest possible valid inputs for `IvcChainInput::try_new`: a proof/AVK that never get
+    /// Cheapest possible valid inputs for `IvcChainStepBundle::try_new`: a proof/AVK that never get
     /// meaningfully used (only their type matters, not their content), plus the real production
     /// circuit verifying keys (needed unconditionally as arguments, even on failure paths that
     /// never reach the code using them).
-    fn ivc_chain_input_try_new_fixture() -> (
+    fn ivc_chain_step_bundle_try_new_fixture() -> (
         SnarkProof<MithrilMembershipDigest>,
         AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
         NonRecursiveCircuitVerifyingKey,
@@ -1144,9 +1144,9 @@ mod tests {
     }
 
     #[test]
-    fn ivc_chain_input_fails_when_prover_data_carries_no_ivc_rolling_state() {
+    fn ivc_chain_step_bundle_fails_when_prover_data_carries_no_ivc_rolling_state() {
         let (certificate_proof, avk, certificate_verifying_key, ivc_verifying_key) =
-            ivc_chain_input_try_new_fixture();
+            ivc_chain_step_bundle_try_new_fixture();
 
         let ancillary_input = AncillaryProofInput::new(
             Some(AncillaryProverData::Future),
@@ -1154,7 +1154,7 @@ mod tests {
             PROTOCOL_MESSAGE_PREIMAGE.to_vec(),
         );
 
-        let err = IvcChainInput::try_new(
+        let err = IvcChainStepBundle::try_new(
             certificate_proof,
             &[0u8; 32],
             avk,
@@ -1172,16 +1172,16 @@ mod tests {
     }
 
     #[test]
-    fn ivc_chain_input_fails_when_genesis_verification_key_is_absent() {
+    fn ivc_chain_step_bundle_fails_when_genesis_verification_key_is_absent() {
         let (certificate_proof, avk, certificate_verifying_key, ivc_verifying_key) =
-            ivc_chain_input_try_new_fixture();
+            ivc_chain_step_bundle_try_new_fixture();
 
         let genesis_data =
             AncillaryGenesisData::new(PROTOCOL_MESSAGE_PREIMAGE.to_vec(), None, None);
         let ancillary_input =
             AncillaryProofInput::new(None, genesis_data, PROTOCOL_MESSAGE_PREIMAGE.to_vec());
 
-        let err = IvcChainInput::try_new(
+        let err = IvcChainStepBundle::try_new(
             certificate_proof,
             &[0u8; 32],
             avk,
@@ -1199,9 +1199,9 @@ mod tests {
     }
 
     #[test]
-    fn ivc_chain_input_fails_when_genesis_signature_is_absent() {
+    fn ivc_chain_step_bundle_fails_when_genesis_signature_is_absent() {
         let (certificate_proof, avk, certificate_verifying_key, ivc_verifying_key) =
-            ivc_chain_input_try_new_fixture();
+            ivc_chain_step_bundle_try_new_fixture();
 
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let signing_key = SchnorrSigningKey::generate(&mut rng);
@@ -1217,7 +1217,7 @@ mod tests {
         let ancillary_input =
             AncillaryProofInput::new(None, genesis_data, PROTOCOL_MESSAGE_PREIMAGE.to_vec());
 
-        let err = IvcChainInput::try_new(
+        let err = IvcChainStepBundle::try_new(
             certificate_proof,
             &[0u8; 32],
             avk,
@@ -1234,14 +1234,14 @@ mod tests {
     }
 
     #[test]
-    fn ivc_chain_input_fails_when_message_preimage_has_wrong_size() {
+    fn ivc_chain_step_bundle_fails_when_message_preimage_has_wrong_size() {
         let (certificate_proof, avk, certificate_verifying_key, ivc_verifying_key) =
-            ivc_chain_input_try_new_fixture();
+            ivc_chain_step_bundle_try_new_fixture();
 
         let ancillary_input =
             AncillaryProofInput::new(None, AncillaryGenesisData::dummy(), vec![0u8; 3]);
 
-        let err = IvcChainInput::try_new(
+        let err = IvcChainStepBundle::try_new(
             certificate_proof,
             &[0u8; 32],
             avk,
@@ -1258,9 +1258,9 @@ mod tests {
     }
 
     #[test]
-    fn ivc_chain_input_fails_when_genesis_message_preimage_has_wrong_size() {
+    fn ivc_chain_step_bundle_fails_when_genesis_message_preimage_has_wrong_size() {
         let (certificate_proof, avk, certificate_verifying_key, ivc_verifying_key) =
-            ivc_chain_input_try_new_fixture();
+            ivc_chain_step_bundle_try_new_fixture();
 
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let signing_key = SchnorrSigningKey::generate(&mut rng);
@@ -1277,7 +1277,7 @@ mod tests {
         let ancillary_input =
             AncillaryProofInput::new(None, genesis_data, PROTOCOL_MESSAGE_PREIMAGE.to_vec());
 
-        let err = IvcChainInput::try_new(
+        let err = IvcChainStepBundle::try_new(
             certificate_proof,
             &[0u8; 32],
             avk,
@@ -1294,9 +1294,9 @@ mod tests {
     }
 
     #[test]
-    fn ivc_chain_input_carries_rolling_state_from_ancillary_prover_data() {
+    fn ivc_chain_step_bundle_carries_rolling_state_from_ancillary_prover_data() {
         let (certificate_proof, avk, certificate_verifying_key, ivc_verifying_key) =
-            ivc_chain_input_try_new_fixture();
+            ivc_chain_step_bundle_try_new_fixture();
 
         let rolling_state = build_standard_rolling_state(StepCounter::new(3), EpochNumber::new(2));
         let ancillary_input = AncillaryProofInput::new(
@@ -1305,7 +1305,7 @@ mod tests {
             PROTOCOL_MESSAGE_PREIMAGE.to_vec(),
         );
 
-        let chain_input = IvcChainInput::try_new(
+        let step_bundle = IvcChainStepBundle::try_new(
             certificate_proof,
             &[0u8; 32],
             avk,
@@ -1318,7 +1318,7 @@ mod tests {
         // checking the step counter should be enough to ensure the rolling
         // state did not change
         assert!(
-            chain_input.rolling_state.as_ref().is_some_and(|rolling_state| {
+            step_bundle.rolling_state.as_ref().is_some_and(|rolling_state| {
                 rolling_state.state().step_counter == StepCounter::new(3)
             }),
             "the rolling state from ancillary prover data must be carried through unchanged"
@@ -1326,9 +1326,9 @@ mod tests {
     }
 
     #[test]
-    fn ivc_chain_input_builds_global_from_genesis_data_and_keys() {
+    fn ivc_chain_step_bundle_builds_global_from_genesis_data_and_keys() {
         let (certificate_proof, avk, certificate_verifying_key, ivc_verifying_key) =
-            ivc_chain_input_try_new_fixture();
+            ivc_chain_step_bundle_try_new_fixture();
 
         let genesis_data = AncillaryGenesisData::dummy();
         let genesis_message: MessageHash = genesis_data
@@ -1343,7 +1343,7 @@ mod tests {
         let ancillary_input =
             AncillaryProofInput::new(None, genesis_data, PROTOCOL_MESSAGE_PREIMAGE.to_vec());
 
-        let chain_input = IvcChainInput::try_new(
+        let step_bundle = IvcChainStepBundle::try_new(
             certificate_proof,
             &[0u8; 32],
             avk,
@@ -1361,7 +1361,7 @@ mod tests {
         );
 
         assert_eq!(
-            chain_input.global, expected_global,
+            step_bundle.global, expected_global,
             "Global must be built from the values passed to try_new"
         );
     }

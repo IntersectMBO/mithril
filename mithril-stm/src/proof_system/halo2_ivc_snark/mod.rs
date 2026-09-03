@@ -12,7 +12,7 @@ mod verifier_setup;
 pub(crate) use interface::IvcChainProver;
 #[cfg(test)]
 pub(crate) use interface::MockIvcChainProver;
-pub(crate) use proof::{IvcChainInput, IvcProof, IvcProver};
+pub(crate) use proof::{IvcChainStepBundle, IvcProof, IvcProver};
 #[cfg(feature = "benchmark-internals")]
 pub(crate) use prover_input::IvcProverInput;
 #[cfg(all(test, feature = "future_snark"))]

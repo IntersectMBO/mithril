@@ -22,8 +22,8 @@ use crate::{
     },
 };
 
-/// Outputs of the IVC prover's preparation step, consumed by the circuit-construction and
-/// proof-generation steps.
+/// Prover input for the IVC circuit: what the preparation step derives from an
+/// `IvcChainStepBundle`, consumed by the circuit-construction and proof-generation steps.
 #[derive(Debug)]
 pub(crate) struct IvcProverInput {
     /// In-circuit witness for the new step.
