@@ -40,7 +40,7 @@ Ultimately, any signer will have the potential to function as a Mithril aggregat
 
 The Mithril signer establishes a connection with the Mithril aggregator for the following purposes:
 
-- Obtaining the presently used protocol parameters
+- For signers in version below 1.2.1, obtaining the presently used protocol parameters
 - Registering its verification keys (public keys)
 - Receiving the verification keys of all other declared signers, available for the upcoming message signing
 - Sending the single signatures of locally computed messages (which will ideally be combined into multi-signatures by the aggregator).
