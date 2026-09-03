@@ -8,7 +8,17 @@ license = { workspace = true }
 repository = { workspace = true }
 description = "A Rust implementation of Mithril Stake-based Threshold Multisignatures (STMs)."
 categories = ["cryptography"]
-include = ["**/*.rs", "Cargo.toml", "README.md", ".gitignore"]
+include = [
+    "**/*.rs",
+    "Cargo.toml",
+    "README.md",
+    ".gitignore",
+    "src/circuits/halo2/non_recursive_circuit_verification_key_for_production.bin",
+    "src/circuits/halo2_ivc/recursive_circuit_verification_key_for_production.bin",
+]
+
+[package.metadata.docs.rs]
+features = ["future_snark", "rustls"]
 
 [package.metadata.cargo-machete]
 # `serde_bytes` is used for proof bytes serialization
