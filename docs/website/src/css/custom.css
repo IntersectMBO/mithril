@@ -48,23 +48,11 @@
   --color-transparent: transparent;
   --color-current: currentColor;
 
-  --color-blue: #01193c;
-  --color-blue-light: #ecf9fd;
-  --color-blue-highlight: #2634ad;
-
-  --color-secondary: #3c9ec8;
   --color-black: #000000;
-
-  --color-gray: #7c8080;
-  --color-gray-dark: #99a3b1;
-  --color-gray-light: #808c9d;
-  --color-gray-extra-light: #f3f4f4;
-  --color-gray-border: #b3bac5;
-
   --color-white: #ffffff;
 
-  --color-cyan: #65cfe1;
-  --color-cyan-dark: #397589;
+  --color-white-ish: #f9fbf8;
+  --color-gray-dark: #383737;
 }
 
 @font-face {
@@ -111,60 +99,57 @@
 }
 
 :root {
-  --ifm-color-primary: #397589;
-  --ifm-color-primary-dark: #397589;
-  --ifm-color-primary-darker: #397589;
-  --ifm-color-primary-darkest: #397589;
-  --ifm-color-primary-light: #65cfe1;
-  --ifm-color-primary-lighter: #65cfe1;
-  --ifm-color-primary-lightest: #65cfe1;
+  --ifm-color-primary: #f4360b;
+  --ifm-color-primary-dark: #dc310a;
+  --ifm-color-primary-darker: #cf2e09;
+  --ifm-color-primary-darkest: #ab2608;
+  --ifm-color-primary-light: #f54a23;
+  --ifm-color-primary-lighter: #f65430;
+  --ifm-color-primary-lightest: #f77254;
   --ifm-code-font-size: 95%;
 
-  --ifm-navbar-height: 60px;
+  --ifm-navbar-height: 70px;
 
   font-family: "Inter";
 }
 
 @media (min-width: 768px) {
   :root {
-    --ifm-navbar-height: 96px;
+    --ifm-navbar-height: 75px;
   }
 }
 
 /*
 Styling overrides to Infima after upgrading to Tailwind V4 
 */
-.navbar__item {
-  font-weight: 600;
-  font-size: 1rem;
-  line-height: 2rem;
-}
-
-.navbar__items {
-  display: flex !important;
+.navbar {
+  background: transparent;
   font-family: "Lexend";
+  box-shadow: none;
 }
 
-.footer__link-item {
-  color: var(--color-gray-extra-light);
-  line-height: normal;
-}
-.footer__link-item:hover {
-  color: var(--ifm-color-primary-dark);
-}
-
-.footer-logo-text {
-  margin: 0;
-  font-size: 1.5rem;
-  line-height: calc(2 / 1.5);
-  font-weight: normal;
+.navbar__items--right{
+  gap: 0.2rem;
+  padding: 0.6rem 1.5rem;
+  border-radius: 999px;
+  background: var(--color-white);
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 8px 24px rgba(16, 24, 40, 0.08);
 }
 
-.navbar__social-link {
-  color: var(--ifm-navbar-link-color);
+.footer{
+  background-color: var(--color-gray-dark);
 }
-.navbar__social-link:hover {
-  color: var(--ifm-navbar-link-hover-color);
+
+.footer__bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  border-top: 1px solid var(--color-white-ish);
+  padding-top: 1rem;
+  margin-top: 1rem;
 }
 
 .hero-title {
@@ -174,10 +159,65 @@ Styling overrides to Infima after upgrading to Tailwind V4
 }
 @media (min-width: 768px) {
   .hero-title {
-    font-size: 3.5rem;
-    line-height: 73px;
+    font-size: 3.25rem;
+    line-height: 75px;
   }
 }
+
+.glitch {
+  animation: textflicker 0.016s infinite alternate;
+}
+
+@keyframes textflicker {
+  from {
+    text-shadow:
+      -2px 0.1 0.1 #c44b31,
+      2px 0.1 0.1 #ff7455;
+  }
+  to {
+    text-shadow:
+      2px 0.5px 1px #ff7455,
+      -2px -0.5px 2px #c44b31;
+  }
+}
+
+/* Loseely based on code by freefrontend.com/css-shine-effect/ */
+.shine-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.shine-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -150%;
+  width: 50%;
+  height: 100%;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 10%,
+    color-mix(in srgb, var(--ifm-color-primary-lightest) 35%, transparent) 40%,
+    transparent 90%
+  );
+  transform: skewX(-20deg);
+  animation: shine 3s ease-in-out infinite;
+  animation-delay: var(--shine-delay, 0s);
+}
+
+@keyframes shine {
+  0% {
+    left: -150%;
+  }
+  40% {
+    left: 150%;
+  }
+  100% {
+    left: 150%;
+  }
+}
+/*-------------------------------------------------------------*/
 
 .animated-text-heading {
   font-size: 2rem;
@@ -271,20 +311,6 @@ h3 {
 .component {
   padding-top: 72px;
   padding-bottom: 72px;
-}
-
-.use-case-text {
-  background: #01193c;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  color: transparent;
-}
-
-@media screen and (max-width: 996px) {
-  .footer {
-    text-align: center;
-  }
 }
 
 a.menu__link:hover {
@@ -467,14 +493,4 @@ a.menu__link {
     opacity 0.1s ease,
     transform 0.1s ease,
     filter 0.1s ease;
-}
-
-.landing-navbar--top {
-  background-color: rgba(255, 255, 255, 0);
-  transition: background-color 0.3s ease;
-}
-
-.landing-navbar--scrolled {
-  background-color: rgba(255, 255, 255, 0.96);
-  transition: background-color 0.3s ease;
 }
