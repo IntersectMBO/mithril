@@ -15,9 +15,7 @@ use crate::{BaseFieldElement, SchnorrSigningKey, circuits::halo2_ivc::PREIMAGE_S
 #[cfg(feature = "future_snark")]
 use crate::{
     SchnorrVerificationKey, StandardSchnorrSignature,
-    proof_system::{
-        IvcRollingState, SnarkVerifierData, halo2_ivc_snark::verifier_setup::IvcVerifierData,
-    },
+    proof_system::{IvcRollingState, SnarkVerifierData, halo2_ivc_snark::IvcVerifierData},
     protocol::aggregate_signature::GenesisMessagePreimage,
 };
 use crate::{StmResult, codec};

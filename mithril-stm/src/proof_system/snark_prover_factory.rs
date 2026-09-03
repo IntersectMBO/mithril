@@ -4,7 +4,7 @@ use crate::{
     MERKLE_TREE_DEPTH_FOR_SNARK, MembershipDigest, Parameters, StmResult,
     proof_system::{
         SnarkAggregateSignatureProver, SnarkProver,
-        halo2_ivc_snark::{IvcChainProver, proof::IvcProver},
+        halo2_ivc_snark::{IvcChainProver, IvcProver},
     },
 };
 
