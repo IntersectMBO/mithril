@@ -209,7 +209,7 @@ impl<D: MembershipDigest, R: RngCore + CryptoRng> SnarkAggregateSignatureProver<
     ///
     /// The clerk clones this before proving so the certificate's ancillary verifier data and the
     /// proof provably originate from the same setup.
-    fn verification_key(&self) -> &NonRecursiveCircuitVerifyingKey {
+    fn verifying_key(&self) -> &NonRecursiveCircuitVerifyingKey {
         &self.setup.verification_key
     }
 
@@ -309,11 +309,11 @@ mod tests {
     }
 
     fn snark_verifier_data(prover: &SnarkProver<ChaCha20Rng>) -> SnarkVerifierData {
-        SnarkVerifierData::new(SnarkAggregateSignatureProver::<D>::verification_key(prover).clone())
+        SnarkVerifierData::new(SnarkAggregateSignatureProver::<D>::verifying_key(prover).clone())
     }
 
     fn snark_verifier_data_non_deterministic(prover: &SnarkProver<OsRng>) -> SnarkVerifierData {
-        SnarkVerifierData::new(SnarkAggregateSignatureProver::<D>::verification_key(prover).clone())
+        SnarkVerifierData::new(SnarkAggregateSignatureProver::<D>::verifying_key(prover).clone())
     }
 
     fn create_prover(params: Parameters, seed: [u8; 32]) -> SnarkProver<ChaCha20Rng> {
@@ -407,7 +407,7 @@ mod tests {
                 .prepare_and_check(
                     &message,
                     &avk,
-                    SnarkAggregateSignatureProver::<D>::verification_key(&prover),
+                    SnarkAggregateSignatureProver::<D>::verifying_key(&prover),
                     &prover.verifier_params(),
                 )
                 .expect("prepare_and_check should succeed on a freshly produced proof");
