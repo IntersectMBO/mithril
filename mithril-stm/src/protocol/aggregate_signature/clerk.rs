@@ -150,7 +150,7 @@ impl<D: MembershipDigest> Clerk<D> {
         sigs: &[SingleSignature],
         msg: &[u8],
     ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
-        let certificate_verifying_key = prover.verification_key().clone();
+        let certificate_verifying_key = prover.verifying_key().clone();
         let snark_proof =
             prover.aggregate_signatures(snark_clerk, sigs, msg).with_context(|| {
                 format!(
@@ -181,7 +181,7 @@ impl<D: MembershipDigest> Clerk<D> {
             .snark_prover_factory
             .snark_aggregate_signature_prover(&snark_clerk.parameters)?;
 
-        let certificate_verifying_key = snark_prover.verification_key().clone();
+        let certificate_verifying_key = snark_prover.verifying_key().clone();
         let certificate_proof = snark_prover
             .aggregate_signatures(snark_clerk, sigs, msg)
             .with_context(|| {
@@ -486,7 +486,7 @@ mod tests {
     ) -> MockSnarkAggregateSignatureProver<D> {
         let mut snark_prover = MockSnarkAggregateSignatureProver::new();
         snark_prover
-            .expect_verification_key()
+            .expect_verifying_key()
             .return_const(certificate_verifying_key());
         snark_prover
             .expect_aggregate_signatures()
