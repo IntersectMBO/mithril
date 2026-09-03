@@ -149,21 +149,36 @@ impl<D: MembershipDigest> IvcOffCircuitChecks<D> for RealIvcOffCircuitChecks {
             .genesis_schnorr_verification_key()
             .ok_or_else(|| anyhow!(AggregationError::MissingGenesisVerificationKey))?;
         genesis_verifying_key.is_valid()?;
-        let _genesis_bootstrap: IvcGenesisBootstrapInput = genesis_data.try_into()?;
+        let genesis_bootstrap: IvcGenesisBootstrapInput = genesis_data.try_into()?;
 
-        if let Some(rolling_state) = ancillary_input
+        let rolling_state = ancillary_input
             .prover_data()
-            .and_then(|prover_data| prover_data.as_ivc_rolling_state())
-        {
-            let transition_type =
-                IvcTransitionType::try_compute_transition_type(rolling_state, &preimage)?;
-            rolling_state.assert_correct_parameters(
-                &preimage,
-                aggregate_verification_key,
-                msg,
-                transition_type,
-            )?;
-            rolling_state.assert_protocol_parameters_unchanged()?;
+            .and_then(|prover_data| prover_data.as_ivc_rolling_state());
+        IvcRollingState::ensure_advanceable_rolling_state(rolling_state)?;
+
+        match rolling_state {
+            Some(rolling_state) => {
+                let transition_type =
+                    IvcTransitionType::try_compute_transition_type(rolling_state, &preimage)?;
+                rolling_state.assert_correct_parameters(
+                    &preimage,
+                    aggregate_verification_key,
+                    msg,
+                    transition_type,
+                )?;
+                rolling_state.assert_protocol_parameters_unchanged()?;
+            }
+            None => {
+                // No rolling state means this is the genesis step: verify the genesis
+                // signature now (`IvcProverInput::prepare_genesis` still verifies it again,
+                // unconditionally, deep inside the expensive proving path).
+                let genesis_message: MessageHash =
+                    genesis_data.genesis_message_preimage().try_into()?;
+                genesis_bootstrap.genesis_signature.verify(
+                    &[BaseFieldElement::from(genesis_message.as_field())],
+                    genesis_verifying_key,
+                )?;
+            }
         }
 
         Ok(())
@@ -1392,13 +1407,14 @@ mod tests {
                 tests::common::{
                     asset_readers::{
                         load_embedded_following_certificate_in_epoch_asset,
+                        load_embedded_genesis_benchmark_fixture,
                         load_embedded_recursive_chain_state_asset,
                     },
                     generators::setup::TOTAL_STAKE,
                 },
                 types::ProtocolParametersHash,
             },
-            proof_system::ivc_halo2_snark::rolling_state::IvcRollingState,
+            proof_system::ivc_halo2_snark::{errors::IvcProofError, rolling_state::IvcRollingState},
             signature_scheme::SchnorrSignatureError,
         };
 
@@ -1596,6 +1612,89 @@ mod tests {
                 .expect_err("missing genesis signature must be rejected");
 
             assert_eq!(err.root_cause().to_string(), "Missing genesis Schnorr signature.");
+        }
+
+        #[test]
+        fn rejects_invalid_genesis_signature() {
+            let step = load_embedded_following_certificate_in_epoch_asset()
+                .expect("same-epoch step output asset should load");
+            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+            let genesis_fixture = load_embedded_genesis_benchmark_fixture()
+                .expect("genesis benchmark fixture should load");
+
+            // A genuine signature over a different message: presence and vk validity pass,
+            // but the cryptographic verification must not.
+            let mut rng = ChaCha20Rng::from_seed([1u8; 32]);
+            let unrelated_signing_key = SchnorrSigningKey::generate(&mut rng);
+            let wrong_signature = unrelated_signing_key
+                .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
+                .expect("sign_standard should succeed for a synthetic message");
+
+            let genesis_data = AncillaryGenesisData::new(
+                genesis_fixture.genesis_protocol_message_preimage.to_vec(),
+                Some(wrong_signature),
+                Some(genesis_fixture.genesis_verification_key),
+            );
+            let ancillary_input =
+                AncillaryProofInput::new(None, genesis_data, step.message_preimage.to_vec());
+
+            let err = RealIvcOffCircuitChecks
+                .check(&step.message, &avk, &ancillary_input)
+                .expect_err("a genesis signature over the wrong message must be rejected");
+
+            assert!(err.downcast_ref::<SchnorrSignatureError>().is_some());
+        }
+
+        #[test]
+        fn accepts_valid_genesis_request() {
+            let step = load_embedded_following_certificate_in_epoch_asset()
+                .expect("same-epoch step output asset should load");
+            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+            let genesis_fixture = load_embedded_genesis_benchmark_fixture()
+                .expect("genesis benchmark fixture should load");
+
+            let genesis_data = AncillaryGenesisData::new(
+                genesis_fixture.genesis_protocol_message_preimage.to_vec(),
+                Some(genesis_fixture.genesis_signature),
+                Some(genesis_fixture.genesis_verification_key),
+            );
+            let ancillary_input =
+                AncillaryProofInput::new(None, genesis_data, step.message_preimage.to_vec());
+
+            let result = RealIvcOffCircuitChecks.check(&step.message, &avk, &ancillary_input);
+
+            assert!(
+                result.is_ok(),
+                "a consistent genesis request should pass, got: {result:?}"
+            );
+        }
+
+        #[test]
+        fn rejects_genesis_rolling_state_passed_as_existing() {
+            let step = load_embedded_following_certificate_in_epoch_asset()
+                .expect("same-epoch step output asset should load");
+            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let signing_key = SchnorrSigningKey::generate(&mut rng);
+            let genesis_signature = signing_key
+                .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
+                .expect("genesis signature should be produced");
+            let genesis_rolling_state = IvcRollingState::genesis(genesis_signature, &[]);
+
+            let ancillary_input = AncillaryProofInput::new(
+                Some(AncillaryProverData::IvcSnark(genesis_rolling_state)),
+                AncillaryGenesisData::dummy(),
+                step.message_preimage.to_vec(),
+            );
+
+            let err = RealIvcOffCircuitChecks
+                .check(&step.message, &avk, &ancillary_input)
+                .expect_err("a genesis rolling state passed as an existing step must be rejected");
+
+            assert_eq!(
+                err.downcast_ref::<IvcProofError>(),
+                Some(&IvcProofError::InvalidProvingContext)
+            );
         }
     }
 
