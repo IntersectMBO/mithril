@@ -9,17 +9,17 @@ use midnight_zk_stdlib::ZkStdLib;
 use num_bigint::BigUint;
 use num_traits::{Num, One};
 
-use crate::circuits::halo2::errors::StmCircuitError;
+use crate::circuits::halo2::errors::CertificateCircuitError;
 use crate::circuits::halo2::types::CircuitBase;
 
 /// Splits a field element into `(lower, upper)` limbs at `num_bits` using LE encoding.
 pub(super) fn split_field_element_into_le_limbs<Fp: PrimeField>(
     value: &Fp,
     num_bits: u32,
-) -> Result<(Fp, Fp), StmCircuitError> {
+) -> Result<(Fp, Fp), CertificateCircuitError> {
     let field_bits = Fp::NUM_BITS;
     if num_bits >= field_bits {
-        return Err(StmCircuitError::InvalidBitDecompositionRange {
+        return Err(CertificateCircuitError::InvalidBitDecompositionRange {
             num_bits,
             field_bits,
         });
@@ -35,19 +35,19 @@ pub(super) fn split_field_element_into_le_limbs<Fp: PrimeField>(
 }
 
 /// Parses the prime-field modulus into a `BigUint` for limb splitting and reduction helpers.
-fn field_modulus_as_biguint<Fp: PrimeField>() -> Result<BigUint, StmCircuitError> {
+fn field_modulus_as_biguint<Fp: PrimeField>() -> Result<BigUint, CertificateCircuitError> {
     BigUint::from_str_radix(&Fp::MODULUS[2..], 16)
-        .map_err(|_| StmCircuitError::FieldModulusParseFailed)
+        .map_err(|_| CertificateCircuitError::FieldModulusParseFailed)
 }
 
 /// Reduces a non-negative integer modulo the field modulus and converts it into a field element.
 fn big_unsigned_integer_to_field_element<Fp: PrimeField>(
     e: BigUint,
-) -> Result<Fp, StmCircuitError> {
+) -> Result<Fp, CertificateCircuitError> {
     let modulus = field_modulus_as_biguint::<Fp>()?;
     let e = e % modulus;
     Fp::from_str_vartime(&e.to_str_radix(10)[..])
-        .ok_or(StmCircuitError::FieldElementConversionFailed)
+        .ok_or(CertificateCircuitError::FieldElementConversionFailed)
 }
 
 /// Constrains two assigned field elements to share the same least-significant-bit parity.
@@ -68,7 +68,7 @@ pub(super) fn decompose_unsafe(
     std_lib: &ZkStdLib,
     layouter: &mut impl Layouter<CircuitBase>,
     x: &AssignedNative<CircuitBase>,
-) -> Result<(AssignedNative<CircuitBase>, AssignedNative<CircuitBase>), StmCircuitError> {
+) -> Result<(AssignedNative<CircuitBase>, AssignedNative<CircuitBase>), CertificateCircuitError> {
     let x_value = x.value();
     let base127 = CircuitBase::from_u128(1_u128 << 127);
     let (x_low, x_high) = x_value

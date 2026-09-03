@@ -23,6 +23,10 @@ use super::{
 /// Holds the global root-of-trust, the current state, the next certificate witness,
 /// the associated SNARK proofs, the latest accumulator, and the verification-key metadata
 /// for both the certificate circuit and the IVC circuit itself.
+///
+/// Named for its contents rather than the circuit: unlike `CertificateCircuit`, which carries the
+/// parameters fixing its constraint system, this bundles a concrete step's values with the
+/// verifier metadata required during synthesis.
 #[derive(Clone, Debug)]
 pub struct IvcCircuitData {
     // Persistent values throughout an ivc stream. This is the root of trust for an ivc stream.
@@ -36,7 +40,7 @@ pub struct IvcCircuitData {
     // Latest IVC proof
     ivc_proof: CircuitValue<Vec<u8>>,
     // Latest Accumulator
-    acc: CircuitValue<Accumulator<RecursiveEmulation>>,
+    accumulator: CircuitValue<Accumulator<RecursiveEmulation>>,
     // Domain and ConstraintSystem associated with certificate circuit VerifyingKey
     certificate_circuit_domain_and_constraint_system:
         (EvaluationDomain<NativeField>, ConstraintSystem<NativeField>),
@@ -47,8 +51,6 @@ pub struct IvcCircuitData {
 
 impl IvcCircuitData {
     /// Validates that the IVC verification key degree matches the IVC circuit degree constant RECURSIVE_CIRCUIT_DEGREE.
-    // Kept until the IVC prover validates recursive circuit keys.
-    #[allow(dead_code)]
     pub(crate) fn validate_ivc_verification_key_degree(
         ivc_verification_key: &RecursiveCircuitVerifyingKey,
     ) -> StmResult<()> {
@@ -104,8 +106,6 @@ impl IvcCircuitData {
     /// [`IvcCircuitError::IvcVerificationKeyDegreeMismatch`] or
     /// [`IvcCircuitError::InsufficientAdviceColumns`] /
     /// [`IvcCircuitError::InsufficientFixedColumns`] if either check fails.
-    // Kept until the IVC prover constructs recursive circuit instances.
-    #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn try_new(
         global: Global,
@@ -113,7 +113,7 @@ impl IvcCircuitData {
         witness: Witness,
         certificate_proof: CertificateProofBytes,
         ivc_proof: IvcProofBytes,
-        acc: Accumulator<RecursiveEmulation>,
+        accumulator: Accumulator<RecursiveEmulation>,
         certificate_verification_key: &NonRecursiveCircuitVerifyingKey,
         ivc_verification_key: &RecursiveCircuitVerifyingKey,
     ) -> StmResult<Self> {
@@ -125,7 +125,7 @@ impl IvcCircuitData {
             witness: CircuitValue::known(witness),
             certificate_proof: CircuitValue::known(certificate_proof.into_vec()),
             ivc_proof: CircuitValue::known(ivc_proof.into_vec()),
-            acc: CircuitValue::known(acc),
+            accumulator: CircuitValue::known(accumulator),
             certificate_circuit_domain_and_constraint_system: (
                 certificate_verification_key.as_ref().get_domain().clone(),
                 certificate_verification_key.as_ref().cs().clone(),
@@ -155,7 +155,7 @@ impl IvcCircuitData {
             witness: CircuitValue::unknown(),
             certificate_proof: CircuitValue::unknown(),
             ivc_proof: CircuitValue::unknown(),
-            acc: CircuitValue::unknown(),
+            accumulator: CircuitValue::unknown(),
             certificate_circuit_domain_and_constraint_system: (
                 certificate_verification_key.as_ref().get_domain().clone(),
                 certificate_verification_key.as_ref().cs().clone(),
@@ -180,7 +180,7 @@ impl Circuit<NativeField> for IvcCircuitData {
             witness: CircuitValue::unknown(),
             certificate_proof: CircuitValue::unknown(),
             ivc_proof: CircuitValue::unknown(),
-            acc: CircuitValue::unknown(),
+            accumulator: CircuitValue::unknown(),
             certificate_circuit_domain_and_constraint_system: self
                 .certificate_circuit_domain_and_constraint_system
                 .clone(),
@@ -242,7 +242,7 @@ impl Circuit<NativeField> for IvcCircuitData {
             &witness,
             &self.certificate_proof,
             &self.ivc_proof,
-            &self.acc,
+            &self.accumulator,
         )?;
         // Constrain the next accumulator as public input
         builder

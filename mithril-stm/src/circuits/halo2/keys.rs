@@ -13,7 +13,7 @@ use crate::circuits::halo2_ivc::{KZGCommitmentScheme, NativeField, PairingEngine
 use crate::circuits::key_generator::KeyGenerator;
 use crate::codec::{TryFromBytes, TryToBytes};
 
-use super::circuit::StmCertificateCircuit;
+use super::circuit::CertificateCircuit;
 
 /// Verifying key of the non-recursive certificate circuit.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -23,7 +23,7 @@ pub(crate) struct NonRecursiveCircuitVerifyingKey(
 
 /// Proving key of the non-recursive certificate circuit.
 #[derive(Clone)]
-pub(crate) struct NonRecursiveCircuitProvingKey(MidnightPK<StmCertificateCircuit>);
+pub(crate) struct NonRecursiveCircuitProvingKey(MidnightPK<CertificateCircuit>);
 
 impl NonRecursiveCircuitVerifyingKey {
     /// Wraps a Midnight verifying key.
@@ -77,7 +77,7 @@ mod midnight_verifying_key_serde {
 
 impl NonRecursiveCircuitProvingKey {
     /// Borrows the wrapped Midnight proving key, for proof generation.
-    pub(crate) fn midnight_pk(&self) -> &MidnightPK<StmCertificateCircuit> {
+    pub(crate) fn midnight_pk(&self) -> &MidnightPK<CertificateCircuit> {
         &self.0
     }
 }
@@ -102,13 +102,13 @@ impl TryToBytes for NonRecursiveCircuitProvingKey {
 
 impl TryFromBytes for NonRecursiveCircuitProvingKey {
     fn try_from_bytes(bytes: &[u8]) -> StmResult<Self> {
-        Ok(Self(MidnightPK::<StmCertificateCircuit>::try_from_bytes(
+        Ok(Self(MidnightPK::<CertificateCircuit>::try_from_bytes(
             bytes,
         )?))
     }
 }
 
-impl KeyGenerator for StmCertificateCircuit {
+impl KeyGenerator for CertificateCircuit {
     type VerifyingKey = NonRecursiveCircuitVerifyingKey;
     type ProvingKey = NonRecursiveCircuitProvingKey;
 
@@ -150,7 +150,7 @@ mod tests {
     use super::{NonRecursiveCircuitProvingKey, NonRecursiveCircuitVerifyingKey};
     use crate::Parameters;
     use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
-    use crate::circuits::halo2::circuit::StmCertificateCircuit;
+    use crate::circuits::halo2::circuit::CertificateCircuit;
     use crate::circuits::key_generator::KeyGenerator;
     use crate::codec::{TryFromBytes, TryToBytes};
 
@@ -183,7 +183,7 @@ mod tests {
             phi_f: 0.2,
         };
         let merkle_tree_depth = 4;
-        let circuit = StmCertificateCircuit::try_new(&parameters, merkle_tree_depth)
+        let circuit = CertificateCircuit::try_new(&parameters, merkle_tree_depth)
             .expect("certificate circuit should build");
         // Oversized on purpose: the generator must clone and downsize to the circuit's degree
         // (keygen would otherwise fail), and the caller's SRS must be left untouched.
@@ -229,7 +229,7 @@ mod tests {
             phi_f: 0.2,
         };
         let merkle_tree_depth = 4;
-        let circuit = StmCertificateCircuit::try_new(&parameters, merkle_tree_depth)
+        let circuit = CertificateCircuit::try_new(&parameters, merkle_tree_depth)
             .expect("certificate circuit should build");
         let circuit_degree = MidnightCircuit::from_relation(&circuit, None).k();
 

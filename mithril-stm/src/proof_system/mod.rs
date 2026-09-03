@@ -46,7 +46,7 @@ pub(crate) const KZG_VERIFIER_PARAMS: [u8; 192] = [
 ];
 
 #[cfg(feature = "future_snark")]
-pub(crate) mod ivc_halo2_snark;
+pub(crate) mod halo2_ivc_snark;
 
 pub use concatenation::{
     AggregateVerificationKeyForConcatenation, ConcatenationClerk, ConcatenationProof,
@@ -70,7 +70,7 @@ pub(crate) use halo2_snark::{
 pub(crate) use halo2_snark::RIGID_SLOT_BYTES as SNARK_AGGREGATE_VERIFICATION_KEY_RIGID_SLOT_BYTES;
 
 #[cfg(feature = "future_snark")]
-pub(crate) use ivc_halo2_snark::rolling_state::IvcRollingState;
+pub(crate) use halo2_ivc_snark::IvcRollingState;
 
 #[cfg(feature = "future_snark")]
 pub(crate) use snark_prover_factory::{NonDeterministicSnarkProverFactory, SnarkProverFactory};

@@ -39,7 +39,7 @@ impl<D: MembershipDigest> SnarkProofSigner<D> {
     }
 
     /// Generates a single signature for the SNARK proof system.
-    /// Computes a unique Schnorr signature over `[merkle_root, msg]` and checks the
+    /// Computes a unique Schnorr signature over `[merkle_tree_commitment, msg]` and checks the
     /// lottery. Returns `SingleSignatureForSnark` if at least one lottery index won,
     /// or `SignatureError::LotteryLost` otherwise. The winning indices are not stored
     /// in the signature at this stage; they are computed and assigned during aggregation.

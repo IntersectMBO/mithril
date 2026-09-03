@@ -119,7 +119,7 @@ harness = false
 required-features = ["future_snark", "benchmark-internals"]
 
 [[bench]]
-name = "ivc_halo2_snark"
+name = "halo2_ivc_snark"
 harness = false
 required-features = ["future_snark", "benchmark-internals"]
 

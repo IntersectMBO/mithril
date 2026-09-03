@@ -20,7 +20,7 @@ use rand_core::{OsRng, RngCore};
 use crate::codec::{TryFromBytes, TryToBytes};
 use crate::{Parameters, StmResult};
 
-use super::halo2::circuit::StmCertificateCircuit;
+use super::halo2::circuit::CertificateCircuit;
 use super::halo2_ivc::keys::RecursiveCircuitKeyGenerator;
 use super::key_generator::KeyGenerator;
 use super::{
@@ -232,14 +232,14 @@ impl<G: KeyGenerator> KeyProvider<G> {
     }
 }
 
-impl KeyProvider<StmCertificateCircuit> {
+impl KeyProvider<CertificateCircuit> {
     /// Production certificate-circuit provider: builds the circuit from `parameters`, roots the
     /// cache at the temporary directory, and validates against the embedded production verifying key.
     pub(crate) fn for_non_recursive_circuit(
         parameters: &Parameters,
         merkle_tree_depth: u32,
     ) -> StmResult<Self> {
-        let circuit = StmCertificateCircuit::try_new(parameters, merkle_tree_depth)?;
+        let circuit = CertificateCircuit::try_new(parameters, merkle_tree_depth)?;
         Ok(Self::new(
             std::env::temp_dir(),
             "non-recursive-keys",
@@ -254,7 +254,7 @@ impl KeyProvider<RecursiveCircuitKeyGenerator> {
     /// circuit is built from, roots the cache at the temporary directory, and validates against the
     /// embedded production verifying key.
     pub(crate) fn for_recursive_circuit(
-        non_recursive_key_provider: KeyProvider<StmCertificateCircuit>,
+        non_recursive_key_provider: KeyProvider<CertificateCircuit>,
     ) -> Self {
         Self::new(
             std::env::temp_dir(),
@@ -289,7 +289,7 @@ mod tests {
     use super::{CacheState, KeyGenerator, KeyProvider};
     use crate::Parameters;
     use crate::StmResult;
-    use crate::circuits::halo2::circuit::StmCertificateCircuit;
+    use crate::circuits::halo2::circuit::CertificateCircuit;
     use crate::codec::{TryFromBytes, TryToBytes};
 
     /// Key backed by raw bytes, so the provider mechanics can be tested without real keygen.
@@ -584,7 +584,7 @@ mod tests {
             m: 10,
             phi_f: 0.2,
         };
-        let circuit = StmCertificateCircuit::try_new(&parameters, 4).unwrap();
+        let circuit = CertificateCircuit::try_new(&parameters, 4).unwrap();
         let base_dir = env::temp_dir().join(current_function!());
         fs::remove_dir_all(&base_dir).ok();
         let provider = KeyProvider::new(base_dir.clone(), "non-recursive", b"corrupt-vk", circuit);

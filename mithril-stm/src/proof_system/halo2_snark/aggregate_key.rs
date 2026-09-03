@@ -38,17 +38,17 @@ impl<D: MembershipDigest> AggregateVerificationKeyForSnark<D> {
     /// Encode to the `RIGID_SLOT_BYTES`-byte rigid-slot layout consumed by the protocol message
     /// `next_aggregate_verification_key` rigid slot:
     ///
-    /// `root_LE (32) || nr_leaves_LE_u32 (4) || total_stake_LE_u64 (8)`.
+    /// `merkle_tree_commitment_digest_LE (32) || nr_leaves_LE_u32 (4) || total_stake_LE_u64 (8)`.
     ///
     /// The IVC circuit fixture's `From<AggregateVerificationKey> for Vec<u8>` writes a 4-byte
-    /// `nr_leaves` field between the root and the total stake. This is a misconception of the
+    /// `nr_leaves` field between the commitment digest and the total stake. This is a misconception of the
     /// IVC fixture: production [AggregateVerificationKeyForSnark] does not carry the leaf
     /// count, and the IVC circuit only consumes the first 32 bytes of the slot (the Merkle
-    /// root) anyway. Until the IVC fixture is fixed to drop those 4 bytes (and the slot is
+    /// tree commitment digest) anyway. Until the IVC fixture is fixed to drop those 4 bytes (and the slot is
     /// shrunk to 40 bytes), the projection here writes zero in `bytes[32..36]` so the host
     /// preimage matches the IVC fixture layout byte-for-byte.
     ///
-    /// Returns an error when the Merkle root does not have the expected 32-byte width.
+    /// Returns an error when the Merkle tree commitment digest does not have the expected 32-byte width.
     // TODO: Refactor the IVC fixture to drop the 4-byte leaf count and remove the zero-padding here.
     pub fn to_rigid_slot_bytes(&self) -> StmResult<[u8; RIGID_SLOT_BYTES]> {
         let root = &self.merkle_tree_commitment.root;

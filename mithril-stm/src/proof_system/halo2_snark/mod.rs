@@ -1,6 +1,7 @@
 mod aggregate_key;
 mod clerk;
 mod eligibility;
+mod errors;
 mod interface;
 mod message;
 mod proof;
@@ -16,6 +17,7 @@ pub(crate) use clerk::SnarkClerk;
 pub(crate) use eligibility::{
     compute_target_value_for_snark_lottery, compute_winning_lottery_indices,
 };
+pub use errors::SnarkProofError;
 #[cfg(test)]
 pub(crate) use interface::MockSnarkAggregateSignatureProver;
 pub(crate) use interface::SnarkAggregateSignatureProver;
@@ -35,19 +37,6 @@ pub(crate) use single_signature::SingleSignatureForSnark;
 ///
 /// For now set to 13 to allow for 2^13 = 8192 signers
 pub const MERKLE_TREE_DEPTH_FOR_SNARK: u32 = 13;
-
-/// Errors which can be outputted by the snark proof creation or verification.
-#[cfg(feature = "future_snark")]
-#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
-pub enum SnarkError {
-    /// Serialization error
-    #[error("Serialization error")]
-    SerializationError,
-
-    /// The SNARK proof failed to verify
-    #[error("The SNARK proof failed to verify.")]
-    VerifyProofFail,
-}
 
 #[cfg(test)]
 mod tests {
@@ -154,15 +143,14 @@ mod tests {
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(20))]
 
-            /// Verifies that `build_snark_message` encodes the Merkle root
+            /// Verifies that `build_snark_message` encodes the Merkle tree commitment digest
             /// consistently with the circuit's public-input encoding.
             ///
-            /// The circuit golden helpers decode the root via
-            /// `BaseFieldElement::from_bytes`
-            /// (see `circuits::halo2::golden::helpers::decode_merkle_root`),
-            /// while `build_snark_message` uses `BaseFieldElement::from_raw`.
-            /// For Poseidon-produced roots (always canonical field elements),
-            /// both must yield the same field element.
+            /// Both paths decode the digest with `BaseFieldElement::from_bytes`, which rejects a
+            /// non-canonical encoding: `build_snark_message` on the host side, and
+            /// `circuits::halo2::golden::helpers::decode_merkle_tree_commitment` on the circuit
+            /// side. This test pins that shared encoding contract, so a change to either decode
+            /// path is caught here.
             #[test]
             fn message_encoding_matches_circuit(
                 sha_input in any::<[u8; 32]>(),
@@ -180,18 +168,17 @@ mod tests {
                 let root_bytes = commitment.root.as_slice();
                 let msg: [u8; 32] = Sha256::digest(sha_input).into();
 
-                // CPU encoding via build_snark_message (uses from_raw)
+                // Host encoding, via build_snark_message
                 let [root_cpu, _] = build_snark_message(&commitment.root, &msg).unwrap();
 
-                // Circuit encoding: golden helpers use from_bytes for the root
+                // Circuit encoding, as the golden helpers perform it
                 assert_eq!(32, root_bytes.len());
                 let root_circuit = BaseFieldElement::from_bytes(root_bytes)
                     .expect("Poseidon root must be canonical");
 
                 assert_eq!(
                     root_cpu, root_circuit,
-                    "build_snark_message (from_raw) must match the circuit's \
-                     from_bytes for Poseidon roots"
+                    "build_snark_message must decode the digest exactly as the circuit does"
                 );
             }
         }
@@ -268,7 +255,7 @@ mod tests {
         /// Verifies the lottery prefix structure matches the circuit's
         /// computation at `circuits::halo2::circuit` lines 77-79:
         /// ```text
-        /// prefix = Poseidon(DST_LOTTERY, merkle_root, msg)
+        /// prefix = Poseidon(DST_LOTTERY, merkle_tree_commitment, msg)
         /// ```
         #[test]
         fn lottery_prefix_structure_matches_circuit() {

@@ -20,5 +20,5 @@ path = "tests-result.junit.xml"
 report-name = "mithril-tests"
 
 [[profile.ci.overrides]]
-filter = 'test(#proof_system::ivc_halo2_snark::*slow::*)'
+filter = 'test(#proof_system::halo2_ivc_snark::*slow::*)'
 test-group = "ivc-snark-sequential"

@@ -1,4 +1,4 @@
-//! Fail-closed CLI parsing for the `ivc_halo2_snark` benchmark.
+//! Fail-closed CLI parsing for the `halo2_ivc_snark` benchmark.
 //!
 //! Split out (behind `benchmark-internals`) and kept **pure** — no printing, no `process::exit` — so the
 //! fail-closed contract can be unit-tested: no option may consume a following token and turn a control

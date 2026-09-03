@@ -92,12 +92,13 @@ readonly -a SLOW_MITHRIL_STM_TESTS=(
   "mithril-stm/src/circuits/halo2/#circuits::halo2::"
   "mithril-stm/src/circuits/halo2_ivc/#circuits::halo2_ivc::"
   "mithril-stm/src/membership_commitment/merkle_tree#membership_commitment::merkle_tree::"
+  "mithril-stm/src/proof_system/halo2_ivc_snark/proof.rs#proof_system::halo2_ivc_snark::proof::"
+  "mithril-stm/src/proof_system/halo2_ivc_snark/prover_input.rs#proof_system::halo2_ivc_snark::proof::"
+  "mithril-stm/src/proof_system/halo2_ivc_snark/prover_input_helpers.rs#proof_system::halo2_ivc_snark::prover_input_helpers::"
+  "mithril-stm/src/proof_system/halo2_ivc_snark/prover_input_helpers.rs#proof_system::halo2_ivc_snark::proof::"
+  "mithril-stm/src/proof_system/halo2_ivc_snark/prover_setup.rs#proof_system::halo2_ivc_snark::prover_setup::"
+  "mithril-stm/src/proof_system/halo2_ivc_snark/rolling_state.rs#proof_system::halo2_ivc_snark::proof::"
   "mithril-stm/src/proof_system/halo2_snark#proof_system::halo2_snark::"
-  "mithril-stm/src/proof_system/ivc_halo2_snark/proof.rs#proof_system::ivc_halo2_snark::proof::"
-  "mithril-stm/src/proof_system/ivc_halo2_snark/prover_input.rs#proof_system::ivc_halo2_snark::proof::"
-  "mithril-stm/src/proof_system/ivc_halo2_snark/prover_input_helpers.rs#proof_system::ivc_halo2_snark::prover_input_helpers::"
-  "mithril-stm/src/proof_system/ivc_halo2_snark/prover_input_helpers.rs#proof_system::ivc_halo2_snark::proof::"
-  "mithril-stm/src/proof_system/ivc_halo2_snark/prover_setup.rs#proof_system::ivc_halo2_snark::prover_setup::"
   "mithril-stm/src/signature_scheme/bls_multi_signature#signature_scheme::bls_multi_signature::"
 )
 

@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     MembershipDigest, Parameters, SingleSignature, StmResult,
     circuits::{
-        halo2::{circuit::StmCertificateCircuit, types::CircuitBase},
+        halo2::{circuit::CertificateCircuit, types::CircuitBase},
         halo2_ivc::{
             certificate_proof::verify_and_prepare_accumulator, types::CertificateProofBytes,
         },
@@ -24,7 +24,7 @@ use crate::{
     proof_system::{
         AggregateVerificationKeyForSnark,
         halo2_snark::{
-            SnarkError, build_snark_message, interface::SnarkAggregateSignatureProver,
+            SnarkProofError, build_snark_message, interface::SnarkAggregateSignatureProver,
             prover_input::SnarkProverInput,
         },
     },
@@ -89,11 +89,12 @@ impl<D: MembershipDigest> SnarkProof<D> {
         snark_verifier_data: &SnarkVerifierData,
         verifier_params: &ParamsVerifierKZG<Bls12>,
     ) -> StmResult<()> {
-        let merkle_root = &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root;
-        let proof_message = build_snark_message(merkle_root, message)?;
+        let merkle_tree_commitment_digest =
+            &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root;
+        let proof_message = build_snark_message(merkle_tree_commitment_digest, message)?;
         let proof_instance = (proof_message[0].into(), proof_message[1].into());
 
-        let verify_result = zk::verify::<StmCertificateCircuit, PoseidonState<CircuitBase>>(
+        let verify_result = zk::verify::<CertificateCircuit, PoseidonState<CircuitBase>>(
             verifier_params,
             snark_verifier_data
                 .certificate_circuit_verification_key()
@@ -103,13 +104,13 @@ impl<D: MembershipDigest> SnarkProof<D> {
             &self.circuit_proof,
         );
 
-        verify_result.map_err(|_| SnarkError::VerifyProofFail.into())
+        verify_result.map_err(|_| SnarkProofError::VerifyProofFail.into())
     }
 
     /// Runs the off-circuit SNARK verifier and returns the verifier's intermediate
     /// `DualMSM`.
     ///
-    /// The public inputs are reconstructed from `message` and the Merkle-tree root
+    /// The public inputs are reconstructed from `message` and the Merkle tree commitment
     /// inside `aggregate_verification_key_for_snark`; the proof is then checked
     /// against the certificate verifying key under the Poseidon transcript.
     ///
@@ -127,8 +128,9 @@ impl<D: MembershipDigest> SnarkProof<D> {
         circuit_verification_key: &NonRecursiveCircuitVerifyingKey,
         verifier_params: &ParamsVerifierKZG<Bls12>,
     ) -> StmResult<DualMSM<Bls12>> {
-        let merkle_root = &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root;
-        let proof_message = build_snark_message(merkle_root, message)?;
+        let merkle_tree_commitment_digest =
+            &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root;
+        let proof_message = build_snark_message(merkle_tree_commitment_digest, message)?;
         let public_inputs: Vec<CircuitBase> =
             vec![proof_message[0].into(), proof_message[1].into()];
 
@@ -153,7 +155,7 @@ impl<D: MembershipDigest> SnarkProof<D> {
         if codec::has_cbor_v1_prefix(bytes) {
             codec::from_cbor_bytes(&bytes[1..])
         } else {
-            Err(SnarkError::SerializationError.into())
+            Err(SnarkProofError::SerializationError.into())
         }
     }
 }
@@ -207,7 +209,7 @@ impl<D: MembershipDigest, R: RngCore + CryptoRng> SnarkAggregateSignatureProver<
     ///
     /// The clerk clones this before proving so the certificate's ancillary verifier data and the
     /// proof provably originate from the same setup.
-    fn verification_key(&self) -> &NonRecursiveCircuitVerifyingKey {
+    fn verifying_key(&self) -> &NonRecursiveCircuitVerifyingKey {
         &self.setup.verification_key
     }
 
@@ -229,7 +231,7 @@ impl<D: MembershipDigest, R: RngCore + CryptoRng> SnarkAggregateSignatureProver<
         let instance = snark_prover_input.get_instance();
         let witness = snark_prover_input.into_witness();
 
-        let circuit_proof = zk::prove::<StmCertificateCircuit, PoseidonState<CircuitBase>>(
+        let circuit_proof = zk::prove::<CertificateCircuit, PoseidonState<CircuitBase>>(
             &self.setup.srs,
             self.setup.proving_key.midnight_pk(),
             &self.setup.circuit,
@@ -307,11 +309,11 @@ mod tests {
     }
 
     fn snark_verifier_data(prover: &SnarkProver<ChaCha20Rng>) -> SnarkVerifierData {
-        SnarkVerifierData::new(SnarkAggregateSignatureProver::<D>::verification_key(prover).clone())
+        SnarkVerifierData::new(SnarkAggregateSignatureProver::<D>::verifying_key(prover).clone())
     }
 
     fn snark_verifier_data_non_deterministic(prover: &SnarkProver<OsRng>) -> SnarkVerifierData {
-        SnarkVerifierData::new(SnarkAggregateSignatureProver::<D>::verification_key(prover).clone())
+        SnarkVerifierData::new(SnarkAggregateSignatureProver::<D>::verifying_key(prover).clone())
     }
 
     fn create_prover(params: Parameters, seed: [u8; 32]) -> SnarkProver<ChaCha20Rng> {
@@ -405,7 +407,7 @@ mod tests {
                 .prepare_and_check(
                     &message,
                     &avk,
-                    SnarkAggregateSignatureProver::<D>::verification_key(&prover),
+                    SnarkAggregateSignatureProver::<D>::verifying_key(&prover),
                     &prover.verifier_params(),
                 )
                 .expect("prepare_and_check should succeed on a freshly produced proof");
