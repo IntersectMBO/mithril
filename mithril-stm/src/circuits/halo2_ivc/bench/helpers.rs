@@ -53,8 +53,7 @@ use crate::{
         trusted_setup::TrustedSetupProvider,
     },
     proof_system::halo2_ivc_snark::{
-        IvcProverInput, IvcProverSetup, proof::IvcProof, rolling_state::IvcRollingState,
-        verifier_setup::IvcVerifierSetup,
+        IvcProof, IvcProverInput, IvcProverSetup, IvcRollingState, IvcVerifierSetup,
     },
 };
 
