@@ -1,6 +1,8 @@
 //! Tools and types to abstract the use of the [Mithril STM library](https://mithril.network/rust-doc/mithril_stm/index.html)
 
 mod cardano;
+#[cfg(feature = "future_snark")]
+mod circuit_key_registry;
 mod codec;
 mod conversions;
 pub mod ed25519;
@@ -18,6 +20,8 @@ pub use cardano::{
     ProtocolInitializerErrorWrapper, ProtocolRegistrationErrorWrapper, SerDeShelleyFileFormat,
     SignerRegistrationParameters, Sum6KesBytes,
 };
+#[cfg(feature = "future_snark")]
+pub use circuit_key_registry::*;
 pub use codec::*;
 pub use ed25519_alias::{era::*, manifest::*, protocol_configuration::*};
 pub use genesis::*;

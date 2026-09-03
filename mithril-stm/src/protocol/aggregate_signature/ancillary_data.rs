@@ -15,6 +15,7 @@ use crate::{BaseFieldElement, SchnorrSigningKey, circuits::halo2_ivc::PREIMAGE_S
 #[cfg(feature = "future_snark")]
 use crate::{
     SchnorrVerificationKey, StandardSchnorrSignature,
+    circuits::CircuitVerificationKeyDigest,
     proof_system::{
         IvcRollingState, SnarkVerifierData, ivc_halo2_snark::verifier_setup::IvcVerifierData,
     },
@@ -127,6 +128,30 @@ impl AncillaryVerifierData {
         match self {
             Self::Snark(snark_verifier_data) => Some(snark_verifier_data),
             Self::IvcSnark(_) => None,
+        }
+    }
+
+    /// Returns the digests of the circuit verification keys carried by this verifier data, in a
+    /// stable order (certificate circuit first, then IVC circuit when present).
+    ///
+    /// These are the keys the proof is verified against, so certifying them certifies the
+    /// circuits used to produce the aggregate signature.
+    #[cfg(feature = "future_snark")]
+    pub fn circuit_verification_key_digests(&self) -> StmResult<Vec<CircuitVerificationKeyDigest>> {
+        match self {
+            Self::IvcSnark(ivc_verifier_data) => Ok(vec![
+                CircuitVerificationKeyDigest::try_from_verification_key(
+                    ivc_verifier_data.certificate_circuit_verification_key(),
+                )?,
+                CircuitVerificationKeyDigest::try_from_verification_key(
+                    ivc_verifier_data.ivc_circuit_verification_key(),
+                )?,
+            ]),
+            Self::Snark(snark_verifier_data) => Ok(vec![
+                CircuitVerificationKeyDigest::try_from_verification_key(
+                    snark_verifier_data.certificate_circuit_verification_key(),
+                )?,
+            ]),
         }
     }
 }
@@ -435,6 +460,35 @@ mod tests {
         assert_eq!(bytes, reconstructed.to_bytes().unwrap());
         assert!(reconstructed.as_snark_verifier_data().is_some());
         assert!(reconstructed.as_ivc_verifier_data().is_none());
+    }
+
+    #[cfg(feature = "future_snark")]
+    #[test]
+    fn ivc_verifier_data_exposes_certificate_then_ivc_circuit_verification_key_digests() {
+        let context = load_embedded_verification_context_asset()
+            .expect("verification context asset should load");
+        let ivc_ancillary_verifier_data = AncillaryVerifierData::IvcSnark(IvcVerifierData::new(
+            MessageHash::ZERO,
+            context.certificate_verifying_key.clone(),
+            context.recursive_verifying_key,
+        ));
+        let snark_ancillary_verifier_data =
+            AncillaryVerifierData::Snark(SnarkVerifierData::new(context.certificate_verifying_key));
+
+        let ivc_digests = ivc_ancillary_verifier_data
+            .circuit_verification_key_digests()
+            .unwrap();
+        let snark_digests = snark_ancillary_verifier_data
+            .circuit_verification_key_digests()
+            .unwrap();
+
+        assert_eq!(2, ivc_digests.len());
+        assert_ne!(ivc_digests[0], ivc_digests[1]);
+        assert_eq!(
+            vec![ivc_digests[0]],
+            snark_digests,
+            "both variants must expose the same digest for the same certificate circuit verification key, certificate circuit first"
+        );
     }
 
     /// Byte-locks the CBOR encoding of the pre-existing `IvcSnark` ancillary variant against a
