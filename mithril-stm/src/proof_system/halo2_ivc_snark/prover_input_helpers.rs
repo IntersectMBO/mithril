@@ -9,11 +9,11 @@ use crate::{
         types::{MerkleTreeCommitment, MessageHash, ProtocolMessagePreimage},
     },
     proof_system::{
-        halo2_snark::build_snark_message,
-        ivc_halo2_snark::{
+        halo2_ivc_snark::{
             prover_setup::IvcProverInputVerificationContext,
             rolling_state::{IvcRollingState, IvcTransitionType},
         },
+        halo2_snark::build_snark_message,
     },
 };
 

@@ -14,7 +14,7 @@ use crate::{
     proof_system::{
         NonDeterministicSnarkProverFactory, SnarkAggregateSignatureProver, SnarkClerk,
         SnarkProverFactory, SnarkVerifierData,
-        ivc_halo2_snark::{proof::IvcChainInput, verifier_setup::IvcVerifierData},
+        halo2_ivc_snark::{proof::IvcChainInput, verifier_setup::IvcVerifierData},
     },
 };
 use crate::{
@@ -294,7 +294,7 @@ mod tests {
         proof_system::{
             IvcRollingState, MERKLE_TREE_DEPTH_FOR_SNARK, MockSnarkAggregateSignatureProver,
             MockSnarkProverFactory, SnarkClerk,
-            ivc_halo2_snark::{
+            halo2_ivc_snark::{
                 MockIvcChainProver, build_standard_rolling_state,
                 proof::{IvcChainInput, IvcProof},
                 verifier_setup::IvcVerifierData,

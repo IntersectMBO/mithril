@@ -5,7 +5,7 @@ use crate::{
     circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey,
     proof_system::{
         IvcRollingState,
-        ivc_halo2_snark::proof::{IvcChainInput, IvcProof},
+        halo2_ivc_snark::proof::{IvcChainInput, IvcProof},
     },
 };
 

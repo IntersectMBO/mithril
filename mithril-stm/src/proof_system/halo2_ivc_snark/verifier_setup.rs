@@ -22,7 +22,7 @@ use crate::{
         },
     },
     codec,
-    proof_system::{KZG_VERIFIER_PARAMS, ivc_halo2_snark::prover_setup::IvcProverSetup},
+    proof_system::{KZG_VERIFIER_PARAMS, halo2_ivc_snark::prover_setup::IvcProverSetup},
 };
 
 /// Minimal setup artifacts needed to verify IVC proofs without loading the full SRS.
@@ -40,8 +40,8 @@ use crate::{
 /// [`IvcProofError::MsmPairingCheckFailed`].
 ///
 /// [`Global`]: crate::circuits::halo2_ivc::state::Global
-/// [`IvcProof::verify`]: crate::proof_system::ivc_halo2_snark::proof::IvcProof::verify
-/// [`IvcProofError::MsmPairingCheckFailed`]: crate::proof_system::ivc_halo2_snark::errors::IvcProofError::MsmPairingCheckFailed
+/// [`IvcProof::verify`]: crate::proof_system::halo2_ivc_snark::proof::IvcProof::verify
+/// [`IvcProofError::MsmPairingCheckFailed`]: crate::proof_system::halo2_ivc_snark::errors::IvcProofError::MsmPairingCheckFailed
 pub(crate) struct IvcVerifierSetup {
     /// Stabilized KZG verifier parameters (embedded constant, no SRS load required).
     verifier_params: ParamsVerifierKZG<Bls12>,

@@ -18,7 +18,7 @@ use crate::{
             types::{IvcProofBytes, MerkleTreeCommitment, MessageHash, StepCounter},
         },
     },
-    proof_system::ivc_halo2_snark::prover_input_helpers::create_snark_message_for_next_state,
+    proof_system::halo2_ivc_snark::prover_input_helpers::create_snark_message_for_next_state,
     signature_scheme::{BaseFieldElement, StandardSchnorrSignature},
 };
 
@@ -315,7 +315,7 @@ mod tests {
             circuits::halo2_ivc::types::ProtocolParametersHash,
             proof_system::{
                 AggregateVerificationKeyForSnark,
-                ivc_halo2_snark::prover_input_helpers::tests::{
+                halo2_ivc_snark::prover_input_helpers::tests::{
                     build_preimage, build_rolling_state, build_standard_preimage,
                     build_standard_rolling_state, merkle_tree_commitment_from_bytes,
                 },

@@ -3,7 +3,7 @@
 This folder holds the benchmark harnesses for `mithril-stm`. The two Halo2 **circuit** benchmark suites are
 the focus of this document:
 
-- the **recursive IVC circuit** — [`ivc_halo2_snark`](ivc_halo2_snark.rs), which ships a small **CLI** to
+- the **recursive IVC circuit** — [`halo2_ivc_snark`](halo2_ivc_snark.rs), which ships a small **CLI** to
   list and select what runs;
 - the **non-recursive certificate circuit** — [`halo2_snark`](halo2_snark.rs) and
   [`halo2_prover_modes`](halo2_prover_modes.rs).
@@ -36,14 +36,14 @@ Everything after `--` is passed to the benchmark binary.
 
 | Bench                                             | Circuit / area                         | What it measures                                                                  | Selection                                           |
 | ------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `ivc_halo2_snark`                                 | recursive IVC circuit                  | prove / verify / fold per transition path + setup (cold/warm), single observation | **custom CLI** (`--list`, literal id/prefix filter) |
+| `halo2_ivc_snark`                                 | recursive IVC circuit                  | prove / verify / fold per transition path + setup (cold/warm), single observation | **custom CLI** (`--list`, literal id/prefix filter) |
 | `halo2_snark`                                     | non-recursive certificate circuit      | constraints, VK size, proof size, prove & verify time across parameter tiers      | Criterion (filter `certificate/<tier>`)             |
 | `halo2_prover_modes`                              | non-recursive certificate circuit      | mock-prover vs real-prover cost projected to an e2e run, across `k` tiers         | no arguments                                        |
 | `multi_sig`, `schnorr_sig`, `stm`, `size_benches` | other crate areas (not Halo2 circuits) | see each file                                                                     | —                                                   |
 
 ---
 
-## Recursive IVC circuit — `ivc_halo2_snark`
+## Recursive IVC circuit — `halo2_ivc_snark`
 
 Exercises the recursive IVC prover/verifier at its production degree (19), using the small committed
 certificate as the inner proof. It measures, for each of the three transition **paths** — `genesis`,
@@ -64,24 +64,24 @@ never silently trigger a multi-minute key generation). Arguments go after `--`:
 
 ```bash
 # List every benchmark id — no benchmark setup or key generation (Cargo may still compile the target):
-cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- --list
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_ivc_snark -- --list
 
 # Show usage:
-cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- --help
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_ivc_snark -- --help
 
 # Run everything (tens of minutes; performs TWO recursive key generations — the shared per-path
 # environment and the cold setup/keys measurement — then all proofs):
-cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_ivc_snark
 
 # Run a subset: pass ONE literal id or prefix (substring match against the ids from --list).
 # One transition path (prove + verify + fold):
-cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- ivc/same_epoch
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_ivc_snark -- ivc/same_epoch
 # One path's verification only:
-cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- ivc/genesis/verify
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_ivc_snark -- ivc/genesis/verify
 # SRS cold vs warm (no key generation):
-cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- ivc/setup/srs
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_ivc_snark -- ivc/setup/srs
 # Keys cold vs warm (cold performs a full recursive key generation):
-cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench ivc_halo2_snark -- ivc/setup/keys
+cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_ivc_snark -- ivc/setup/keys
 ```
 
 The filter is a **literal** substring, not a regex. The parser rejects (rather than silently ignores):
