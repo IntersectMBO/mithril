@@ -204,3 +204,47 @@ pub(crate) struct AssignedWitness {
     // Protocol message preimage bytes
     pub(crate) message_preimage: Vec<AssignedByte<NativeField>>,
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        circuits::halo2::{
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+            keys::NonRecursiveCircuitVerifyingKey,
+        },
+        circuits::halo2_ivc::{
+            RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, keys::RecursiveCircuitVerifyingKey,
+        },
+        codec::TryFromBytes,
+        signature_scheme::{ScalarFieldElement, SchnorrSigningKey, SchnorrVerificationKey},
+    };
+
+    use super::*;
+
+    #[test]
+    fn new_rejects_invalid_genesis_verification_key() {
+        let invalid_key = SchnorrVerificationKey::new_from_signing_key(SchnorrSigningKey(
+            ScalarFieldElement::get_zero(),
+        ));
+        let certificate_verifying_key = NonRecursiveCircuitVerifyingKey::try_from_bytes(
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        )
+        .expect("production verifying key bytes should deserialize");
+        let ivc_verifying_key = RecursiveCircuitVerifyingKey::try_from_bytes(
+            RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        )
+        .expect("production verifying key bytes should deserialize");
+
+        let result = Global::new(
+            MessageHash::ZERO,
+            invalid_key,
+            &certificate_verifying_key,
+            &ivc_verifying_key,
+        );
+
+        assert!(
+            result.is_err(),
+            "an invalid genesis verification key must be rejected"
+        );
+    }
+}
