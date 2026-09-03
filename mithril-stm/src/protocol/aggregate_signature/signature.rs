@@ -1225,7 +1225,7 @@ mod tests {
         use crate::{
             Clerk, Initializer, KeyRegistration, MithrilMembershipDigest, Parameters,
             SingleSignature,
-            proof_system::{SnarkProver, SnarkProverSetup},
+            proof_system::{SnarkAggregateSignatureProver, SnarkProver, SnarkProverSetup},
         };
 
         type D = MithrilMembershipDigest;
@@ -1643,7 +1643,7 @@ mod tests {
                 .expect("SnarkProverSetup creation must succeed");
             let snark_proof = SnarkProver::try_new_deterministic(prover_seed, setup)
                 .expect("SnarkProver creation must succeed")
-                .aggregate_signatures::<D>(snark_clerk, &signatures, &message)
+                .aggregate_signatures(snark_clerk, &signatures, &message)
                 .expect("SNARK signature aggregation must succeed");
 
             AggregateSignature::Snark(Box::new(snark_proof))

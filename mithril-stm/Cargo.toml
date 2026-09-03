@@ -1,6 +1,6 @@
 [package]
 name = "mithril-stm"
-version = "0.12.11"
+version = "0.12.12"
 edition = { workspace = true }
 authors = { workspace = true }
 homepage = { workspace = true }
@@ -89,6 +89,7 @@ rug = { version = "1.30.0", optional = true }
 criterion = { version = "0.8.2", features = ["html_reports"] }
 fs2 = "0.4.3"
 httpmock = "0.8.3"
+mockall = { workspace = true }
 num-bigint = "0.4.6"
 num-rational = "0.4.2"
 proptest = "1.11.0"

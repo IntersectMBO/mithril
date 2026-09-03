@@ -102,7 +102,7 @@ impl AssignedState {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Global {
     // Persistent values that do not change through an ivc stream
     pub(crate) genesis_message: MessageHash,
@@ -115,7 +115,6 @@ pub(crate) struct Global {
 }
 
 impl Global {
-    #[allow(dead_code)]
     pub(crate) fn new(
         genesis_message: MessageHash,
         genesis_verification_key: SchnorrVerificationKey,

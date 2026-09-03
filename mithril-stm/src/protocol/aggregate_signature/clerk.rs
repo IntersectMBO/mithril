@@ -5,38 +5,22 @@ use std::sync::Arc;
 use anyhow::Context;
 #[cfg(feature = "future_snark")]
 use anyhow::anyhow;
-#[cfg(feature = "future_snark")]
-use midnight_proofs::transcript::Blake2b256;
-#[cfg(feature = "future_snark")]
-use rand_core::OsRng;
 
+#[cfg(all(feature = "future_snark", test))]
+use crate::proof_system::MockSnarkProverFactory;
+#[cfg(feature = "future_snark")]
+use crate::{
+    AggregateSignatureError, AncillaryProverData, AncillaryVerifierData,
+    proof_system::{
+        NonDeterministicSnarkProverFactory, SnarkAggregateSignatureProver, SnarkClerk,
+        SnarkProverFactory, SnarkVerifierData,
+        ivc_halo2_snark::{proof::IvcChainInput, verifier_setup::IvcVerifierData},
+    },
+};
 use crate::{
     AggregateVerificationKey, ClosedKeyRegistration, LotteryIndex, MembershipDigest, Parameters,
     Signer, SingleSignature, Stake, StmResult, VerificationKeyForConcatenation,
     proof_system::{ConcatenationClerk, ConcatenationProof},
-};
-#[cfg(feature = "future_snark")]
-use crate::{
-    AggregationError,
-    circuits::{
-        halo2::keys::NonRecursiveCircuitVerifyingKey, halo2_ivc::PREIMAGE_SIZE,
-        key_provider::KeyProvider, trusted_setup::TrustedSetupProvider,
-    },
-    proof_system::ivc_halo2_snark::IvcSnarkProverSetup,
-};
-
-#[cfg(feature = "future_snark")]
-use crate::{
-    AggregateSignatureError, AncillaryProverData, AncillaryVerifierData, MithrilMembershipDigest,
-    SnarkProof,
-    circuits::halo2_ivc::{ProtocolMessagePreimage, state::Global},
-    proof_system::{
-        MERKLE_TREE_DEPTH_FOR_SNARK, SnarkClerk, SnarkProver, SnarkVerifierData,
-        ivc_halo2_snark::{
-            proof::{IvcProof, IvcProver},
-            verifier_setup::IvcVerifierData,
-        },
-    },
 };
 
 use super::{
@@ -53,6 +37,9 @@ pub struct Clerk<D: MembershipDigest> {
     concatenation_proof_clerk: ConcatenationClerk,
     #[cfg(feature = "future_snark")]
     snark_proof_clerk: Option<SnarkClerk>,
+    /// A factory that returns the provers necessary to create the SNARK proofs
+    #[cfg(feature = "future_snark")]
+    snark_prover_factory: Arc<dyn SnarkProverFactory<D> + Send + Sync>,
     phantom_data: PhantomData<D>,
 }
 
@@ -66,6 +53,8 @@ impl<D: MembershipDigest> Clerk<D> {
                 .closed_key_registration
                 .has_snark_verification_keys()
                 .then(|| SnarkClerk::new_clerk_from_signer(signer)),
+            #[cfg(feature = "future_snark")]
+            snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory),
             phantom_data: PhantomData,
         }
     }
@@ -84,7 +73,24 @@ impl<D: MembershipDigest> Clerk<D> {
             snark_proof_clerk: closed_registration.has_snark_verification_keys().then(|| {
                 SnarkClerk::new_clerk_from_closed_key_registration(parameters, closed_registration)
             }),
+            #[cfg(feature = "future_snark")]
+            snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory),
             phantom_data: PhantomData,
+        }
+    }
+
+    /// Create a Clerk from a signer whose SNARK provers come from a mocked factory.
+    #[cfg(all(feature = "future_snark", test))]
+    pub(crate) fn new_clerk_from_signer_with_mock_prover_factory(
+        signer: &Signer<D>,
+        snark_prover_factory: MockSnarkProverFactory<D>,
+    ) -> Self
+    where
+        D: Send + Sync + 'static,
+    {
+        Self {
+            snark_prover_factory: Arc::new(snark_prover_factory),
+            ..Self::new_clerk_from_signer(signer)
         }
     }
 
@@ -120,29 +126,11 @@ impl<D: MembershipDigest> Clerk<D> {
                 let clerk = self
                     .get_snark_clerk()
                     .ok_or_else(|| anyhow!(AggregateSignatureError::MissingSnarkClerk))?;
-                let mut prover = SnarkProver::try_new_non_deterministic(
-                    &clerk.parameters,
-                    MERKLE_TREE_DEPTH_FOR_SNARK,
-                )?;
-                // Clone the verifying key before proving so the certificate's ancillary verifier
-                // data and the proof provably originate from the same setup.
-                let certificate_verifying_key = prover.verification_key().clone();
-                let snark_proof =
-                    prover.aggregate_signatures(clerk, sigs, msg).with_context(|| {
-                        format!(
-                            "Signatures failed to aggregate for type {}",
-                            AggregateSignatureType::Snark
-                        )
-                    })?;
-                Ok((
-                    AggregateSignature::Snark(Box::new(snark_proof)),
-                    AncillaryProofOutput::new(
-                        None,
-                        Some(AncillaryVerifierData::Snark(SnarkVerifierData::new(
-                            certificate_verifying_key,
-                        ))),
-                    ),
-                ))
+
+                let mut prover = self
+                    .snark_prover_factory
+                    .snark_aggregate_signature_prover(&clerk.parameters)?;
+                Self::aggregate_signatures_for_snark(clerk, prover.as_mut(), sigs, msg)
             }
             #[cfg(feature = "future_snark")]
             AggregateSignatureType::IvcSnark => {
@@ -150,50 +138,83 @@ impl<D: MembershipDigest> Clerk<D> {
                     .get_snark_clerk()
                     .ok_or_else(|| anyhow!(AggregateSignatureError::MissingSnarkClerk))?;
 
-                let snark_proof = SnarkProver::try_new_non_deterministic(
-                    &snark_clerk.parameters,
-                    MERKLE_TREE_DEPTH_FOR_SNARK,
-                )?
-                .aggregate_signatures::<MithrilMembershipDigest>(snark_clerk, sigs, msg)
-                .with_context(|| {
-                    format!(
-                        "Signatures failed to aggregate for type {}",
-                        AggregateSignatureType::Snark
-                    )
-                })?;
-
-                let trusted_setup_provider = TrustedSetupProvider::default();
-                let certificate_provider = KeyProvider::for_non_recursive_circuit(
-                    &snark_clerk.parameters,
-                    MERKLE_TREE_DEPTH_FOR_SNARK,
-                )?;
-                let recursive_key_provider =
-                    KeyProvider::for_recursive_circuit(certificate_provider);
-                let ivc_prover_setup = Arc::new(IvcSnarkProverSetup::load(
-                    &trusted_setup_provider,
-                    &recursive_key_provider,
-                )?);
-                let certificate_verifying_key = ivc_prover_setup.certificate_verifying_key.clone();
-
-                let (ivc_proof, next_ancillary_prover_data, ancillary_verifier_data) =
-                    ivc_prover_input_preparation_and_prove(
-                        snark_proof,
-                        msg,
-                        snark_clerk,
-                        &ancillary_input,
-                        ivc_prover_setup,
-                        certificate_verifying_key,
-                    )?;
-
-                Ok((
-                    AggregateSignature::IvcSnark(Box::new(ivc_proof)),
-                    AncillaryProofOutput::new(
-                        next_ancillary_prover_data,
-                        Some(ancillary_verifier_data),
-                    ),
-                ))
+                self.aggregate_signatures_for_ivc_snark(snark_clerk, sigs, msg, ancillary_input)
             }
         }
+    }
+
+    #[cfg(feature = "future_snark")]
+    fn aggregate_signatures_for_snark(
+        snark_clerk: &SnarkClerk,
+        prover: &mut dyn SnarkAggregateSignatureProver<D>,
+        sigs: &[SingleSignature],
+        msg: &[u8],
+    ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
+        let certificate_verifying_key = prover.verification_key().clone();
+        let snark_proof =
+            prover.aggregate_signatures(snark_clerk, sigs, msg).with_context(|| {
+                format!(
+                    "Signatures failed to aggregate for type {}",
+                    AggregateSignatureType::Snark
+                )
+            })?;
+        Ok((
+            AggregateSignature::Snark(Box::new(snark_proof)),
+            AncillaryProofOutput::new(
+                None,
+                Some(AncillaryVerifierData::Snark(SnarkVerifierData::new(
+                    certificate_verifying_key,
+                ))),
+            ),
+        ))
+    }
+
+    #[cfg(feature = "future_snark")]
+    fn aggregate_signatures_for_ivc_snark(
+        &self,
+        snark_clerk: &SnarkClerk,
+        sigs: &[SingleSignature],
+        msg: &[u8],
+        ancillary_input: AncillaryProofInput,
+    ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
+        let mut snark_prover = self
+            .snark_prover_factory
+            .snark_aggregate_signature_prover(&snark_clerk.parameters)?;
+
+        let certificate_verifying_key = snark_prover.verification_key().clone();
+        let certificate_proof = snark_prover
+            .aggregate_signatures(snark_clerk, sigs, msg)
+            .with_context(|| {
+                format!(
+                    "Signatures failed to aggregate for type {}",
+                    AggregateSignatureType::IvcSnark
+                )
+            })?;
+        drop(snark_prover);
+
+        let mut ivc_prover = self.snark_prover_factory.ivc_chain_prover(&snark_clerk.parameters)?;
+        let chain_input = IvcChainInput::try_new(
+            certificate_proof,
+            msg,
+            snark_clerk.compute_aggregate_verification_key_for_snark(),
+            ancillary_input,
+            &certificate_verifying_key,
+            ivc_prover.verifying_key(),
+        )?;
+        let genesis_protocol_message_hash = chain_input.global.genesis_message;
+        let (ivc_proof, next_rolling_state) = ivc_prover.advance_chain(chain_input)?;
+        let verifier_data = IvcVerifierData::new(
+            genesis_protocol_message_hash,
+            certificate_verifying_key,
+            ivc_prover.verifying_key().clone(),
+        );
+        Ok((
+            AggregateSignature::IvcSnark(Box::new(ivc_proof)),
+            AncillaryProofOutput::new(
+                next_rolling_state.map(AncillaryProverData::IvcSnark),
+                Some(AncillaryVerifierData::IvcSnark(verifier_data)),
+            ),
+        ))
     }
 
     /// Get the concatenation clerk.
@@ -245,229 +266,641 @@ impl<D: MembershipDigest> Clerk<D> {
     }
 }
 
-/// Prepares the IVC prover inputs from `ancillary_input` and the cached prover setup to
-/// build the [`Global`] chain constants, and run [`IvcProver::prove`].
-///
-/// Returns `(proof, ancillary_prover_data, ancillary_verifier_data)`. `ancillary_prover_data` is `Some` when
-/// the step advances the epoch and `None` for same-epoch steps.
-///
-/// # Errors
-/// Fails if the genesis Schnorr verifying key is absent, the message preimage is not PREIMAGE_SIZE bytes,
-/// or the proof itself fails.
-#[cfg(feature = "future_snark")]
-fn ivc_prover_input_preparation_and_prove<D: MembershipDigest>(
-    snark_proof: SnarkProof<D>,
-    msg: &[u8],
-    clerk: &SnarkClerk,
-    ancillary_input: &AncillaryProofInput,
-    ivc_prover_setup: Arc<IvcSnarkProverSetup>,
-    certificate_verifying_key: NonRecursiveCircuitVerifyingKey,
-) -> StmResult<(
-    IvcProof<Blake2b256>,
-    Option<AncillaryProverData>,
-    AncillaryVerifierData,
-)> {
-    let protocol_message_preimage_bytes: [u8; PREIMAGE_SIZE] =
-        ancillary_input.message_preimage().try_into()?;
-
-    let genesis_data = ancillary_input.genesis_data();
-
-    let genesis_verifying_key = genesis_data
-        .genesis_schnorr_verification_key()
-        .cloned()
-        .ok_or_else(|| anyhow!(AggregationError::MissingGenesisVerificationKey))?;
-
-    let genesis_message = genesis_data.genesis_message_preimage().try_into()?;
-
-    let ivc_verifying_key = ivc_prover_setup.ivc_verifying_key.clone();
-
-    let current_rolling_state = ancillary_input
-        .prover_data()
-        .map(|prover_data| {
-            prover_data.as_ivc_rolling_state().ok_or(anyhow!(
-                AggregationError::MissingIvcRollingStateInAncillaryProverData
-            ))
-        })
-        .transpose()?;
-
-    let genesis_bootstrap = &genesis_data.try_into()?;
-
-    let avk = clerk.compute_aggregate_verification_key_for_snark();
-
-    let global = Global::new(
-        genesis_message,
-        genesis_verifying_key,
-        &certificate_verifying_key,
-        &ivc_verifying_key,
-    );
-
-    let mut prover = IvcProver {
-        ivc_setup: ivc_prover_setup,
-        rng: OsRng,
-    };
-
-    let (ivc_proof, next_rolling_state) = prover.prove(
-        snark_proof,
-        msg,
-        &avk,
-        &global,
-        &ProtocolMessagePreimage(protocol_message_preimage_bytes),
-        genesis_bootstrap,
-        current_rolling_state,
-    )?;
-
-    let next_ancillary_prover_data = next_rolling_state.map(AncillaryProverData::IvcSnark);
-
-    let ancillary_verifier_data = AncillaryVerifierData::IvcSnark(IvcVerifierData::new(
-        genesis_message,
-        certificate_verifying_key,
-        ivc_verifying_key,
-    ));
-
-    Ok((
-        ivc_proof,
-        next_ancillary_prover_data,
-        ancillary_verifier_data,
-    ))
-}
-
 #[cfg(feature = "future_snark")]
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-    use std::sync::Arc;
 
-    use midnight_curves::Bls12;
-    use midnight_proofs::poly::kzg::params::ParamsKZG;
-    use midnight_zk_stdlib::{self as zk, MidnightCircuit};
-    use rand_chacha::ChaCha20Rng;
-    use rand_core::SeedableRng;
+    use anyhow::anyhow;
+    use midnight_proofs::transcript::Blake2b256;
 
     use crate::{
-        AncillaryGenesisData, AncillaryProofInput, MithrilMembershipDigest, Parameters,
-        circuits::halo2::circuit::StmCertificateCircuit,
-        circuits::halo2::keys::NonRecursiveCircuitVerifyingKey,
-        circuits::halo2_ivc::PREIMAGE_SIZE,
-        circuits::halo2_ivc::keys::{RecursiveCircuitProvingKey, RecursiveCircuitVerifyingKey},
-        proof_system::SnarkClerk,
-        proof_system::{MERKLE_TREE_DEPTH_FOR_SNARK, ivc_halo2_snark::IvcSnarkProverSetup},
-        protocol::aggregate_signature::tests::setup_equal_parties,
-        {AggregationError, AncillaryProverData, SnarkProof},
+        AggregateSignature, AggregateSignatureError, AggregateSignatureType, AggregationError,
+        AncillaryGenesisData, AncillaryProofInput, AncillaryProofOutput, AncillaryProverData,
+        Clerk, MithrilMembershipDigest, Parameters, Signer, SnarkProof, StmResult,
+        circuits::{
+            halo2::{
+                NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                keys::NonRecursiveCircuitVerifyingKey,
+            },
+            halo2_ivc::{
+                PREIMAGE_SIZE, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                accumulator::trivial_accumulator,
+                keys::RecursiveCircuitVerifyingKey,
+                state::State,
+                types::{EpochNumber, IvcProofBytes, MessageHash, StepCounter},
+            },
+        },
+        codec::{TryFromBytes, TryToBytes},
+        proof_system::{
+            IvcRollingState, MERKLE_TREE_DEPTH_FOR_SNARK, MockSnarkAggregateSignatureProver,
+            MockSnarkProverFactory, SnarkClerk,
+            ivc_halo2_snark::{
+                MockIvcChainProver, build_standard_rolling_state,
+                proof::{IvcChainInput, IvcProof},
+                verifier_setup::IvcVerifierData,
+            },
+        },
+        protocol::aggregate_signature::tests::{
+            setup_equal_parties, setup_party_without_snark_keys,
+        },
     };
 
-    use super::ivc_prover_input_preparation_and_prove;
+    const DUMMY_MESSAGE: [u8; 0] = [];
 
-    fn build_fast_dummy_ivc_setup(
-        params: Parameters,
-        depth: u32,
-    ) -> (Arc<IvcSnarkProverSetup>, NonRecursiveCircuitVerifyingKey) {
-        let circuit = StmCertificateCircuit::try_new(&params, depth)
-            .expect("certificate circuit should build");
-        let circuit_degree = MidnightCircuit::from_relation(&circuit, None).k();
+    const DUMMY_PROTOCOL_MESSAGE_PREIMAGE: [u8; PREIMAGE_SIZE] = [0u8; PREIMAGE_SIZE];
 
-        let cert_srs =
-            ParamsKZG::<Bls12>::unsafe_setup(circuit_degree, ChaCha20Rng::from_seed([42u8; 32]));
+    type D = MithrilMembershipDigest;
 
-        let midnight_vk = zk::setup_vk(&cert_srs, &circuit);
-        let midnight_pk = zk::setup_pk(&circuit, &midnight_vk);
-        let cert_vk = midnight_vk.vk().clone();
-        // Not the correct key but we only need a dummy
-        let cert_pk = midnight_pk.pk().clone();
+    type ChainInputPredicate = Box<dyn Fn(&IvcChainInput<D>) -> bool + Send>;
 
-        let ivc_setup = Arc::new(IvcSnarkProverSetup {
-            srs: cert_srs,
-            certificate_verifying_key: NonRecursiveCircuitVerifyingKey::new(midnight_vk.clone()),
-            ivc_verifying_key: RecursiveCircuitVerifyingKey::new(cert_vk),
-            ivc_proving_key: RecursiveCircuitProvingKey::new(cert_pk),
-            certificate_fixed_bases: BTreeMap::new(),
-            ivc_fixed_bases: BTreeMap::new(),
-            combined_fixed_bases: BTreeMap::new(),
-        });
+    type ParametersPredicate = Box<dyn Fn(&Parameters) -> bool + Send>;
 
-        (ivc_setup, NonRecursiveCircuitVerifyingKey::new(midnight_vk))
+    const PARAMS: Parameters = Parameters {
+        k: 1,
+        m: 10,
+        phi_f: 0.9,
+    };
+
+    /// How the mocked SNARK aggregate signature prover behaves.
+    enum SnarkProverBehavior {
+        /// Returns a dummy certificate proof.
+        AggregatesSignatures,
+        /// Returns a dummy certificate proof only if the given predicate holds for the
+        /// parameters passed to the factory.
+        AggregatesSignaturesWithFunction(ParametersPredicate),
+        /// The factory fails to build it, with the given root cause.
+        FailsToBuild(&'static str),
+        /// It is built but fails to aggregate, with the given root cause.
+        FailsToAggregate(&'static str),
+        /// The SNARK prover is never called.
+        NeverCalled,
+    }
+
+    /// How the mocked IVC chain prover behaves.
+    enum IvcProverBehavior {
+        /// Advances the chain and returns the given next rolling state.
+        AdvancesChain(Option<IvcRollingState>),
+        /// Advances the chain only if the given predicate holds for the built `IvcChainInput`,
+        /// then returns the given next rolling state.
+        AdvancesChainWithFunction(ChainInputPredicate, Option<IvcRollingState>),
+        /// The factory fails to build it, with the given root cause.
+        FailsToBuild(&'static str),
+        /// It is built but fails to advance the chain, with the given root cause.
+        FailsToAdvanceChain(&'static str),
+        /// It must never be asked to advance the chain.
+        NeverAdvancesChain,
+        /// The Ivc prover is never called.
+        NeverCalled,
+    }
+
+    /// Builds the [`MockSnarkProverFactory`] backing a clerk under test.
+    ///
+    /// Defaults to the happy path: the SNARK prover returns a dummy certificate proof and the IVC
+    /// prover advances the chain without producing a next rolling state.
+    struct MockProverFactory {
+        /// The snark prover behavior
+        snark_behavior: SnarkProverBehavior,
+        /// The ivc prover behavior
+        ivc_behavior: IvcProverBehavior,
+    }
+
+    impl MockProverFactory {
+        fn new() -> Self {
+            Self {
+                snark_behavior: SnarkProverBehavior::AggregatesSignatures,
+                ivc_behavior: IvcProverBehavior::AdvancesChain(None),
+            }
+        }
+
+        fn snark_prover(mut self, behavior: SnarkProverBehavior) -> Self {
+            self.snark_behavior = behavior;
+            self
+        }
+        fn ivc_prover(mut self, behavior: IvcProverBehavior) -> Self {
+            self.ivc_behavior = behavior;
+            self
+        }
+
+        fn without_snark_prover(mut self) -> Self {
+            self.snark_behavior = SnarkProverBehavior::NeverCalled;
+            self
+        }
+
+        fn without_ivc_prover(mut self) -> Self {
+            self.ivc_behavior = IvcProverBehavior::NeverCalled;
+            self
+        }
+
+        fn build_clerk(self, signer: &Signer<D>) -> Clerk<D> {
+            let mut factory = MockSnarkProverFactory::new();
+
+            match self.snark_behavior {
+                SnarkProverBehavior::AggregatesSignatures => {
+                    wire_snark_prover(
+                        &mut factory,
+                        snark_prover_returning(Ok(dummy_snark_proof(PARAMS))),
+                    );
+                }
+                SnarkProverBehavior::AggregatesSignaturesWithFunction(predicate) => {
+                    let snark_prover = snark_prover_returning(Ok(dummy_snark_proof(PARAMS)));
+                    factory
+                        .expect_snark_aggregate_signature_prover()
+                        .once()
+                        .withf(move |actual_params| predicate(actual_params))
+                        .return_once(move |_| Ok(Box::new(snark_prover)));
+                }
+                SnarkProverBehavior::FailsToBuild(message) => {
+                    factory
+                        .expect_snark_aggregate_signature_prover()
+                        .once()
+                        .return_once(move |_| Err(anyhow!(message)));
+                }
+                SnarkProverBehavior::FailsToAggregate(message) => {
+                    wire_snark_prover(&mut factory, snark_prover_returning(Err(message)));
+                }
+                SnarkProverBehavior::NeverCalled => {}
+            }
+
+            match self.ivc_behavior {
+                IvcProverBehavior::AdvancesChain(rolling_state) => {
+                    let mut ivc_prover = ivc_prover_with_verifying_key();
+                    ivc_prover
+                        .expect_advance_chain()
+                        .once()
+                        .return_once(move |_| Ok((dummy_ivc_proof(), rolling_state)));
+                    wire_ivc_prover(&mut factory, ivc_prover);
+                }
+                IvcProverBehavior::AdvancesChainWithFunction(predicate, rolling_state) => {
+                    let mut ivc_prover = ivc_prover_with_verifying_key();
+                    ivc_prover
+                        .expect_advance_chain()
+                        .once()
+                        .withf(move |chain_input| predicate(chain_input))
+                        .return_once(move |_| Ok((dummy_ivc_proof(), rolling_state)));
+                    wire_ivc_prover(&mut factory, ivc_prover);
+                }
+                IvcProverBehavior::FailsToBuild(message) => {
+                    factory
+                        .expect_ivc_chain_prover()
+                        .once()
+                        .return_once(move |_| Err(anyhow!(message)));
+                }
+                IvcProverBehavior::FailsToAdvanceChain(message) => {
+                    let mut ivc_prover = ivc_prover_with_verifying_key();
+                    ivc_prover
+                        .expect_advance_chain()
+                        .once()
+                        .return_once(move |_| Err(anyhow!(message)));
+                    wire_ivc_prover(&mut factory, ivc_prover);
+                }
+                IvcProverBehavior::NeverAdvancesChain => {
+                    let mut ivc_prover = ivc_prover_with_verifying_key();
+                    ivc_prover.expect_advance_chain().never();
+                    wire_ivc_prover(&mut factory, ivc_prover);
+                }
+                IvcProverBehavior::NeverCalled => {}
+            }
+
+            Clerk::new_clerk_from_signer_with_mock_prover_factory(signer, factory)
+        }
+    }
+
+    fn wire_snark_prover(
+        factory: &mut MockSnarkProverFactory<D>,
+        snark_prover: MockSnarkAggregateSignatureProver<D>,
+    ) {
+        factory
+            .expect_snark_aggregate_signature_prover()
+            .once()
+            .return_once(move |_| Ok(Box::new(snark_prover)));
+    }
+
+    fn wire_ivc_prover(factory: &mut MockSnarkProverFactory<D>, ivc_prover: MockIvcChainProver<D>) {
+        factory
+            .expect_ivc_chain_prover()
+            .once()
+            .return_once(move |_| Ok(Box::new(ivc_prover)));
+    }
+
+    fn snark_prover_returning(
+        result: Result<SnarkProof<D>, &'static str>,
+    ) -> MockSnarkAggregateSignatureProver<D> {
+        let mut snark_prover = MockSnarkAggregateSignatureProver::new();
+        snark_prover
+            .expect_verification_key()
+            .return_const(certificate_verifying_key());
+        snark_prover
+            .expect_aggregate_signatures()
+            .once()
+            .return_once(move |_, _, _| result.map_err(|message| anyhow!(message)));
+        snark_prover
+    }
+
+    fn aggregate_snark(
+        clerk: Clerk<D>,
+        ancillary_input: AncillaryProofInput,
+    ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
+        clerk.aggregate_signatures_with_type(
+            &[],
+            &DUMMY_MESSAGE,
+            AggregateSignatureType::Snark,
+            ancillary_input,
+        )
+    }
+
+    fn aggregate_ivc_with_dummy_message(
+        clerk: Clerk<D>,
+        ancillary_input: AncillaryProofInput,
+    ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
+        clerk.aggregate_signatures_with_type(
+            &[],
+            &DUMMY_MESSAGE,
+            AggregateSignatureType::IvcSnark,
+            ancillary_input,
+        )
+    }
+
+    fn aggregate_ivc_with_message(
+        clerk: Clerk<D>,
+        message: &[u8],
+        ancillary_input: AncillaryProofInput,
+    ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
+        clerk.aggregate_signatures_with_type(
+            &[],
+            message,
+            AggregateSignatureType::IvcSnark,
+            ancillary_input,
+        )
+    }
+
+    fn certificate_verifying_key() -> NonRecursiveCircuitVerifyingKey {
+        NonRecursiveCircuitVerifyingKey::try_from_bytes(
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        )
+        .expect("production verifying key bytes should deserialize")
+    }
+
+    fn ivc_verifying_key() -> RecursiveCircuitVerifyingKey {
+        RecursiveCircuitVerifyingKey::try_from_bytes(
+            RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        )
+        .expect("production verifying key bytes should deserialize")
+    }
+
+    fn dummy_snark_proof(params: Parameters) -> SnarkProof<D> {
+        SnarkProof::new(vec![], params, MERKLE_TREE_DEPTH_FOR_SNARK)
+    }
+
+    fn build_ancillary_input(prover_data: Option<AncillaryProverData>) -> AncillaryProofInput {
+        AncillaryProofInput::new(
+            prover_data,
+            AncillaryGenesisData::dummy(),
+            DUMMY_PROTOCOL_MESSAGE_PREIMAGE.to_vec(),
+        )
+    }
+
+    fn dummy_ivc_proof() -> IvcProof<Blake2b256> {
+        IvcProof::new(
+            IvcProofBytes::empty(),
+            State::genesis(),
+            trivial_accumulator(&[]),
+        )
+    }
+
+    fn setup_single_party(params: Parameters) -> Signer<D> {
+        setup_equal_parties(params, 1).into_iter().next().unwrap()
+    }
+
+    /// An IVC chain prover stub with only its verifying key set
+    fn ivc_prover_with_verifying_key() -> MockIvcChainProver<D> {
+        let mut ivc_prover = MockIvcChainProver::new();
+        ivc_prover.expect_verifying_key().return_const(ivc_verifying_key());
+        ivc_prover
     }
 
     #[test]
-    fn ivc_prover_input_preparation_fails_when_prover_data_carries_no_ivc_rolling_state() {
-        use crate::SchnorrVerificationKey;
+    fn ivc_aggregation_threads_next_rolling_state_into_prover_data() {
+        let signer = setup_single_party(PARAMS);
+        let current_rolling_state =
+            build_standard_rolling_state(StepCounter::new(3), EpochNumber::new(2));
+        let next_rolling_state =
+            build_standard_rolling_state(StepCounter::new(4), EpochNumber::new(3));
+        let expected_prover_data = AncillaryProverData::IvcSnark(next_rolling_state.clone())
+            .to_bytes()
+            .unwrap();
 
-        let tiny_params = Parameters {
-            k: 1,
-            m: 10,
-            phi_f: 0.9,
-        };
-        let (ivc_prover_setup, certificate_verifying_key) =
-            build_fast_dummy_ivc_setup(tiny_params, 1);
+        let clerk = MockProverFactory::new()
+            .ivc_prover(IvcProverBehavior::AdvancesChainWithFunction(
+                Box::new(|step_input| {
+                    step_input.message == DUMMY_MESSAGE
+                        && step_input.rolling_state.as_ref().is_some_and(|rolling_state| {
+                            rolling_state.state().step_counter == StepCounter::new(3)
+                        })
+                }),
+                Some(next_rolling_state),
+            ))
+            .build_clerk(&signer);
 
-        let ps = setup_equal_parties(tiny_params, 1);
-        let snark_clerk = SnarkClerk::new_clerk_from_signer(&ps[0]);
-        let snark_proof = SnarkProof::<MithrilMembershipDigest>::new(
-            vec![],
-            tiny_params,
-            MERKLE_TREE_DEPTH_FOR_SNARK,
-        );
-
-        let ancillary_input = AncillaryProofInput::new(
-            Some(AncillaryProverData::Future),
-            AncillaryGenesisData::new(vec![0u8; 32], None, Some(SchnorrVerificationKey::default())),
-            vec![0u8; PREIMAGE_SIZE],
-        );
-
-        let err = ivc_prover_input_preparation_and_prove(
-            snark_proof,
-            &[0u8; 32],
-            &snark_clerk,
-            &ancillary_input,
-            ivc_prover_setup,
-            certificate_verifying_key,
+        let (aggregate_signature, ancillary_output) = aggregate_ivc_with_dummy_message(
+            clerk,
+            build_ancillary_input(Some(AncillaryProverData::IvcSnark(current_rolling_state))),
         )
-        .expect_err("Should fail without IVC rolling state.");
+        .expect("aggregation with mocked provers should succeed");
+
+        assert!(matches!(
+            aggregate_signature,
+            AggregateSignature::IvcSnark(_)
+        ));
+        assert_eq!(
+            ancillary_output.prover_data().unwrap().to_bytes().unwrap(),
+            expected_prover_data
+        );
+    }
+
+    #[test]
+    fn concatenation_aggregation_does_not_build_snark_provers() {
+        let signer = setup_single_party(PARAMS);
+        let signature = signer.create_single_signature(&DUMMY_MESSAGE).unwrap();
+
+        let clerk = MockProverFactory::new()
+            .without_snark_prover()
+            .without_ivc_prover()
+            .build_clerk(&signer);
+
+        let (aggregate_signature, _ancillary_output) = clerk
+            .aggregate_signatures_with_type(
+                &[signature],
+                &DUMMY_MESSAGE,
+                AggregateSignatureType::Concatenation,
+                build_ancillary_input(None),
+            )
+            .expect("aggregation with mocked provers should succeed");
+
+        assert!(matches!(
+            aggregate_signature,
+            AggregateSignature::Concatenation(_)
+        ));
+    }
+
+    #[test]
+    fn snark_aggregation_fails_when_snark_clerk_is_missing() {
+        let signer = setup_party_without_snark_keys(PARAMS, 1);
+        let clerk = Clerk::new_clerk_from_signer(&signer);
+
+        let err = aggregate_snark(clerk, build_ancillary_input(None))
+            .expect_err("Should fail without Snark clerk.");
 
         assert_eq!(
-            err.downcast_ref::<AggregationError>(),
-            Some(&AggregationError::MissingIvcRollingStateInAncillaryProverData),
-            "missing IVC rolling state in ancillary prover data must be rejected, got: {err}"
+            err.downcast_ref::<AggregateSignatureError>(),
+            Some(&AggregateSignatureError::MissingSnarkClerk),
+            "missing IVC Snark clerk must be rejected, got: {err}"
         );
     }
 
     #[test]
-    fn ivc_prover_input_preparation_fails_when_genesis_verification_key_is_absent() {
-        let tiny_params = Parameters {
-            k: 1,
-            m: 10,
-            phi_f: 0.9,
-        };
-        let (ivc_prover_setup, certificate_verifying_key) =
-            build_fast_dummy_ivc_setup(tiny_params, 1);
+    fn snark_aggregation_builds_snark_prover_with_clerk_parameters() {
+        let signer = setup_single_party(PARAMS);
 
-        let ps = setup_equal_parties(tiny_params, 1);
-        let snark_clerk = SnarkClerk::new_clerk_from_signer(&ps[0]);
-        let snark_proof = SnarkProof::<MithrilMembershipDigest>::new(
-            vec![],
-            tiny_params,
-            MERKLE_TREE_DEPTH_FOR_SNARK,
+        let clerk = MockProverFactory::new()
+            .without_ivc_prover()
+            .snark_prover(SnarkProverBehavior::AggregatesSignaturesWithFunction(
+                Box::new(|actual_params| *actual_params == PARAMS),
+            ))
+            .build_clerk(&signer);
+
+        let (aggregate_signature, _ancillary_output) =
+            aggregate_snark(clerk, build_ancillary_input(None))
+                .expect("aggregation with mocked provers should succeed");
+
+        assert!(matches!(aggregate_signature, AggregateSignature::Snark(_)));
+    }
+
+    #[test]
+    fn snark_aggregation_propagates_prover_factory_error() {
+        let signer = setup_single_party(PARAMS);
+
+        let clerk = MockProverFactory::new()
+            .without_ivc_prover()
+            .snark_prover(SnarkProverBehavior::FailsToBuild("factory error"))
+            .build_clerk(&signer);
+
+        let err = aggregate_snark(clerk, build_ancillary_input(None))
+            .expect_err("factory error should propagate");
+
+        assert_eq!(err.to_string(), "factory error");
+    }
+
+    #[test]
+    fn snark_aggregation_returns_verifier_data_from_prover_key() {
+        let signer = setup_single_party(PARAMS);
+
+        let clerk = MockProverFactory::new().without_ivc_prover().build_clerk(&signer);
+
+        let (aggregate_signature, ancillary_output) =
+            aggregate_snark(clerk, build_ancillary_input(None))
+                .expect("aggregation with mocked provers should succeed");
+
+        assert!(matches!(aggregate_signature, AggregateSignature::Snark(_)));
+
+        let verifier_data = ancillary_output
+            .verifier_data()
+            .unwrap()
+            .as_snark_verifier_data()
+            .unwrap();
+
+        assert_eq!(
+            verifier_data
+                .certificate_circuit_verification_key()
+                .to_bytes_vec()
+                .unwrap(),
+            certificate_verifying_key().to_bytes_vec().unwrap()
         );
+    }
 
-        let ancillary_input = AncillaryProofInput::new(
+    #[test]
+    fn snark_aggregation_propagates_prover_error() {
+        let signer = setup_single_party(PARAMS);
+
+        let clerk = MockProverFactory::new()
+            .without_ivc_prover()
+            .snark_prover(SnarkProverBehavior::FailsToAggregate("prover error"))
+            .build_clerk(&signer);
+
+        let err = aggregate_snark(clerk, build_ancillary_input(None))
+            .expect_err("prover error should propagate");
+
+        assert_eq!(err.root_cause().to_string(), "prover error");
+    }
+
+    #[test]
+    fn ivc_aggregation_fails_when_snark_clerk_is_missing() {
+        let signer = setup_party_without_snark_keys(PARAMS, 1);
+        let clerk = Clerk::new_clerk_from_signer(&signer);
+
+        let err = aggregate_snark(clerk, build_ancillary_input(None))
+            .expect_err("Should fail without Snark clerk.");
+
+        assert_eq!(
+            err.downcast_ref::<AggregateSignatureError>(),
+            Some(&AggregateSignatureError::MissingSnarkClerk),
+            "missing IVC Snark clerk must be rejected, got: {err}"
+        );
+    }
+
+    #[test]
+    fn ivc_aggregation_propagates_ivc_chain_prover_factory_error() {
+        let signer = setup_single_party(PARAMS);
+
+        let clerk = MockProverFactory::new()
+            .ivc_prover(IvcProverBehavior::FailsToBuild("ivc factory error"))
+            .build_clerk(&signer);
+
+        let err = aggregate_ivc_with_dummy_message(clerk, build_ancillary_input(None))
+            .expect_err("ivc factory error should propagate");
+
+        assert_eq!(err.to_string(), "ivc factory error");
+    }
+
+    #[test]
+    fn ivc_aggregation_does_not_advance_chain_on_invalid_ancillary_input() {
+        let signer = setup_single_party(PARAMS);
+
+        let clerk = MockProverFactory::new()
+            .ivc_prover(IvcProverBehavior::NeverAdvancesChain)
+            .build_clerk(&signer);
+
+        let invalid_ancillary_input = AncillaryProofInput::new(
             None,
-            AncillaryGenesisData::new(vec![0u8; 32], None, None),
-            vec![0u8; PREIMAGE_SIZE],
+            AncillaryGenesisData::new(vec![0u8; PREIMAGE_SIZE], None, None),
+            DUMMY_PROTOCOL_MESSAGE_PREIMAGE.to_vec(),
         );
 
-        let err = ivc_prover_input_preparation_and_prove(
-            snark_proof,
-            &[0u8; 32],
-            &snark_clerk,
-            &ancillary_input,
-            ivc_prover_setup,
-            certificate_verifying_key,
-        )
-        .expect_err("Should fail without genesis verification key.");
+        let err = aggregate_ivc_with_dummy_message(clerk, invalid_ancillary_input)
+            .expect_err("Should fail without genesis verification key.");
 
         assert_eq!(
             err.downcast_ref::<AggregationError>(),
             Some(&AggregationError::MissingGenesisVerificationKey),
             "missing genesis verification key must be rejected, got: {err}"
+        );
+    }
+
+    #[test]
+    fn ivc_aggregation_passes_certificate_proof_message_and_avk_to_step_prover() {
+        let signer = setup_single_party(PARAMS);
+        let message: &[u8] = &[7, 7, 7];
+
+        let snark_clerk = SnarkClerk::new_clerk_from_signer(&signer);
+        let expected_proof_bytes = dummy_snark_proof(PARAMS).to_bytes().unwrap();
+        let expected_avk = snark_clerk.compute_aggregate_verification_key_for_snark();
+
+        let clerk = MockProverFactory::new()
+            .ivc_prover(IvcProverBehavior::AdvancesChainWithFunction(
+                Box::new(move |chain_input| {
+                    chain_input.message == message
+                        && chain_input.certificate_proof.to_bytes().unwrap() == expected_proof_bytes
+                        && chain_input.aggregate_verification_key == expected_avk
+                }),
+                None,
+            ))
+            .build_clerk(&signer);
+
+        aggregate_ivc_with_message(clerk, message, build_ancillary_input(None))
+            .expect("aggregation with mocked provers should succeed");
+    }
+
+    #[test]
+    fn ivc_aggregation_uses_snark_prover_key_for_global_and_verifier_data() {
+        let signer = setup_single_party(PARAMS);
+
+        let clerk = MockProverFactory::new().build_clerk(&signer);
+
+        let (_aggregate_signature, ancillary_output) =
+            aggregate_ivc_with_dummy_message(clerk, build_ancillary_input(None))
+                .expect("aggregation with mocked provers should succeed");
+
+        let verifier_data = ancillary_output
+            .verifier_data()
+            .unwrap()
+            .as_ivc_verifier_data()
+            .unwrap();
+
+        let genesis_message: MessageHash = AncillaryGenesisData::dummy()
+            .genesis_message_preimage()
+            .try_into()
+            .unwrap();
+        let expected = IvcVerifierData::new(
+            genesis_message,
+            certificate_verifying_key(),
+            ivc_verifying_key(),
+        );
+
+        assert_eq!(
+            verifier_data.to_bytes().unwrap(),
+            expected.to_bytes().unwrap()
+        );
+    }
+
+    #[test]
+    fn ivc_aggregation_returns_no_prover_data_on_same_epoch_step() {
+        let signer = setup_single_party(PARAMS);
+
+        let clerk = MockProverFactory::new().build_clerk(&signer);
+
+        let (_aggregate_signature, ancillary_output) =
+            aggregate_ivc_with_dummy_message(clerk, build_ancillary_input(None))
+                .expect("aggregation with mocked provers should succeed");
+
+        assert!(ancillary_output.prover_data().is_none());
+    }
+
+    #[test]
+    fn ivc_aggregation_propagates_snark_prover_error() {
+        let signer = setup_single_party(PARAMS);
+
+        let clerk = MockProverFactory::new()
+            .snark_prover(SnarkProverBehavior::FailsToAggregate("SNARK prover error"))
+            .without_ivc_prover()
+            .build_clerk(&signer);
+
+        let err = aggregate_ivc_with_dummy_message(clerk, build_ancillary_input(None))
+            .expect_err("SNARK prover error should propagate");
+
+        assert_eq!(err.root_cause().to_string(), "SNARK prover error");
+    }
+
+    #[test]
+    fn ivc_aggregation_propagates_ivc_prover_error() {
+        let signer = setup_single_party(PARAMS);
+
+        let clerk = MockProverFactory::new()
+            .ivc_prover(IvcProverBehavior::FailsToAdvanceChain("ivc prover error"))
+            .build_clerk(&signer);
+
+        let err = aggregate_ivc_with_dummy_message(clerk, build_ancillary_input(None))
+            .expect_err("ivc prover error should propagate");
+
+        assert_eq!(err.root_cause().to_string(), "ivc prover error");
+    }
+
+    #[test]
+    fn ivc_aggregation_does_not_advance_chain_when_prover_data_carries_no_ivc_rolling_state() {
+        let signer = setup_single_party(PARAMS);
+
+        let clerk = MockProverFactory::new()
+            .ivc_prover(IvcProverBehavior::NeverAdvancesChain)
+            .build_clerk(&signer);
+
+        let err = aggregate_ivc_with_dummy_message(
+            clerk,
+            build_ancillary_input(Some(AncillaryProverData::Future)),
+        )
+        .expect_err("Should fail when prover data carries no IVC rolling state.");
+
+        assert_eq!(
+            err.downcast_ref::<AggregationError>(),
+            Some(&AggregationError::MissingIvcRollingStateInAncillaryProverData),
+            "missing IVC rolling state must be rejected, got: {err}"
         );
     }
 }

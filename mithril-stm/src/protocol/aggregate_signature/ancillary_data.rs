@@ -5,6 +5,13 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(all(test, feature = "future_snark"))]
+use rand_chacha::ChaCha20Rng;
+#[cfg(all(test, feature = "future_snark"))]
+use rand_core::SeedableRng;
+
+#[cfg(all(test, feature = "future_snark"))]
+use crate::{BaseFieldElement, SchnorrSigningKey, circuits::halo2_ivc::PREIMAGE_SIZE};
 #[cfg(feature = "future_snark")]
 use crate::{
     SchnorrVerificationKey, StandardSchnorrSignature,
@@ -48,9 +55,19 @@ impl AncillaryProverData {
         }
     }
 
-    /// Returns the wrapped IvcRollingState of an AncillaryProverData if it exists.
+    /// Returns a reference to the wrapped IvcRollingState of an AncillaryProverData if it exists.
     #[cfg(feature = "future_snark")]
     pub fn as_ivc_rolling_state(&self) -> Option<&IvcRollingState> {
+        match self {
+            Self::IvcSnark(state) => Some(state),
+            #[cfg(test)]
+            Self::Future => None,
+        }
+    }
+
+    /// Consumes self and returns the wrapped IvcRollingState of an AncillaryProverData if it exists.
+    #[cfg(feature = "future_snark")]
+    pub fn into_ivc_rolling_state(self) -> Option<IvcRollingState> {
         match self {
             Self::IvcSnark(state) => Some(state),
             #[cfg(test)]
@@ -172,17 +189,25 @@ impl AncillaryGenesisData {
         self.genesis_schnorr_verification_key.as_ref()
     }
 
-    /// Build genesis ancillary data carrying no data, for use in tests.
-    #[cfg(test)]
+    /// Builds deterministic genesis ancillary data for tests.
+    #[cfg(all(test, feature = "future_snark"))]
     pub fn dummy() -> Self {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let signing_key = SchnorrSigningKey::generate(&mut rng);
+        let message = vec![BaseFieldElement::from(1u64)];
+        let signature = signing_key.sign_standard(&message, &mut rng).unwrap();
+        let verification_key = SchnorrVerificationKey::new_from_signing_key(signing_key);
         Self::new(
-            #[cfg(feature = "future_snark")]
-            Vec::new(),
-            #[cfg(feature = "future_snark")]
-            None,
-            #[cfg(feature = "future_snark")]
-            None,
+            vec![0u8; PREIMAGE_SIZE],
+            Some(signature),
+            Some(verification_key),
         )
+    }
+
+    /// Build genesis ancillary data carrying no data, for use in tests.
+    #[cfg(all(test, not(feature = "future_snark")))]
+    pub fn dummy() -> Self {
+        Self::new()
     }
 }
 
@@ -216,9 +241,14 @@ impl AncillaryProofInput {
         }
     }
 
-    /// Return the prover ancillary data carried from the previous certificate.
+    /// Returns a reference to the prover ancillary data carried from the previous certificate.
     pub fn prover_data(&self) -> Option<&AncillaryProverData> {
         self.prover_data.as_ref()
+    }
+
+    /// Consumes self and returns the prover ancillary data carried from the previous certificate.
+    pub fn into_prover_data(self) -> Option<AncillaryProverData> {
+        self.prover_data
     }
 
     /// Return the genesis ancillary data.
@@ -232,7 +262,8 @@ impl AncillaryProofInput {
         &self.message_preimage
     }
 
-    /// Build an ancillary proof input carrying no data, for use in tests.
+    /// Build an ancillary proof input carrying deterministic AncillaryGenesisData or no data
+    /// depending on the tests it is used in.
     #[cfg(test)]
     pub fn dummy() -> Self {
         Self::new(

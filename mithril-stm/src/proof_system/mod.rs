@@ -19,6 +19,8 @@ macro_rules! cfg_rug {
 mod concatenation;
 #[cfg(feature = "future_snark")]
 mod halo2_snark;
+#[cfg(feature = "future_snark")]
+mod snark_prover_factory;
 
 /// Serialized `ParamsVerifierKZG` (i.e. `s_g2`) from the Midnight production trusted SRS.
 ///
@@ -52,17 +54,16 @@ pub use concatenation::{
 pub(crate) use concatenation::{ConcatenationProofSigner, SingleSignatureForConcatenation};
 
 #[cfg(feature = "future_snark")]
-pub use halo2_snark::AggregateVerificationKeyForSnark;
-
-#[cfg(feature = "future_snark")]
-pub use halo2_snark::{MERKLE_TREE_DEPTH_FOR_SNARK, SnarkProof, SnarkVerifierData};
+pub use halo2_snark::{
+    AggregateVerificationKeyForSnark, MERKLE_TREE_DEPTH_FOR_SNARK, SnarkProof, SnarkVerifierData,
+};
 
 #[cfg(all(test, feature = "future_snark"))]
-pub(crate) use halo2_snark::SnarkProverSetup;
+pub(crate) use halo2_snark::{MockSnarkAggregateSignatureProver, SnarkProverSetup};
 #[cfg(feature = "future_snark")]
 pub(crate) use halo2_snark::{
-    SingleSignatureForSnark, SnarkClerk, SnarkProofSigner, SnarkProver, SnarkVerifierSetup,
-    compute_target_value_for_snark_lottery,
+    SingleSignatureForSnark, SnarkAggregateSignatureProver, SnarkClerk, SnarkProofSigner,
+    SnarkProver, SnarkVerifierSetup, compute_target_value_for_snark_lottery,
 };
 
 #[cfg(all(test, feature = "future_snark"))]
@@ -70,3 +71,9 @@ pub(crate) use halo2_snark::RIGID_SLOT_BYTES as SNARK_AGGREGATE_VERIFICATION_KEY
 
 #[cfg(feature = "future_snark")]
 pub(crate) use ivc_halo2_snark::rolling_state::IvcRollingState;
+
+#[cfg(feature = "future_snark")]
+pub(crate) use snark_prover_factory::{NonDeterministicSnarkProverFactory, SnarkProverFactory};
+
+#[cfg(all(test, feature = "future_snark"))]
+pub(crate) use snark_prover_factory::MockSnarkProverFactory;
