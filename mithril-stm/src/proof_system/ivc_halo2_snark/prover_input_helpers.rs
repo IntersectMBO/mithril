@@ -15,6 +15,7 @@ use crate::{
             prover_setup::IvcProverInputVerificationContext, rolling_state::IvcRollingState,
         },
     },
+    signature_scheme::BaseFieldElement,
 };
 
 /// Classifies how the incoming certificate advances the chain.
@@ -159,6 +160,22 @@ pub(crate) fn build_next_accumulator(
     ]);
     next_accumulator.collapse();
     Ok(next_accumulator)
+}
+
+/// Recomputes `SHA256(protocol_message_preimage)`, reduced into the base field the same way
+/// the in-circuit `combine_bytes`/`assert_message_matches_preimage` constraint does, and checks
+/// it against `expected_message`.
+pub(crate) fn assert_message_hash_matches_preimage(
+    expected_message: MessageHash,
+    protocol_message_preimage: &ProtocolMessagePreimage,
+) -> StmResult<()> {
+    let recomputed_message = MessageHash::from_field(
+        BaseFieldElement::try_from(protocol_message_preimage.0.as_slice())?.0,
+    );
+    if recomputed_message != expected_message {
+        return Err(IvcCircuitError::MessagePreimageMismatch.into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -468,6 +485,41 @@ pub(crate) mod tests {
                     },
                     ..
                 }
+            ));
+        }
+    }
+
+    mod assert_message_hash_matches_preimage {
+
+        use super::*;
+
+        #[test]
+        fn accepts_matching_hash() {
+            let preimage = build_standard_preimage(EpochNumber::new(3));
+            let expected_message = MessageHash::from_field(
+                BaseFieldElement::try_from(preimage.0.as_slice())
+                    .expect("hashing should not fail")
+                    .0,
+            );
+
+            let result = assert_message_hash_matches_preimage(expected_message, &preimage);
+
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn rejects_mismatched_hash() {
+            let preimage = build_standard_preimage(EpochNumber::new(3));
+
+            let err =
+                assert_message_hash_matches_preimage(MessageHash::ZERO, &preimage).unwrap_err();
+
+            let circuit_error = err
+                .downcast_ref::<IvcCircuitError>()
+                .expect("error chain should carry IvcCircuitError");
+            assert!(matches!(
+                circuit_error,
+                IvcCircuitError::MessagePreimageMismatch
             ));
         }
     }
