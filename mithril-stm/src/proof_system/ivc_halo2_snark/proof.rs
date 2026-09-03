@@ -374,20 +374,6 @@ where
     }
 }
 
-/// Rejects a `rolling_state` that carries a genesis state (`step_counter == 0`).
-///
-/// The genesis step is only ever produced internally by the bootstrap path; callers reach it by
-/// passing `rolling_state = None`. A genesis state supplied as a previous step would instead run
-/// a normal step that silently ignores the certificate. Since `genesis_bootstrap` is always
-/// supplied, this is the only remaining invalid context: the previously-possible both-`Some` and
-/// both-`None` misuses are now unrepresentable.
-fn ensure_advanceable_rolling_state(rolling_state: Option<&IvcRollingState>) -> StmResult<()> {
-    if rolling_state.is_some_and(|rs| rs.is_genesis()) {
-        return Err(IvcProofError::InvalidProvingContext.into());
-    }
-    Ok(())
-}
-
 /// A struct used exclusively by the IVC prover that stores all the information needed
 /// to advance the chain by one step
 #[derive(Debug)]
@@ -495,7 +481,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
         genesis_bootstrap: &IvcGenesisBootstrapInput,
         rolling_state: Option<&IvcRollingState>,
     ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)> {
-        ensure_advanceable_rolling_state(rolling_state)?;
+        IvcRollingState::ensure_advanceable_rolling_state(rolling_state)?;
 
         // `rolling_state = None` is the first certificate: bootstrap from genesis internally,
         // then continue with the seeded state. Otherwise advance from the supplied state.
@@ -717,16 +703,13 @@ mod tests {
             AggregateVerificationKeyForSnark, MERKLE_TREE_DEPTH_FOR_SNARK,
             ivc_halo2_snark::{
                 build_standard_rolling_state, errors::IvcProofError,
-                rolling_state::IvcRollingState, verifier_setup::IvcVerifierSetup,
+                verifier_setup::IvcVerifierSetup,
             },
         },
         signature_scheme::{BaseFieldElement, SchnorrSigningKey, SchnorrVerificationKey},
     };
 
-    use super::{
-        IvcChainInput, IvcOffCircuitChecks, IvcProof, RealIvcOffCircuitChecks,
-        ensure_advanceable_rolling_state,
-    };
+    use super::{IvcChainInput, IvcOffCircuitChecks, IvcProof, RealIvcOffCircuitChecks};
 
     const STEP_OUTPUT_MSG: [u8; 32] = [
         22, 148, 87, 37, 149, 0, 124, 10, 156, 94, 108, 6, 78, 59, 239, 80, 126, 213, 158, 211,
@@ -1139,48 +1122,8 @@ mod tests {
         }
     }
 
-    // The context guard is the first thing `IvcProver::prove` runs. It is tested directly here
-    // rather than through `prove` so the test stays fast: reaching `prove` would require building
-    // an `IvcSnarkProverSetup` (full keygen). With `genesis_bootstrap` now always supplied, a genesis
-    // `rolling_state` is the only remaining invalid context; both-`Some`/both-`None` are
-    // unrepresentable.
-    #[test]
-    fn ensure_advanceable_rolling_state_rejects_only_genesis_state() {
-        // A genesis signature is needed to build any rolling state; its value is irrelevant
-        // because the guard only inspects the step counter.
-        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-        let signing_key = SchnorrSigningKey::generate(&mut rng);
-        let genesis_signature = signing_key
-            .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
-            .expect("genesis signature should be produced");
-
-        // `None` bootstraps from genesis internally: accepted.
-        ensure_advanceable_rolling_state(None).expect("None must be accepted (genesis bootstrap)");
-
-        // A genesis rolling state (`step_counter == 0`) must be rejected.
-        let genesis_state = IvcRollingState::genesis(genesis_signature, &[]);
-        assert!(genesis_state.is_genesis());
-        let err = ensure_advanceable_rolling_state(Some(&genesis_state))
-            .expect_err("genesis rolling state must be rejected");
-        assert_eq!(
-            err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::InvalidProvingContext),
-            "genesis rolling state must fail with InvalidProvingContext, got: {err}"
-        );
-
-        // A non-genesis rolling state (a previous step's output) is accepted.
-        let chain_state = load_embedded_recursive_chain_state_asset()
-            .expect("recursive chain state asset should load");
-        let advanced_state = IvcRollingState::new(
-            chain_state.state,
-            chain_state.ivc_proof,
-            chain_state.accumulator,
-            chain_state.genesis_signature,
-        );
-        assert!(!advanced_state.is_genesis());
-        ensure_advanceable_rolling_state(Some(&advanced_state))
-            .expect("a non-genesis rolling state must be accepted");
-    }
+    // The context guard is `IvcRollingState::ensure_advanceable_rolling_state`, tested directly
+    // in rolling_state.rs alongside the type it belongs to.
 
     /// Cheapest possible valid inputs for `IvcChainInput::try_new`: a proof/AVK that never get
     /// meaningfully used (only their type matters, not their content), plus the real production

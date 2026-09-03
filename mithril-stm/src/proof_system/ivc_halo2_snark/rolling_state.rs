@@ -20,8 +20,9 @@ use crate::{
             types::{IvcProofBytes, StepCounter},
         },
     },
-    proof_system::ivc_halo2_snark::prover_input_helpers::{
-        IvcTransitionType, create_snark_message_for_next_state,
+    proof_system::ivc_halo2_snark::{
+        errors::IvcProofError,
+        prover_input_helpers::{IvcTransitionType, create_snark_message_for_next_state},
     },
     signature_scheme::{BaseFieldElement, StandardSchnorrSignature},
 };
@@ -191,6 +192,20 @@ impl IvcRollingState {
             && self.state().protocol_parameters != self.state().next_protocol_parameters
         {
             return Err(IvcCircuitError::ProtocolParametersChanged.into());
+        }
+        Ok(())
+    }
+
+    /// Rejects a `rolling_state` that carries a genesis state (`step_counter == 0`).
+    ///
+    /// The genesis step is only ever produced internally by the bootstrap path; callers reach it
+    /// by passing `rolling_state = None`. A genesis state supplied as a previous step would
+    /// instead run a normal step that silently ignores the certificate.
+    pub(crate) fn ensure_advanceable_rolling_state(
+        rolling_state: Option<&IvcRollingState>,
+    ) -> StmResult<()> {
+        if rolling_state.is_some_and(|rs| rs.is_genesis()) {
+            return Err(IvcProofError::InvalidProvingContext.into());
         }
         Ok(())
     }
@@ -563,6 +578,43 @@ mod tests {
                 circuit_error,
                 IvcCircuitError::ProtocolParametersChanged
             ));
+        }
+    }
+
+    mod ensure_advanceable_rolling_state {
+        use crate::proof_system::ivc_halo2_snark::prover_input_helpers::tests::build_standard_rolling_state;
+
+        use super::*;
+
+        #[test]
+        fn accepts_none() {
+            IvcRollingState::ensure_advanceable_rolling_state(None)
+                .expect("None must be accepted (genesis bootstrap)");
+        }
+
+        #[test]
+        fn rejects_genesis_state() {
+            let genesis_state = IvcRollingState::genesis(build_genesis_signature(), &[]);
+            assert!(genesis_state.is_genesis());
+
+            let err = IvcRollingState::ensure_advanceable_rolling_state(Some(&genesis_state))
+                .expect_err("genesis rolling state must be rejected");
+
+            assert_eq!(
+                err.downcast_ref::<IvcProofError>(),
+                Some(&IvcProofError::InvalidProvingContext),
+                "genesis rolling state must fail with InvalidProvingContext, got: {err}"
+            );
+        }
+
+        #[test]
+        fn accepts_non_genesis_state() {
+            let advanced_state =
+                build_standard_rolling_state(StepCounter::new(5), EpochNumber::new(3));
+            assert!(!advanced_state.is_genesis());
+
+            IvcRollingState::ensure_advanceable_rolling_state(Some(&advanced_state))
+                .expect("a non-genesis rolling state must be accepted");
         }
     }
 }
