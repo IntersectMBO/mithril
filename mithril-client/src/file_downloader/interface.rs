@@ -1,3 +1,5 @@
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::path::Path;
 
 use anyhow::anyhow;
@@ -257,6 +259,24 @@ pub trait FileDownloader: Sync + Send {
         compression_algorithm: Option<CompressionAlgorithm>,
         download_event_type: DownloadEvent,
     ) -> StdResult<()>;
+}
+
+/// Error raised by [FileDownloader] when a location could not be reached
+#[derive(Debug, PartialEq, Eq)]
+pub struct FileDownloaderUnreachable {
+    /// Name of the unreachable download source.
+    pub source: &'static str,
+    /// URI that could not be reached.
+    pub uri: String,
+}
+
+impl Error for FileDownloaderUnreachable {}
+
+impl Display for FileDownloaderUnreachable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let Self { source, uri } = self;
+        write!(f, "{source} downloader unreachable, uri: '{uri}'",)
+    }
 }
 
 #[cfg(test)]

@@ -52,13 +52,7 @@ impl ImmutablesMessagePart {
         let sanitized_locations: Vec<_> = self
             .locations
             .iter()
-            .filter(|l| {
-                !matches!(
-                    l,
-                    // Temporarily exclude IPFS locations until the download is implemented.
-                    ImmutablesLocation::Unknown | ImmutablesLocation::Ipfs { .. }
-                )
-            })
+            .filter(|l| !matches!(l, ImmutablesLocation::Unknown))
             .cloned()
             .collect();
 
@@ -356,12 +350,20 @@ mod tests {
         #[test]
         fn succeeds_and_leave_all_locations_intact_if_no_unknown_location() {
             let immutable_locations = ImmutablesMessagePart {
-                locations: vec![ImmutablesLocation::CloudStorage {
-                    uri: MultiFilesUri::Template(TemplateUri(
-                        "http://whatever/{immutable_file_number}.tar.zst".to_string(),
-                    )),
-                    compression_algorithm: None,
-                }],
+                locations: vec![
+                    ImmutablesLocation::CloudStorage {
+                        uri: MultiFilesUri::Template(TemplateUri(
+                            "http://whatever/{immutable_file_number}.tar.zst".to_string(),
+                        )),
+                        compression_algorithm: None,
+                    },
+                    ImmutablesLocation::Ipfs {
+                        uri: MultiFilesUri::Template(TemplateUri(
+                            "Whatever_CID/{immutable_file_number}.tar.zst".to_string(),
+                        )),
+                        compression_algorithm: None,
+                    },
+                ],
                 average_size_uncompressed: 512,
             };
 
@@ -381,6 +383,12 @@ mod tests {
                         )),
                         compression_algorithm: None,
                     },
+                    ImmutablesLocation::Ipfs {
+                        uri: MultiFilesUri::Template(TemplateUri(
+                            "Whatever_CID/{immutable_file_number}.tar.zst".to_string(),
+                        )),
+                        compression_algorithm: None,
+                    },
                     ImmutablesLocation::Unknown,
                 ],
                 average_size_uncompressed: 512,
@@ -391,12 +399,20 @@ mod tests {
                 .expect("Should succeed since not all locations are unknown.");
             assert_eq!(
                 sanitize_locations,
-                vec![ImmutablesLocation::CloudStorage {
-                    uri: MultiFilesUri::Template(TemplateUri(
-                        "http://whatever/{immutable_file_number}.tar.zst".to_string(),
-                    )),
-                    compression_algorithm: None,
-                }]
+                vec![
+                    ImmutablesLocation::CloudStorage {
+                        uri: MultiFilesUri::Template(TemplateUri(
+                            "http://whatever/{immutable_file_number}.tar.zst".to_string(),
+                        )),
+                        compression_algorithm: None,
+                    },
+                    ImmutablesLocation::Ipfs {
+                        uri: MultiFilesUri::Template(TemplateUri(
+                            "Whatever_CID/{immutable_file_number}.tar.zst".to_string(),
+                        )),
+                        compression_algorithm: None,
+                    }
+                ]
             );
         }
 
@@ -408,22 +424,6 @@ mod tests {
             }
             .sanitized_locations()
             .expect_err("Should fail since all locations are unknown.");
-        }
-
-        // Temporarily exclude IPFS locations until the download is implemented.
-        #[test]
-        fn fails_if_all_locations_are_ipfs() {
-            ImmutablesMessagePart {
-                locations: vec![ImmutablesLocation::Ipfs {
-                    uri: MultiFilesUri::Template(TemplateUri(
-                        "Whatever_CID/{immutable_file_number}.tar.zst".to_string(),
-                    )),
-                    compression_algorithm: None,
-                }],
-                average_size_uncompressed: 512,
-            }
-            .sanitized_locations()
-            .expect_err("Should fail since all locations are IPFS.");
         }
     }
 

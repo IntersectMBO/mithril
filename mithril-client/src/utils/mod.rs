@@ -20,3 +20,7 @@ cfg_fs! {
     pub(crate) use unexpected_downloaded_file_verifier::*;
     pub use vec_deque_extensions::VecDequeExtensions;
 }
+
+cfg_fs_unstable! {
+    pub mod url;
+}

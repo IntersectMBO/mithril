@@ -39,6 +39,8 @@ use crate::certificate_client::{
 use crate::common::MithrilNetwork;
 use crate::era::{EraFetcher, MithrilEraClient};
 use crate::feedback::{FeedbackReceiver, FeedbackSender};
+#[cfg(all(feature = "unstable", feature = "fs"))]
+use crate::file_downloader::IpfsFileDownloader;
 #[cfg(feature = "fs")]
 use crate::file_downloader::{
     FileDownloadRetryPolicy, FileDownloader, HttpFileDownloader, RetryDownloader,
@@ -220,6 +222,10 @@ pub struct ClientBuilder {
     certificate_verifier: Option<Arc<dyn CertificateVerifier>>,
     #[cfg(feature = "fs")]
     http_file_downloader: Option<Arc<dyn FileDownloader>>,
+    #[cfg(all(feature = "unstable", feature = "fs"))]
+    ipfs_file_downloader: Option<Arc<dyn FileDownloader>>,
+    #[cfg(all(feature = "unstable", feature = "fs"))]
+    ipfs_rpc_base_url: Option<String>,
     #[cfg(feature = "unstable")]
     certificate_verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
     era_fetcher: Option<Arc<dyn EraFetcher>>,
@@ -269,6 +275,10 @@ impl ClientBuilder {
             certificate_verifier: None,
             #[cfg(feature = "fs")]
             http_file_downloader: None,
+            #[cfg(all(feature = "unstable", feature = "fs"))]
+            ipfs_file_downloader: None,
+            #[cfg(all(feature = "unstable", feature = "fs"))]
+            ipfs_rpc_base_url: None,
             #[cfg(feature = "unstable")]
             certificate_verifier_cache: None,
             era_fetcher: None,
@@ -374,6 +384,26 @@ impl ClientBuilder {
             Some(http_file_downloader) => http_file_downloader,
         };
 
+        #[cfg(all(feature = "unstable", feature = "fs"))]
+        let ipfs_file_downloader: Option<Arc<dyn FileDownloader>> =
+            if let Some(ipfs_file_downloader) = self.ipfs_file_downloader {
+                Some(ipfs_file_downloader)
+            } else if let Some(ipfs_rpc_base_url) = self.ipfs_rpc_base_url {
+                // Note: no retry for IPFS downloads: retrying here would delay tripping the circuit breaker
+                // on the first unreachable file and waste time on every file after it's already tripped.
+                Some(Arc::new(
+                    IpfsFileDownloader::new(
+                        reqwest::Url::parse(&ipfs_rpc_base_url)
+                            .with_context(|| "Parsing IPFS rpc base url failed")?,
+                        feedback_sender.clone(),
+                        logger.clone(),
+                    )
+                    .with_context(|| "Building IPFS file downloader failed")?,
+                ))
+            } else {
+                None
+            };
+
         #[cfg(feature = "fs")]
         let ancillary_verifier = match self.ancillary_verification_key {
             None => None,
@@ -388,6 +418,8 @@ impl ClientBuilder {
             aggregator_client.clone(),
             #[cfg(feature = "fs")]
             http_file_downloader,
+            #[cfg(all(feature = "unstable", feature = "fs"))]
+            ipfs_file_downloader,
             #[cfg(feature = "fs")]
             ancillary_verifier,
             #[cfg(feature = "fs")]
@@ -554,6 +586,34 @@ impl ClientBuilder {
             ancillary_verification_key: T,
         ) -> ClientBuilder {
             self.ancillary_verification_key = ancillary_verification_key.into();
+            self
+        }
+    }
+
+    cfg_fs_unstable! {
+        /// Set the [FileDownloader] that will be used to download artifacts with IPFS.
+        pub fn with_ipfs_file_downloader(
+            mut self,
+            ipfs_file_downloader: Arc<dyn FileDownloader>,
+        ) -> ClientBuilder {
+            self.ipfs_file_downloader = Some(ipfs_file_downloader);
+            self
+        }
+
+        /// Set the base URL of a Kubo node's RPC API.
+        ///
+        /// When set, downloads can use IPFS locations advertised for an artifact. If an IPFS
+        /// download fails, the client tries the artifact's other available locations.
+        ///
+        /// The URL must point to a running and reachable Kubo node, for example, `http://127.0.0.1:5001/`.
+        ///
+        /// Reminder: The Kubo RPC API provides admin-level access and must never be exposed to the
+        /// public internet.
+        pub fn with_ipfs_rpc_url<T: Into<Option<String>>>(
+            mut self,
+            ipfs_rpc_base_url: T,
+        ) -> ClientBuilder {
+            self.ipfs_rpc_base_url = ipfs_rpc_base_url.into();
             self
         }
     }

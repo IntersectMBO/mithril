@@ -115,18 +115,18 @@ pub enum DigestLocation {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum ImmutablesLocation {
-    /// Cloud storage location.
-    CloudStorage {
-        /// URI of the cloud storage location.
+    /// IPFS location.
+    Ipfs {
+        /// URI of the IPFS location.
         uri: MultiFilesUri,
 
         /// Compression algorithm of the Cardano database artifacts.
         #[serde(skip_serializing_if = "Option::is_none")]
         compression_algorithm: Option<CompressionAlgorithm>,
     },
-    /// IPFS location.
-    Ipfs {
-        /// URI of the IPFS location.
+    /// Cloud storage location.
+    CloudStorage {
+        /// URI of the cloud storage location.
         uri: MultiFilesUri,
 
         /// Compression algorithm of the Cardano database artifacts.
