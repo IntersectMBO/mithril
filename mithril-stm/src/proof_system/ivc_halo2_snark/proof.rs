@@ -140,6 +140,17 @@ impl<D: MembershipDigest> IvcOffCircuitChecks<D> for RealIvcOffCircuitChecks {
             create_snark_message_for_next_state(aggregate_verification_key, msg)?;
         assert_message_hash_matches_preimage(certificate_message_hash, &preimage)?;
 
+        // Genesis data is carried on every request, not only genesis ones (the genesis
+        // verification key is a public input on every proving step) — `IvcChainInput::try_new`
+        // validates it unconditionally, before it even looks at the rolling state, and this
+        // mirrors that so it happens before the certificate proof too.
+        let genesis_data = ancillary_input.genesis_data();
+        let genesis_verifying_key = genesis_data
+            .genesis_schnorr_verification_key()
+            .ok_or_else(|| anyhow!(AggregationError::MissingGenesisVerificationKey))?;
+        genesis_verifying_key.is_valid()?;
+        let _genesis_bootstrap: IvcGenesisBootstrapInput = genesis_data.try_into()?;
+
         if let Some(rolling_state) = ancillary_input
             .prover_data()
             .and_then(|prover_data| prover_data.as_ivc_rolling_state())
@@ -1445,6 +1456,7 @@ mod tests {
                 types::ProtocolParametersHash,
             },
             proof_system::ivc_halo2_snark::rolling_state::IvcRollingState,
+            signature_scheme::SchnorrSignatureError,
         };
 
         use super::*;
@@ -1570,6 +1582,77 @@ mod tests {
                 err.downcast_ref::<IvcCircuitError>(),
                 Some(&IvcCircuitError::ProtocolParametersChanged)
             );
+        }
+
+        #[test]
+        fn rejects_missing_genesis_verification_key() {
+            let step = load_embedded_following_certificate_in_epoch_asset()
+                .expect("same-epoch step output asset should load");
+            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+            let genesis_data =
+                AncillaryGenesisData::new(vec![0u8; PREIMAGE_SIZE], None, None);
+            let ancillary_input =
+                AncillaryProofInput::new(None, genesis_data, step.message_preimage.to_vec());
+
+            let err = RealIvcOffCircuitChecks
+                .check(&step.message, &avk, &ancillary_input)
+                .expect_err("missing genesis verification key must be rejected");
+
+            assert_eq!(
+                err.downcast_ref::<AggregationError>(),
+                Some(&AggregationError::MissingGenesisVerificationKey)
+            );
+        }
+
+        #[test]
+        fn rejects_invalid_genesis_verification_key() {
+            use crate::signature_scheme::ScalarFieldElement;
+
+            let step = load_embedded_following_certificate_in_epoch_asset()
+                .expect("same-epoch step output asset should load");
+            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+            let invalid_key = SchnorrVerificationKey::new_from_signing_key(SchnorrSigningKey(
+                ScalarFieldElement::get_zero(),
+            ));
+            let genesis_data = AncillaryGenesisData::new(
+                vec![0u8; PREIMAGE_SIZE],
+                None,
+                Some(invalid_key),
+            );
+            let ancillary_input =
+                AncillaryProofInput::new(None, genesis_data, step.message_preimage.to_vec());
+
+            let err = RealIvcOffCircuitChecks
+                .check(&step.message, &avk, &ancillary_input)
+                .expect_err("invalid genesis verification key must be rejected");
+
+            // is_valid() itself is thoroughly tested in verification_key.rs; here we only
+            // confirm the check is actually invoked and its rejection propagates.
+            assert!(err.downcast_ref::<SchnorrSignatureError>().is_some());
+        }
+
+        #[test]
+        fn rejects_missing_genesis_signature() {
+            let step = load_embedded_following_certificate_in_epoch_asset()
+                .expect("same-epoch step output asset should load");
+            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let signing_key = SchnorrSigningKey::generate(&mut rng);
+            let genesis_verification_key = SchnorrVerificationKey::new_from_signing_key(signing_key);
+
+            let genesis_data = AncillaryGenesisData::new(
+                vec![0u8; PREIMAGE_SIZE],
+                None,
+                Some(genesis_verification_key),
+            );
+            let ancillary_input =
+                AncillaryProofInput::new(None, genesis_data, step.message_preimage.to_vec());
+
+            let err = RealIvcOffCircuitChecks
+                .check(&step.message, &avk, &ancillary_input)
+                .expect_err("missing genesis signature must be rejected");
+
+            assert_eq!(err.root_cause().to_string(), "Missing genesis Schnorr signature.");
         }
     }
 
