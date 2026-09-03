@@ -1,6 +1,6 @@
 //! `IvcProver` and `IvcProof`: the proving-session handle and its emitted IVC proof.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
 use anyhow::{Context, anyhow};
 use ff::FromUniformBytes;
@@ -47,7 +47,10 @@ use crate::{
         errors::IvcProofError,
         interface::IvcChainProver,
         prover_input::IvcProverInput,
-        prover_input_helpers::IvcTransitionType,
+        prover_input_helpers::{
+            IvcTransitionType, assert_message_hash_matches_preimage,
+            create_snark_message_for_next_state,
+        },
         prover_setup::IvcSnarkProverSetup,
         rolling_state::{IvcRollingState, midnight_accumulator_serde},
         verifier_setup::IvcVerifierSetup,
@@ -98,6 +101,61 @@ impl TryFrom<&AncillaryGenesisData> for IvcGenesisBootstrapInput {
             genesis_protocol_message_preimage: genesis_protocol_message_preimage.into(),
             genesis_signature: *genesis_signature,
         })
+    }
+}
+
+/// Runs every off-circuit consistency check that doesn't need the certificate proof to exist
+/// yet: message-hash-vs-preimage, and (for a non-genesis step) transition-type classification,
+/// certificate/rolling-state consistency, and protocol-parameters stability.
+///
+/// Genesis verification-key validity and genesis signature verification are deliberately not
+/// covered here: the former lives in `Global::new`, the latter in
+/// `IvcProverInput::prepare_genesis`, both already running ahead of the expensive parts of their
+/// own call paths.
+#[cfg_attr(test, mockall::automock)]
+pub(crate) trait IvcOffCircuitChecks<D: MembershipDigest>: Debug {
+    fn check(
+        &self,
+        msg: &[u8],
+        aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
+        ancillary_input: &AncillaryProofInput,
+    ) -> StmResult<()>;
+}
+
+/// Production implementation of [`IvcOffCircuitChecks`].
+#[derive(Debug, Default)]
+pub(crate) struct RealIvcOffCircuitChecks;
+
+impl<D: MembershipDigest> IvcOffCircuitChecks<D> for RealIvcOffCircuitChecks {
+    fn check(
+        &self,
+        msg: &[u8],
+        aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
+        ancillary_input: &AncillaryProofInput,
+    ) -> StmResult<()> {
+        let preimage_bytes: [u8; PREIMAGE_SIZE] = ancillary_input.message_preimage().try_into()?;
+        let preimage = ProtocolMessagePreimage(preimage_bytes);
+
+        let (certificate_message_hash, _) =
+            create_snark_message_for_next_state(aggregate_verification_key, msg)?;
+        assert_message_hash_matches_preimage(certificate_message_hash, &preimage)?;
+
+        if let Some(rolling_state) = ancillary_input
+            .prover_data()
+            .and_then(|prover_data| prover_data.as_ivc_rolling_state())
+        {
+            let transition_type =
+                IvcTransitionType::try_compute_transition_type(rolling_state, &preimage)?;
+            rolling_state.assert_correct_parameters(
+                &preimage,
+                aggregate_verification_key,
+                msg,
+                transition_type,
+            )?;
+            rolling_state.assert_protocol_parameters_unchanged()?;
+        }
+
+        Ok(())
     }
 }
 
@@ -631,7 +689,7 @@ mod tests {
         circuits::halo2_ivc::{
             PREIMAGE_SIZE, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
             keys::RecursiveCircuitVerifyingKey,
-            state::Global,
+            state::{Global, State},
             tests::common::{
                 asset_readers::{
                     load_embedded_following_certificate_in_epoch_asset,
@@ -654,7 +712,10 @@ mod tests {
         signature_scheme::{BaseFieldElement, SchnorrSigningKey, SchnorrVerificationKey},
     };
 
-    use super::{IvcChainInput, IvcProof, ensure_advanceable_rolling_state};
+    use super::{
+        IvcChainInput, IvcOffCircuitChecks, IvcProof, RealIvcOffCircuitChecks,
+        ensure_advanceable_rolling_state,
+    };
 
     const STEP_OUTPUT_MSG: [u8; 32] = [
         22, 148, 87, 37, 149, 0, 124, 10, 156, 94, 108, 6, 78, 59, 239, 80, 126, 213, 158, 211,
@@ -1368,6 +1429,148 @@ mod tests {
             chain_input.global, expected_global,
             "Global must be built from the values passed to try_new"
         );
+    }
+
+    mod ivc_off_circuit_checks {
+        use crate::{
+            circuits::halo2_ivc::{
+                errors::IvcCircuitError,
+                tests::common::{
+                    asset_readers::{
+                        load_embedded_following_certificate_in_epoch_asset,
+                        load_embedded_recursive_chain_state_asset,
+                    },
+                    generators::setup::TOTAL_STAKE,
+                },
+                types::ProtocolParametersHash,
+            },
+            proof_system::ivc_halo2_snark::rolling_state::IvcRollingState,
+        };
+
+        use super::*;
+
+        fn wrap_avk(root: &[u8; 32]) -> AggregateVerificationKeyForSnark<MithrilMembershipDigest> {
+            let mut avk_bytes = [0u8; 40];
+            avk_bytes[0..32].copy_from_slice(root);
+            avk_bytes[32..40].copy_from_slice(&TOTAL_STAKE.to_be_bytes());
+            AggregateVerificationKeyForSnark::<MithrilMembershipDigest>::from_bytes(&avk_bytes)
+                .expect("AVK should decode from asset bytes")
+        }
+
+        fn rolling_state_from_chain_state() -> IvcRollingState {
+            let chain_state = load_embedded_recursive_chain_state_asset()
+                .expect("recursive chain state asset should load");
+            IvcRollingState::new(
+                chain_state.state,
+                chain_state.ivc_proof,
+                chain_state.accumulator,
+                chain_state.genesis_signature,
+            )
+        }
+
+        #[test]
+        fn accepts_consistent_same_epoch_step() {
+            let step = load_embedded_following_certificate_in_epoch_asset()
+                .expect("same-epoch step output asset should load");
+            let ancillary_input = AncillaryProofInput::new(
+                Some(AncillaryProverData::IvcSnark(rolling_state_from_chain_state())),
+                AncillaryGenesisData::dummy(),
+                step.message_preimage.to_vec(),
+            );
+            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+
+            let result = RealIvcOffCircuitChecks.check(&step.message, &avk, &ancillary_input);
+
+            assert!(
+                result.is_ok(),
+                "consistent same-epoch step should pass, got: {result:?}"
+            );
+        }
+
+        #[test]
+        fn rejects_mismatched_message_preimage_at_genesis() {
+            let step = load_embedded_following_certificate_in_epoch_asset()
+                .expect("same-epoch step output asset should load");
+            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+            // No rolling state (genesis path): a mismatched preimage should still be caught.
+            let ancillary_input = AncillaryProofInput::new(
+                None,
+                AncillaryGenesisData::dummy(),
+                vec![0u8; PREIMAGE_SIZE],
+            );
+
+            let err = RealIvcOffCircuitChecks
+                .check(&step.message, &avk, &ancillary_input)
+                .expect_err("mismatched preimage must be rejected at genesis");
+
+            assert_eq!(
+                err.downcast_ref::<IvcCircuitError>(),
+                Some(&IvcCircuitError::MessagePreimageMismatch)
+            );
+        }
+
+        #[test]
+        fn rejects_mismatched_message_preimage_past_genesis() {
+            let step = load_embedded_following_certificate_in_epoch_asset()
+                .expect("same-epoch step output asset should load");
+            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+            let ancillary_input = AncillaryProofInput::new(
+                Some(AncillaryProverData::IvcSnark(rolling_state_from_chain_state())),
+                AncillaryGenesisData::dummy(),
+                vec![0u8; PREIMAGE_SIZE],
+            );
+
+            let err = RealIvcOffCircuitChecks
+                .check(&step.message, &avk, &ancillary_input)
+                .expect_err("mismatched preimage must be rejected past genesis");
+
+            assert_eq!(
+                err.downcast_ref::<IvcCircuitError>(),
+                Some(&IvcCircuitError::MessagePreimageMismatch)
+            );
+        }
+
+        #[test]
+        fn rejects_when_protocol_parameters_changed() {
+            let step = load_embedded_following_certificate_in_epoch_asset()
+                .expect("same-epoch step output asset should load");
+            let chain_state = load_embedded_recursive_chain_state_asset()
+                .expect("recursive chain state asset should load");
+
+            // Only `protocol_parameters` (current) diverges from `next_protocol_parameters`;
+            // `assert_correct_parameters` never checks the current value, so this reaches
+            // `assert_protocol_parameters_unchanged` instead of failing earlier.
+            let diverged_state = State::new(
+                chain_state.state.step_counter,
+                chain_state.state.message,
+                chain_state.state.merkle_tree_commitment,
+                chain_state.state.next_merkle_tree_commitment,
+                ProtocolParametersHash::from_field(BaseFieldElement::from(999u64).0),
+                chain_state.state.next_protocol_parameters,
+                chain_state.state.current_epoch,
+            );
+            let rolling_state = IvcRollingState::new(
+                diverged_state,
+                chain_state.ivc_proof,
+                chain_state.accumulator,
+                chain_state.genesis_signature,
+            );
+            let ancillary_input = AncillaryProofInput::new(
+                Some(AncillaryProverData::IvcSnark(rolling_state)),
+                AncillaryGenesisData::dummy(),
+                step.message_preimage.to_vec(),
+            );
+            let avk = wrap_avk(&step.aggregate_verification_key_merkle_root);
+
+            let err = RealIvcOffCircuitChecks
+                .check(&step.message, &avk, &ancillary_input)
+                .expect_err("diverged protocol parameters must be rejected");
+
+            assert_eq!(
+                err.downcast_ref::<IvcCircuitError>(),
+                Some(&IvcCircuitError::ProtocolParametersChanged)
+            );
+        }
     }
 
     mod slow {
