@@ -5,7 +5,7 @@ use crate::{
     circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey,
     proof_system::{
         IvcRollingState,
-        halo2_ivc_snark::proof::{IvcChainInput, IvcProof},
+        halo2_ivc_snark::proof::{IvcChainStepBundle, IvcProof},
     },
 };
 
@@ -20,6 +20,6 @@ pub(crate) trait IvcChainProver<D: MembershipDigest> {
     /// that certifies all the certificates back to the genesis certificate.
     fn advance_chain(
         &mut self,
-        chain_input: IvcChainInput<D>,
+        step_bundle: IvcChainStepBundle<D>,
     ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)>;
 }
