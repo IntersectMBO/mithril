@@ -16,7 +16,7 @@ use crate::{BaseFieldElement, SchnorrSigningKey, circuits::halo2_ivc::PREIMAGE_S
 use crate::{
     SchnorrVerificationKey, StandardSchnorrSignature,
     proof_system::{
-        IvcRollingState, SnarkVerifierData, ivc_halo2_snark::verifier_setup::IvcVerifierData,
+        IvcRollingState, SnarkVerifierData, halo2_ivc_snark::verifier_setup::IvcVerifierData,
     },
     protocol::aggregate_signature::GenesisMessagePreimage,
 };

@@ -5,7 +5,7 @@
 //! ## Running
 //!
 //! ```text
-//! cargo bench -p mithril-stm --features future_snark,benchmark-internals --bench ivc_halo2_snark -- <id-or-prefix>
+//! cargo bench -p mithril-stm --features future_snark,benchmark-internals --bench halo2_ivc_snark -- <id-or-prefix>
 //! ```
 //!
 //! `<id-or-prefix>` is a single **literal** substring of a benchmark id (e.g. `ivc/same_epoch/prove` or
@@ -44,7 +44,7 @@ const PATHS: &[(TransitionPath, &str)] = &[
 ];
 
 fn die(message: &str) -> ! {
-    eprintln!("ivc_halo2_snark: {message}");
+    eprintln!("halo2_ivc_snark: {message}");
     std::process::exit(2);
 }
 
@@ -98,7 +98,7 @@ fn path_selected(filter: Option<&str>, path: TransitionPath, name: &str) -> bool
 fn print_usage() {
     println!(
         "Recursive IVC circuit benchmarks (façade-driven).\n\n\
-         Usage: cargo bench ... --bench ivc_halo2_snark -- [<literal-id-or-prefix>]\n\n\
+         Usage: cargo bench ... --bench halo2_ivc_snark -- [<literal-id-or-prefix>]\n\n\
          Pass a single literal id or prefix to select benchmarks; omit it to run all. Use --list to see \
          the ids. --test and --profile-time are unsupported (they force a recursive keygen).\n\n\
          Cost: a no-filter run does the shared per-path recursive keygen AND the setup keys keygen, then \

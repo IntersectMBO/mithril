@@ -14,7 +14,7 @@ use crate::{
     circuits::halo2_ivc::state::Global,
     proof_system::{
         SnarkProof, SnarkVerifierSetup,
-        ivc_halo2_snark::{proof::IvcProof, verifier_setup::IvcVerifierSetup},
+        halo2_ivc_snark::{proof::IvcProof, verifier_setup::IvcVerifierSetup},
     },
 };
 
@@ -527,7 +527,7 @@ mod tests {
                 },
                 types::MessageHash,
             },
-            proof_system::ivc_halo2_snark::{proof::IvcProof, verifier_setup::IvcVerifierData},
+            proof_system::halo2_ivc_snark::{proof::IvcProof, verifier_setup::IvcVerifierData},
         };
 
         const LOADED_CONTEXT_MSG: [u8; 32] = [
@@ -619,7 +619,7 @@ mod tests {
                 types::MessageHash,
             },
             proof_system::{
-                MERKLE_TREE_DEPTH_FOR_SNARK, ivc_halo2_snark::verifier_setup::IvcVerifierData,
+                MERKLE_TREE_DEPTH_FOR_SNARK, halo2_ivc_snark::verifier_setup::IvcVerifierData,
             },
             protocol::aggregate_signature::tests::setup_equal_parties,
         };

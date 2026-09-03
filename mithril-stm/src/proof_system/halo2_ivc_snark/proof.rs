@@ -43,7 +43,7 @@ use crate::{
         trusted_setup::TrustedSetupProvider,
     },
     codec,
-    proof_system::ivc_halo2_snark::{
+    proof_system::halo2_ivc_snark::{
         errors::IvcProofError,
         interface::IvcChainProver,
         prover_input::IvcProverInput,
@@ -643,7 +643,7 @@ mod tests {
         codec::TryFromBytes,
         proof_system::{
             AggregateVerificationKeyForSnark, MERKLE_TREE_DEPTH_FOR_SNARK,
-            ivc_halo2_snark::{
+            halo2_ivc_snark::{
                 build_standard_rolling_state, errors::IvcProofError,
                 rolling_state::IvcRollingState, verifier_setup::IvcVerifierSetup,
             },
@@ -1393,7 +1393,7 @@ mod tests {
                     types::ProtocolMessagePreimage,
                 },
             },
-            proof_system::ivc_halo2_snark::{
+            proof_system::halo2_ivc_snark::{
                 prover_setup::IvcProverSetup, rolling_state::IvcRollingState,
                 verifier_setup::IvcVerifierSetup,
             },

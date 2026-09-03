@@ -13,7 +13,7 @@ use crate::{
             MerkleTreeCommitment, MessageHash, ProtocolMessagePreimage, ProtocolParametersHash,
         },
     },
-    proof_system::ivc_halo2_snark::{
+    proof_system::halo2_ivc_snark::{
         prover_input_helpers::{
             build_next_accumulator, build_next_state, verify_certificate_proof,
         },
@@ -164,7 +164,7 @@ mod tests {
                 IvcCircuitVerificationKeyRepresentation, IvcProofBytes, StepCounter,
             },
         },
-        proof_system::ivc_halo2_snark::prover_setup::IvcProverInputVerificationContext,
+        proof_system::halo2_ivc_snark::prover_setup::IvcProverInputVerificationContext,
         signature_scheme::SchnorrSignatureError,
     };
 
