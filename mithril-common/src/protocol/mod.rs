@@ -6,6 +6,8 @@
 
 mod ancillary;
 mod multi_signer;
+#[cfg(all(test, feature = "future_snark"))]
+mod recursive_snark_example_fixtures;
 mod signer_builder;
 mod single_signer;
 
