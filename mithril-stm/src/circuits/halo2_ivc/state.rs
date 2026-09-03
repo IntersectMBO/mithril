@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::StmResult;
 use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 use crate::circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey;
 use crate::signature_scheme::{SchnorrVerificationKey, StandardSchnorrSignature};
@@ -115,13 +116,18 @@ pub(crate) struct Global {
 }
 
 impl Global {
+    /// Fails if `genesis_verification_key` is not a valid Jubjub point: it is a public input on
+    /// every proving step, not only genesis, so a malformed key would otherwise only surface
+    /// deep inside circuit synthesis.
     pub(crate) fn new(
         genesis_message: MessageHash,
         genesis_verification_key: SchnorrVerificationKey,
         certificate_verification_key: &NonRecursiveCircuitVerifyingKey,
         ivc_verification_key: &RecursiveCircuitVerifyingKey,
-    ) -> Self {
-        Global {
+    ) -> StmResult<Self> {
+        genesis_verification_key.is_valid()?;
+
+        Ok(Global {
             genesis_message,
             genesis_verification_key,
             certificate_circuit_verification_key_representation:
@@ -132,7 +138,7 @@ impl Global {
                 IvcCircuitVerificationKeyRepresentation::from_field(
                     ivc_verification_key.as_ref().transcript_repr(),
                 ),
-        }
+        })
     }
 
     pub(crate) fn as_public_input(&self) -> Vec<NativeField> {

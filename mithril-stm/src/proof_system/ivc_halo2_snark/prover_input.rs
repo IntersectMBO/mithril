@@ -192,7 +192,8 @@ mod tests {
             genesis_fixture.genesis_verification_key,
             &asset.certificate_verifying_key,
             &asset.recursive_verifying_key,
-        );
+        )
+        .expect("genesis verification key fixture should be valid");
         let verification_context = IvcProverInputVerificationContext::from_verifying_keys(
             asset.verifier_params,
             &asset.certificate_verifying_key,

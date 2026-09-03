@@ -380,7 +380,7 @@ impl<D: MembershipDigest> IvcChainInput<D> {
             genesis_verifying_key,
             certificate_verifying_key,
             ivc_verifying_key,
-        );
+        )?;
 
         Ok(Self {
             certificate_proof,
@@ -1361,7 +1361,8 @@ mod tests {
             genesis_verification_key,
             &certificate_verifying_key,
             &ivc_verifying_key,
-        );
+        )
+        .expect("genesis verification key fixture should be valid");
 
         assert_eq!(
             chain_input.global, expected_global,
@@ -1485,7 +1486,8 @@ mod tests {
                 genesis_fixture.genesis_verification_key,
                 &verification_context.certificate_verifying_key,
                 &verification_context.recursive_verifying_key,
-            );
+            )
+            .expect("genesis verification key fixture should be valid");
             let genesis_bootstrap = IvcGenesisBootstrapInput {
                 genesis_signature: genesis_fixture.genesis_signature,
                 genesis_protocol_message_preimage: ProtocolMessagePreimage::new(

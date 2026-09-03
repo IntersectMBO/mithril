@@ -471,6 +471,7 @@ pub(crate) fn build_recursive_global(
         certificate_verifying_key,
         recursive_verifying_key,
     )
+    .expect("deterministic test setup's genesis verification key should be valid")
 }
 
 /// Value committed by the genesis message as the next protocol parameters.
