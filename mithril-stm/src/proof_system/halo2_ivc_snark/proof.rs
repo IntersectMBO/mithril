@@ -609,31 +609,33 @@ mod tests {
     use crate::{
         AggregationError, AncillaryGenesisData, AncillaryProofInput, AncillaryProverData,
         MithrilMembershipDigest, Parameters, SnarkProof,
-        circuits::halo2::{
-            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
-            keys::NonRecursiveCircuitVerifyingKey, types::CircuitBase,
-        },
-        circuits::halo2_ivc::{
-            PREIMAGE_SIZE, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
-            keys::RecursiveCircuitVerifyingKey,
-            state::Global,
-            tests::common::{
-                asset_readers::{
-                    load_embedded_following_certificate_in_epoch_asset,
-                    load_embedded_next_epoch_step_output_asset,
-                    load_embedded_recursive_chain_state_asset,
-                    load_embedded_verification_context_asset,
-                },
-                generators::{build_asset_generation_setup_from_cache, build_recursive_global},
+        circuits::{
+            halo2::{
+                NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                keys::NonRecursiveCircuitVerifyingKey, types::CircuitBase,
             },
-            types::{EpochNumber, IvcProofBytes, MessageHash, StepCounter},
+            halo2_ivc::{
+                PREIMAGE_SIZE, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                keys::RecursiveCircuitVerifyingKey,
+                state::Global,
+                tests::common::{
+                    asset_readers::{
+                        load_embedded_following_certificate_in_epoch_asset,
+                        load_embedded_next_epoch_step_output_asset,
+                        load_embedded_recursive_chain_state_asset,
+                        load_embedded_verification_context_asset,
+                    },
+                    generators::{build_asset_generation_setup_from_cache, build_recursive_global},
+                },
+                types::{EpochNumber, IvcProofBytes, MessageHash, StepCounter},
+            },
         },
         codec::TryFromBytes,
         proof_system::{
-            AggregateVerificationKeyForSnark, MERKLE_TREE_DEPTH_FOR_SNARK,
+            AggregateVerificationKeyForSnark, IvcRollingState, MERKLE_TREE_DEPTH_FOR_SNARK,
             halo2_ivc_snark::{
                 build_standard_rolling_state, errors::IvcProofError,
-                rolling_state::IvcRollingState, verifier_setup::IvcVerifierSetup,
+                verifier_setup::IvcVerifierSetup,
             },
         },
         signature_scheme::{BaseFieldElement, SchnorrSigningKey, SchnorrVerificationKey},
