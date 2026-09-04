@@ -1,4 +1,15 @@
 #![doc = include_str!("../README.md")]
+#![cfg_attr(
+    feature = "future_snark",
+    doc = concat!(
+        "\n## Recursive SNARK aggregate signature\n\n```no_run\n",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/recursive_snark_aggregate_signature.rs"
+        )),
+        "\n```\n"
+    )
+)]
 //! Implementation of Stake-based Threshold Multisignatures
 //! Top-level API for Mithril Stake-based Threshold Multisignature scheme.
 //! See figure 6 of [the paper](https://eprint.iacr.org/2021/916) for most of the
