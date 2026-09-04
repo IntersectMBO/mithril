@@ -46,6 +46,7 @@ use crate::{
     proof_system::halo2_ivc_snark::{
         errors::IvcProofError,
         interface::IvcChainProver,
+        off_circuit_checker::ensure_advanceable_rolling_state,
         prover_input::IvcProverInput,
         prover_setup::IvcProverSetup,
         rolling_state::{IvcRollingState, IvcTransitionType, midnight_accumulator_serde},
@@ -301,20 +302,6 @@ where
         .map_err(|e| IvcProofError::ProofGenerationFailed(e.to_string()))?;
         Ok(transcript.finalize())
     }
-}
-
-/// Rejects a `rolling_state` that carries a genesis state (`step_counter == 0`).
-///
-/// The genesis step is only ever produced internally by the bootstrap path; callers reach it by
-/// passing `rolling_state = None`. A genesis state supplied as a previous step would instead run
-/// a normal step that silently ignores the certificate. Since `genesis_bootstrap` is always
-/// supplied, this is the only remaining invalid context: the previously-possible both-`Some` and
-/// both-`None` misuses are now unrepresentable.
-fn ensure_advanceable_rolling_state(rolling_state: Option<&IvcRollingState>) -> StmResult<()> {
-    if rolling_state.is_some_and(|rs| rs.is_genesis()) {
-        return Err(IvcProofError::InvalidProvingContext.into());
-    }
-    Ok(())
 }
 
 /// Everything the IVC prover needs to add one certificate to the chain, assembled by the clerk.

@@ -2,6 +2,7 @@
 
 mod errors;
 mod interface;
+mod off_circuit_checker;
 mod proof;
 mod prover_input;
 mod prover_input_helpers;
@@ -19,5 +20,5 @@ pub(crate) use prover_input::IvcProverInput;
 pub(crate) use prover_input_helpers::tests::build_standard_rolling_state;
 #[cfg(feature = "benchmark-internals")]
 pub(crate) use prover_setup::IvcProverSetup;
-pub(crate) use rolling_state::IvcRollingState;
+pub(crate) use rolling_state::{IvcRollingState, IvcTransitionType};
 pub(crate) use verifier_setup::{IvcVerifierData, IvcVerifierSetup};
