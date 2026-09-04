@@ -98,7 +98,9 @@ impl<D: MembershipDigest> Clerk<D> {
         D: Send + Sync + 'static,
     {
         let mut ivc_off_circuit_checker = MockIvcOffCircuitChecker::new();
-        ivc_off_circuit_checker.expect_check().returning(|_, _, _| Ok(()));
+        ivc_off_circuit_checker
+            .expect_off_circuit_check()
+            .returning(|_, _, _| Ok(()));
         Self {
             snark_prover_factory: Arc::new(snark_prover_factory),
             ivc_off_circuit_checker: Arc::new(ivc_off_circuit_checker),
@@ -150,7 +152,7 @@ impl<D: MembershipDigest> Clerk<D> {
                     .get_snark_clerk()
                     .ok_or_else(|| anyhow!(AggregateSignatureError::MissingSnarkClerk))?;
 
-                self.ivc_off_circuit_checker.check(
+                self.ivc_off_circuit_checker.off_circuit_check(
                     msg,
                     &snark_clerk
                         .compute_aggregate_verification_key_for_snark::<D>()
@@ -490,11 +492,11 @@ mod tests {
             let clerk = MockProverFactory::new()
                 .without_snark_prover()
                 .without_ivc_prover()
-                .build_clerk(&signer);
+                .build_clerk(signer);
 
             let mut checker = MockIvcOffCircuitChecker::new();
             checker
-                .expect_check()
+                .expect_off_circuit_check()
                 .once()
                 .return_once(|_, _, _| Err(anyhow!("synthetic rejection")));
             Clerk {

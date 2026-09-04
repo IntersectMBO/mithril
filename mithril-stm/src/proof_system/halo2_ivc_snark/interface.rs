@@ -29,7 +29,7 @@ pub(crate) trait IvcChainProver<D: MembershipDigest> {
 #[cfg_attr(test, mockall::automock)]
 pub(crate) trait IvcOffCircuitChecker: Debug {
     /// Orchestrates the three category checks below.
-    fn check(
+    fn off_circuit_check(
         &self,
         msg: &[u8],
         aggregate_verification_key_merkle_root: &[u8],

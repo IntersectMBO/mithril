@@ -19,7 +19,7 @@ use crate::{
 pub(crate) struct RealIvcOffCircuitChecker;
 
 impl IvcOffCircuitChecker for RealIvcOffCircuitChecker {
-    fn check(
+    fn off_circuit_check(
         &self,
         msg: &[u8],
         aggregate_verification_key_merkle_root: &[u8],
@@ -135,6 +135,7 @@ mod tests {
         },
         signature_scheme::{
             BaseFieldElement, ScalarFieldElement, SchnorrSigningKey, SchnorrVerificationKey,
+            StandardSchnorrSignature,
         },
     };
 
@@ -151,14 +152,31 @@ mod tests {
         )
     }
 
+    fn genesis_only_ancillary_input(genesis_data: AncillaryGenesisData) -> AncillaryProofInput {
+        AncillaryProofInput::new(None, genesis_data, vec![0u8; PREIMAGE_SIZE])
+    }
+
+    /// Builds a signature and its matching verification key from a seed, both over the same
+    /// synthetic message. Convenient for tests that only need one of the two.
+    fn synthetic_signature_and_key(
+        seed: [u8; 32],
+    ) -> (StandardSchnorrSignature, SchnorrVerificationKey) {
+        let mut rng = ChaCha20Rng::from_seed(seed);
+        let signing_key = SchnorrSigningKey::generate(&mut rng);
+        let signature = signing_key
+            .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
+            .expect("sign_standard should succeed for a synthetic message");
+        let verification_key = SchnorrVerificationKey::new_from_signing_key(signing_key);
+        (signature, verification_key)
+    }
+
     mod check_genesis {
         use super::*;
 
         #[test]
         fn rejects_missing_genesis_verification_key() {
             let genesis_data = AncillaryGenesisData::new(vec![0u8; PREIMAGE_SIZE], None, None);
-            let ancillary_input =
-                AncillaryProofInput::new(None, genesis_data, vec![0u8; PREIMAGE_SIZE]);
+            let ancillary_input = genesis_only_ancillary_input(genesis_data);
 
             let err = RealIvcOffCircuitChecker
                 .check_genesis(&ancillary_input)
@@ -177,8 +195,7 @@ mod tests {
             ));
             let genesis_data =
                 AncillaryGenesisData::new(vec![0u8; PREIMAGE_SIZE], None, Some(invalid_key));
-            let ancillary_input =
-                AncillaryProofInput::new(None, genesis_data, vec![0u8; PREIMAGE_SIZE]);
+            let ancillary_input = genesis_only_ancillary_input(genesis_data);
 
             RealIvcOffCircuitChecker
                 .check_genesis(&ancillary_input)
@@ -187,18 +204,14 @@ mod tests {
 
         #[test]
         fn rejects_missing_genesis_signature() {
-            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-            let signing_key = SchnorrSigningKey::generate(&mut rng);
-            let genesis_verification_key =
-                SchnorrVerificationKey::new_from_signing_key(signing_key);
+            let (_, genesis_verification_key) = synthetic_signature_and_key([0u8; 32]);
 
             let genesis_data = AncillaryGenesisData::new(
                 vec![0u8; PREIMAGE_SIZE],
                 None,
                 Some(genesis_verification_key),
             );
-            let ancillary_input =
-                AncillaryProofInput::new(None, genesis_data, vec![0u8; PREIMAGE_SIZE]);
+            let ancillary_input = genesis_only_ancillary_input(genesis_data);
 
             let err = RealIvcOffCircuitChecker
                 .check_genesis(&ancillary_input)
@@ -214,20 +227,14 @@ mod tests {
         fn rejects_genesis_signature_over_wrong_message() {
             let genesis_fixture = load_embedded_genesis_benchmark_fixture()
                 .expect("genesis benchmark fixture should load");
-
-            let mut rng = ChaCha20Rng::from_seed([1u8; 32]);
-            let unrelated_signing_key = SchnorrSigningKey::generate(&mut rng);
-            let wrong_signature = unrelated_signing_key
-                .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
-                .expect("sign_standard should succeed for a synthetic message");
+            let (wrong_signature, _) = synthetic_signature_and_key([1u8; 32]);
 
             let genesis_data = AncillaryGenesisData::new(
                 genesis_fixture.genesis_protocol_message_preimage.to_vec(),
                 Some(wrong_signature),
                 Some(genesis_fixture.genesis_verification_key),
             );
-            let ancillary_input =
-                AncillaryProofInput::new(None, genesis_data, vec![0u8; PREIMAGE_SIZE]);
+            let ancillary_input = genesis_only_ancillary_input(genesis_data);
 
             RealIvcOffCircuitChecker
                 .check_genesis(&ancillary_input)
@@ -244,8 +251,7 @@ mod tests {
                 Some(genesis_fixture.genesis_signature),
                 Some(genesis_fixture.genesis_verification_key),
             );
-            let ancillary_input =
-                AncillaryProofInput::new(None, genesis_data, vec![0u8; PREIMAGE_SIZE]);
+            let ancillary_input = genesis_only_ancillary_input(genesis_data);
 
             RealIvcOffCircuitChecker
                 .check_genesis(&ancillary_input)
@@ -273,11 +279,7 @@ mod tests {
 
         #[test]
         fn rejects_genesis_shaped_existing_rolling_state() {
-            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-            let signing_key = SchnorrSigningKey::generate(&mut rng);
-            let genesis_signature = signing_key
-                .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
-                .expect("genesis signature should be produced");
+            let (genesis_signature, _) = synthetic_signature_and_key([0u8; 32]);
             let genesis_rolling_state = IvcRollingState::genesis(genesis_signature, &[]);
 
             let ancillary_input = AncillaryProofInput::new(
@@ -431,7 +433,7 @@ mod tests {
         );
 
         RealIvcOffCircuitChecker
-            .check(
+            .off_circuit_check(
                 &step.message,
                 &step.aggregate_verification_key_merkle_root,
                 &ancillary_input,
