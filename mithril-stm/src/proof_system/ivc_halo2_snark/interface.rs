@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use midnight_proofs::transcript::Blake2b256;
 
 use crate::{
-    AggregateVerificationKeyForSnark, AncillaryProofInput, MembershipDigest, StmResult,
+    AncillaryProofInput, MembershipDigest, StmResult,
     circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey,
     proof_system::{
         IvcRollingState,

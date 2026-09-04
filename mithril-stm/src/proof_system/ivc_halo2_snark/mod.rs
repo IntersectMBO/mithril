@@ -8,9 +8,10 @@ mod prover_setup;
 pub(crate) mod rolling_state;
 pub(crate) mod verifier_setup;
 
-pub(crate) use interface::IvcChainProver;
+pub(crate) use interface::{IvcChainProver, IvcOffCircuitChecker};
 #[cfg(test)]
-pub(crate) use interface::MockIvcChainProver;
+pub(crate) use interface::{MockIvcChainProver, MockIvcOffCircuitChecker};
+pub(crate) use off_circuit_checker::RealIvcOffCircuitChecker;
 #[cfg(feature = "benchmark-internals")]
 pub(crate) use prover_input::IvcProverInput;
 #[cfg(all(test, feature = "future_snark"))]
