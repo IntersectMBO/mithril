@@ -28,7 +28,7 @@ pub(crate) trait IvcChainProver<D: MembershipDigest> {
 
 #[cfg_attr(test, mockall::automock)]
 pub(crate) trait IvcOffCircuitChecker: Debug {
-    /// Orchestrates the three category checks below. The only method `Clerk` calls.
+    /// Orchestrates the three category checks below.
     fn check(
         &self,
         msg: &[u8],
@@ -36,7 +36,7 @@ pub(crate) trait IvcOffCircuitChecker: Debug {
         ancillary_input: &AncillaryProofInput,
     ) -> StmResult<()>;
 
-    /// Genesis vk present + structurally valid, genesis signature present + preimage sized
+    /// Checks: genesis vk present + structurally valid, genesis signature present + preimage sized
     /// correctly, genesis signature cryptographically verifies.
     fn check_genesis(&self, ancillary_input: &AncillaryProofInput) -> StmResult<()>;
 
