@@ -110,6 +110,10 @@ serde_json = { workspace = true }
 tempfile = "3.27.0"
 
 [[example]]
+name = "non_recursive_snark_aggregate_signature"
+required-features = ["future_snark"]
+
+[[example]]
 name = "recursive_snark_aggregate_signature"
 required-features = ["future_snark"]
 

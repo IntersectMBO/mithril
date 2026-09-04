@@ -2,6 +2,17 @@
 #![cfg_attr(
     feature = "future_snark",
     doc = concat!(
+        "\n## Non-recursive SNARK aggregate signature\n\n```no_run\n",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/non_recursive_snark_aggregate_signature.rs"
+        )),
+        "\n```\n"
+    )
+)]
+#![cfg_attr(
+    feature = "future_snark",
+    doc = concat!(
         "\n## Recursive SNARK aggregate signature\n\n```no_run\n",
         include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
