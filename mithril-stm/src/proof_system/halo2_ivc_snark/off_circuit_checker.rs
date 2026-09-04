@@ -1,13 +1,8 @@
 use anyhow::anyhow;
 
 use crate::{
-    AggregateVerificationKeyForSnark, AggregationError, AncillaryProofInput, BaseFieldElement,
-    MembershipDigest, StmResult,
-    circuits::halo2_ivc::{
-        PREIMAGE_SIZE, ProtocolMessagePreimage,
-        errors::{EpochTransitionErrorKind, IvcCircuitError},
-        types::MessageHash,
-    },
+    AggregationError, AncillaryProofInput, BaseFieldElement, StmResult,
+    circuits::halo2_ivc::{PREIMAGE_SIZE, ProtocolMessagePreimage, types::MessageHash},
     proof_system::{
         IvcRollingState,
         halo2_ivc_snark::{
@@ -19,7 +14,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-struct RealIvcOffCircuitChecker;
+pub(crate) struct RealIvcOffCircuitChecker;
 
 impl IvcOffCircuitChecker for RealIvcOffCircuitChecker {
     fn check(
