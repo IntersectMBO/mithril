@@ -292,6 +292,8 @@ impl<D: MembershipDigest> Clerk<D> {
 #[cfg(test)]
 mod tests {
 
+    use std::sync::Arc;
+
     use anyhow::anyhow;
     use midnight_proofs::transcript::Blake2b256;
 
@@ -314,8 +316,8 @@ mod tests {
         },
         codec::{TryFromBytes, TryToBytes},
         proof_system::{
-            IvcRollingState, MERKLE_TREE_DEPTH_FOR_SNARK, MockSnarkAggregateSignatureProver,
-            MockSnarkProverFactory, SnarkClerk,
+            IvcRollingState, MERKLE_TREE_DEPTH_FOR_SNARK, MockIvcOffCircuitChecker,
+            MockSnarkAggregateSignatureProver, MockSnarkProverFactory, SnarkClerk,
             ivc_halo2_snark::{
                 MockIvcChainProver, build_standard_rolling_state,
                 proof::{IvcChainInput, IvcProof},
@@ -484,6 +486,23 @@ mod tests {
             }
 
             Clerk::new_clerk_from_signer_with_mock_prover_factory(signer, factory)
+        }
+
+        fn build_clerk_rejecting_checks(self, signer: &Signer<D>) -> Clerk<D> {
+            let clerk = MockProverFactory::new()
+                .without_snark_prover()
+                .without_ivc_prover()
+                .build_clerk(&signer);
+
+            let mut checker = MockIvcOffCircuitChecker::new();
+            checker
+                .expect_check()
+                .once()
+                .return_once(|_, _, _| Err(anyhow!("synthetic rejection")));
+            Clerk {
+                ivc_off_circuit_checker: Arc::new(checker),
+                ..clerk
+            }
         }
     }
 
@@ -924,5 +943,22 @@ mod tests {
             Some(&AggregationError::MissingIvcRollingStateInAncillaryProverData),
             "missing IVC rolling state must be rejected, got: {err}"
         );
+    }
+
+    #[test]
+    fn ivc_snark_rejects_before_generating_certificate_proof_when_check_fails() {
+        let signer = setup_single_party(PARAMS);
+        let clerk = MockProverFactory::new().build_clerk_rejecting_checks(&signer);
+
+        let err = clerk
+            .aggregate_signatures_with_type(
+                &[],
+                &DUMMY_MESSAGE,
+                AggregateSignatureType::IvcSnark,
+                build_ancillary_input(None),
+            )
+            .expect_err("a rejected check must abort aggregation before any proving");
+
+        assert_eq!(err.to_string(), "synthetic rejection");
     }
 }
