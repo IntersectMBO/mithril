@@ -18,7 +18,9 @@ use crate::{
             types::{IvcProofBytes, MerkleTreeCommitment, MessageHash, StepCounter},
         },
     },
-    proof_system::halo2_ivc_snark::prover_input_helpers::create_snark_message_for_next_state,
+    proof_system::halo2_ivc_snark::{
+        errors::IvcProofError, prover_input_helpers::create_snark_message_for_next_state,
+    },
     signature_scheme::{BaseFieldElement, StandardSchnorrSignature},
 };
 
@@ -210,6 +212,22 @@ impl IvcRollingState {
             certificate_message_hash,
             certificate_merkle_tree_commitment,
         ))
+    }
+
+    /// Rejects a `rolling_state` that carries a genesis state (`step_counter == 0`).
+    ///
+    /// The genesis step is only ever produced internally by the bootstrap path; callers reach it by
+    /// passing `rolling_state = None`. A genesis state supplied as a previous step would instead run
+    /// a normal step that silently ignores the certificate. Since `genesis_bootstrap` is always
+    /// supplied, this is the only remaining invalid context: the previously-possible both-`Some` and
+    /// both-`None` misuses are now unrepresentable.
+    pub(crate) fn ensure_advanceable_rolling_state(
+        rolling_state: Option<&IvcRollingState>,
+    ) -> StmResult<()> {
+        if rolling_state.is_some_and(|rs| rs.is_genesis()) {
+            return Err(IvcProofError::InvalidProvingContext.into());
+        }
+        Ok(())
     }
 }
 

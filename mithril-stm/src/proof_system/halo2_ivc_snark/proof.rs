@@ -46,7 +46,6 @@ use crate::{
     proof_system::halo2_ivc_snark::{
         errors::IvcProofError,
         interface::IvcChainProver,
-        off_circuit_checker::ensure_advanceable_rolling_state,
         prover_input::IvcProverInput,
         prover_setup::IvcProverSetup,
         rolling_state::{IvcRollingState, IvcTransitionType, midnight_accumulator_serde},
@@ -411,7 +410,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
         genesis_bootstrap: &IvcGenesisBootstrapInput,
         rolling_state: Option<&IvcRollingState>,
     ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)> {
-        ensure_advanceable_rolling_state(rolling_state)?;
+        IvcRollingState::ensure_advanceable_rolling_state(rolling_state)?;
 
         // `rolling_state = None` is the first certificate: bootstrap from genesis internally,
         // then continue with the seeded state. Otherwise advance from the supplied state.
@@ -640,7 +639,7 @@ mod tests {
         signature_scheme::{BaseFieldElement, SchnorrSigningKey, SchnorrVerificationKey},
     };
 
-    use super::{IvcChainStepBundle, IvcProof, ensure_advanceable_rolling_state};
+    use super::{IvcChainStepBundle, IvcProof};
 
     const STEP_OUTPUT_MSG: [u8; 32] = [
         22, 148, 87, 37, 149, 0, 124, 10, 156, 94, 108, 6, 78, 59, 239, 80, 126, 213, 158, 211,
@@ -1069,12 +1068,13 @@ mod tests {
             .expect("genesis signature should be produced");
 
         // `None` bootstraps from genesis internally: accepted.
-        ensure_advanceable_rolling_state(None).expect("None must be accepted (genesis bootstrap)");
+        IvcRollingState::ensure_advanceable_rolling_state(None)
+            .expect("None must be accepted (genesis bootstrap)");
 
         // A genesis rolling state (`step_counter == 0`) must be rejected.
         let genesis_state = IvcRollingState::genesis(genesis_signature, &[]);
         assert!(genesis_state.is_genesis());
-        let err = ensure_advanceable_rolling_state(Some(&genesis_state))
+        let err = IvcRollingState::ensure_advanceable_rolling_state(Some(&genesis_state))
             .expect_err("genesis rolling state must be rejected");
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
@@ -1092,7 +1092,7 @@ mod tests {
             chain_state.genesis_signature,
         );
         assert!(!advanced_state.is_genesis());
-        ensure_advanceable_rolling_state(Some(&advanced_state))
+        IvcRollingState::ensure_advanceable_rolling_state(Some(&advanced_state))
             .expect("a non-genesis rolling state must be accepted");
     }
 

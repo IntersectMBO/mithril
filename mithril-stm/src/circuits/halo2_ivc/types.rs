@@ -5,12 +5,14 @@
 
 use ff::Field;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+use crate::{BaseFieldElement, StmResult};
 
 use super::{
     NativeField, PREIMAGE_CURRENT_EPOCH_BYTES, PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
     PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, PREIMAGE_SIZE, Value,
 };
-use crate::BaseFieldElement;
 
 /// Circuit-boundary alias for Midnight proofs' `Value<T>` witness wrapper.
 pub(crate) type CircuitValue<T> = Value<T>;
@@ -148,6 +150,15 @@ impl ProtocolMessagePreimage {
 impl From<[u8; PREIMAGE_SIZE]> for ProtocolMessagePreimage {
     fn from(bytes: [u8; PREIMAGE_SIZE]) -> Self {
         Self(bytes)
+    }
+}
+
+impl TryInto<MessageHash> for &ProtocolMessagePreimage {
+    type Error = anyhow::Error;
+    fn try_into(self) -> StmResult<MessageHash> {
+        let preimage_hash: [u8; 32] = Sha256::digest(self.0).into();
+        let message_field_elem = BaseFieldElement::from_raw(&preimage_hash)?.0;
+        Ok(MessageHash::from_field(message_field_elem))
     }
 }
 
