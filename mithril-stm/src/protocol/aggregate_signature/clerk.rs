@@ -7,14 +7,18 @@ use anyhow::Context;
 use anyhow::anyhow;
 
 #[cfg(all(feature = "future_snark", test))]
-use crate::proof_system::MockSnarkProverFactory;
+use crate::proof_system::{MockIvcOffCircuitChecker, MockSnarkProverFactory};
+
 #[cfg(feature = "future_snark")]
 use crate::{
     AggregateSignatureError, AncillaryProverData, AncillaryVerifierData,
     proof_system::{
         NonDeterministicSnarkProverFactory, SnarkAggregateSignatureProver, SnarkClerk,
         SnarkProverFactory, SnarkVerifierData,
-        ivc_halo2_snark::{proof::IvcChainInput, verifier_setup::IvcVerifierData},
+        ivc_halo2_snark::{
+            IvcOffCircuitChecker, RealIvcOffCircuitChecker, proof::IvcChainInput,
+            verifier_setup::IvcVerifierData,
+        },
     },
 };
 use crate::{
@@ -40,6 +44,8 @@ pub struct Clerk<D: MembershipDigest> {
     /// A factory that returns the provers necessary to create the SNARK proofs
     #[cfg(feature = "future_snark")]
     snark_prover_factory: Arc<dyn SnarkProverFactory<D> + Send + Sync>,
+    #[cfg(feature = "future_snark")]
+    ivc_off_circuit_checker: Arc<dyn IvcOffCircuitChecker + Send + Sync>,
     phantom_data: PhantomData<D>,
 }
 
@@ -55,6 +61,8 @@ impl<D: MembershipDigest> Clerk<D> {
                 .then(|| SnarkClerk::new_clerk_from_signer(signer)),
             #[cfg(feature = "future_snark")]
             snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory),
+            #[cfg(feature = "future_snark")]
+            ivc_off_circuit_checker: Arc::new(RealIvcOffCircuitChecker),
             phantom_data: PhantomData,
         }
     }
@@ -75,6 +83,8 @@ impl<D: MembershipDigest> Clerk<D> {
             }),
             #[cfg(feature = "future_snark")]
             snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory),
+            #[cfg(feature = "future_snark")]
+            ivc_off_circuit_checker: Arc::new(RealIvcOffCircuitChecker),
             phantom_data: PhantomData,
         }
     }
@@ -88,8 +98,11 @@ impl<D: MembershipDigest> Clerk<D> {
     where
         D: Send + Sync + 'static,
     {
+        let mut ivc_off_circuit_checker = MockIvcOffCircuitChecker::new();
+        ivc_off_circuit_checker.expect_check().returning(|_, _, _| Ok(()));
         Self {
             snark_prover_factory: Arc::new(snark_prover_factory),
+            ivc_off_circuit_checker: Arc::new(ivc_off_circuit_checker),
             ..Self::new_clerk_from_signer(signer)
         }
     }
@@ -137,6 +150,15 @@ impl<D: MembershipDigest> Clerk<D> {
                 let snark_clerk = self
                     .get_snark_clerk()
                     .ok_or_else(|| anyhow!(AggregateSignatureError::MissingSnarkClerk))?;
+
+                self.ivc_off_circuit_checker.check(
+                    msg,
+                    &snark_clerk
+                        .compute_aggregate_verification_key_for_snark::<D>()
+                        .get_merkle_tree_commitment()
+                        .root,
+                    &ancillary_input,
+                )?;
 
                 self.aggregate_signatures_for_ivc_snark(snark_clerk, sigs, msg, ancillary_input)
             }
@@ -270,6 +292,8 @@ impl<D: MembershipDigest> Clerk<D> {
 #[cfg(test)]
 mod tests {
 
+    use std::sync::Arc;
+
     use anyhow::anyhow;
     use midnight_proofs::transcript::Blake2b256;
 
@@ -292,8 +316,8 @@ mod tests {
         },
         codec::{TryFromBytes, TryToBytes},
         proof_system::{
-            IvcRollingState, MERKLE_TREE_DEPTH_FOR_SNARK, MockSnarkAggregateSignatureProver,
-            MockSnarkProverFactory, SnarkClerk,
+            IvcRollingState, MERKLE_TREE_DEPTH_FOR_SNARK, MockIvcOffCircuitChecker,
+            MockSnarkAggregateSignatureProver, MockSnarkProverFactory, SnarkClerk,
             ivc_halo2_snark::{
                 MockIvcChainProver, build_standard_rolling_state,
                 proof::{IvcChainInput, IvcProof},
@@ -462,6 +486,23 @@ mod tests {
             }
 
             Clerk::new_clerk_from_signer_with_mock_prover_factory(signer, factory)
+        }
+
+        fn build_clerk_rejecting_checks(self, signer: &Signer<D>) -> Clerk<D> {
+            let clerk = MockProverFactory::new()
+                .without_snark_prover()
+                .without_ivc_prover()
+                .build_clerk(&signer);
+
+            let mut checker = MockIvcOffCircuitChecker::new();
+            checker
+                .expect_check()
+                .once()
+                .return_once(|_, _, _| Err(anyhow!("synthetic rejection")));
+            Clerk {
+                ivc_off_circuit_checker: Arc::new(checker),
+                ..clerk
+            }
         }
     }
 
@@ -902,5 +943,22 @@ mod tests {
             Some(&AggregationError::MissingIvcRollingStateInAncillaryProverData),
             "missing IVC rolling state must be rejected, got: {err}"
         );
+    }
+
+    #[test]
+    fn ivc_snark_rejects_before_generating_certificate_proof_when_check_fails() {
+        let signer = setup_single_party(PARAMS);
+        let clerk = MockProverFactory::new().build_clerk_rejecting_checks(&signer);
+
+        let err = clerk
+            .aggregate_signatures_with_type(
+                &[],
+                &DUMMY_MESSAGE,
+                AggregateSignatureType::IvcSnark,
+                build_ancillary_input(None),
+            )
+            .expect_err("a rejected check must abort aggregation before any proving");
+
+        assert_eq!(err.to_string(), "synthetic rejection");
     }
 }

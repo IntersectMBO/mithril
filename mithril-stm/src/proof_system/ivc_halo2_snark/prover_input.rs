@@ -61,7 +61,7 @@ impl IvcProverInput {
 
         rolling_state.assert_correct_parameters(
             protocol_message_preimage,
-            aggregate_verification_key_for_snark,
+            &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root,
             message,
             transition_type,
         )?;
@@ -74,7 +74,10 @@ impl IvcProverInput {
         )?;
 
         let (certificate_message_hash, certificate_merkle_tree_commitment) =
-            create_snark_message_for_next_state(aggregate_verification_key_for_snark, message)?;
+            create_snark_message_for_next_state(
+                &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root,
+                message,
+            )?;
 
         let next_state = build_next_state(
             transition_type,

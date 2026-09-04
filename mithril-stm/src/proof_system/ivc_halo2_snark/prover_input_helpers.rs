@@ -12,7 +12,8 @@ use crate::{
     proof_system::{
         halo2_snark::build_snark_message,
         ivc_halo2_snark::{
-            prover_setup::IvcProverInputVerificationContext, rolling_state::IvcRollingState,
+            errors::IvcProofError, prover_setup::IvcProverInputVerificationContext,
+            rolling_state::IvcRollingState,
         },
     },
 };
@@ -91,12 +92,12 @@ pub(crate) fn verify_certificate_proof<D: MembershipDigest>(
 /// Builds the certificate's two-element SNARK public-input message from the AVK Merkle root
 /// and the certificate's message bytes and returns typed versions that can be used to build
 /// a circuit `State`
-pub(crate) fn create_snark_message_for_next_state<D: MembershipDigest>(
-    aggregate_verification_key_for_snark: &AggregateVerificationKeyForSnark<D>,
+pub(crate) fn create_snark_message_for_next_state(
+    aggregate_verification_key_commitment: &[u8],
     certificate_message_bytes: &[u8],
 ) -> StmResult<(MessageHash, MerkleTreeCommitment)> {
     let snark_message = build_snark_message(
-        &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root,
+        aggregate_verification_key_commitment,
         certificate_message_bytes,
     )?;
     let certificate_message_hash = MessageHash::from_field(snark_message[1].0);
@@ -158,6 +159,12 @@ pub(crate) fn build_next_accumulator(
         previous_ivc_proof_collapsed_accumulator,
     ]);
     next_accumulator.collapse();
+    if !next_accumulator.check(
+        verification_context.verifier_params(),
+        &verification_context.combined_fixed_bases(),
+    ) {
+        return Err(IvcProofError::InvalidNextAccumulator.into());
+    }
     Ok(next_accumulator)
 }
 

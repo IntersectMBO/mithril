@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use crate::circuits::halo2_ivc::types::EpochNumber;
 use crate::{
-    AggregateVerificationKeyForSnark, MembershipDigest, StmResult,
+    StmResult,
     circuits::{
         halo2::types::CircuitBase,
         halo2_ivc::{
@@ -20,8 +20,9 @@ use crate::{
             types::{IvcProofBytes, StepCounter},
         },
     },
-    proof_system::ivc_halo2_snark::prover_input_helpers::{
-        IvcTransitionType, create_snark_message_for_next_state,
+    proof_system::ivc_halo2_snark::{
+        errors::IvcProofError,
+        prover_input_helpers::{IvcTransitionType, create_snark_message_for_next_state},
     },
     signature_scheme::{BaseFieldElement, StandardSchnorrSignature},
 };
@@ -141,15 +142,15 @@ impl IvcRollingState {
     /// Asserts that the parameters in the rolling state matches the ones in
     /// the protocol message depending on the epoch transition type.
     /// This is done mainly to avoid computing a proof that will not verify.
-    pub(crate) fn assert_correct_parameters<D: MembershipDigest>(
+    pub(crate) fn assert_correct_parameters(
         &self,
         protocol_message_preimage: &ProtocolMessagePreimage,
-        aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
+        aggregate_verification_key_commitment: &[u8],
         message: &[u8],
         transition_type: IvcTransitionType,
     ) -> StmResult<()> {
         let (_, merkle_tree_commitment) =
-            create_snark_message_for_next_state(aggregate_verification_key, message)?;
+            create_snark_message_for_next_state(aggregate_verification_key_commitment, message)?;
 
         let result = match transition_type {
             IvcTransitionType::SameEpoch => {
@@ -179,6 +180,22 @@ impl IvcRollingState {
             .into());
         }
 
+        Ok(())
+    }
+
+    /// Rejects a `rolling_state` that carries a genesis state (`step_counter == 0`).
+    ///
+    /// The genesis step is only ever produced internally by the bootstrap path; callers reach it by
+    /// passing `rolling_state = None`. A genesis state supplied as a previous step would instead run
+    /// a normal step that silently ignores the certificate. Since `genesis_bootstrap` is always
+    /// supplied, this is the only remaining invalid context: the previously-possible both-`Some` and
+    /// both-`None` misuses are now unrepresentable.
+    pub(crate) fn ensure_advanceable_rolling_state(
+        rolling_state: Option<&IvcRollingState>,
+    ) -> StmResult<()> {
+        if rolling_state.is_some_and(|rs| rs.is_genesis()) {
+            return Err(IvcProofError::InvalidProvingContext.into());
+        }
         Ok(())
     }
 }
@@ -218,7 +235,9 @@ mod tests {
     use rand_core::SeedableRng;
 
     use crate::{
-        circuits::halo2_ivc::types::EpochNumber,
+        circuits::halo2_ivc::{
+            embedded_assets::load_embedded_recursive_chain_state_asset, types::EpochNumber,
+        },
         signature_scheme::{BaseFieldElement, SchnorrSigningKey},
     };
 
@@ -287,31 +306,71 @@ mod tests {
         assert!(!rolling_state.is_next_epoch(EpochNumber::new(2)));
     }
 
+    // The context guard is the first thing `IvcProver::prove` runs. It is tested directly here
+    // rather than through `prove` so the test stays fast: reaching `prove` would require building
+    // an `IvcSnarkProverSetup` (full keygen). With `genesis_bootstrap` now always supplied, a genesis
+    // `rolling_state` is the only remaining invalid context; both-`Some`/both-`None` are
+    // unrepresentable.
+    #[test]
+    fn ensure_advanceable_rolling_state_rejects_only_genesis_state() {
+        // A genesis signature is needed to build any rolling state; its value is irrelevant
+        // because the guard only inspects the step counter.
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let signing_key = SchnorrSigningKey::generate(&mut rng);
+        let genesis_signature = signing_key
+            .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
+            .expect("genesis signature should be produced");
+
+        // `None` bootstraps from genesis internally: accepted.
+        IvcRollingState::ensure_advanceable_rolling_state(None)
+            .expect("None must be accepted (genesis bootstrap)");
+
+        // A genesis rolling state (`step_counter == 0`) must be rejected.
+        let genesis_state = IvcRollingState::genesis(genesis_signature, &[]);
+        assert!(genesis_state.is_genesis());
+        let err = IvcRollingState::ensure_advanceable_rolling_state(Some(&genesis_state))
+            .expect_err("genesis rolling state must be rejected");
+        assert_eq!(
+            err.downcast_ref::<IvcProofError>(),
+            Some(&IvcProofError::InvalidProvingContext),
+            "genesis rolling state must fail with InvalidProvingContext, got: {err}"
+        );
+
+        // A non-genesis rolling state (a previous step's output) is accepted.
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let advanced_state = IvcRollingState::new(
+            chain_state.state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+        assert!(!advanced_state.is_genesis());
+        IvcRollingState::ensure_advanceable_rolling_state(Some(&advanced_state))
+            .expect("a non-genesis rolling state must be accepted");
+    }
+
     mod assert_correct_parameters {
         use crate::{
-            MithrilMembershipDigest,
             circuits::halo2_ivc::types::ProtocolParametersHash,
-            proof_system::{
-                AggregateVerificationKeyForSnark,
-                ivc_halo2_snark::prover_input_helpers::tests::{
-                    build_preimage, build_rolling_state, build_standard_preimage,
-                    build_standard_rolling_state, merkle_tree_commitment_from_bytes,
-                },
+            proof_system::ivc_halo2_snark::prover_input_helpers::tests::{
+                build_preimage, build_rolling_state, build_standard_preimage,
+                build_standard_rolling_state, merkle_tree_commitment_from_bytes,
             },
         };
 
         use super::*;
 
-        // Creates an avk with a zero root
-        fn avk_with_zero_root() -> AggregateVerificationKeyForSnark<MithrilMembershipDigest> {
-            AggregateVerificationKeyForSnark::from_bytes(&[0u8; 40]).unwrap()
+        // Creates a zero root of an avk
+        fn avk_zero_root() -> Vec<u8> {
+            [0u8; 40].to_vec()
         }
 
-        // Creates an avk with non zero root
-        fn avk_with_nonzero_root() -> AggregateVerificationKeyForSnark<MithrilMembershipDigest> {
+        // Creates a non-zero root of an avk
+        fn avk_nonzero_root() -> Vec<u8> {
             let mut bytes = [0u8; 40];
             bytes[0] = 0x02;
-            AggregateVerificationKeyForSnark::from_bytes(&bytes).unwrap()
+            bytes.to_vec()
         }
 
         #[test]
@@ -322,7 +381,7 @@ mod tests {
 
             let result = rolling_state.assert_correct_parameters(
                 &preimage,
-                &avk_with_zero_root(),
+                &avk_zero_root(),
                 &[0u8; 32],
                 IvcTransitionType::SameEpoch,
             );
@@ -339,7 +398,7 @@ mod tests {
             let err = rolling_state_with_step_counter_one
                 .assert_correct_parameters(
                     &preimage,
-                    &avk_with_zero_root(),
+                    &avk_zero_root(),
                     &[0u8; 32],
                     IvcTransitionType::SameEpoch,
                 )
@@ -368,7 +427,7 @@ mod tests {
             let err = rolling_state
                 .assert_correct_parameters(
                     &preimage_with_non_zero_next_merkle_tree_commitment,
-                    &avk_with_zero_root(),
+                    &avk_zero_root(),
                     &[0u8; 32],
                     IvcTransitionType::SameEpoch,
                 )
@@ -397,7 +456,7 @@ mod tests {
             let err = rolling_state_with_zero_hash_parameters
                 .assert_correct_parameters(
                     &preimage_with_non_zero_hash_parameters,
-                    &avk_with_zero_root(),
+                    &avk_zero_root(),
                     &[0u8; 32],
                     IvcTransitionType::SameEpoch,
                 )
@@ -422,7 +481,6 @@ mod tests {
             non_zero_root_bytes[0] = 0x02;
             let non_zero_next_merkle_tree_commitment =
                 merkle_tree_commitment_from_bytes(non_zero_root_bytes);
-            let non_zero_merkle_tree_commitment_avk = avk_with_nonzero_root();
 
             let rolling_state = build_rolling_state(
                 StepCounter::new(5),
@@ -435,7 +493,7 @@ mod tests {
 
             let result = rolling_state.assert_correct_parameters(
                 &preimage,
-                &non_zero_merkle_tree_commitment_avk,
+                &avk_nonzero_root(),
                 &[0u8; 32],
                 IvcTransitionType::NextEpoch,
             );
@@ -446,7 +504,6 @@ mod tests {
         #[test]
         fn rejects_next_epoch_when_next_merkle_commitment_does_not_match() {
             let zero_next_merkle_tree_commitment = merkle_tree_commitment_from_bytes([0u8; 32]);
-            let non_zero_merkle_tree_commitment_avk = avk_with_nonzero_root();
 
             let rolling_state = build_rolling_state(
                 StepCounter::new(5),
@@ -460,7 +517,7 @@ mod tests {
             let err = rolling_state
                 .assert_correct_parameters(
                     &preimage,
-                    &non_zero_merkle_tree_commitment_avk,
+                    &avk_nonzero_root(),
                     &[0u8; 32],
                     IvcTransitionType::NextEpoch,
                 )
@@ -487,7 +544,7 @@ mod tests {
 
             let result = rolling_state.assert_correct_parameters(
                 &preimage,
-                &avk_with_zero_root(),
+                &avk_zero_root(),
                 &[0u8; 32],
                 IvcTransitionType::Genesis,
             );
