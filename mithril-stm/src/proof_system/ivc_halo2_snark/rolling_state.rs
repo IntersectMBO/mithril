@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use crate::circuits::halo2_ivc::types::EpochNumber;
 use crate::{
-    AggregateVerificationKeyForSnark, MembershipDigest, StmResult,
+    StmResult,
     circuits::{
         halo2::types::CircuitBase,
         halo2_ivc::{
@@ -141,15 +141,15 @@ impl IvcRollingState {
     /// Asserts that the parameters in the rolling state matches the ones in
     /// the protocol message depending on the epoch transition type.
     /// This is done mainly to avoid computing a proof that will not verify.
-    pub(crate) fn assert_correct_parameters<D: MembershipDigest>(
+    pub(crate) fn assert_correct_parameters(
         &self,
         protocol_message_preimage: &ProtocolMessagePreimage,
-        aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
+        aggregate_verification_key_commitment: &[u8],
         message: &[u8],
         transition_type: IvcTransitionType,
     ) -> StmResult<()> {
         let (_, merkle_tree_commitment) =
-            create_snark_message_for_next_state(aggregate_verification_key, message)?;
+            create_snark_message_for_next_state(aggregate_verification_key_commitment, message)?;
 
         let result = match transition_type {
             IvcTransitionType::SameEpoch => {
@@ -289,29 +289,25 @@ mod tests {
 
     mod assert_correct_parameters {
         use crate::{
-            MithrilMembershipDigest,
             circuits::halo2_ivc::types::ProtocolParametersHash,
-            proof_system::{
-                AggregateVerificationKeyForSnark,
-                ivc_halo2_snark::prover_input_helpers::tests::{
-                    build_preimage, build_rolling_state, build_standard_preimage,
-                    build_standard_rolling_state, merkle_tree_commitment_from_bytes,
-                },
+            proof_system::ivc_halo2_snark::prover_input_helpers::tests::{
+                build_preimage, build_rolling_state, build_standard_preimage,
+                build_standard_rolling_state, merkle_tree_commitment_from_bytes,
             },
         };
 
         use super::*;
 
-        // Creates an avk with a zero root
-        fn avk_with_zero_root() -> AggregateVerificationKeyForSnark<MithrilMembershipDigest> {
-            AggregateVerificationKeyForSnark::from_bytes(&[0u8; 40]).unwrap()
+        // Creates a zero root of an avk
+        fn avk_zero_root() -> Vec<u8> {
+            [0u8; 40].to_vec()
         }
 
-        // Creates an avk with non zero root
-        fn avk_with_nonzero_root() -> AggregateVerificationKeyForSnark<MithrilMembershipDigest> {
+        // Creates a non-zero root of an avk
+        fn avk_nonzero_root() -> Vec<u8> {
             let mut bytes = [0u8; 40];
             bytes[0] = 0x02;
-            AggregateVerificationKeyForSnark::from_bytes(&bytes).unwrap()
+            bytes.to_vec()
         }
 
         #[test]
@@ -322,7 +318,7 @@ mod tests {
 
             let result = rolling_state.assert_correct_parameters(
                 &preimage,
-                &avk_with_zero_root(),
+                &avk_zero_root(),
                 &[0u8; 32],
                 IvcTransitionType::SameEpoch,
             );
@@ -339,7 +335,7 @@ mod tests {
             let err = rolling_state_with_step_counter_one
                 .assert_correct_parameters(
                     &preimage,
-                    &avk_with_zero_root(),
+                    &avk_zero_root(),
                     &[0u8; 32],
                     IvcTransitionType::SameEpoch,
                 )
@@ -368,7 +364,7 @@ mod tests {
             let err = rolling_state
                 .assert_correct_parameters(
                     &preimage_with_non_zero_next_merkle_tree_commitment,
-                    &avk_with_zero_root(),
+                    &avk_zero_root(),
                     &[0u8; 32],
                     IvcTransitionType::SameEpoch,
                 )
@@ -397,7 +393,7 @@ mod tests {
             let err = rolling_state_with_zero_hash_parameters
                 .assert_correct_parameters(
                     &preimage_with_non_zero_hash_parameters,
-                    &avk_with_zero_root(),
+                    &avk_zero_root(),
                     &[0u8; 32],
                     IvcTransitionType::SameEpoch,
                 )
@@ -422,7 +418,6 @@ mod tests {
             non_zero_root_bytes[0] = 0x02;
             let non_zero_next_merkle_tree_commitment =
                 merkle_tree_commitment_from_bytes(non_zero_root_bytes);
-            let non_zero_merkle_tree_commitment_avk = avk_with_nonzero_root();
 
             let rolling_state = build_rolling_state(
                 StepCounter::new(5),
@@ -435,7 +430,7 @@ mod tests {
 
             let result = rolling_state.assert_correct_parameters(
                 &preimage,
-                &non_zero_merkle_tree_commitment_avk,
+                &avk_nonzero_root(),
                 &[0u8; 32],
                 IvcTransitionType::NextEpoch,
             );
@@ -446,7 +441,6 @@ mod tests {
         #[test]
         fn rejects_next_epoch_when_next_merkle_commitment_does_not_match() {
             let zero_next_merkle_tree_commitment = merkle_tree_commitment_from_bytes([0u8; 32]);
-            let non_zero_merkle_tree_commitment_avk = avk_with_nonzero_root();
 
             let rolling_state = build_rolling_state(
                 StepCounter::new(5),
@@ -460,7 +454,7 @@ mod tests {
             let err = rolling_state
                 .assert_correct_parameters(
                     &preimage,
-                    &non_zero_merkle_tree_commitment_avk,
+                    &avk_nonzero_root(),
                     &[0u8; 32],
                     IvcTransitionType::NextEpoch,
                 )
@@ -487,7 +481,7 @@ mod tests {
 
             let result = rolling_state.assert_correct_parameters(
                 &preimage,
-                &avk_with_zero_root(),
+                &avk_zero_root(),
                 &[0u8; 32],
                 IvcTransitionType::Genesis,
             );
