@@ -15,6 +15,7 @@ include = [
     ".gitignore",
     "src/circuits/halo2/non_recursive_circuit_verification_key_for_production.bin",
     "src/circuits/halo2_ivc/recursive_circuit_verification_key_for_production.bin",
+    "examples/assets/*.bin",
 ]
 
 [package.metadata.docs.rs]
@@ -107,6 +108,10 @@ rand = "0.10.2"
 rand_chacha = { workspace = true }
 serde_json = { workspace = true }
 tempfile = "3.27.0"
+
+[[example]]
+name = "recursive_snark_aggregate_signature"
+required-features = ["future_snark"]
 
 [[bench]]
 name = "multi_sig"
