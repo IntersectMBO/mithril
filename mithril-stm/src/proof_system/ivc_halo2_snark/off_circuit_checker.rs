@@ -1,13 +1,20 @@
 use anyhow::anyhow;
 
 use crate::{
-    AggregationError, AncillaryProofInput, BaseFieldElement, StmResult,
-    circuits::halo2_ivc::{PREIMAGE_SIZE, ProtocolMessagePreimage, types::MessageHash},
+    AggregateVerificationKeyForSnark, AggregationError, AncillaryProofInput, BaseFieldElement,
+    MembershipDigest, StmResult,
+    circuits::halo2_ivc::{
+        PREIMAGE_SIZE, ProtocolMessagePreimage,
+        errors::{EpochTransitionErrorKind, IvcCircuitError},
+        types::MessageHash,
+    },
     proof_system::{
         IvcRollingState,
         ivc_halo2_snark::{
-            errors::IvcProofError, interface::IvcOffCircuitChecker,
-            proof::IvcGenesisBootstrapInput, prover_input_helpers::IvcTransitionType,
+            errors::IvcProofError,
+            interface::IvcOffCircuitChecker,
+            proof::IvcGenesisBootstrapInput,
+            prover_input_helpers::{IvcTransitionType, create_snark_message_for_next_state},
         },
     },
 };
@@ -22,7 +29,10 @@ impl IvcOffCircuitChecker for RealIvcOffCircuitChecker {
         aggregate_verification_key_merkle_root: &[u8],
         ancillary_input: &AncillaryProofInput,
     ) -> StmResult<()> {
-        todo!()
+        self.check_genesis(ancillary_input)?;
+        self.check_rolling_state(msg, aggregate_verification_key_merkle_root, ancillary_input)?;
+        self.check_protocol_message(msg, aggregate_verification_key_merkle_root, ancillary_input)?;
+        Ok(())
     }
 
     fn check_genesis(&self, ancillary_input: &AncillaryProofInput) -> StmResult<()> {
@@ -54,7 +64,7 @@ impl IvcOffCircuitChecker for RealIvcOffCircuitChecker {
             .prover_data()
             .and_then(|prover_data| prover_data.as_ivc_rolling_state());
 
-        ensure_advanceable_rolling_state(rolling_state)?;
+        IvcRollingState::ensure_advanceable_rolling_state(rolling_state)?;
 
         let Some(rolling_state) = rolling_state else {
             return Ok(());
@@ -71,7 +81,7 @@ impl IvcOffCircuitChecker for RealIvcOffCircuitChecker {
             msg,
             transition_type,
         )?;
-        rolling_state.assert_protocol_parameters_unchanged()?;
+        assert_protocol_parameters_unchanged(rolling_state)?;
 
         Ok(())
     }
@@ -82,22 +92,33 @@ impl IvcOffCircuitChecker for RealIvcOffCircuitChecker {
         aggregate_verification_key_merkle_root: &[u8],
         ancillary_input: &AncillaryProofInput,
     ) -> StmResult<()> {
-        todo!()
+        let preimage_bytes: [u8; PREIMAGE_SIZE] = ancillary_input.message_preimage().try_into()?;
+        let preimage = ProtocolMessagePreimage(preimage_bytes);
+
+        let (certificate_message_hash, _) =
+            create_snark_message_for_next_state(aggregate_verification_key_merkle_root, msg)?;
+
+        let recomputed_hash: MessageHash = (&preimage).try_into()?;
+        if recomputed_hash != certificate_message_hash {
+            return Err(IvcProofError::MessagePreimageMismatch.into());
+        }
+
+        Ok(())
     }
 }
 
-/// Rejects a `rolling_state` that carries a genesis state (`step_counter == 0`).
-///
-/// The genesis step is only ever produced internally by the bootstrap path; callers reach it by
-/// passing `rolling_state = None`. A genesis state supplied as a previous step would instead run
-/// a normal step that silently ignores the certificate. Since `genesis_bootstrap` is always
-/// supplied, this is the only remaining invalid context: the previously-possible both-`Some` and
-/// both-`None` misuses are now unrepresentable.
-pub(crate) fn ensure_advanceable_rolling_state(
-    rolling_state: Option<&IvcRollingState>,
+/// Asserts that the rolling state's protocol parameters have not diverged from their
+/// lookahead value. At genesis `protocol_parameters` is zeroed while `next_protocol_parameters`
+/// carries the bootstrap value, so genesis is exempt; every step after that must have the two
+/// equal, since changing protocol parameters between epochs isn't currently supported.
+pub(crate) fn assert_protocol_parameters_unchanged(
+    rolling_state: &IvcRollingState,
 ) -> StmResult<()> {
-    if rolling_state.is_some_and(|rs| rs.is_genesis()) {
-        return Err(IvcProofError::InvalidProvingContext.into());
+    if !rolling_state.is_genesis()
+        && rolling_state.state().protocol_parameters
+            != rolling_state.state().next_protocol_parameters
+    {
+        return Err(IvcProofError::ProtocolParametersChanged.into());
     }
     Ok(())
 }

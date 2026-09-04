@@ -34,4 +34,12 @@ pub(crate) enum IvcProofError {
         "IVC proof rejected: the message used to create the proof is different from the input message"
     )]
     InvalidMessage,
+
+    /// The protocol parameters having been changed
+    #[error("The protocol parameters were changed which would result in an invalid proof")]
+    ProtocolParametersChanged,
+
+    /// The message supplied to the clerk does not match the protocol message preimage
+    #[error("The message supplied to the clerk does not match the protocol message preimage")]
+    MessagePreimageMismatch,
 }
