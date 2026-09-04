@@ -1,5 +1,6 @@
 pub(crate) mod errors;
 mod interface;
+mod off_circuit_checker;
 pub(crate) mod proof;
 mod prover_input;
 mod prover_input_helpers;

@@ -1,7 +1,9 @@
+use std::fmt::Debug;
+
 use midnight_proofs::transcript::Blake2b256;
 
 use crate::{
-    MembershipDigest, StmResult,
+    AggregateVerificationKeyForSnark, AncillaryProofInput, MembershipDigest, StmResult,
     circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey,
     proof_system::{
         IvcRollingState,
@@ -22,4 +24,36 @@ pub(crate) trait IvcChainProver<D: MembershipDigest> {
         &mut self,
         chain_input: IvcChainInput<D>,
     ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)>;
+}
+
+#[cfg_attr(test, mockall::automock)]
+pub(crate) trait IvcOffCircuitChecker: Debug {
+    /// Orchestrates the three category checks below. The only method `Clerk` calls.
+    fn check(
+        &self,
+        msg: &[u8],
+        aggregate_verification_key_merkle_root: &[u8],
+        ancillary_input: &AncillaryProofInput,
+    ) -> StmResult<()>;
+
+    /// Genesis vk present + structurally valid, genesis signature present + preimage sized
+    /// correctly, genesis signature cryptographically verifies.
+    fn check_genesis(&self, ancillary_input: &AncillaryProofInput) -> StmResult<()>;
+
+    /// If there's an existing rolling state: not genesis-shaped, epoch transition valid,
+    /// certificate/state consistency, protocol parameters unchanged. No-ops when there isn't one.
+    fn check_rolling_state(
+        &self,
+        msg: &[u8],
+        aggregate_verification_key_merkle_root: &[u8],
+        ancillary_input: &AncillaryProofInput,
+    ) -> StmResult<()>;
+
+    /// Protocol message preimage is the right size, and hashes to the certificate's message.
+    fn check_protocol_message(
+        &self,
+        msg: &[u8],
+        aggregate_verification_key_merkle_root: &[u8],
+        ancillary_input: &AncillaryProofInput,
+    ) -> StmResult<()>;
 }
