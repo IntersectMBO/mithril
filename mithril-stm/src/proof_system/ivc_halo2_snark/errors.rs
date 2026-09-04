@@ -42,4 +42,10 @@ pub(crate) enum IvcProofError {
     /// The message supplied to the clerk does not match the protocol message preimage
     #[error("The message supplied to the clerk does not match the protocol message preimage")]
     MessagePreimageMismatch,
+
+    /// New accumulator created from the previous ivc proof and new certificate proof does not verify
+    #[error(
+        "New accumulator created from the previous ivc proof and new certificate proof does not verify"
+    )]
+    InvalidNextAccumulator,
 }

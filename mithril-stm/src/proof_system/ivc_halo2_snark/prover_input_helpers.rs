@@ -12,7 +12,8 @@ use crate::{
     proof_system::{
         halo2_snark::build_snark_message,
         ivc_halo2_snark::{
-            prover_setup::IvcProverInputVerificationContext, rolling_state::IvcRollingState,
+            errors::IvcProofError, prover_setup::IvcProverInputVerificationContext,
+            rolling_state::IvcRollingState,
         },
     },
 };
@@ -158,6 +159,12 @@ pub(crate) fn build_next_accumulator(
         previous_ivc_proof_collapsed_accumulator,
     ]);
     next_accumulator.collapse();
+    if !next_accumulator.check(
+        verification_context.verifier_params(),
+        &verification_context.combined_fixed_bases(),
+    ) {
+        return Err(IvcProofError::InvalidNextAccumulator.into());
+    }
     Ok(next_accumulator)
 }
 
