@@ -468,24 +468,26 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
 
         // Next-epoch steps update the rolling state with a fresh Poseidon proof.
         // Same-epoch steps leave the rolling state unchanged (return None).
-        let next_rolling_state =
-            if matches!(prover_input.transition_type, IvcTransitionType::NextEpoch) {
-                let poseidon_bytes = IvcProof::<PoseidonState<CircuitBase>>::prove_with_transcript(
-                    &self.ivc_setup.srs,
-                    &self.ivc_setup.ivc_proving_key,
-                    &circuit_data,
-                    &public_inputs,
-                    &mut self.rng,
-                )?;
-                Some(IvcRollingState::new(
-                    prover_input.next_state.clone(),
-                    IvcProofBytes::new(poseidon_bytes),
-                    prover_input.next_accumulator.clone(),
-                    effective_rolling_state.genesis_signature(),
-                ))
-            } else {
-                None
-            };
+        let next_rolling_state = if matches!(
+            prover_input.transition_type,
+            Some(IvcTransitionType::NextEpoch)
+        ) {
+            let poseidon_bytes = IvcProof::<PoseidonState<CircuitBase>>::prove_with_transcript(
+                &self.ivc_setup.srs,
+                &self.ivc_setup.ivc_proving_key,
+                &circuit_data,
+                &public_inputs,
+                &mut self.rng,
+            )?;
+            Some(IvcRollingState::new(
+                prover_input.next_state.clone(),
+                IvcProofBytes::new(poseidon_bytes),
+                prover_input.next_accumulator.clone(),
+                effective_rolling_state.genesis_signature(),
+            ))
+        } else {
+            None
+        };
 
         let blake2b_bytes = IvcProof::<Blake2b256>::prove_with_transcript(
             &self.ivc_setup.srs,

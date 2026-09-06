@@ -23,10 +23,11 @@ use crate::{
 };
 
 /// Classifies how the incoming certificate advances the chain.
+///
+/// The genesis step has no incoming certificate and so no transition to classify; it is
+/// represented by the absence of one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IvcTransitionType {
-    /// First step of the chain; no certificate is processed.
-    Genesis,
     /// Certificate extends the current epoch.
     SameEpoch,
     /// Certificate starts a new epoch.
@@ -194,9 +195,6 @@ impl IvcRollingState {
             IvcTransitionType::NextEpoch => {
                 self.state.next_merkle_tree_commitment == certificate_merkle_tree_commitment
             }
-            // The classification above never yields `Genesis`: the genesis step is built by
-            // `IvcProverInput::prepare_genesis`, which never validates a transition.
-            IvcTransitionType::Genesis => unreachable!("genesis bypasses transition validation"),
         };
 
         if !parameters_match {

@@ -32,8 +32,9 @@ pub(crate) struct IvcProverInput {
     pub(crate) next_state: State,
     /// Folded accumulator the new step's IVC proof commits to.
     pub(crate) next_accumulator: Accumulator<BlstrsEmulation>,
-    /// Classification of this step (genesis, same-epoch, or next-epoch).
-    pub(crate) transition_type: IvcTransitionType,
+    /// How this step advances the chain, or `None` for the genesis step, which has no
+    /// incoming certificate to classify.
+    pub(crate) transition_type: Option<IvcTransitionType>,
 }
 
 impl IvcProverInput {
@@ -93,7 +94,7 @@ impl IvcProverInput {
             witness,
             next_state,
             next_accumulator,
-            transition_type,
+            transition_type: Some(transition_type),
         })
     }
 
@@ -130,7 +131,7 @@ impl IvcProverInput {
             witness,
             next_state,
             next_accumulator: rolling_state.accumulator().clone(),
-            transition_type: IvcTransitionType::Genesis,
+            transition_type: None,
         })
     }
 }
@@ -342,7 +343,7 @@ mod tests {
         );
         assert_eq!(input.witness, expected_witness);
 
-        assert_eq!(input.transition_type, IvcTransitionType::Genesis);
+        assert_eq!(input.transition_type, None);
         assert_eq!(
             accumulator_bytes(&input.next_accumulator),
             accumulator_bytes(rolling_state.accumulator()),
