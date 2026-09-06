@@ -15,8 +15,8 @@
 //! cached, measured on an Apple Mac Studio; the first run additionally downloads that setup. The
 //! circuit keys are generated on each run, because the example's parameters are sized so it can be
 //! run at all and its keys are therefore not the production ones the key cache recognises.
-//! Verification is cheap by comparison and needs no trusted setup at all: the verifier parameters
-//! are embedded in the crate.
+//! Verification is cheap by comparison and does not download the full SRS: the KZG verifier
+//! parameters derived from the trusted setup are embedded in the crate.
 //!
 //! It is far cheaper than the recursive example, which proves the whole chain behind each
 //! certificate rather than a single certificate on its own.

@@ -5,7 +5,7 @@
 //! protocol.
 //!
 //! The example below aggregates and verifies a certificate with the concatenation proof system,
-//! the one Mithril uses today. The SNARK proof systems follow, behind the `future_snark` feature.
+//! the one currently used by the Mithril network. The SNARK proof systems follow, behind the `future_snark` feature.
 #![doc = concat!(
     "\n## Concatenation aggregate signature\n\n```rust\n",
     include_str!(concat!(

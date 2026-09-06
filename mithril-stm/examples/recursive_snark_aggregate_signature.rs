@@ -18,8 +18,7 @@
 //! from genesis therefore generates five proofs, which is most of what the run below costs.
 //!
 //! Expect roughly four and a half minutes and about 12 GB of peak memory, measured on an Apple Mac
-//! Studio; a machine with 16 GB of RAM will manage it, one with 8 GB will not. The first run
-//! additionally downloads the trusted setup. Every aggregation generates the circuit keys afresh,
+//! Studio. The first run additionally downloads the trusted setup. Every aggregation generates the circuit keys afresh,
 //! because the example's parameters are sized so it can be run at all and its keys are therefore not
 //! the production ones the key cache recognises.
 //!

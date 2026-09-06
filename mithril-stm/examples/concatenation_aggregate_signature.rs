@@ -1,6 +1,6 @@
 //! Aggregating and verifying a certificate with the concatenation proof system.
 //!
-//! This is the proof system Mithril uses today. The certificate carries the individual signatures
+//! This is the proof system currently used by the Mithril network. The certificate carries the individual signatures
 //! that won the lottery, concatenated, together with the batched Merkle paths proving each signer
 //! was registered. Verification is cheap and needs no trusted setup, at the cost of a certificate
 //! that grows with the quorum.
