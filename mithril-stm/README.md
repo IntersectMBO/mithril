@@ -4,7 +4,11 @@
 
 - `mithril-stm` is a Rust implementation of the scheme described in the paper [Mithril: Stake-based Threshold Multisignatures](https://eprint.iacr.org/2021/916.pdf) by Pyrros Chaidos and Aggelos Kiayias.
 - The BLS12-381 signature library [blst](https://github.com/supranational/blst) is used as the backend for the implementation of STM.
-- This implementation supports the _trivial concatenation proof system_ (Section 4.3). Other proof systems such as _Bulletproofs_ or _Halo2_ are not supported in this version.
+- Three proof systems are available:
+  - the _trivial concatenation proof system_ (Section 4.3), currently used by the Mithril network. A certificate carries the winning signatures concatenated, so it grows with the quorum, and verification needs no trusted setup.
+  - a _non-recursive SNARK_ proof system, which replaces those signatures with a single succinct proof of the same statement.
+  - a _recursive SNARK_ proof system, in which each certificate proves the whole chain of certificates behind it, so a verifier checks one proof rather than every certificate since genesis.
+- The two SNARK proof systems are **experimental**. They are gated behind the `future_snark` feature, which also requires one of `rustls` or `native-tls` for the trusted setup download.
 - We implemented the concatenation proof system as batch proofs:
   - Individual signatures do not contain the Merkle path to prove membership of the avk. Instead, it is the role of the aggregator to generate such proofs. This allows for a more efficient implementation of batched membership proofs (or batched Merkle paths).
 - Protocol documentation is given in [Mithril Protocol in depth](https://mithril.network/doc/mithril/mithril-protocol/protocol/).
@@ -64,6 +68,20 @@ cargo test --release
 ```shell
 cargo bench
 ```
+
+## Examples
+
+One runnable example per proof system, each covering aggregation and verification. The sources are also reproduced in the [crate documentation](https://docs.rs/mithril-stm).
+
+| Example                                                                                                                                  | Command                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [Concatenation](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/concatenation_aggregate_signature.rs)             | `cargo run -p mithril-stm --example concatenation_aggregate_signature`                                                |
+| [Non-recursive SNARK](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/non_recursive_snark_aggregate_signature.rs) | `cargo run --release -p mithril-stm --example non_recursive_snark_aggregate_signature --features future_snark,rustls` |
+| [Recursive SNARK](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/recursive_snark_aggregate_signature.rs)         | `cargo run --release -p mithril-stm --example recursive_snark_aggregate_signature --features future_snark,rustls`     |
+
+The concatenation example runs in well under a second. The two SNARK examples generate real proofs and are substantially more demanding; each states its measured cost and its hardware requirement in its own header. The first run of either downloads the trusted setup, unless it is already cached.
+
+[Key registration](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/key_registration.rs) shows the registration phase on its own, treating each participant individually.
 
 ## Benchmarks
 
