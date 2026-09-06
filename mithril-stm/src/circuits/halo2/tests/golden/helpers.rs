@@ -229,7 +229,7 @@ fn decode_merkle_tree_commitment(root_bytes: &[u8]) -> StmResult<MerkleTreeCommi
     let actual = root_bytes.len();
     let root_array: [u8; 32] = root_bytes.try_into().map_err(|_| {
         anyhow!(
-            CertificateCircuitError::InvalidMerkleTreeCommitmentDigestLength {
+            CertificateCircuitError::InvalidMerkleTreeCommitmentBytesLength {
                 actual: checked_len_u32(actual),
             }
         )
@@ -237,7 +237,7 @@ fn decode_merkle_tree_commitment(root_bytes: &[u8]) -> StmResult<MerkleTreeCommi
     BaseFieldElement::from_bytes(&root_array)
         .ok()
         .map(Into::into)
-        .ok_or_else(|| anyhow!(CertificateCircuitError::NonCanonicalMerkleTreeCommitmentDigest))
+        .ok_or_else(|| anyhow!(CertificateCircuitError::NonCanonicalMerkleTreeCommitmentBytes))
 }
 
 fn build_merkle_tree_wrapper(

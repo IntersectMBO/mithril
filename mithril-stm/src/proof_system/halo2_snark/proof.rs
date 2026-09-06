@@ -89,9 +89,9 @@ impl<D: MembershipDigest> SnarkProof<D> {
         snark_verifier_data: &SnarkVerifierData,
         verifier_params: &ParamsVerifierKZG<Bls12>,
     ) -> StmResult<()> {
-        let merkle_tree_commitment_digest =
+        let merkle_tree_commitment_bytes =
             &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root;
-        let proof_message = build_snark_message(merkle_tree_commitment_digest, message)?;
+        let proof_message = build_snark_message(merkle_tree_commitment_bytes, message)?;
         let proof_instance = (proof_message[0].into(), proof_message[1].into());
 
         let verify_result = zk::verify::<CertificateCircuit, PoseidonState<CircuitBase>>(
@@ -128,9 +128,9 @@ impl<D: MembershipDigest> SnarkProof<D> {
         circuit_verification_key: &NonRecursiveCircuitVerifyingKey,
         verifier_params: &ParamsVerifierKZG<Bls12>,
     ) -> StmResult<DualMSM<Bls12>> {
-        let merkle_tree_commitment_digest =
+        let merkle_tree_commitment_bytes =
             &aggregate_verification_key_for_snark.get_merkle_tree_commitment().root;
-        let proof_message = build_snark_message(merkle_tree_commitment_digest, message)?;
+        let proof_message = build_snark_message(merkle_tree_commitment_bytes, message)?;
         let public_inputs: Vec<CircuitBase> =
             vec![proof_message[0].into(), proof_message[1].into()];
 

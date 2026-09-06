@@ -143,10 +143,10 @@ mod tests {
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(20))]
 
-            /// Verifies that `build_snark_message` encodes the Merkle tree commitment digest
+            /// Verifies that `build_snark_message` encodes the Merkle tree commitment bytes
             /// consistently with the circuit's public-input encoding.
             ///
-            /// Both paths decode the digest with `BaseFieldElement::from_bytes`, which rejects a
+            /// Both paths decode those bytes with `BaseFieldElement::from_bytes`, which rejects a
             /// non-canonical encoding: `build_snark_message` on the host side, and
             /// `circuits::halo2::golden::helpers::decode_merkle_tree_commitment` on the circuit
             /// side. This test pins that shared encoding contract, so a change to either decode
@@ -178,7 +178,7 @@ mod tests {
 
                 assert_eq!(
                     root_cpu, root_circuit,
-                    "build_snark_message must decode the digest exactly as the circuit does"
+                    "build_snark_message must decode the commitment bytes exactly as the circuit does"
                 );
             }
         }

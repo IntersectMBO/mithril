@@ -2,7 +2,6 @@ use midnight_proofs::plonk::Error as PlonkError;
 use thiserror::Error;
 
 /// Circuit-scoped errors for Halo2 STM validation and execution.
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum CertificateCircuitError {
     /// Invalid relation parameters: requires `k < m <= 2^LOTTERY_BIT_BOUND - 1`.
@@ -85,13 +84,13 @@ pub enum CertificateCircuitError {
     #[error("Challenge endianness mismatch")]
     ChallengeEndiannessMismatch,
 
-    /// Merkle tree commitment digest has an invalid byte length.
-    #[error("Invalid merkle tree commitment digest length ({actual})")]
-    InvalidMerkleTreeCommitmentDigestLength { actual: u32 },
+    /// Merkle tree commitment bytes have an invalid length.
+    #[error("Invalid merkle tree commitment bytes length ({actual})")]
+    InvalidMerkleTreeCommitmentBytesLength { actual: u32 },
 
-    /// Merkle tree commitment digest is not a canonical base field element encoding.
-    #[error("Non-canonical merkle tree commitment digest")]
-    NonCanonicalMerkleTreeCommitmentDigest,
+    /// Merkle tree commitment bytes are not a canonical base field element encoding.
+    #[error("Non-canonical merkle tree commitment bytes")]
+    NonCanonicalMerkleTreeCommitmentBytes,
 
     /// STM Merkle-path verification failed for selected leaf.
     #[error("Merkle path verification failed")]

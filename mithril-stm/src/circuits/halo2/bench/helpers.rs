@@ -293,12 +293,12 @@ fn bench_merkle_tree_commitment(
     let root_array: [u8; 32] = root_bytes
         .as_slice()
         .try_into()
-        .map_err(|_| anyhow!("bench: merkle tree commitment digest has unexpected length"))?;
+        .map_err(|_| anyhow!("bench: merkle tree commitment bytes have an unexpected length"))?;
     BaseFieldElement::from_bytes(&root_array)
         .ok()
         .map(Into::into)
         .ok_or_else(|| {
-            anyhow!("bench: merkle tree commitment digest is not a canonical field element")
+            anyhow!("bench: merkle tree commitment bytes are not a canonical field element")
         })
 }
 
