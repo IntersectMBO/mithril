@@ -78,7 +78,7 @@ runs:
       run: |
         echo "::group::Cargo publish packages (dry run)"
         echo "Packages to publish (dry-run): '${{ steps.check_versions.outputs.packages_to_deploy }}'"
-        cargo publish ${{ steps.check_versions.outputs.cargo_package_args }} --dry-run ${{ inputs.dry_run_verify == 'true' && '' || '--no-verify' }} --allow-dirty ${{ inputs.publish_args }}
+        cargo publish ${{ steps.check_versions.outputs.cargo_package_args }} --dry-run ${{ inputs.dry_run_verify == 'false' && '--no-verify' || '' }} --allow-dirty ${{ inputs.publish_args }}
         echo "::endgroup::"
 
     - name: Cargo package list
