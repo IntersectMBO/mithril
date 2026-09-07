@@ -1,4 +1,5 @@
 use anyhow::{Context, anyhow};
+use reqwest::Url;
 use slog_scope::{info, warn};
 
 use mithril_common::{
@@ -29,6 +30,7 @@ impl CheckCardanoDatabaseToolkit {
         &self,
         aggregator: &Aggregator,
         client: &mut Client,
+        ipfs_rpc_url: Option<Url>,
         expected_epoch_min: Epoch,
         total_signers_expected: usize,
     ) -> StdResult<()> {
@@ -43,7 +45,7 @@ impl CheckCardanoDatabaseToolkit {
             )
             .await?;
         self.node_producing_cardano_database_digests_map(aggregator).await?;
-        self.verify_with_client(client, &artifact.hash).await?;
+        self.verify_with_client(client, ipfs_rpc_url, &artifact.hash).await?;
 
         Ok(())
     }
@@ -116,7 +118,12 @@ impl CheckCardanoDatabaseToolkit {
         })
     }
 
-    pub async fn verify_with_client(&self, client: &mut Client, hash: &str) -> StdResult<()> {
+    pub async fn verify_with_client(
+        &self,
+        client: &mut Client,
+        ipfs_rpc_url: Option<Url>,
+        hash: &str,
+    ) -> StdResult<()> {
         client
             .run(ClientCommand::CardanoDbV2(CardanoDbV2Command::List))
             .await?;
@@ -145,9 +152,20 @@ impl CheckCardanoDatabaseToolkit {
         client
             .run(ClientCommand::CardanoDbV2(CardanoDbV2Command::Download {
                 hash: hash.to_string(),
+                ipfs_rpc_url: None,
             }))
             .await?;
-        info!("Client downloaded & restored the cardano database snapshot"; "hash" => &hash);
+        info!("Client downloaded & restored the cardano database snapshot"; "hash" => &hash, "storage_source" => "local");
+
+        if ipfs_rpc_url.is_some() {
+            client
+                .run(ClientCommand::CardanoDbV2(CardanoDbV2Command::Download {
+                    hash: hash.to_string(),
+                    ipfs_rpc_url,
+                }))
+                .await?;
+            info!("Client downloaded & restored the cardano database snapshot"; "hash" => &hash, "storage_source" => "ipfs");
+        }
 
         Ok(())
     }

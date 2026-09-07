@@ -119,6 +119,7 @@ pub struct MithrilInfrastructure {
     artifacts_dir: PathBuf,
     bin_dir: PathBuf,
     devnet: Devnet,
+    ipfs_devnet: Option<IpfsDevnet>,
     aggregators: Vec<Aggregator>,
     signers: Vec<Signer>,
     relay_aggregators: Vec<RelayAggregator>,
@@ -222,6 +223,7 @@ impl MithrilInfrastructure {
             bin_dir: config.bin_dir.to_path_buf(),
             artifacts_dir: config.artifacts_dir.to_path_buf(),
             devnet: config.devnet.clone(),
+            ipfs_devnet: config.ipfs_devnet.clone(),
             aggregators: all_aggregators,
             signers,
             relay_aggregators,
@@ -602,6 +604,10 @@ impl MithrilInfrastructure {
 
     pub fn relay_passives(&self) -> &[RelayPassive] {
         &self.relay_passives
+    }
+
+    pub fn client_ipfs_node(&self) -> Option<&KuboNode> {
+        self.ipfs_devnet.as_ref().and_then(|d| d.topology().last())
     }
 
     pub fn chain_observer(&self) -> Arc<dyn ChainObserver> {
