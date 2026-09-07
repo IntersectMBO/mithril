@@ -214,17 +214,22 @@ impl IvcRollingState {
         ))
     }
 
-    /// Rejects a `rolling_state` that carries a genesis state (`step_counter == 0`).
-    ///
-    /// The genesis step is only ever produced internally by the bootstrap path; callers reach it by
-    /// passing `rolling_state = None`. A genesis state supplied as a previous step would instead run
-    /// a normal step that silently ignores the certificate. Since `genesis_bootstrap` is always
-    /// supplied, this is the only remaining invalid context: the previously-possible both-`Some` and
-    /// both-`None` misuses are now unrepresentable.
-    pub(crate) fn ensure_advanceable_rolling_state(
-        rolling_state: Option<&IvcRollingState>,
-    ) -> StmResult<()> {
-        if rolling_state.is_some_and(|rs| rs.is_genesis()) {
+    /// Asserts that the rolling state's protocol parameters have not diverged from their
+    /// lookahead value. At genesis `protocol_parameters` is zeroed while `next_protocol_parameters`
+    /// carries the bootstrap value, so genesis is exempt; every step after that must have the two
+    /// equal, since changing protocol parameters between epochs isn't currently supported.
+    pub(crate) fn assert_protocol_parameters_unchanged(&self) -> StmResult<()> {
+        if !self.is_genesis()
+            && self.state().protocol_parameters != self.state().next_protocol_parameters
+        {
+            return Err(IvcProofError::ProtocolParametersChanged.into());
+        }
+        Ok(())
+    }
+
+    /// Rejects `self` if that carries a genesis state (`step_counter == 0`).
+    pub(crate) fn ensure_advanceable(&self) -> StmResult<()> {
+        if self.is_genesis() {
             return Err(IvcProofError::InvalidProvingContext.into());
         }
         Ok(())
@@ -343,13 +348,15 @@ mod tests {
             .expect("genesis signature should be produced");
 
         // `None` bootstraps from genesis internally: accepted.
-        IvcRollingState::ensure_advanceable_rolling_state(None)
+        None.map(IvcRollingState::ensure_advanceable)
+            .transpose()
             .expect("None must be accepted (genesis bootstrap)");
 
         // A genesis rolling state (`step_counter == 0`) must be rejected.
         let genesis_state = IvcRollingState::genesis(genesis_signature, &[]);
         assert!(genesis_state.is_genesis());
-        let err = IvcRollingState::ensure_advanceable_rolling_state(Some(&genesis_state))
+        let err = genesis_state
+            .ensure_advanceable()
             .expect_err("genesis rolling state must be rejected");
         assert_eq!(
             err.downcast_ref::<IvcProofError>(),
@@ -367,7 +374,8 @@ mod tests {
             chain_state.genesis_signature,
         );
         assert!(!advanced_state.is_genesis());
-        IvcRollingState::ensure_advanceable_rolling_state(Some(&advanced_state))
+        advanced_state
+            .ensure_advanceable()
             .expect("a non-genesis rolling state must be accepted");
     }
 

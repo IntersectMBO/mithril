@@ -1,7 +1,8 @@
 use anyhow::anyhow;
 
 use crate::{
-    AggregationError, AncillaryProofInput, BaseFieldElement, StmResult,
+    AggregateVerificationKeyForSnark, AggregationError, AncillaryProofInput, BaseFieldElement,
+    MembershipDigest, StmResult,
     circuits::halo2_ivc::{PREIMAGE_SIZE, ProtocolMessagePreimage, types::MessageHash},
     proof_system::{
         IvcRollingState,
@@ -16,22 +17,15 @@ use crate::{
 /// Production implementation of `IvcOffCircuitChecker`. Stateless: every check is a pure
 /// function of its arguments, so no setup or trusted material is needed to construct one.
 #[derive(Debug)]
-pub(crate) struct RealIvcOffCircuitChecker;
+pub(crate) struct MithrilIvcOffCircuitChecker;
 
-impl IvcOffCircuitChecker for RealIvcOffCircuitChecker {
+impl<D: MembershipDigest> IvcOffCircuitChecker<D> for MithrilIvcOffCircuitChecker {
     fn off_circuit_check(
         &self,
         msg: &[u8],
-        aggregate_verification_key_merkle_root: &[u8],
+        aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
         ancillary_input: &AncillaryProofInput,
     ) -> StmResult<()> {
-        self.check_genesis(ancillary_input)?;
-        self.check_rolling_state(msg, aggregate_verification_key_merkle_root, ancillary_input)?;
-        self.check_protocol_message(msg, aggregate_verification_key_merkle_root, ancillary_input)?;
-        Ok(())
-    }
-
-    fn check_genesis(&self, ancillary_input: &AncillaryProofInput) -> StmResult<()> {
         let genesis_data = ancillary_input.genesis_data();
 
         let genesis_verifying_key = genesis_data
@@ -40,81 +34,38 @@ impl IvcOffCircuitChecker for RealIvcOffCircuitChecker {
             .ok_or_else(|| anyhow!(AggregationError::MissingGenesisVerificationKey))?;
         genesis_verifying_key.is_valid()?;
 
-        let genesis_message: MessageHash = genesis_data.genesis_message_preimage().try_into()?;
-
-        let genesis_bootstrap: IvcGenesisBootstrapInput = genesis_data.try_into()?;
-        genesis_bootstrap.genesis_signature.verify(
-            &[BaseFieldElement::from(genesis_message.as_field())],
-            &genesis_verifying_key,
-        )?;
-        Ok(())
-    }
-
-    fn check_rolling_state(
-        &self,
-        msg: &[u8],
-        aggregate_verification_key_merkle_root: &[u8],
-        ancillary_input: &AncillaryProofInput,
-    ) -> StmResult<()> {
         let rolling_state = ancillary_input
             .prover_data()
             .and_then(|prover_data| prover_data.as_ivc_rolling_state());
+        rolling_state.map(IvcRollingState::ensure_advanceable).transpose()?;
 
-        IvcRollingState::ensure_advanceable_rolling_state(rolling_state)?;
+        let preimage_bytes: [u8; PREIMAGE_SIZE] = ancillary_input.message_preimage().try_into()?;
+        let preimage = ProtocolMessagePreimage(preimage_bytes);
 
-        let Some(rolling_state) = rolling_state else {
-            return Ok(());
+        if let Some(rolling_state) = rolling_state {
+            let (transition_type, certificate_message_hash, certificate_merkle_tree_commitment) =
+                rolling_state.validate_transition(&preimage, aggregate_verification_key, msg)?;
+            let preimage_message_hash: MessageHash = (&preimage).try_into()?;
+            if preimage_message_hash != certificate_message_hash {
+                return Err(IvcProofError::MessagePreimageMismatch.into());
+            }
+            rolling_state.assert_protocol_parameters_unchanged()?;
+        } else {
+            let genesis_message: MessageHash =
+                genesis_data.genesis_message_preimage().try_into()?;
+
+            let genesis_bootstrap: IvcGenesisBootstrapInput = genesis_data.try_into()?;
+            genesis_bootstrap.genesis_signature.verify(
+                &[BaseFieldElement::from(genesis_message.as_field())],
+                &genesis_verifying_key,
+            )?;
         };
 
         let preimage_bytes: [u8; PREIMAGE_SIZE] = ancillary_input.message_preimage().try_into()?;
         let preimage = ProtocolMessagePreimage(preimage_bytes);
 
-        let (transition_type, certificate_message_hash, certificate_merkle_tree_commitment) =
-            rolling_state.validate_transition(
-                &preimage,
-                aggregate_verification_key_merkle_root,
-                msg,
-            )?;
         rolling_state.assert_protocol_parameters_unchanged()?;
 
-        Ok(())
-    }
-
-    fn check_protocol_message(
-        &self,
-        msg: &[u8],
-        aggregate_verification_key_merkle_root: &[u8],
-        ancillary_input: &AncillaryProofInput,
-    ) -> StmResult<()> {
-        let preimage_bytes: [u8; PREIMAGE_SIZE] = ancillary_input.message_preimage().try_into()?;
-        let preimage = ProtocolMessagePreimage(preimage_bytes);
-
-        let (certificate_message_hash, _) =
-            create_snark_message_for_next_state(aggregate_verification_key_merkle_root, msg)?;
-
-        let recomputed_hash: MessageHash = (&preimage).try_into()?;
-        if recomputed_hash != certificate_message_hash {
-            return Err(IvcProofError::MessagePreimageMismatch.into());
-        }
-
-        Ok(())
-    }
-}
-
-impl RealIvcOffCircuitChecker {
-    /// Asserts that the rolling state's protocol parameters have not diverged from their
-    /// lookahead value. At genesis `protocol_parameters` is zeroed while `next_protocol_parameters`
-    /// carries the bootstrap value, so genesis is exempt; every step after that must have the two
-    /// equal, since changing protocol parameters between epochs isn't currently supported.
-    pub(crate) fn assert_protocol_parameters_unchanged(
-        rolling_state: &IvcRollingState,
-    ) -> StmResult<()> {
-        if !rolling_state.is_genesis()
-            && rolling_state.state().protocol_parameters
-                != rolling_state.state().next_protocol_parameters
-        {
-            return Err(IvcProofError::ProtocolParametersChanged.into());
-        }
         Ok(())
     }
 }
@@ -125,11 +76,14 @@ mod tests {
     use rand_core::SeedableRng;
 
     use crate::{
-        AncillaryGenesisData, AncillaryProverData,
+        AncillaryGenesisData, AncillaryProverData, MithrilMembershipDigest,
         circuits::halo2_ivc::{
             tests::common::asset_readers::{
+                load_embedded_first_certificate_in_epoch_asset,
                 load_embedded_following_certificate_in_epoch_asset,
-                load_embedded_genesis_benchmark_fixture, load_embedded_recursive_chain_state_asset,
+                load_embedded_genesis_benchmark_fixture,
+                load_embedded_next_epoch_step_output_asset,
+                load_embedded_recursive_chain_state_asset,
             },
             types::ProtocolParametersHash,
         },
@@ -170,6 +124,11 @@ mod tests {
         (signature, verification_key)
     }
 
+    // Creates an avk with a zero root
+    fn avk_with_zero_root() -> AggregateVerificationKeyForSnark<MithrilMembershipDigest> {
+        AggregateVerificationKeyForSnark::from_bytes(&[0u8; 40]).unwrap()
+    }
+
     mod check_genesis {
         use super::*;
 
@@ -178,8 +137,8 @@ mod tests {
             let genesis_data = AncillaryGenesisData::new(vec![0u8; PREIMAGE_SIZE], None, None);
             let ancillary_input = genesis_only_ancillary_input(genesis_data);
 
-            let err = RealIvcOffCircuitChecker
-                .check_genesis(&ancillary_input)
+            let err = MithrilIvcOffCircuitChecker
+                .off_circuit_check(&[0u8; 32], &avk_with_zero_root(), &ancillary_input)
                 .expect_err("missing genesis verification key must be rejected");
 
             assert_eq!(
@@ -197,8 +156,8 @@ mod tests {
                 AncillaryGenesisData::new(vec![0u8; PREIMAGE_SIZE], None, Some(invalid_key));
             let ancillary_input = genesis_only_ancillary_input(genesis_data);
 
-            RealIvcOffCircuitChecker
-                .check_genesis(&ancillary_input)
+            MithrilIvcOffCircuitChecker
+                .off_circuit_check(&[0u8; 32], &avk_with_zero_root(), &ancillary_input)
                 .expect_err("invalid genesis verification key must be rejected");
         }
 
@@ -213,8 +172,8 @@ mod tests {
             );
             let ancillary_input = genesis_only_ancillary_input(genesis_data);
 
-            let err = RealIvcOffCircuitChecker
-                .check_genesis(&ancillary_input)
+            let err = MithrilIvcOffCircuitChecker
+                .off_circuit_check(&[0u8; 32], &avk_with_zero_root(), &ancillary_input)
                 .expect_err("missing genesis signature must be rejected");
 
             assert_eq!(
@@ -236,8 +195,8 @@ mod tests {
             );
             let ancillary_input = genesis_only_ancillary_input(genesis_data);
 
-            RealIvcOffCircuitChecker
-                .check_genesis(&ancillary_input)
+            MithrilIvcOffCircuitChecker
+                .off_circuit_check(&[0u8; 32], &avk_with_zero_root(), &ancillary_input)
                 .expect_err("a genesis signature over the wrong message must be rejected");
         }
 
@@ -245,17 +204,26 @@ mod tests {
         fn accepts_valid_genesis_data() {
             let genesis_fixture = load_embedded_genesis_benchmark_fixture()
                 .expect("genesis benchmark fixture should load");
+            let first_step = load_embedded_first_certificate_in_epoch_asset()
+                .expect("first-step certificate asset should load");
 
             let genesis_data = AncillaryGenesisData::new(
                 genesis_fixture.genesis_protocol_message_preimage.to_vec(),
                 Some(genesis_fixture.genesis_signature),
                 Some(genesis_fixture.genesis_verification_key),
             );
-            let ancillary_input = genesis_only_ancillary_input(genesis_data);
+            let ancillary_input =
+                AncillaryProofInput::new(None, genesis_data, first_step.message_preimage.to_vec());
 
-            RealIvcOffCircuitChecker
-                .check_genesis(&ancillary_input)
-                .expect("consistent genesis data should pass");
+            MithrilIvcOffCircuitChecker
+                .off_circuit_check(
+                    &first_step.message,
+                    &first_step.aggregate_verification_key_merkle_root,
+                    &ancillary_input,
+                )
+                .expect(
+                    "consistent genesis data paired with a matching first certificate should pass",
+                );
         }
     }
 
@@ -263,19 +231,6 @@ mod tests {
         use crate::circuits::halo2_ivc::state::State;
 
         use super::*;
-
-        #[test]
-        fn accepts_when_no_rolling_state() {
-            let ancillary_input = AncillaryProofInput::new(
-                None,
-                AncillaryGenesisData::dummy(),
-                vec![0u8; PREIMAGE_SIZE],
-            );
-
-            RealIvcOffCircuitChecker
-                .check_rolling_state(&[0u8; 32], &[0u8; 32], &ancillary_input)
-                .expect("no rolling state means nothing to check here");
-        }
 
         #[test]
         fn rejects_genesis_shaped_existing_rolling_state() {
@@ -288,8 +243,8 @@ mod tests {
                 vec![0u8; PREIMAGE_SIZE],
             );
 
-            RealIvcOffCircuitChecker
-                .check_rolling_state(&[0u8; 32], &[0u8; 32], &ancillary_input)
+            MithrilIvcOffCircuitChecker
+                .off_circuit_check(&[0u8; 32], &avk_with_zero_root(), &ancillary_input)
                 .expect_err("a genesis-shaped existing rolling state must be rejected");
         }
 
@@ -305,13 +260,16 @@ mod tests {
                 step.message_preimage.to_vec(),
             );
 
-            RealIvcOffCircuitChecker
-                .check_rolling_state(
+            MithrilIvcOffCircuitChecker
+                .off_circuit_check(
                     &step.message,
                     &step.aggregate_verification_key_merkle_root,
                     &ancillary_input,
                 )
-                .expect("consistent same-epoch step should pass");
+                .expect(
+                    "consistent same-epoch step should pass every check, including the \
+                     message-hash match",
+                );
         }
 
         #[test]
@@ -345,8 +303,8 @@ mod tests {
                 step.message_preimage.to_vec(),
             );
 
-            RealIvcOffCircuitChecker
-                .check_rolling_state(
+            MithrilIvcOffCircuitChecker
+                .off_circuit_check(
                     &step.message,
                     &step.aggregate_verification_key_merkle_root,
                     &ancillary_input,
@@ -362,11 +320,16 @@ mod tests {
         fn rejects_wrong_size_preimage() {
             let step = load_embedded_following_certificate_in_epoch_asset()
                 .expect("same-epoch step output asset should load");
-            let ancillary_input =
-                AncillaryProofInput::new(None, AncillaryGenesisData::dummy(), vec![0u8; 3]);
+            let ancillary_input = AncillaryProofInput::new(
+                Some(AncillaryProverData::IvcSnark(
+                    rolling_state_from_chain_state(),
+                )),
+                AncillaryGenesisData::dummy(),
+                vec![0u8; 3],
+            );
 
-            RealIvcOffCircuitChecker
-                .check_protocol_message(
+            MithrilIvcOffCircuitChecker
+                .off_circuit_check(
                     &step.message,
                     &step.aggregate_verification_key_merkle_root,
                     &ancillary_input,
@@ -378,38 +341,28 @@ mod tests {
         fn rejects_mismatched_message_hash() {
             let step = load_embedded_following_certificate_in_epoch_asset()
                 .expect("same-epoch step output asset should load");
+
+            // Flip a byte outside the three decoded slots (next merkle-tree commitment, next
+            // protocol parameters, current epoch) so assert_correct_parameters and
+            // assert_protocol_parameters_unchanged still pass, isolating the message-hash check.
+            let mut corrupted_preimage = step.message_preimage;
+            corrupted_preimage[0] ^= 0xFF;
+
             let ancillary_input = AncillaryProofInput::new(
-                None,
+                Some(AncillaryProverData::IvcSnark(
+                    rolling_state_from_chain_state(),
+                )),
                 AncillaryGenesisData::dummy(),
-                vec![0u8; PREIMAGE_SIZE],
+                corrupted_preimage.to_vec(),
             );
 
-            RealIvcOffCircuitChecker
-                .check_protocol_message(
+            MithrilIvcOffCircuitChecker
+                .off_circuit_check(
                     &step.message,
                     &step.aggregate_verification_key_merkle_root,
                     &ancillary_input,
                 )
                 .expect_err("mismatched preimage must be rejected");
-        }
-
-        #[test]
-        fn accepts_matching_message_hash() {
-            let step = load_embedded_following_certificate_in_epoch_asset()
-                .expect("same-epoch step output asset should load");
-            let ancillary_input = AncillaryProofInput::new(
-                None,
-                AncillaryGenesisData::dummy(),
-                step.message_preimage.to_vec(),
-            );
-
-            RealIvcOffCircuitChecker
-                .check_protocol_message(
-                    &step.message,
-                    &step.aggregate_verification_key_merkle_root,
-                    &ancillary_input,
-                )
-                .expect("consistent message/preimage should pass");
         }
     }
 
@@ -432,12 +385,40 @@ mod tests {
             step.message_preimage.to_vec(),
         );
 
-        RealIvcOffCircuitChecker
+        MithrilIvcOffCircuitChecker
             .off_circuit_check(
                 &step.message,
                 &step.aggregate_verification_key_merkle_root,
                 &ancillary_input,
             )
             .expect("a fully consistent request should pass every check");
+    }
+
+    #[test]
+    fn check_accepts_a_fully_consistent_next_epoch_request() {
+        let step = load_embedded_next_epoch_step_output_asset()
+            .expect("next-epoch step output asset should load");
+        let genesis_fixture = load_embedded_genesis_benchmark_fixture()
+            .expect("genesis benchmark fixture should load");
+        let genesis_data = AncillaryGenesisData::new(
+            genesis_fixture.genesis_protocol_message_preimage.to_vec(),
+            Some(genesis_fixture.genesis_signature),
+            Some(genesis_fixture.genesis_verification_key),
+        );
+        let ancillary_input = AncillaryProofInput::new(
+            Some(AncillaryProverData::IvcSnark(
+                rolling_state_from_chain_state(),
+            )),
+            genesis_data,
+            step.message_preimage.to_vec(),
+        );
+
+        MithrilIvcOffCircuitChecker
+            .off_circuit_check(
+                &step.message,
+                &step.aggregate_verification_key_merkle_root,
+                &ancillary_input,
+            )
+            .expect("a fully consistent next-epoch request should pass every check");
     }
 }

@@ -1,11 +1,16 @@
 //! Tests that `trivial_accumulator` has the expected structure, verifiable through
 //! its public-input encoding.
 
+use std::collections::BTreeMap;
+
 use midnight_circuits::types::Instantiable;
 
 use crate::circuits::halo2_ivc::{
-    AssignedAccumulator,
-    accumulator::{check_dual_msm_matches_fixed_bases, trivial_accumulator},
+    AssignedAccumulator, EmulatedCurve,
+    accumulator::{
+        check_accumulator_fixed_bases_present, check_dual_msm_matches_fixed_bases,
+        trivial_accumulator,
+    },
     errors::IvcCircuitError,
     tests::common::{
         asset_readers::{
@@ -95,4 +100,35 @@ fn wrong_prefix_for_fixed_bases_fails_check_for_dual_msm_names() {
         ivc_error,
         IvcCircuitError::MsmFixedBasesNamesMismatch { .. }
     ));
+}
+
+#[test]
+fn missing_fixed_base_name_fails_check_for_accumulator_names() {
+    let accumulator = trivial_accumulator(&["a".to_string(), "b".to_string()]);
+
+    let fixed_bases: BTreeMap<String, EmulatedCurve> =
+        BTreeMap::from([("a".to_string(), EmulatedCurve::default())]);
+
+    let err = check_accumulator_fixed_bases_present(&accumulator, &fixed_bases)
+        .expect_err("a fixed base missing from the map should be rejected");
+    let ivc_error = err
+        .downcast::<IvcCircuitError>()
+        .expect("error chain should carry IvcCircuitError");
+    assert!(matches!(
+        ivc_error,
+        IvcCircuitError::MsmFixedBasesNamesMismatch { name } if name == "b"
+    ));
+}
+
+#[test]
+fn all_fixed_base_names_present_succeeds_for_accumulator_names() {
+    let accumulator = trivial_accumulator(&["a".to_string(), "b".to_string()]);
+
+    let fixed_bases: BTreeMap<String, EmulatedCurve> = BTreeMap::from([
+        ("a".to_string(), EmulatedCurve::default()),
+        ("b".to_string(), EmulatedCurve::default()),
+    ]);
+
+    check_accumulator_fixed_bases_present(&accumulator, &fixed_bases)
+        .expect("every fixed base name referenced by the accumulator is present in the map");
 }

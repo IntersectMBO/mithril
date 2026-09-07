@@ -153,10 +153,10 @@ impl From<[u8; PREIMAGE_SIZE]> for ProtocolMessagePreimage {
     }
 }
 
-impl TryInto<MessageHash> for &ProtocolMessagePreimage {
+impl TryFrom<&ProtocolMessagePreimage> for MessageHash {
     type Error = anyhow::Error;
-    fn try_into(self) -> StmResult<MessageHash> {
-        let preimage_hash: [u8; 32] = Sha256::digest(self.0).into();
+    fn try_from(preimage: &ProtocolMessagePreimage) -> StmResult<Self> {
+        let preimage_hash: [u8; 32] = Sha256::digest(preimage.0).into();
         let message_field_elem = BaseFieldElement::from_raw(&preimage_hash)?.0;
         Ok(MessageHash::from_field(message_field_elem))
     }

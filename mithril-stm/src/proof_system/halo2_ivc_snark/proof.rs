@@ -410,8 +410,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
         genesis_bootstrap: &IvcGenesisBootstrapInput,
         rolling_state: Option<&IvcRollingState>,
     ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)> {
-        IvcRollingState::ensure_advanceable_rolling_state(rolling_state)?;
-
+        rolling_state.map(IvcRollingState::ensure_advanceable).transpose()?;
         // `rolling_state = None` is the first certificate: bootstrap from genesis internally,
         // then continue with the seeded state. Otherwise advance from the supplied state.
         let effective_rolling_state: &IvcRollingState = match rolling_state {

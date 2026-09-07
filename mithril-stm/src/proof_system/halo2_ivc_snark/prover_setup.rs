@@ -263,9 +263,11 @@ impl IvcProverInputVerificationContext {
 
     /// Returns the union of the certificate and IVC fixed-base maps, keyed by name.
     pub(crate) fn combined_fixed_bases(&self) -> BTreeMap<String, G1Projective> {
-        let mut combined = self.certificate_fixed_bases.clone();
-        combined.extend(self.ivc_fixed_bases.clone());
-        combined
+        self.certificate_fixed_bases
+            .iter()
+            .chain(self.ivc_fixed_bases.iter())
+            .map(|(name, base)| (name.clone(), *base))
+            .collect()
     }
 
     /// Wrap the certificate proof's prepared `DualMSM` into a collapsed accumulator on

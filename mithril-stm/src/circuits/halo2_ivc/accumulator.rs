@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use ff::Field;
+use midnight_circuits::verifier::SelfEmulation;
 use midnight_proofs::poly::{CommitmentLabel, kzg::msm::DualMSM};
 
 use crate::{StmResult, circuits::halo2_ivc::errors::IvcCircuitError};
@@ -77,6 +78,25 @@ pub(crate) fn check_dual_msm_matches_fixed_bases(
             _ => continue,
         };
         if fixed_bases.get(&name) != Some(base) {
+            return Err(IvcCircuitError::MsmFixedBasesNamesMismatch { name }.into());
+        }
+    }
+    Ok(())
+}
+
+/// Checks that every fixed-base name the `accumulator`` references is present in `fixed_bases`.
+/// Pre-flight check for `Accumulator::check`, which panics (not returns false) on a missing name.
+pub(crate) fn check_accumulator_fixed_bases_present<S: SelfEmulation>(
+    accumulator: &Accumulator<S>,
+    fixed_bases: &BTreeMap<String, S::C>,
+) -> StmResult<()> {
+    let names = accumulator
+        .lhs()
+        .fixed_base_scalars()
+        .into_keys()
+        .chain(accumulator.rhs().fixed_base_scalars().into_keys());
+    for name in names {
+        if !fixed_bases.contains_key(&name) {
             return Err(IvcCircuitError::MsmFixedBasesNamesMismatch { name }.into());
         }
     }

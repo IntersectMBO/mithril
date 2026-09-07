@@ -5,6 +5,8 @@ use midnight_proofs::poly::kzg::msm::DualMSM;
 use crate::{
     AggregateVerificationKeyForSnark, MembershipDigest, SnarkProof, StmResult,
     circuits::halo2_ivc::{
+        accumulator::check_accumulator_fixed_bases_present,
+        errors::{EpochTransitionErrorKind, IvcCircuitError},
         state::{Global, State},
         types::{MerkleTreeCommitment, MessageHash, ProtocolMessagePreimage},
     },
@@ -106,9 +108,15 @@ pub(crate) fn build_next_accumulator(
         previous_ivc_proof_collapsed_accumulator,
     ]);
     next_accumulator.collapse();
+    let combined_fixed_bases = verification_context.combined_fixed_bases();
+    check_accumulator_fixed_bases_present(&next_accumulator, &combined_fixed_bases)?;
+    // The certificate and previous-IVC-proof accumulators are already individually
+    // pairing-checked above; by bilinearity their fold is too. This only fires against
+    // `rolling_state.accumulator()`, the one input never independently re-checked here —
+    // defense-in-depth for a rolling state loaded from persisted/untrusted storage.
     if !next_accumulator.check(
         verification_context.verifier_params(),
-        &verification_context.combined_fixed_bases(),
+        &combined_fixed_bases,
     ) {
         return Err(IvcProofError::InvalidNextAccumulator.into());
     }
