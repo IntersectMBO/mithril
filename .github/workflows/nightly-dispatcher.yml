@@ -26,6 +26,25 @@ jobs:
   test-e2e:
     uses: ./.github/workflows/test-e2e.yml
 
+  publish-crate-dry-run-with-verification:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Publish package to crates.io
+        uses: ./.github/workflows/actions/publish-rust-crates
+        with:
+          dry_run: "true"
+          dry_run_verify: "true"
+          publish_args: "--features rustls"
+          packages: mithril-stm, mithril-build-script, mithril-common, mithril-aggregator-client, mithril-aggregator-discovery, mithril-cardano-node-internal-database, mithril-client, mithril-merkle-tree
+
   notify-on-failure:
     uses: ./.github/workflows/test-notify-on-failure.yml
     needs:
@@ -35,6 +54,7 @@ jobs:
         test-client,
         test-rust,
         test-e2e,
+        publish-crate-dry-run-with-verification,
       ]
     if: failure()
     secrets: inherit
