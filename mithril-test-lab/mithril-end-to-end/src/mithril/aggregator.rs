@@ -1,5 +1,4 @@
 use std::cmp;
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,12 +15,13 @@ use tokio::sync::RwLock;
 use mithril_cardano_node_chain::chain_observer::{ChainObserver, PallasChainObserver};
 use mithril_common::{CardanoNetwork, StdResult, entities};
 
-use crate::utils::{MithrilCommand, NodeVersion};
+use crate::utils::{EnvVars, MithrilCommand, NodeVersion};
 use crate::{
     ANCILLARY_MANIFEST_SECRET_KEY, AggregateSignatureType, DEVNET_DMQ_MAGIC_ID, DEVNET_MAGIC_ID,
     DmqNodeFlavor, ERA_MARKERS_SECRET_KEY, ERA_MARKERS_VERIFICATION_KEY, FullNode,
-    GENESIS_SECRET_KEY, GENESIS_VERIFICATION_KEY, PROTOCOL_CONFIGURATION_MARKERS_SECRET_KEY,
-    PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY, RetryableDevnetError,
+    GENESIS_SECRET_KEY, GENESIS_VERIFICATION_KEY, KuboNode,
+    PROTOCOL_CONFIGURATION_MARKERS_SECRET_KEY, PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY,
+    RetryableDevnetError,
 };
 
 #[derive(Debug)]
@@ -30,6 +30,7 @@ pub struct AggregatorConfig<'a> {
     pub name: &'a str,
     pub server_port: u64,
     pub full_node: &'a FullNode,
+    pub ipfs_kubo_node: Option<&'a KuboNode>,
     pub cardano_cli_path: &'a Path,
     pub work_dir: &'a Path,
     pub store_dir: &'a Path,
@@ -106,7 +107,7 @@ impl Aggregator {
         let public_server_url = format!("http://localhost:{server_port_parameter}/aggregator");
         let cardano_node_version = aggregator_config.cardano_node_version.to_string();
         let aggregate_signature_type = aggregator_config.aggregate_signature_type.to_string();
-        let mut env = HashMap::from([
+        let mut env = EnvVars::from([
             ("NETWORK", "devnet"),
             ("NETWORK_MAGIC", &magic_id),
             ("DMQ_NETWORK_MAGIC", &dmq_magic_id),
@@ -193,6 +194,16 @@ impl Aggregator {
         if aggregator_config.use_dmq {
             env.insert("DMQ_NODE_SOCKET_PATH", dmq_node_socket_path.as_str());
         }
+        if let Some(node) = aggregator_config.ipfs_kubo_node {
+            env.insert(
+                "IPFS_RPC_SERVER_CONFIG",
+                format!(
+                    r#"{{"url": "{}", "mfs_folder_name": "mithril-snapshots"}}"#,
+                    node.rpc_url
+                ),
+            );
+        }
+
         let args = vec![
             "--db-directory",
             aggregator_config.full_node.db_path.to_str().unwrap(),
