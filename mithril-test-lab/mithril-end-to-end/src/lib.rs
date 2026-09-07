@@ -10,6 +10,7 @@ pub use mithril::*;
 pub use utils::{CompatibilityChecker, CompatibilityCheckerError, NodeVersion};
 
 use clap::ValueEnum;
+
 /// The flavor of DMQ node to use in the tests.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum DmqNodeFlavor {

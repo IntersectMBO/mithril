@@ -18,7 +18,8 @@ use crate::mithril::relay_signer::RelaySignerConfiguration;
 use crate::toolkit::ScenarioToolkit;
 use crate::{
     AggregateSignatureType, Aggregator, AggregatorConfig, Client, DEVNET_MAGIC_ID, Devnet,
-    DmqNodeFlavor, FullNode, PoolNode, RelayAggregator, RelayPassive, RelaySigner, Signer,
+    DmqNodeFlavor, FullNode, IpfsDevnet, KuboNode, PoolNode, RelayAggregator, RelayPassive,
+    RelaySigner, Signer,
 };
 
 use super::signer::SignerConfig;
@@ -37,6 +38,7 @@ pub struct MithrilInfrastructureConfig {
     pub number_of_signers: u8,
     pub server_port: u64,
     pub devnet: Devnet,
+    pub ipfs_devnet: Option<IpfsDevnet>,
     pub work_dir: PathBuf,
     pub store_dir: PathBuf,
     pub artifacts_dir: PathBuf,
@@ -78,6 +80,7 @@ impl MithrilInfrastructureConfig {
             number_of_signers: 1,
             server_port: 8080,
             devnet: Devnet::default(),
+            ipfs_devnet: None,
             work_dir: PathBuf::from("/tmp/work"),
             store_dir: PathBuf::from("/tmp/store"),
             artifacts_dir: PathBuf::from("/tmp/artifacts"),
@@ -140,6 +143,10 @@ impl MithrilInfrastructure {
         if config.use_dmq && config.dmq_node_flavor == Some(DmqNodeFlavor::Haskell) {
             config.devnet.run_dmq().await?;
         }
+        if let Some(ipfs_devnet) = &config.ipfs_devnet {
+            ipfs_devnet.start().await?;
+        }
+
         let devnet_topology = config.devnet.topology();
         let aggregator_cardano_nodes = &devnet_topology.full_nodes;
         let signer_cardano_nodes = &devnet_topology.pool_nodes;

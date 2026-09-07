@@ -27,15 +27,13 @@ use mithril_common::{
     messages::SignedEntityTypeDiscriminantsMessage,
 };
 use mithril_doc::GenerateDocCommands;
+use mithril_end_to_end::scenario::{FullScenario, MinimalScenario, RunOnlyScenario};
 use mithril_end_to_end::toolkit::{ScenarioToolkit, ScenarioToolkitContext};
 use mithril_end_to_end::{
     AggregateSignatureType, Aggregator, Client, CompatibilityChecker, CompatibilityCheckerError,
-    Devnet, DevnetBootstrapArgs, DmqNodeFlavor, MithrilInfrastructure, MithrilInfrastructureConfig,
-    NodeVersion, RelaySigner, RetryableDevnetError, Signer,
-};
-use mithril_end_to_end::{
-    ProtocolConfiguration,
-    scenario::{FullScenario, MinimalScenario, RunOnlyScenario},
+    Devnet, DevnetBootstrapArgs, DmqNodeFlavor, IpfsDevnet, IpfsDevnetBootstrapArgs,
+    MithrilInfrastructure, MithrilInfrastructureConfig, NodeVersion, ProtocolConfiguration,
+    RelaySigner, RetryableDevnetError, Signer,
 };
 
 /// Default signed entity types used by scenarios that support multiple entities, such as Full and RunOnly.
@@ -187,6 +185,14 @@ struct NetworkTopologyArgs {
     /// Haskell DMQ node version
     #[clap(long)]
     dmq_node_version: Option<String>,
+
+    /// Enable upload and download to an IPFS devnet
+    #[clap(long)]
+    use_ipfs: bool,
+
+    /// Directory containing scripts to bootstrap an IPFS devnet
+    #[clap(long, default_value = "./ipfs_devnet")]
+    ipfs_devnet_scripts_directory: PathBuf,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -421,6 +427,7 @@ impl From<StdResult<()>> for AppResult {
 
 struct App {
     devnet: Arc<Mutex<Option<Devnet>>>,
+    ipfs_devnet: Arc<Mutex<Option<IpfsDevnet>>>,
     infrastructure: Arc<Mutex<Option<Arc<MithrilInfrastructure>>>>,
 }
 
@@ -428,6 +435,7 @@ impl App {
     fn new() -> Self {
         Self {
             devnet: Arc::new(Mutex::new(None)),
+            ipfs_devnet: Arc::new(Mutex::new(None)),
             infrastructure: Arc::new(Mutex::new(None)),
         }
     }
@@ -512,6 +520,21 @@ impl App {
         .await?;
         *self.devnet.lock().await = Some(devnet.clone());
 
+        let ipfs_devnet = if args.network_topology.use_ipfs {
+            let devnet = IpfsDevnet::bootstrap(&IpfsDevnetBootstrapArgs {
+                devnet_scripts_dir: args.network_topology.ipfs_devnet_scripts_directory,
+                // One per aggregator + one for the Mithril Client
+                number_of_nodes: args.network_topology.number_of_aggregators + 1,
+                swarm_target_dir: work_dir.join("ipfs_devnet"),
+                kubo_version: None,
+            })
+            .await?;
+            Some(devnet)
+        } else {
+            None
+        };
+        *self.ipfs_devnet.lock().await = ipfs_devnet.clone();
+
         let startup_protocol_configuration =
             Self::build_startup_protocol_configuration(&args.mithril.aggregate_signature_type);
 
@@ -523,6 +546,7 @@ impl App {
                     number_of_signers: args.network_topology.number_of_signers,
                     server_port,
                     devnet: devnet.clone(),
+                    ipfs_devnet: ipfs_devnet.clone(),
                     work_dir,
                     store_dir,
                     artifacts_dir,
@@ -639,6 +663,7 @@ impl App {
 
 struct AppStopper {
     devnet: Arc<Mutex<Option<Devnet>>>,
+    ipfs_devnet: Arc<Mutex<Option<IpfsDevnet>>>,
     infrastructure: Arc<Mutex<Option<Arc<MithrilInfrastructure>>>>,
 }
 
@@ -646,6 +671,7 @@ impl AppStopper {
     pub fn new(app: &App) -> Self {
         Self {
             devnet: app.devnet.clone(),
+            ipfs_devnet: app.ipfs_devnet.clone(),
             infrastructure: app.infrastructure.clone(),
         }
     }
@@ -658,7 +684,12 @@ impl AppStopper {
         }
         if let Some(devnet) = self.devnet.lock().await.as_ref() {
             let _ = devnet.stop().await.inspect_err(|e| {
-                error!("Failed to stop devnet: {}", e);
+                error!("Failed to stop Cardano devnet: {}", e);
+            });
+        }
+        if let Some(ipfs_devnet) = self.ipfs_devnet.lock().await.as_ref() {
+            let _ = ipfs_devnet.stop().await.inspect_err(|e| {
+                error!("Failed to stop IPFS devnet: {}", e);
             });
         }
     }
