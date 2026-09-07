@@ -5,6 +5,10 @@ inputs:
   dry_run:
     description: Dry run will not publish to crates.io, just test it.
     required: true
+  dry_run_verify:
+    description: Build verification step when running the dry run publish.
+    required: false
+    default: "false"
   packages:
     description: comma separated list of rust crates to publish.
     required: true
@@ -74,7 +78,7 @@ runs:
       run: |
         echo "::group::Cargo publish packages (dry run)"
         echo "Packages to publish (dry-run): '${{ steps.check_versions.outputs.packages_to_deploy }}'"
-        cargo publish ${{ steps.check_versions.outputs.cargo_package_args }} --dry-run --no-verify --allow-dirty ${{ inputs.publish_args }}
+        cargo publish ${{ steps.check_versions.outputs.cargo_package_args }} --dry-run ${{ inputs.dry_run_verify == 'true' && '' || '--no-verify' }} --allow-dirty ${{ inputs.publish_args }}
         echo "::endgroup::"
 
     - name: Cargo package list
