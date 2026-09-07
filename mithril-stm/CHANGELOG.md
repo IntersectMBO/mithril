@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.13 (09-07-2026)
+
+### Changed
+
+- Aligned the naming of the recursive (IVC) and non-recursive SNARK stacks without changing proving or verifying behaviour: `StmCertificateCircuit` to `CertificateCircuit`, `IvcSnarkProverSetup` to `IvcProverSetup`, `StmCircuitError` to `CertificateCircuitError`, and `SnarkError` to `SnarkProofError` in its own module.
+- Renamed `proof_system::ivc_halo2_snark` to `proof_system::halo2_ivc_snark`, matching the suffix of `circuits::halo2_ivc`, and made its submodules private with the module's surface re-exported explicitly.
+- Completed the `merkle_root` to `merkle_tree_commitment` naming on the non-recursive side, spelling the byte form `merkle_tree_commitment_bytes`, so that the two error variants became `InvalidMerkleTreeCommitmentBytesLength` and `NonCanonicalMerkleTreeCommitmentBytes`.
+- Merged the IVC transition classification and validation into `IvcRollingState::validate_transition`, dropped the genesis transition variant it could not produce, and built the certificate's SNARK message once per step instead of twice.
+- Renamed the IVC I/O traits to `WriteWithFormat` and `ReadWithFormat`, and gave `GenesisMessagePreimage` a private field with `From`, `as_bytes` and `TryFrom` accessors, keeping `Deref` and `PartialEq<[u8]>` so that callers are unaffected.
+
 ## 0.12.12 (09-02-2026)
 
 ### Added

@@ -14,7 +14,7 @@ use crate::{
     proof_system::{
         NonDeterministicSnarkProverFactory, SnarkAggregateSignatureProver, SnarkClerk,
         SnarkProverFactory, SnarkVerifierData,
-        ivc_halo2_snark::{proof::IvcChainInput, verifier_setup::IvcVerifierData},
+        halo2_ivc_snark::{IvcChainStepBundle, IvcVerifierData},
     },
 };
 use crate::{
@@ -150,7 +150,7 @@ impl<D: MembershipDigest> Clerk<D> {
         sigs: &[SingleSignature],
         msg: &[u8],
     ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
-        let certificate_verifying_key = prover.verification_key().clone();
+        let certificate_verifying_key = prover.verifying_key().clone();
         let snark_proof =
             prover.aggregate_signatures(snark_clerk, sigs, msg).with_context(|| {
                 format!(
@@ -181,7 +181,7 @@ impl<D: MembershipDigest> Clerk<D> {
             .snark_prover_factory
             .snark_aggregate_signature_prover(&snark_clerk.parameters)?;
 
-        let certificate_verifying_key = snark_prover.verification_key().clone();
+        let certificate_verifying_key = snark_prover.verifying_key().clone();
         let certificate_proof = snark_prover
             .aggregate_signatures(snark_clerk, sigs, msg)
             .with_context(|| {
@@ -193,7 +193,7 @@ impl<D: MembershipDigest> Clerk<D> {
         drop(snark_prover);
 
         let mut ivc_prover = self.snark_prover_factory.ivc_chain_prover(&snark_clerk.parameters)?;
-        let chain_input = IvcChainInput::try_new(
+        let step_bundle = IvcChainStepBundle::try_new(
             certificate_proof,
             msg,
             snark_clerk.compute_aggregate_verification_key_for_snark(),
@@ -201,8 +201,8 @@ impl<D: MembershipDigest> Clerk<D> {
             &certificate_verifying_key,
             ivc_prover.verifying_key(),
         )?;
-        let genesis_protocol_message_hash = chain_input.global.genesis_message;
-        let (ivc_proof, next_rolling_state) = ivc_prover.advance_chain(chain_input)?;
+        let genesis_protocol_message_hash = step_bundle.global.genesis_message;
+        let (ivc_proof, next_rolling_state) = ivc_prover.advance_chain(step_bundle)?;
         let verifier_data = IvcVerifierData::new(
             genesis_protocol_message_hash,
             certificate_verifying_key,
@@ -294,10 +294,9 @@ mod tests {
         proof_system::{
             IvcRollingState, MERKLE_TREE_DEPTH_FOR_SNARK, MockSnarkAggregateSignatureProver,
             MockSnarkProverFactory, SnarkClerk,
-            ivc_halo2_snark::{
-                MockIvcChainProver, build_standard_rolling_state,
-                proof::{IvcChainInput, IvcProof},
-                verifier_setup::IvcVerifierData,
+            halo2_ivc_snark::{
+                IvcChainStepBundle, IvcProof, IvcVerifierData, MockIvcChainProver,
+                build_standard_rolling_state,
             },
         },
         protocol::aggregate_signature::tests::{
@@ -311,7 +310,7 @@ mod tests {
 
     type D = MithrilMembershipDigest;
 
-    type ChainInputPredicate = Box<dyn Fn(&IvcChainInput<D>) -> bool + Send>;
+    type StepBundlePredicate = Box<dyn Fn(&IvcChainStepBundle<D>) -> bool + Send>;
 
     type ParametersPredicate = Box<dyn Fn(&Parameters) -> bool + Send>;
 
@@ -340,9 +339,9 @@ mod tests {
     enum IvcProverBehavior {
         /// Advances the chain and returns the given next rolling state.
         AdvancesChain(Option<IvcRollingState>),
-        /// Advances the chain only if the given predicate holds for the built `IvcChainInput`,
+        /// Advances the chain only if the given predicate holds for the built `IvcChainStepBundle`,
         /// then returns the given next rolling state.
-        AdvancesChainWithFunction(ChainInputPredicate, Option<IvcRollingState>),
+        AdvancesChainWithFunction(StepBundlePredicate, Option<IvcRollingState>),
         /// The factory fails to build it, with the given root cause.
         FailsToBuild(&'static str),
         /// It is built but fails to advance the chain, with the given root cause.
@@ -435,7 +434,7 @@ mod tests {
                     ivc_prover
                         .expect_advance_chain()
                         .once()
-                        .withf(move |chain_input| predicate(chain_input))
+                        .withf(move |step_bundle| predicate(step_bundle))
                         .return_once(move |_| Ok((dummy_ivc_proof(), rolling_state)));
                     wire_ivc_prover(&mut factory, ivc_prover);
                 }
@@ -487,7 +486,7 @@ mod tests {
     ) -> MockSnarkAggregateSignatureProver<D> {
         let mut snark_prover = MockSnarkAggregateSignatureProver::new();
         snark_prover
-            .expect_verification_key()
+            .expect_verifying_key()
             .return_const(certificate_verifying_key());
         snark_prover
             .expect_aggregate_signatures()
@@ -796,10 +795,10 @@ mod tests {
 
         let clerk = MockProverFactory::new()
             .ivc_prover(IvcProverBehavior::AdvancesChainWithFunction(
-                Box::new(move |chain_input| {
-                    chain_input.message == message
-                        && chain_input.certificate_proof.to_bytes().unwrap() == expected_proof_bytes
-                        && chain_input.aggregate_verification_key == expected_avk
+                Box::new(move |step_bundle| {
+                    step_bundle.message == message
+                        && step_bundle.certificate_proof.to_bytes().unwrap() == expected_proof_bytes
+                        && step_bundle.aggregate_verification_key == expected_avk
                 }),
                 None,
             ))

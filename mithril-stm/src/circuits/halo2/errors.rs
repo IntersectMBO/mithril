@@ -2,9 +2,8 @@ use midnight_proofs::plonk::Error as PlonkError;
 use thiserror::Error;
 
 /// Circuit-scoped errors for Halo2 STM validation and execution.
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
-pub enum StmCircuitError {
+pub enum CertificateCircuitError {
     /// Invalid relation parameters: requires `k < m <= 2^LOTTERY_BIT_BOUND - 1`.
     #[error(
         "Circuit::validate_parameters failed: expected k < m <= 2^LOTTERY_BIT_BOUND - 1, got k={k}, m={m}"
@@ -85,13 +84,13 @@ pub enum StmCircuitError {
     #[error("Challenge endianness mismatch")]
     ChallengeEndiannessMismatch,
 
-    /// Merkle root digest has an invalid byte length.
-    #[error("Invalid merkle root digest length ({actual})")]
-    InvalidMerkleRootDigestLength { actual: u32 },
+    /// Merkle tree commitment bytes have an invalid length.
+    #[error("Invalid merkle tree commitment bytes length ({actual})")]
+    InvalidMerkleTreeCommitmentBytesLength { actual: u32 },
 
-    /// Merkle root digest is not a canonical base field element encoding.
-    #[error("Non-canonical merkle root digest")]
-    NonCanonicalMerkleRootDigest,
+    /// Merkle tree commitment bytes are not a canonical base field element encoding.
+    #[error("Non-canonical merkle tree commitment bytes")]
+    NonCanonicalMerkleTreeCommitmentBytes,
 
     /// STM Merkle-path verification failed for selected leaf.
     #[error("Merkle path verification failed")]
@@ -118,7 +117,7 @@ pub enum StmCircuitError {
     Backend(String),
 }
 
-impl From<PlonkError> for StmCircuitError {
+impl From<PlonkError> for CertificateCircuitError {
     fn from(error: PlonkError) -> Self {
         Self::Backend(error.to_string())
     }
@@ -133,8 +132,8 @@ mod tests {
         let plonk_error = PlonkError::ConstraintSystemFailure;
         let expected_message = plonk_error.to_string();
         assert_eq!(
-            StmCircuitError::from(plonk_error),
-            StmCircuitError::Backend(expected_message),
+            CertificateCircuitError::from(plonk_error),
+            CertificateCircuitError::Backend(expected_message),
         );
     }
 }

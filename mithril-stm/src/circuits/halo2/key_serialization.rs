@@ -8,7 +8,7 @@ use midnight_zk_stdlib::{MidnightPK, MidnightVK};
 use crate::StmResult;
 use crate::codec::{TryFromBytes, TryToBytes};
 
-use super::circuit::StmCertificateCircuit;
+use super::circuit::CertificateCircuit;
 
 /// Serde format used for the on-disk / in-cache production keys.
 const KEY_SERDE_FORMAT: SerdeFormat = SerdeFormat::RawBytes;
@@ -33,7 +33,7 @@ impl TryFromBytes for MidnightVK {
 }
 
 // Certificate circuit proving key.
-impl TryToBytes for MidnightPK<StmCertificateCircuit> {
+impl TryToBytes for MidnightPK<CertificateCircuit> {
     fn to_bytes_vec(&self) -> StmResult<Vec<u8>> {
         let mut bytes = Vec::new();
         self.write(&mut bytes, KEY_SERDE_FORMAT)
@@ -42,10 +42,10 @@ impl TryToBytes for MidnightPK<StmCertificateCircuit> {
     }
 }
 
-impl TryFromBytes for MidnightPK<StmCertificateCircuit> {
+impl TryFromBytes for MidnightPK<CertificateCircuit> {
     fn try_from_bytes(bytes: &[u8]) -> StmResult<Self> {
         let mut reader = bytes;
-        MidnightPK::<StmCertificateCircuit>::read(&mut reader, KEY_SERDE_FORMAT)
+        MidnightPK::<CertificateCircuit>::read(&mut reader, KEY_SERDE_FORMAT)
             .with_context(|| "Failed to deserialize the certificate proving key")
     }
 }
@@ -83,7 +83,7 @@ mod tests {
             phi_f: 0.2,
         };
         let merkle_tree_depth = 4;
-        let circuit = StmCertificateCircuit::try_new(&parameters, merkle_tree_depth)
+        let circuit = CertificateCircuit::try_new(&parameters, merkle_tree_depth)
             .expect("certificate circuit should build");
         let circuit_degree = MidnightCircuit::from_relation(&circuit, None).k();
         let srs = ParamsKZG::unsafe_setup(circuit_degree, ChaCha20Rng::seed_from_u64(42));
@@ -91,7 +91,7 @@ mod tests {
         let proving_key = zk::setup_pk(&circuit, &verifying_key);
 
         let first = proving_key.to_bytes_vec().expect("serialize should succeed");
-        let restored = MidnightPK::<StmCertificateCircuit>::try_from_bytes(&first)
+        let restored = MidnightPK::<CertificateCircuit>::try_from_bytes(&first)
             .expect("re-deserialize should succeed");
         let second = restored.to_bytes_vec().expect("re-serialize should succeed");
         assert_eq!(

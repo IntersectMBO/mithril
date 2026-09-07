@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as Sha2Digest, Sha256};
 
 use crate::AggregateVerificationKeyForSnark;
-use crate::circuits::halo2::circuit::StmCertificateCircuit;
+use crate::circuits::halo2::circuit::CertificateCircuit;
 use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_DEGREE;
 use crate::circuits::halo2_ivc::accumulator::fixed_bases_and_names_from_verifying_key;
@@ -100,7 +100,7 @@ impl Default for AssetPaths {
 #[derive(Debug)]
 pub(crate) struct AssetGenerationSetup {
     /// Deterministic certificate relation used by the golden generators.
-    pub(crate) certificate_relation: StmCertificateCircuit,
+    pub(crate) certificate_relation: CertificateCircuit,
     /// Verification key for the trusted genesis signature.
     pub(crate) genesis_verification_key: SchnorrVerificationKey,
     /// Hash of the deterministic genesis protocol message.
@@ -185,7 +185,7 @@ pub(crate) fn build_deterministic_params(circuit_degree: u32) -> ParamsKZG<Bls12
 /// Loads the shared unsafe SRS of degree `circuit_degree` from the content-keyed test cache,
 /// generating and persisting it on a miss.
 ///
-/// This is the entry [`IvcSnarkProverSetup::build_for_test`] writes: both derive from the same
+/// This is the entry [`IvcProverSetup::build_for_test`] writes: both derive from the same
 /// seed, so the generation cost is paid once per degree across the whole suite.
 fn load_shared_unsafe_srs(circuit_degree: u32) -> ParamsKZG<Bls12> {
     let srs_cache = FileMutex::for_shared_cache("unsafe-srs", &[&UNSAFE_SRS_SEED.to_le_bytes()]);
@@ -614,7 +614,7 @@ fn assemble_asset_generation_setup(fixture: CachedSignerFixture) -> AssetGenerat
     let number_of_lotteries = QUORUM_SIZE * 10;
 
     // Rebuilt on every call: it is derived from constants, not from the random generator.
-    let certificate_relation = StmCertificateCircuit::try_new(
+    let certificate_relation = CertificateCircuit::try_new(
         &Parameters {
             k: QUORUM_SIZE as u64,
             m: number_of_lotteries as u64,

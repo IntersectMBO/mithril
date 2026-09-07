@@ -89,7 +89,7 @@ mod tests {
     };
     use crate::circuits::halo2::types::{CircuitBase, CircuitCurve};
     use crate::circuits::halo2::witness::{
-        CircuitWitnessEntry, MerkleRoot, SignedMessageWithoutPrefix,
+        CircuitWitnessEntry, MerkleTreeCommitment, SignedMessageWithoutPrefix,
     };
     use crate::signature_scheme::{
         BaseFieldElement, DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE, PrimeOrderProjectivePoint,
@@ -99,7 +99,11 @@ mod tests {
 
     impl_focused_test_relation!(
         UniqueSchnorrSignatureRelation,
-        (CircuitWitnessEntry, MerkleRoot, SignedMessageWithoutPrefix),
+        (
+            CircuitWitnessEntry,
+            MerkleTreeCommitment,
+            SignedMessageWithoutPrefix
+        ),
         error = Error,
         jubjub_poseidon_used_chips(),
         |std_lib, layouter, witness| {

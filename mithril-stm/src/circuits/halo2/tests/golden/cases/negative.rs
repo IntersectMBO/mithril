@@ -1,6 +1,6 @@
 use crate::LotteryIndex;
 use crate::circuits::common::merkle::Position;
-use crate::circuits::halo2::errors::StmCircuitError;
+use crate::circuits::halo2::errors::CertificateCircuitError;
 use crate::circuits::halo2::gadgets::LOTTERY_BIT_BOUND;
 use crate::circuits::halo2::tests::golden::helpers::{
     LOTTERIES_PER_K, LeafSelector, StmCircuitScenario, assert_proof_rejected_by_verifier,
@@ -22,7 +22,7 @@ fn k_not_less_than_m() {
     let error = assert_proving_circuit_error(result);
     assert!(matches!(
         error,
-        StmCircuitError::InvalidCircuitParameters { k: K, m: M }
+        CertificateCircuitError::InvalidCircuitParameters { k: K, m: M }
     ));
 }
 
@@ -35,7 +35,7 @@ fn m_exceeds_lottery_bit_bound() {
     let error = assert_proving_circuit_error(result);
     assert!(matches!(
         error,
-        StmCircuitError::InvalidCircuitParameters { k: K, m: M }
+        CertificateCircuitError::InvalidCircuitParameters { k: K, m: M }
     ));
 }
 
@@ -267,7 +267,7 @@ mod slow {
         let error = assert_proving_circuit_error(prove_and_verify_result(&env, scenario));
         assert_eq!(
             error,
-            StmCircuitError::LotteryIndexOutOfBounds {
+            CertificateCircuitError::LotteryIndexOutOfBounds {
                 index: m as LotteryIndex,
                 m,
             }
@@ -297,7 +297,7 @@ mod slow {
         let error = assert_proving_circuit_error(prove_and_verify_result(&env, scenario));
         assert_eq!(
             error,
-            StmCircuitError::LotteryIndexTooLarge {
+            CertificateCircuitError::LotteryIndexTooLarge {
                 index: too_large,
                 max_supported,
             }
@@ -386,7 +386,7 @@ mod slow {
         let error = assert_proving_circuit_error(prove_and_verify_result(&env, scenario));
         assert_eq!(
             error,
-            StmCircuitError::MerkleSiblingLengthMismatch {
+            CertificateCircuitError::MerkleSiblingLengthMismatch {
                 expected_depth,
                 actual: expected_depth - 1,
             }
@@ -421,7 +421,7 @@ mod slow {
         let error = assert_proving_circuit_error(prove_and_verify_result(&env, scenario));
         assert_eq!(
             error,
-            StmCircuitError::MerkleSiblingLengthMismatch {
+            CertificateCircuitError::MerkleSiblingLengthMismatch {
                 expected_depth,
                 actual: expected_depth + 1,
             }
@@ -565,7 +565,7 @@ mod slow {
         let error = assert_proving_circuit_error(prove_and_verify_result(&env, scenario));
         assert_eq!(
             error,
-            StmCircuitError::WitnessLengthMismatch {
+            CertificateCircuitError::WitnessLengthMismatch {
                 expected_k: K,
                 actual: 2,
             }
@@ -596,7 +596,7 @@ mod slow {
         let error = assert_proving_circuit_error(prove_and_verify_result(&env, scenario));
         assert_eq!(
             error,
-            StmCircuitError::WitnessLengthMismatch {
+            CertificateCircuitError::WitnessLengthMismatch {
                 expected_k: K,
                 actual: 4,
             }

@@ -13,18 +13,17 @@ use crate::{
             MerkleTreeCommitment, MessageHash, ProtocolMessagePreimage, ProtocolParametersHash,
         },
     },
-    proof_system::ivc_halo2_snark::{
+    proof_system::halo2_ivc_snark::{
         prover_input_helpers::{
-            IvcTransitionType, build_next_accumulator, build_next_state,
-            create_snark_message_for_next_state, verify_certificate_proof,
+            build_next_accumulator, build_next_state, verify_certificate_proof,
         },
         prover_setup::IvcProverInputVerificationContext,
-        rolling_state::IvcRollingState,
+        rolling_state::{IvcRollingState, IvcTransitionType},
     },
 };
 
-/// Outputs of the IVC prover's preparation step, consumed by the circuit-construction and
-/// proof-generation steps.
+/// Prover input for the IVC circuit: what the preparation step derives from an
+/// `IvcChainStepBundle`, consumed by the circuit-construction and proof-generation steps.
 #[derive(Debug)]
 pub(crate) struct IvcProverInput {
     /// In-circuit witness for the new step.
@@ -33,16 +32,17 @@ pub(crate) struct IvcProverInput {
     pub(crate) next_state: State,
     /// Folded accumulator the new step's IVC proof commits to.
     pub(crate) next_accumulator: Accumulator<BlstrsEmulation>,
-    /// Classification of this step (genesis, same-epoch, or next-epoch).
-    pub(crate) transition_type: IvcTransitionType,
+    /// How this step advances the chain, or `None` for the genesis step, which has no
+    /// incoming certificate to classify.
+    pub(crate) transition_type: Option<IvcTransitionType>,
 }
 
 impl IvcProverInput {
     /// Advances the chain state by one step and bundles the in-circuit witness, the
     /// next state, and the next folded accumulator.
     ///
-    /// First classifies the requested step via [`IvcTransitionType::try_compute_transition_type`], then
-    /// validates the epoch advance against the rolling chain state.
+    /// First classifies the requested step and validates it against the rolling chain state via
+    /// [`IvcRollingState::validate_transition`].
     /// The certificate proof is verifier-prepared, then the certificate and previous IVC accumulators are
     /// folded into the chain's accumulator.
     pub(crate) fn prepare<D: MembershipDigest>(
@@ -54,17 +54,12 @@ impl IvcProverInput {
         rolling_state: &IvcRollingState,
         verification_context: &IvcProverInputVerificationContext,
     ) -> StmResult<Self> {
-        let transition_type = IvcTransitionType::try_compute_transition_type(
-            rolling_state,
-            protocol_message_preimage,
-        )?;
-
-        rolling_state.assert_correct_parameters(
-            protocol_message_preimage,
-            aggregate_verification_key_for_snark,
-            message,
-            transition_type,
-        )?;
+        let (transition_type, certificate_message_hash, certificate_merkle_tree_commitment) =
+            rolling_state.validate_transition(
+                protocol_message_preimage,
+                aggregate_verification_key_for_snark,
+                message,
+            )?;
 
         let certificate_dual_msm = verify_certificate_proof(
             certificate_proof,
@@ -72,9 +67,6 @@ impl IvcProverInput {
             aggregate_verification_key_for_snark,
             verification_context,
         )?;
-
-        let (certificate_message_hash, certificate_merkle_tree_commitment) =
-            create_snark_message_for_next_state(aggregate_verification_key_for_snark, message)?;
 
         let next_state = build_next_state(
             transition_type,
@@ -102,7 +94,7 @@ impl IvcProverInput {
             witness,
             next_state,
             next_accumulator,
-            transition_type,
+            transition_type: Some(transition_type),
         })
     }
 
@@ -139,7 +131,7 @@ impl IvcProverInput {
             witness,
             next_state,
             next_accumulator: rolling_state.accumulator().clone(),
-            transition_type: IvcTransitionType::Genesis,
+            transition_type: None,
         })
     }
 }
@@ -157,7 +149,7 @@ mod tests {
             PREIMAGE_CURRENT_EPOCH_BYTES, PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
             PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, PREIMAGE_SIZE,
             errors::{EpochTransitionErrorKind, IvcCircuitError},
-            io::Write as IvcWrite,
+            io::WriteWithFormat,
             tests::common::{
                 asset_readers::{
                     load_embedded_following_certificate_in_epoch_asset,
@@ -173,7 +165,7 @@ mod tests {
                 IvcCircuitVerificationKeyRepresentation, IvcProofBytes, StepCounter,
             },
         },
-        proof_system::ivc_halo2_snark::prover_setup::IvcProverInputVerificationContext,
+        proof_system::halo2_ivc_snark::prover_setup::IvcProverInputVerificationContext,
         signature_scheme::SchnorrSignatureError,
     };
 
@@ -351,7 +343,7 @@ mod tests {
         );
         assert_eq!(input.witness, expected_witness);
 
-        assert_eq!(input.transition_type, IvcTransitionType::Genesis);
+        assert_eq!(input.transition_type, None);
         assert_eq!(
             accumulator_bytes(&input.next_accumulator),
             accumulator_bytes(rolling_state.accumulator()),

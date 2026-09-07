@@ -15,9 +15,7 @@ use crate::{BaseFieldElement, SchnorrSigningKey, circuits::halo2_ivc::PREIMAGE_S
 #[cfg(feature = "future_snark")]
 use crate::{
     SchnorrVerificationKey, StandardSchnorrSignature,
-    proof_system::{
-        IvcRollingState, SnarkVerifierData, ivc_halo2_snark::verifier_setup::IvcVerifierData,
-    },
+    proof_system::{IvcRollingState, SnarkVerifierData, halo2_ivc_snark::IvcVerifierData},
     protocol::aggregate_signature::GenesisMessagePreimage,
 };
 use crate::{StmResult, codec};
@@ -162,7 +160,7 @@ impl AncillaryGenesisData {
     ) -> Self {
         Self {
             #[cfg(feature = "future_snark")]
-            genesis_message_preimage: GenesisMessagePreimage(genesis_message_preimage),
+            genesis_message_preimage: GenesisMessagePreimage::from(genesis_message_preimage),
             #[cfg(feature = "future_snark")]
             genesis_schnorr_signature,
             #[cfg(feature = "future_snark")]
@@ -368,7 +366,7 @@ mod tests {
         let genesis_data = AncillaryGenesisData::new(preimage.clone(), None, None);
 
         assert_eq!(
-            genesis_data.genesis_message_preimage().0,
+            genesis_data.genesis_message_preimage().as_bytes(),
             preimage.as_slice()
         );
         assert!(genesis_data.genesis_schnorr_signature().is_none());

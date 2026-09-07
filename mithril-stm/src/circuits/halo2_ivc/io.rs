@@ -1,6 +1,7 @@
 //! Byte serialization of the recursive circuit's rolling accumulator and its MSMs.
 //!
-//! The `Write` / `Read` traits define the on-the-wire layout. All length prefixes are little-endian `u32`.
+//! The `WriteWithFormat` / `ReadWithFormat` traits define the on-the-wire layout.
+//! All length prefixes are little-endian `u32`.
 //!
 //! - `Msm`: `bases.len()` then each base via the format-aware `write` (honours `SerdeFormat`);
 //!   `scalars.len()` then each scalar via raw `write_raw`; `fixed_base_scalars.len()` then, per entry,
@@ -13,14 +14,14 @@ use midnight_curves::serde::SerdeObject;
 use midnight_proofs::utils::{SerdeFormat, helpers::ProcessedSerdeObject};
 use std::{collections::BTreeMap, io};
 
-pub trait Write {
+pub trait WriteWithFormat {
     fn write<W: io::Write>(&self, w: &mut W, format: SerdeFormat) -> io::Result<()>;
 }
-pub trait Read: Sized {
+pub trait ReadWithFormat: Sized {
     fn read<R: io::Read>(r: &mut R, format: SerdeFormat) -> io::Result<Self>;
 }
 
-impl Write for Msm<RecursiveEmulation> {
+impl WriteWithFormat for Msm<RecursiveEmulation> {
     fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
         let bases = self.bases();
         let scalars = self.scalars();
@@ -48,7 +49,7 @@ impl Write for Msm<RecursiveEmulation> {
     }
 }
 
-impl Read for Msm<RecursiveEmulation> {
+impl ReadWithFormat for Msm<RecursiveEmulation> {
     fn read<R: io::Read>(
         reader: &mut R,
         format: SerdeFormat,
@@ -93,14 +94,14 @@ impl Read for Msm<RecursiveEmulation> {
     }
 }
 
-impl Write for Accumulator<RecursiveEmulation> {
+impl WriteWithFormat for Accumulator<RecursiveEmulation> {
     fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
         self.lhs().write(writer, format)?;
         self.rhs().write(writer, format)
     }
 }
 
-impl Read for Accumulator<RecursiveEmulation> {
+impl ReadWithFormat for Accumulator<RecursiveEmulation> {
     fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> io::Result<Self> {
         let lhs = Msm::read(reader, format)?;
         let rhs = Msm::read(reader, format)?;

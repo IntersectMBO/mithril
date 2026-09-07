@@ -5,7 +5,7 @@ use midnight_circuits::types::{AssignedBit, AssignedNative, AssignedNativePoint}
 use midnight_proofs::circuit::Layouter;
 use midnight_zk_stdlib::ZkStdLib;
 
-use crate::circuits::halo2::errors::StmCircuitError;
+use crate::circuits::halo2::errors::CertificateCircuitError;
 use crate::circuits::halo2::types::{CircuitBase, CircuitCurve};
 
 /// Assigned inputs required to verify one Merkle authentication path inside the circuit.
@@ -14,7 +14,7 @@ pub(crate) struct MerklePathInputs<'a> {
     pub(crate) verification_key: &'a AssignedNativePoint<CircuitCurve>,
     /// Assigned lottery target value stored in the Merkle leaf.
     pub(crate) lottery_target_value: &'a AssignedNative<CircuitBase>,
-    /// Assigned public Merkle root committed by the statement.
+    /// Assigned public Merkle tree commitment carried by the statement.
     pub(crate) merkle_tree_commitment: &'a AssignedNative<CircuitBase>,
     /// Assigned sibling hashes for each Merkle path level.
     pub(crate) merkle_siblings: &'a [AssignedNative<CircuitBase>],
@@ -29,7 +29,7 @@ pub(crate) fn verify_merkle_path(
     std_lib: &ZkStdLib,
     layouter: &mut impl Layouter<CircuitBase>,
     inputs: MerklePathInputs<'_>,
-) -> Result<(), StmCircuitError> {
+) -> Result<(), CertificateCircuitError> {
     let verification_key_x = std_lib.jubjub().x_coordinate(inputs.verification_key);
     let verification_key_y = std_lib.jubjub().y_coordinate(inputs.verification_key);
     let leaf = std_lib.poseidon(
@@ -75,22 +75,18 @@ pub(crate) fn verify_merkle_path(
     //
     // The first sibling can never be padding so there is not need to check for a 0 value.
     // This saves a few constraints per loop.
-    let first_sibling =
-        inputs
-            .merkle_siblings
-            .first()
-            .ok_or(StmCircuitError::MerkleSiblingLengthMismatch {
-                expected_depth: inputs.merkle_tree_depth,
-                actual: 0,
-            })?;
-    let first_position =
-        inputs
-            .merkle_positions
-            .first()
-            .ok_or(StmCircuitError::MerklePositionLengthMismatch {
-                expected_depth: inputs.merkle_tree_depth,
-                actual: 0,
-            })?;
+    let first_sibling = inputs.merkle_siblings.first().ok_or(
+        CertificateCircuitError::MerkleSiblingLengthMismatch {
+            expected_depth: inputs.merkle_tree_depth,
+            actual: 0,
+        },
+    )?;
+    let first_position = inputs.merkle_positions.first().ok_or(
+        CertificateCircuitError::MerklePositionLengthMismatch {
+            expected_depth: inputs.merkle_tree_depth,
+            actual: 0,
+        },
+    )?;
     let first_left = std_lib.select(layouter, first_position, &leaf, first_sibling)?;
     let first_right = std_lib.select(layouter, first_position, first_sibling, &leaf)?;
     let first_node = std_lib.poseidon(layouter, &[first_left, first_right])?;
@@ -111,7 +107,7 @@ pub(crate) fn verify_merkle_path(
 
     std_lib
         .assert_equal(layouter, &root, inputs.merkle_tree_commitment)
-        .map_err(StmCircuitError::from)
+        .map_err(CertificateCircuitError::from)
 }
 
 #[cfg(test)]
@@ -120,21 +116,21 @@ mod tests {
     use midnight_proofs::plonk::Error;
 
     use crate::circuits::common::merkle::Position;
-    use crate::circuits::halo2::errors::StmCircuitError;
+    use crate::circuits::halo2::errors::CertificateCircuitError;
     use crate::circuits::halo2::tests::test_helpers::{
         TEST_MERKLE_TREE_DEPTH, TEST_MERKLE_TREE_DEPTH_FOR_PATH_PADDING, assert_relation_rejected,
         impl_focused_test_relation, jubjub_poseidon_used_chips, prove_and_verify_relation,
         sample_valid_circuit_witness_entry,
     };
     use crate::circuits::halo2::types::{CircuitBase, CircuitBaseField};
-    use crate::circuits::halo2::witness::{CircuitWitnessEntry, MerkleRoot};
+    use crate::circuits::halo2::witness::{CircuitWitnessEntry, MerkleTreeCommitment};
 
     use super::{MerklePathInputs, verify_merkle_path};
 
     impl_focused_test_relation!(
         MerkleRelation,
-        (CircuitWitnessEntry, MerkleRoot),
-        error = StmCircuitError,
+        (CircuitWitnessEntry, MerkleTreeCommitment),
+        error = CertificateCircuitError,
         jubjub_poseidon_used_chips(),
         |std_lib, layouter, witness| {
             let verification_key = std_lib.jubjub().assign(
@@ -204,8 +200,8 @@ mod tests {
 
     impl_focused_test_relation!(
         MerklePathRelation,
-        (CircuitWitnessEntry, MerkleRoot),
-        error = StmCircuitError,
+        (CircuitWitnessEntry, MerkleTreeCommitment),
+        error = CertificateCircuitError,
         jubjub_poseidon_used_chips(),
         |std_lib, layouter, witness| {
             let verification_key = std_lib.jubjub().assign(
@@ -293,7 +289,7 @@ mod tests {
         assert_relation_rejected(prove_and_verify_relation(
             &relation,
             &(),
-            (entry, MerkleRoot::from(999u64)),
+            (entry, MerkleTreeCommitment::from(999u64)),
         ));
     }
 
@@ -327,7 +323,7 @@ mod tests {
         assert_relation_rejected(prove_and_verify_relation(
             &relation,
             &(),
-            (entry, MerkleRoot::from(999u64)),
+            (entry, MerkleTreeCommitment::from(999u64)),
         ));
     }
 }

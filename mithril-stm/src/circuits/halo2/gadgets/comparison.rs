@@ -3,7 +3,7 @@ use midnight_circuits::types::{AssignedBit, AssignedNative};
 use midnight_proofs::circuit::Layouter;
 use midnight_zk_stdlib::ZkStdLib;
 
-use crate::circuits::halo2::errors::StmCircuitError;
+use crate::circuits::halo2::errors::CertificateCircuitError;
 use crate::circuits::halo2::gadgets::comparison_helpers::decompose_unsafe;
 use crate::circuits::halo2::types::CircuitBase;
 
@@ -13,7 +13,7 @@ pub(super) fn lower_than_native(
     layouter: &mut impl Layouter<CircuitBase>,
     x: &AssignedNative<CircuitBase>,
     y: &AssignedNative<CircuitBase>,
-) -> Result<AssignedBit<CircuitBase>, StmCircuitError> {
+) -> Result<AssignedBit<CircuitBase>, CertificateCircuitError> {
     let (x_low_assigned, x_high_assigned) = decompose_unsafe(std_lib, layouter, x)?;
     let (y_low_assigned, y_high_assigned) = decompose_unsafe(std_lib, layouter, y)?;
 
@@ -24,14 +24,14 @@ pub(super) fn lower_than_native(
     let low_less = std_lib.and(layouter, &[is_equal_high, is_less_low])?;
     std_lib
         .or(layouter, &[is_less_high, low_less])
-        .map_err(StmCircuitError::from)
+        .map_err(CertificateCircuitError::from)
 }
 
 #[cfg(test)]
 mod tests {
     use midnight_circuits::instructions::AssignmentInstructions;
 
-    use crate::circuits::halo2::errors::StmCircuitError;
+    use crate::circuits::halo2::errors::CertificateCircuitError;
     use crate::circuits::halo2::tests::test_helpers::{
         assert_relation_rejected, comparison_used_chips, impl_focused_test_relation,
         prove_and_verify_relation,
@@ -45,14 +45,16 @@ mod tests {
     impl_focused_test_relation!(
         ComparisonLessThanRelation,
         ComparisonWitness,
-        error = StmCircuitError,
+        error = CertificateCircuitError,
         comparison_used_chips(),
         |std_lib, layouter, witness| {
             let x = std_lib.assign(layouter, witness.map(|(x, _)| x.into()))?;
             let y = std_lib.assign(layouter, witness.map(|(_, y)| y.into()))?;
 
             let is_less = lower_than_native(std_lib, layouter, &x, &y)?;
-            std_lib.assert_true(layouter, &is_less).map_err(StmCircuitError::from)
+            std_lib
+                .assert_true(layouter, &is_less)
+                .map_err(CertificateCircuitError::from)
         }
     );
 
