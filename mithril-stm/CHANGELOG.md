@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.14 (09-09-2026)
+
+### Added
+
+- Added a runnable example per proof system in `examples/`, each covering aggregation and verification: concatenation, non-recursive SNARK and recursive SNARK, the last advancing a chain across two epochs.
+- Added `circuits::halo2_ivc::build_snapshot_protocol_message_preimage`, which assembles the rigid protocol message preimage from an aggregate verification key, a protocol parameters hash and an epoch, so that a caller can build one without depending on `mithril-common`.
+
+### Changed
+
+- Described the three proof systems in the README, linking each to its page on the website and to its example, and marked the two SNARK ones experimental and gated behind `future_snark`.
+- Removed the concatenation example from the README and from the crate documentation, leaving `examples/` as its single source.
+
+### Fixed
+
+- Added the two production circuit verifying keys to the package `include` list, without which the released crate could not be built with `future_snark`, and configured docs.rs to build with that feature.
+
 ## 0.12.13 (09-07-2026)
 
 ### Changed
