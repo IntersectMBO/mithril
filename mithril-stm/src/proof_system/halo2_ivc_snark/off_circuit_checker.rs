@@ -78,8 +78,7 @@ impl<D: MembershipDigest> IvcOffCircuitChecker<D> for MithrilIvcOffCircuitChecke
                     == genesis_preimage.next_merkle_tree_commitment();
             if !matches_genesis_lookahead {
                 return Err(IvcCircuitError::InvalidEpochTransition {
-                    kind:
-                        EpochTransitionErrorKind::RollingStateParametersDoesNotMatchProtocolMessage,
+                    kind: EpochTransitionErrorKind::GenesisLookaheadDoesNotMatchProtocolMessage,
                     last_committed_epoch: genesis_epoch.as_u64(),
                 }
                 .into());
@@ -105,6 +104,7 @@ mod tests {
     use crate::{
         AncillaryGenesisData, AncillaryProverData, MithrilMembershipDigest,
         circuits::halo2_ivc::{
+            state::State,
             tests::common::asset_readers::{
                 load_embedded_first_certificate_in_epoch_asset,
                 load_embedded_following_certificate_in_epoch_asset,
@@ -127,6 +127,29 @@ mod tests {
             .expect("recursive chain state asset should load");
         IvcRollingState::new(
             chain_state.state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        )
+    }
+
+    // Builds a rolling state whose `protocol_parameters` diverges from `next_protocol_parameters`
+    // (as if an earlier certificate had announced a parameter change for the following epoch),
+    // otherwise carrying the same fields as the embedded recursive chain state asset.
+    fn diverged_rolling_state() -> IvcRollingState {
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let diverged_state = State::new(
+            chain_state.state.step_counter,
+            chain_state.state.message,
+            chain_state.state.merkle_tree_commitment,
+            chain_state.state.next_merkle_tree_commitment,
+            ProtocolParametersHash::from_field(BaseFieldElement::from(999u64).0),
+            chain_state.state.next_protocol_parameters,
+            chain_state.state.current_epoch,
+        );
+        IvcRollingState::new(
+            diverged_state,
             chain_state.ivc_proof,
             chain_state.accumulator,
             chain_state.genesis_signature,
@@ -261,11 +284,49 @@ mod tests {
                     "consistent genesis data paired with a matching first certificate should pass",
                 );
         }
+
+        #[test]
+        fn rejects_first_certificate_with_wrong_epoch_or_avk() {
+            let genesis_fixture = load_embedded_genesis_benchmark_fixture()
+                .expect("genesis benchmark fixture should load");
+            let mismatched_step = load_embedded_following_certificate_in_epoch_asset()
+                .expect("same-epoch step output asset should load");
+
+            let genesis_data = AncillaryGenesisData::new(
+                genesis_fixture.genesis_protocol_message_preimage.to_vec(),
+                Some(genesis_fixture.genesis_signature),
+                Some(genesis_fixture.genesis_verification_key),
+            );
+            let ancillary_input = AncillaryProofInput::new(
+                None,
+                genesis_data,
+                mismatched_step.message_preimage.to_vec(),
+            );
+
+            let err = MithrilIvcOffCircuitChecker
+                .off_circuit_check(
+                    &mismatched_step.message,
+                    &avk_with_root(mismatched_step.aggregate_verification_key_merkle_root),
+                    &ancillary_input,
+                )
+                .expect_err(
+                    "a certificate not matching genesis's announced epoch/AVK must be rejected",
+                );
+
+            let circuit_error = err
+                .downcast_ref::<IvcCircuitError>()
+                .expect("error chain should carry IvcCircuitError");
+            assert!(matches!(
+                circuit_error,
+                IvcCircuitError::InvalidEpochTransition {
+                    kind: EpochTransitionErrorKind::GenesisLookaheadDoesNotMatchProtocolMessage,
+                    ..
+                }
+            ));
+        }
     }
 
     mod check_rolling_state {
-        use crate::circuits::halo2_ivc::state::State;
-
         use super::*;
 
         #[test]
@@ -306,29 +367,6 @@ mod tests {
                     "consistent same-epoch step should pass every check, including the \
                      message-hash match",
                 );
-        }
-
-        // Builds a rolling state whose `protocol_parameters` diverges from `next_protocol_parameters`
-        // (as if an earlier certificate had announced a parameter change for the following epoch),
-        // otherwise carrying the same fields as the embedded recursive chain state asset.
-        fn diverged_rolling_state() -> IvcRollingState {
-            let chain_state = load_embedded_recursive_chain_state_asset()
-                .expect("recursive chain state asset should load");
-            let diverged_state = State::new(
-                chain_state.state.step_counter,
-                chain_state.state.message,
-                chain_state.state.merkle_tree_commitment,
-                chain_state.state.next_merkle_tree_commitment,
-                ProtocolParametersHash::from_field(BaseFieldElement::from(999u64).0),
-                chain_state.state.next_protocol_parameters,
-                chain_state.state.current_epoch,
-            );
-            IvcRollingState::new(
-                diverged_state,
-                chain_state.ivc_proof,
-                chain_state.accumulator,
-                chain_state.genesis_signature,
-            )
         }
 
         #[test]

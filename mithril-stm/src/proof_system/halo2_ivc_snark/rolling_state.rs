@@ -218,8 +218,8 @@ impl IvcRollingState {
     /// value into `protocol_parameters`.
     ///
     /// A `SameEpoch` transition never consumes `next_protocol_parameters` (see `build_next_state`),
-    /// so a chain that already carries a divergence — from an earlier certificate that announced a
-    /// parameter change — can still process every remaining `SameEpoch` certificate in the epoch
+    /// so a chain that already carries a divergence, from an earlier certificate that announced a
+    /// parameter change, can still process every remaining `SameEpoch` certificate in the epoch
     /// where the divergence appeared; only the `NextEpoch` transition that would actually promote
     /// the diverged value into the new epoch is rejected.
     pub(crate) fn assert_protocol_parameters_unchanged(
