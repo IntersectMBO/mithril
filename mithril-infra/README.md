@@ -103,6 +103,74 @@ The commands to run when bootstrapping is:
 docker exec mithril-aggregator /app/bin/mithril-aggregator -vvv genesis bootstrap
 ```
 
+## IPFS node (experimental)
+
+The infrastructure can host a [Kubo](https://github.com/ipfs/kubo) IPFS node, joined to the public IPFS network, on which the Mithril aggregator publishes the Cardano database immutable archives.
+
+### Deployment
+
+The node is disabled by default. To deploy it, set in the terraform variable file:
+
+```bash
+mithril_ipfs_enabled = true
+```
+
+The node then runs in the `ipfs-node` container next to the other services of the VM, with:
+
+- its datastore on the data disk, in `data/$CARDANO_NETWORK/ipfs`, sized by `mithril_ipfs_storage_max` (defaults to `100GB`), which is the target used by the garbage collector and not a hard limit;
+- its RPC API reachable at `http://ipfs-node:5001/`, on the internal `mithril_network` Docker network only;
+- its libp2p swarm published on port `4001` (TCP and UDP), which is opened in the firewall of the VM.
+
+:warning: The RPC API grants admin level access on the node and must never be exposed publicly.
+
+:warning: The node copies the published archives in its datastore, so the data disk of the VM must be sized to hold both the archives of the aggregator and their copy in the datastore.
+
+The aggregator is configured with the `IPFS_RPC_SERVER_CONFIG` environment variable, which enables the upload of the immutable archives to the node.
+
+The `ipfs.**.api.mithril.network` DNS record points to the VM, and terraform outputs the swarm address of the node:
+
+```bash
+terraform output mithril_ipfs_swarm_dial_to
+```
+
+### Download artifacts from the node
+
+The Mithril client retrieves the artifacts through its own IPFS node. To use the deployed node as a peer, retrieve its full multiaddress first:
+
+```bash
+docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 id -f "<addrs>"
+```
+
+Then, on the client host, peer a local Kubo node with it and download a Cardano database:
+
+```bash
+ipfs swarm peering add **NODE_MULTIADDRESS**
+
+mithril-client --unstable \
+    --aggregator-endpoint https://aggregator.**.api.mithril.network/aggregator \
+    cardano-db download latest \
+    --ipfs-rpc-url http://127.0.0.1:5001/
+```
+
+### Operate the node
+
+```bash
+# Display the node logs
+docker logs -f ipfs-node
+
+# Display the peers connected to the node
+docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 swarm peers
+
+# Display the disk space used by the datastore
+docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 repo stat
+
+# List the archives published by the aggregator
+docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 files ls -l /mithril
+
+# Reclaim the disk space of the unpinned blocks
+docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 repo gc
+```
+
 ## Tools
 
 The Mithril infrastructure comes with some scripts that help handle common tasks.
