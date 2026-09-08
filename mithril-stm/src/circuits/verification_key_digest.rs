@@ -1,10 +1,11 @@
 //! Opaque digest identifying a circuit verification key.
 //!
-//! The digest is computed as a Poseidon hash over the canonical byte serialization of a
-//! verifying key. Poseidon is SNARK-friendly and native to the scalar field of the circuits, so
-//! the digest computation stays cheap if the registry check is ever proven in-circuit. It lets
-//! callers reference a circuit verification key, for example in a signed registry, without
-//! carrying the key itself or depending on its internal structure.
+//! The digest is computed as a Poseidon hash over the SHA-256 hash of the canonical byte
+//! serialization of a verifying key, so the Poseidon hasher absorbs a single field element, as
+//! byte strings are fed to it elsewhere in the crate. Poseidon is SNARK-friendly and native to
+//! the scalar field of the circuits, so the digest computation stays cheap if the registry check
+//! is ever proven in-circuit. It lets callers reference a circuit verification key, for example
+//! in a signed registry, without carrying the key itself or depending on its internal structure.
 
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
@@ -12,6 +13,7 @@ use std::str::FromStr;
 use anyhow::{Context, anyhow};
 use digest::Digest;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use sha2::Sha256;
 
 use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
 use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
@@ -22,7 +24,8 @@ use crate::{MithrilMembershipDigest, Parameters, StmError, StmResult, codec::Try
 /// Byte length of a circuit verification key digest.
 pub const CIRCUIT_VERIFICATION_KEY_DIGEST_SIZE: usize = 32;
 
-/// Poseidon digest of the canonical byte serialization of a circuit verification key.
+/// Poseidon digest of the SHA-256 hash of the canonical byte serialization of a circuit
+/// verification key.
 ///
 /// Serialized as a lowercase hex string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -38,10 +41,12 @@ impl CircuitVerificationKeyDigest {
         ))
     }
 
-    /// Compute the digest of a verifying key already in its canonical byte serialization.
+    /// Compute the digest of a verifying key already in its canonical byte serialization, hashing
+    /// the bytes with SHA-256 first so the Poseidon hasher absorbs a single field element.
     fn from_canonical_key_bytes(canonical_key_bytes: &[u8]) -> Self {
+        let canonical_key_bytes_hash: [u8; 32] = Sha256::digest(canonical_key_bytes).into();
         let mut hasher = MidnightPoseidonDigest::new();
-        hasher.update(canonical_key_bytes);
+        hasher.update(canonical_key_bytes_hash);
         Self(hasher.finalize().into())
     }
 
@@ -162,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn digest_is_poseidon_hash_of_canonical_key_bytes() {
+    fn digest_is_poseidon_hash_of_the_sha256_hash_of_canonical_key_bytes() {
         let context = load_embedded_verification_context_asset()
             .expect("verification context asset should load");
 
@@ -171,8 +176,10 @@ mod tests {
         )
         .unwrap();
 
+        let canonical_key_bytes_hash: [u8; 32] =
+            Sha256::digest(context.certificate_verifying_key.to_bytes_vec().unwrap()).into();
         let mut hasher = MidnightPoseidonDigest::new();
-        hasher.update(context.certificate_verifying_key.to_bytes_vec().unwrap());
+        hasher.update(canonical_key_bytes_hash);
         let expected: [u8; CIRCUIT_VERIFICATION_KEY_DIGEST_SIZE] = hasher.finalize().into();
 
         assert_eq!(&expected, digest.as_bytes());
@@ -242,7 +249,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(
-                "5cfbcf921d5b29e3d449c5ecd707dd78924612790a27a68610c1cf0af3b7cc52",
+                "9e68083f22b192e8c0ec6a62c2904ec546128a7bf4bb45138be8fa1a114e1f00",
                 digest.to_string(),
                 "golden circuit verification key digest changed for a fixed input, this alters the digest computation and breaks published circuit verification key registries"
             );
@@ -251,12 +258,12 @@ mod tests {
         #[test]
         fn golden_digests_of_production_circuit_keys() {
             assert_eq!(
-                "1264305828d13c48a7b85b0cf472198d5a8014d8c06b50e9f4dd9c586249355c",
+                "beca1c3e5b14ba8b74bad0177e1d762078473b33aaacb7017dd7425c53f61d25",
                 CircuitVerificationKeyDigest::for_production_certificate_circuit().to_string(),
                 "golden production certificate circuit verification key digest changed, either the digest computation or the embedded production key changed, which breaks published circuit verification key registries"
             );
             assert_eq!(
-                "e2077c751852ee5a4e0908b7b963e037bac64f6fd0bf1af2ff1f012e0aa57e57",
+                "cf0e9d63b167d81431b96bdf71bdaa7d0d947f134329cfacaa9d4e31794c3069",
                 CircuitVerificationKeyDigest::for_ivc_circuit().to_string(),
                 "golden IVC circuit verification key digest changed, either the digest computation or the embedded production key changed, which breaks published circuit verification key registries"
             );
@@ -302,12 +309,12 @@ mod tests {
             .unwrap();
 
             assert_eq!(
-                "1ecb40d6ba62504520a904ae053f7ad6747ce2ebafd7facef3fb4009d52b6336",
+                "653471392ada496934d7752f9b483efd92ae6c3271af636945c4b4ce74ae316c",
                 certificate_key_digest.to_string(),
                 "golden certificate circuit verification key digest changed, either the digest computation or the canonical key serialization changed, which breaks published circuit verification key registries"
             );
             assert_eq!(
-                "08174d68b60d5655d0def90e6d3680f8bd6216a1c714bc3c6111d7c1d8472a28",
+                "770a223fac0f319f0a76990b2c71a6faa7e3525c29d37eb80bf9fe5d5406b221",
                 recursive_key_digest.to_string(),
                 "golden IVC circuit verification key digest changed, either the digest computation or the canonical key serialization changed, which breaks published circuit verification key registries"
             );
