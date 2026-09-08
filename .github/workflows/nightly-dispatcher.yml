@@ -43,7 +43,7 @@ jobs:
           dry_run: "true"
           dry_run_verify: "true"
           packages: mithril-stm, mithril-build-script, mithril-common, mithril-aggregator-client, mithril-aggregator-discovery, mithril-cardano-node-internal-database, mithril-client, mithril-merkle-tree
-        
+
   clippy-check-all-crates:
     runs-on: ubuntu-24.04
     steps:
@@ -54,12 +54,27 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
-      
+
       - name: Run clippy check on all crates
         shell: bash
         run: |
           ./.github/workflows/scripts/clippy-check.sh
 
+  clippy-check-all-crates-all-features:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Run clippy check on all crates with all features combinations
+        shell: bash
+        run: |
+          ./.github/workflows/scripts/clippy-check-all-features.sh
 
   notify-on-failure:
     uses: ./.github/workflows/test-notify-on-failure.yml
@@ -72,6 +87,7 @@ jobs:
         test-e2e,
         publish-crate-dry-run-with-verification,
         clippy-check-all-crates,
+        clippy-check-all-crates-all-features,
       ]
     if: failure()
     secrets: inherit
