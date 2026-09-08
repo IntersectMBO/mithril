@@ -6,8 +6,9 @@ pub(crate) use curve_points::*;
 pub use field_elements::BaseFieldElement;
 pub(crate) use field_elements::ScalarFieldElement;
 pub(crate) use poseidon_digest::{
-    DOMAIN_SEPARATION_TAG_LOTTERY, DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE,
-    DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE, compute_poseidon_digest,
+    DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST, DOMAIN_SEPARATION_TAG_LOTTERY,
+    DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE, DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE,
+    compute_poseidon_digest,
 };
 
 use serde::{

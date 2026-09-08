@@ -1,8 +1,8 @@
 //! Opaque digest identifying a circuit verification key.
 //!
-//! The digest is computed as a Poseidon hash over the transcript representation of a verifying
-//! key: the field element Halo2 derives from the pinned constraint system, the evaluation domain
-//! and the fixed and permutation commitments. The serialized key bytes are not enough to identify
+//! The digest is computed as a Poseidon hash, under a dedicated domain separation tag, over the
+//! transcript representation of a verifying key: the field element Halo2 derives from the pinned
+//! constraint system, the evaluation domain and the fixed and permutation commitments. The serialized key bytes are not enough to identify
 //! a circuit, as the recursive key serialization omits the constraint system, reconstructed from
 //! the circuit code when the key is read, so two circuits with different gates can share the same
 //! bytes. Poseidon is SNARK-friendly and native to the scalar field of the circuits, so the digest
@@ -14,7 +14,6 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 use anyhow::{Context, anyhow};
-use digest::Digest;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
@@ -24,14 +23,18 @@ use crate::circuits::halo2_ivc::{
     KZGCommitmentScheme, NativeField, PairingEngine,
     RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, VerifyingKey,
 };
-use crate::hash::poseidon::MidnightPoseidonDigest;
 use crate::proof_system::{NonDeterministicSnarkProverFactory, SnarkProverFactory};
+use crate::signature_scheme::{
+    BaseFieldElement, DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST,
+    compute_poseidon_digest,
+};
 use crate::{MithrilMembershipDigest, Parameters, StmError, StmResult, codec::TryFromBytes};
 
 /// Byte length of a circuit verification key digest.
 pub const CIRCUIT_VERIFICATION_KEY_DIGEST_SIZE: usize = 32;
 
-/// Poseidon digest of the transcript representation of a circuit verification key.
+/// Domain separated Poseidon digest of the transcript representation of a circuit verification
+/// key.
 ///
 /// Serialized as a lowercase hex string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -48,11 +51,14 @@ impl CircuitVerificationKeyDigest {
     }
 
     /// Compute the digest of the transcript representation of a verifying key, a field element
-    /// the Poseidon hasher absorbs as is.
+    /// the Poseidon hash absorbs as is after the domain separation tag.
     fn from_transcript_representation(transcript_representation: NativeField) -> Self {
-        let mut hasher = MidnightPoseidonDigest::new();
-        hasher.update(transcript_representation.to_bytes_le());
-        Self(hasher.finalize().into())
+        let digest = compute_poseidon_digest(&[
+            DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST,
+            BaseFieldElement(transcript_representation),
+        ]);
+
+        Self(digest.to_bytes())
     }
 
     /// Digest of the IVC circuit verification key.
@@ -174,24 +180,20 @@ mod tests {
     }
 
     #[test]
-    fn digest_is_poseidon_hash_of_the_verification_key_transcript_representation() {
+    fn digest_is_domain_separated_poseidon_hash_of_the_verification_key_transcript_representation()
+    {
         let context = load_embedded_verification_context_asset()
             .expect("verification context asset should load");
 
         let digest =
             CircuitVerificationKeyDigest::from_verification_key(&context.certificate_verifying_key);
 
-        let mut hasher = MidnightPoseidonDigest::new();
-        hasher.update(
-            context
-                .certificate_verifying_key
-                .as_ref()
-                .transcript_repr()
-                .to_bytes_le(),
-        );
-        let expected: [u8; CIRCUIT_VERIFICATION_KEY_DIGEST_SIZE] = hasher.finalize().into();
+        let expected = compute_poseidon_digest(&[
+            DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST,
+            BaseFieldElement(context.certificate_verifying_key.as_ref().transcript_repr()),
+        ]);
 
-        assert_eq!(&expected, digest.as_bytes());
+        assert_eq!(&expected.to_bytes(), digest.as_bytes());
     }
 
     #[test]
@@ -241,7 +243,7 @@ mod tests {
             );
 
             assert_eq!(
-                "ea21d013415b00dc1a74ea17cd305efc640a941fb3aa662a059923ea6aaece36",
+                "f1d28fe496eacf78e36379ddd2ce01b8705dfd6ece4894a8db25aba6cb38312d",
                 digest.to_string(),
                 "golden circuit verification key digest changed for a fixed transcript representation, this alters the digest computation and breaks published circuit verification key registries"
             );
@@ -250,14 +252,14 @@ mod tests {
         #[test]
         fn golden_digests_of_production_circuit_keys() {
             assert_eq!(
-                "23109dde1bbcc5293159e1299434761221bc3131d4476ddf67155edccf06c219",
+                "b4f2e431d9b6f016d6c551a3b6ae9f2b6b494941181eabdafd1313fc7c240f25",
                 CircuitVerificationKeyDigest::for_production_certificate_circuit()
                     .unwrap()
                     .to_string(),
                 "golden production certificate circuit verification key digest changed, either the digest computation, the embedded production key or the certificate circuit changed, which breaks published circuit verification key registries"
             );
             assert_eq!(
-                "91e3fa784a720632b294f0becc2cbc1262274c6b36e2d2da1b716031751ec369",
+                "d4c87805251f4bb7e68dde64c18d0da544cc9c2385983074fada3e753dbf6423",
                 CircuitVerificationKeyDigest::for_ivc_circuit().unwrap().to_string(),
                 "golden IVC circuit verification key digest changed, either the digest computation, the embedded production key or the IVC circuit changed, which breaks published circuit verification key registries"
             );
@@ -276,12 +278,12 @@ mod tests {
             );
 
             assert_eq!(
-                "ddbcb7ac2fc177e397166cc49314c73f9638787db6db90f287d3490451378159",
+                "61026abdb434dacb969e2b0dd6ff3c49de3f2eba759d967fce011bd519372714",
                 certificate_key_digest.to_string(),
                 "golden certificate circuit verification key digest changed, either the digest computation or the circuit changed, which breaks published circuit verification key registries"
             );
             assert_eq!(
-                "af6087f9a37517c1024d67685b34f052bb534830a772f81117a85b75ae59b20a",
+                "d3688e5681a2a35a218006bd07f2be2ff8991a35249ac5646f9d6ba042d4ac0c",
                 recursive_key_digest.to_string(),
                 "golden IVC circuit verification key digest changed, either the digest computation or the circuit changed, which breaks published circuit verification key registries"
             );
