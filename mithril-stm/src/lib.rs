@@ -3,39 +3,6 @@
 //! Top-level API for Mithril Stake-based Threshold Multisignature scheme.
 //! See figure 6 of [the paper](https://eprint.iacr.org/2021/916) for most of the
 //! protocol.
-//!
-//! The example below aggregates and verifies a certificate with the concatenation proof system,
-//! the one currently used by the Mithril network. The SNARK proof systems follow, behind the `future_snark` feature.
-#![doc = concat!(
-    "\n## Concatenation aggregate signature\n\n```rust\n",
-    include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/examples/concatenation_aggregate_signature.rs"
-    )),
-    "\n```\n"
-)]
-#![cfg_attr(
-    feature = "future_snark",
-    doc = concat!(
-        "\n## Non-recursive SNARK aggregate signature\n\n```no_run\n",
-        include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/examples/non_recursive_snark_aggregate_signature.rs"
-        )),
-        "\n```\n"
-    )
-)]
-#![cfg_attr(
-    feature = "future_snark",
-    doc = concat!(
-        "\n## Recursive SNARK aggregate signature\n\n```no_run\n",
-        include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/examples/recursive_snark_aggregate_signature.rs"
-        )),
-        "\n```\n"
-    )
-)]
 
 /// Return the name of the enclosing function, for test labeling and diagnostics.
 ///
