@@ -63,7 +63,7 @@ future_snark = [
 native-tls = ["reqwest?/native-tls"]
 rustls = ["reqwest?/rustls"]
 num-integer-backend = ["dep:num-bigint", "dep:num-integer", "dep:num-rational", "dep:num-traits"]
-rug-backend = ["rug/default"]
+rug-backend = ["dep:rug"]
 
 [dependencies]
 anyhow = { workspace = true }
