@@ -135,21 +135,21 @@ impl AncillaryVerifierData {
     /// These are the keys the proof is verified against, so certifying them certifies the
     /// circuits used to produce the aggregate signature.
     #[cfg(feature = "future_snark")]
-    pub fn circuit_verification_key_digests(&self) -> StmResult<Vec<CircuitVerificationKeyDigest>> {
+    pub fn circuit_verification_key_digests(&self) -> Vec<CircuitVerificationKeyDigest> {
         match self {
-            Self::IvcSnark(ivc_verifier_data) => Ok(vec![
-                CircuitVerificationKeyDigest::try_from_verification_key(
+            Self::IvcSnark(ivc_verifier_data) => vec![
+                CircuitVerificationKeyDigest::from_verification_key(
                     ivc_verifier_data.certificate_circuit_verification_key(),
-                )?,
-                CircuitVerificationKeyDigest::try_from_verification_key(
+                ),
+                CircuitVerificationKeyDigest::from_verification_key(
                     ivc_verifier_data.ivc_circuit_verification_key(),
-                )?,
-            ]),
-            Self::Snark(snark_verifier_data) => Ok(vec![
-                CircuitVerificationKeyDigest::try_from_verification_key(
+                ),
+            ],
+            Self::Snark(snark_verifier_data) => {
+                vec![CircuitVerificationKeyDigest::from_verification_key(
                     snark_verifier_data.certificate_circuit_verification_key(),
-                )?,
-            ]),
+                )]
+            }
         }
     }
 }
@@ -473,12 +473,8 @@ mod tests {
         let snark_ancillary_verifier_data =
             AncillaryVerifierData::Snark(SnarkVerifierData::new(context.certificate_verifying_key));
 
-        let ivc_digests = ivc_ancillary_verifier_data
-            .circuit_verification_key_digests()
-            .unwrap();
-        let snark_digests = snark_ancillary_verifier_data
-            .circuit_verification_key_digests()
-            .unwrap();
+        let ivc_digests = ivc_ancillary_verifier_data.circuit_verification_key_digests();
+        let snark_digests = snark_ancillary_verifier_data.circuit_verification_key_digests();
 
         assert_eq!(2, ivc_digests.len());
         assert_ne!(ivc_digests[0], ivc_digests[1]);
