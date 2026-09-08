@@ -1,4 +1,8 @@
-//! Test/generator-side protocol message builder for Halo2 IVC circuit assets.
+//! Assembly of the rigid protocol message preimage the recursive circuit consumes.
+//!
+//! The layout is fixed by the protocol and reproduced here byte for byte, so that this crate
+//! can build a preimage without depending on `mithril-common`, which owns the canonical
+//! builder and depends on this crate.
 
 use std::collections::BTreeMap;
 
@@ -29,6 +33,29 @@ impl std::fmt::Display for DynamicProtocolMessagePartKey {
             Self::SnapshotDigest => write!(f, "snapshot_digest"),
         }
     }
+}
+
+/// Assembles the rigid protocol message preimage announcing a signer set for an epoch.
+///
+/// `next_protocol_parameters_hash` fills the 32-byte protocol-parameters slot. A Mithril node
+/// derives it from the protocol parameters it announces; the circuit itself only requires the value
+/// to stay the same from one step to the next, so a caller outside the node may supply any fixed
+/// value.
+pub fn build_snapshot_protocol_message_preimage<D: MembershipDigest>(
+    snapshot_digest: &str,
+    next_aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
+    next_protocol_parameters_hash: [u8; 32],
+    current_epoch: u64,
+) -> StmResult<[u8; PREIMAGE_SIZE]> {
+    let mut protocol_message = ProtocolMessage::new();
+    protocol_message.set_dynamic_message_part(
+        DynamicProtocolMessagePartKey::SnapshotDigest,
+        snapshot_digest.to_owned(),
+    );
+    protocol_message.set_next_snark_aggregate_verification_key(next_aggregate_verification_key)?;
+    protocol_message.set_next_protocol_parameters(next_protocol_parameters_hash);
+    protocol_message.set_current_epoch(current_epoch);
+    protocol_message.try_rigid_preimage()
 }
 
 pub(crate) struct ProtocolMessage {

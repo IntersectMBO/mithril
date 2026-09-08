@@ -67,14 +67,15 @@ pub(crate) mod io;
 pub(crate) mod key_serialization;
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod keys;
-#[cfg(test)]
-pub(crate) mod protocol_message;
+mod protocol_message;
 pub(crate) mod state;
 pub(crate) mod types;
 pub(crate) mod witness_assignments;
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+pub use protocol_message::build_snapshot_protocol_message_preimage;
 
 pub(crate) use types::{CircuitValue, ProtocolMessagePreimage};
 

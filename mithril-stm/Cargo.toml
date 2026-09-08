@@ -15,7 +15,6 @@ include = [
     ".gitignore",
     "src/circuits/halo2/non_recursive_circuit_verification_key_for_production.bin",
     "src/circuits/halo2_ivc/recursive_circuit_verification_key_for_production.bin",
-    "examples/assets/*.bin",
 ]
 
 [package.metadata.docs.rs]
