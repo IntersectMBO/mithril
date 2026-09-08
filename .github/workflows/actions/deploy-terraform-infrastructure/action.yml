@@ -94,6 +94,10 @@ inputs:
     description: Mithril P2P network signer relay signature registration mode ('p2p' or 'passthrough') (experimental, for test only).
     required: false
     default: "p2p"
+  mithril_ipfs_enabled:
+    description: Deploy an IPFS node and upload the Cardano database immutable archives to it (experimental).
+    required: false
+    default: "false"
   mithril_api_domain:
     description: Mithril network api domain root.
     required: true
@@ -288,6 +292,7 @@ runs:
           mithril_p2p_network_bootstrap_peer                                           = "${{ inputs.mithril_p2p_network_bootstrap_peer }}"
           mithril_p2p_signer_relay_signer_registration_mode                            = "${{ inputs.mithril_p2p_signer_relay_signer_registration_mode }}"
           mithril_p2p_signer_relay_signature_registration_mode                         = "${{ inputs.mithril_p2p_signer_relay_signature_registration_mode }}"
+          mithril_ipfs_enabled                                                         = "${{ inputs.mithril_ipfs_enabled }}"
           mithril_api_domain                                                           = "${{ inputs.mithril_api_domain }}"
           mithril_image_id                                                             = "${{ inputs.mithril_image_id }}"
           mithril_genesis_verification_key_url                                         = "${{ inputs.mithril_genesis_verification_key_url }}"

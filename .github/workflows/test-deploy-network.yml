@@ -37,6 +37,7 @@ jobs:
             mithril_p2p_use_dmq_protocol: true
             mithril_p2p_signer_relay_signer_registration_mode: passthrough
             mithril_p2p_signer_relay_signature_registration_mode: p2p
+            mithril_ipfs_enabled: true
             mithril_api_domain: api.mithril.network
             mithril_era_reader_adapter_type: bootstrap-latest
             mithril_signers: |
@@ -71,6 +72,7 @@ jobs:
             mithril_p2p_network_bootstrap_peer: "/dns4/aggregator.dev-preview.api.mithril.network/tcp/6060"
             mithril_p2p_signer_relay_signer_registration_mode: passthrough
             mithril_p2p_signer_relay_signature_registration_mode: p2p
+            mithril_ipfs_enabled: false
             mithril_api_domain: api.mithril.network
             mithril_era_reader_adapter_type: bootstrap-latest
             mithril_signers: |
@@ -89,6 +91,7 @@ jobs:
             cardano_network: mainnet
             mithril_use_p2p_network: false
             mithril_p2p_use_dmq_protocol: false
+            mithril_ipfs_enabled: false
             mithril_api_domain: api.mithril.network
             mithril_era_reader_adapter_type: bootstrap
             mithril_signers: |
@@ -142,6 +145,7 @@ jobs:
           mithril_use_p2p_network: ${{ matrix.mithril_use_p2p_network }}
           mithril_p2p_use_dmq_protocol: ${{ matrix.mithril_p2p_use_dmq_protocol }}
           mithril_p2p_network_bootstrap_peer: ${{ matrix.mithril_p2p_network_bootstrap_peer }}
+          mithril_ipfs_enabled: ${{ matrix.mithril_ipfs_enabled }}
           mithril_api_domain: ${{ matrix.mithril_api_domain }}
           mithril_image_id: ${{ inputs.mithril_image_id }}
           mithril_signers: ${{ toJSON(matrix.mithril_signers) }}
