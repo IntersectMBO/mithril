@@ -416,6 +416,30 @@ variable "mithril_aggregator_custom_origin_tag_white_list" {
   default     = ""
 }
 
+variable "mithril_ipfs_enabled" {
+  type        = bool
+  description = "Deploy an IPFS node and make the Mithril aggregator upload the Cardano database immutable archives to it (experimental)"
+  default     = false
+}
+
+variable "mithril_ipfs_storage_max" {
+  type        = string
+  description = "The maximum disk space used by the IPFS node datastore"
+  default     = "100GB"
+}
+
+variable "ipfs_image_id" {
+  type        = string
+  description = "The IPFS image tag of service to deploy"
+  default     = "v0.38.1"
+}
+
+variable "ipfs_image_registry" {
+  type        = string
+  description = "The IPFS image repository of service to deploy"
+  default     = "ipfs/kubo"
+}
+
 variable "prometheus_auth_username" {
   type        = string
   description = "The username for authentication on local prometheus endpoint"

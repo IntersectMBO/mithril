@@ -62,6 +62,16 @@ resource "google_dns_record_set" "mithril-signer-endpoint" {
   rrdatas      = [google_compute_address.mithril-external-address.address]
 }
 
+resource "google_dns_record_set" "mithril-ipfs-endpoint" {
+  count = var.mithril_ipfs_enabled ? 1 : 0
+
+  name         = "ipfs.${google_dns_managed_zone.mithril-api-zone.dns_name}"
+  managed_zone = google_dns_managed_zone.mithril-api-zone.name
+  type         = "A"
+  ttl          = 300
+  rrdatas      = [google_compute_address.mithril-external-address.address]
+}
+
 resource "google_dns_record_set" "prometheus-endpoint" {
   name         = "prometheus.${google_dns_managed_zone.mithril-api-zone.dns_name}"
   managed_zone = google_dns_managed_zone.mithril-api-zone.name
@@ -93,8 +103,10 @@ locals {
   mithril_signers_relay_p2p_dial_to = var.mithril_use_p2p_network == false ? null : [for key, signer in var.mithril_signers :
     format("/dns4/%s/tcp/%s", "mithril-signer-${key}.${trimsuffix(google_dns_managed_zone.mithril-api-zone.dns_name, ".")}", local.mithril_signers_relay_listen_port[key])
   ]
-  prometheus_host         = trimsuffix(google_dns_record_set.prometheus-endpoint.name, ".")
-  prometheus_endpoint_url = format("https://%s%s", local.prometheus_credentials, local.prometheus_host)
-  loki_host               = trimsuffix(google_dns_record_set.loki-endpoint.name, ".")
-  loki_endpoint_url       = format("https://%s%s", local.loki_credentials, local.loki_host)
+  mithril_ipfs_host          = "ipfs.${trimsuffix(google_dns_managed_zone.mithril-api-zone.dns_name, ".")}"
+  mithril_ipfs_swarm_dial_to = var.mithril_ipfs_enabled ? format("/dns4/%s/tcp/%s", local.mithril_ipfs_host, local.mithril_ipfs_swarm_port) : null
+  prometheus_host            = trimsuffix(google_dns_record_set.prometheus-endpoint.name, ".")
+  prometheus_endpoint_url    = format("https://%s%s", local.prometheus_credentials, local.prometheus_host)
+  loki_host                  = trimsuffix(google_dns_record_set.loki-endpoint.name, ".")
+  loki_endpoint_url          = format("https://%s%s", local.loki_credentials, local.loki_host)
 }

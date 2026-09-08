@@ -51,3 +51,7 @@ output "mithril_p2p_dmq_network_bootstrap_peer" {
     [for key in keys(var.mithril_signers) : "${google_compute_address.mithril-external-address.address}:${local.mithril_signers_dmq_relay_port[key]}"]
   )) : "${google_compute_address.mithril-external-address.address}:${local.mithril_aggregator_dmq_port}"
 }
+
+output "mithril_ipfs_swarm_dial_to" {
+  value = local.mithril_ipfs_swarm_dial_to
+}
