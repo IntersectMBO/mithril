@@ -37,10 +37,12 @@ impl std::fmt::Display for DynamicProtocolMessagePartKey {
 
 /// Assembles the rigid protocol message preimage announcing a signer set for an epoch.
 ///
-/// `next_protocol_parameters_hash` fills the 32-byte protocol-parameters slot. A Mithril node
-/// derives it from the protocol parameters it announces; the circuit itself only requires the value
-/// to stay the same from one step to the next, so a caller outside the node may supply any fixed
-/// value.
+/// `next_protocol_parameters_hash` fills the 32-byte protocol-parameters slot verbatim: this
+/// function neither derives nor validates it. A message that is to be compatible with a Mithril node
+/// must carry the decoded hash the node computes for the protocol parameters it announces. The
+/// circuit treats the slot as opaque and only requires the value to stay the same from one step to
+/// the next, so a value chosen otherwise will still prove — and will not describe a message any node
+/// would produce.
 pub fn build_snapshot_protocol_message_preimage<D: MembershipDigest>(
     snapshot_digest: &str,
     next_aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,

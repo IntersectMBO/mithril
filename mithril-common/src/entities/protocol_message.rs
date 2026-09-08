@@ -883,6 +883,69 @@ mod tests {
         );
     }
 
+    /// `mithril-stm` reproduces this crate's rigid preimage layout so that it can build a protocol
+    /// message without depending on this crate, which depends on it. Nothing but this test keeps the
+    /// two implementations from drifting apart.
+    #[cfg(feature = "future_snark")]
+    #[test]
+    fn rigid_preimage_matches_the_mithril_stm_builder() {
+        use mithril_stm::{
+            AggregateVerificationKeyForSnark,
+            circuits::halo2_ivc::build_snapshot_protocol_message_preimage,
+        };
+
+        use crate::crypto_helper::ProtocolMembershipDigest;
+
+        let snapshot_digest = hex::encode([0xAAu8; 32]);
+        let aggregate_verification_key_wire_value =
+            build_snark_avk_wire_value_for_test([0xCCu8; 32], 12_345);
+        let protocol_parameters_hash =
+            [0xDDu8; ProtocolMessage::RIGID_NEXT_PROTOCOL_PARAMETERS_BYTES];
+        let current_epoch = 7u64;
+
+        let mut canonical = ProtocolMessage::new_rigid();
+        canonical.set_message_part(
+            ProtocolMessagePartKey::SnapshotDigest,
+            snapshot_digest.clone(),
+        );
+        canonical.set_message_part(
+            ProtocolMessagePartKey::NextSnarkAggregateVerificationKey,
+            aggregate_verification_key_wire_value.clone(),
+        );
+        canonical.set_message_part(
+            ProtocolMessagePartKey::NextProtocolParameters,
+            hex::encode(protocol_parameters_hash),
+        );
+        canonical.set_message_part(
+            ProtocolMessagePartKey::CurrentEpoch,
+            current_epoch.to_string(),
+        );
+        canonical
+            .check_rigid_integrity()
+            .expect("the reference message must be a well-formed rigid message");
+
+        let aggregate_verification_key: AggregateVerificationKeyForSnark<ProtocolMembershipDigest> =
+            AggregateVerificationKeyForSnark::from_bytes(
+                &hex::decode(&aggregate_verification_key_wire_value)
+                    .expect("the wire value must be hex"),
+            )
+            .expect("the wire value must decode to a SNARK aggregate verification key");
+
+        let from_mithril_stm = build_snapshot_protocol_message_preimage(
+            &snapshot_digest,
+            &aggregate_verification_key,
+            protocol_parameters_hash,
+            current_epoch,
+        )
+        .expect("the mithril-stm builder must assemble the preimage");
+
+        assert_eq!(
+            canonical.rigid_preimage(),
+            from_mithril_stm.to_vec(),
+            "the mithril-stm preimage builder has drifted from the canonical layout"
+        );
+    }
+
     #[cfg(feature = "future_snark")]
     #[test]
     fn rigid_preimage_concatenates_labeled_segments_in_a_fixed_order() {

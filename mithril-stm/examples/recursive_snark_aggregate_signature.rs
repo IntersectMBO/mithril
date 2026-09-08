@@ -52,10 +52,12 @@ const SIGNER_STAKES: [Stake; 4] = [1_000, 2_000, 3_000, 4_000];
 /// Stands in for the snapshot each protocol message announces.
 const SNAPSHOT_DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
-/// Fills the protocol message's protocol-parameters slot. A node derives this from the parameters it
-/// announces; the circuit only requires the value to be the same at every step, and the parameters
-/// below never change, so one fixed value serves the whole chain.
-const NEXT_PROTOCOL_PARAMETERS_HASH: [u8; 32] = [0u8; 32];
+/// Fills the protocol message's protocol-parameters slot: the hash a node computes for the
+/// parameters below, which never change, so one value serves the whole chain.
+const NEXT_PROTOCOL_PARAMETERS_HASH: [u8; 32] = [
+    0x30, 0x6a, 0xd5, 0x96, 0x9f, 0xde, 0x8a, 0x09, 0x45, 0xf2, 0xf3, 0xcf, 0xe4, 0x53, 0x68, 0x85,
+    0x45, 0xa3, 0x4e, 0x3a, 0xf7, 0xc5, 0x35, 0xef, 0xef, 0x94, 0x3f, 0x89, 0xb2, 0x14, 0x96, 0x15,
+];
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Not production parameters: they are small so the example is runnable.
