@@ -1,8 +1,11 @@
-//! Aggregating and verifying certificates with the recursive SNARK proof system.
+//! Aggregating and verifying aggregate signatures with the recursive SNARK proof system.
 //!
-//! Each certificate carries one recursive proof attesting to the whole chain behind it, so a
-//! verifier checks a single proof rather than every certificate since genesis. This example anchors
-//! a chain at genesis and advances it by two epochs, verifying each certificate as it goes.
+//! This proof system is experimental. It is gated behind the `future_snark` feature and its API
+//! may still change.
+//!
+//! Each aggregate signature carries one recursive proof attesting to the whole chain behind it, so
+//! a verifier checks a single proof rather than every aggregate signature since genesis. This
+//! example anchors a chain at genesis and advances it by two epochs, verifying each one as it goes.
 //!
 //! Run it with:
 //!
@@ -11,16 +14,18 @@
 //!     --features future_snark,rustls
 //! ```
 //!
-//! Each step produces two proofs over the same circuit, under different transcripts. The Poseidon
-//! one seeds the rolling state, so the following step can verify it inside the circuit; the Blake2b
-//! one travels on the certificate for verifiers outside it. A step that stays within its epoch
-//! produces only the Blake2b proof, since the chain state does not advance. Advancing two epochs
-//! from genesis therefore generates five proofs, which is most of what the run below costs.
+//! Advancing an epoch proves the same circuit twice, under a different transcript each time. Only
+//! the Blake2b proof travels with the aggregate signature, which is the one a verifier checks; the
+//! proof stays with the prover, seeding the rolling state so the next step can verify it inside the
+//! circuit. Anchoring at genesis costs one further Poseidon proof, so the two epochs below are five
+//! proofs in all, which is most of what the run costs.
 //!
-//! Expect roughly four and a half minutes and about 12 GB of peak memory, measured on an Apple Mac
-//! Studio. The first run additionally downloads the trusted setup. Every aggregation generates the circuit keys afresh,
-//! because the example's parameters are sized so it can be run at all and its keys are therefore not
-//! the production ones the key cache recognises.
+//! Expect roughly four and a half minutes and about 12 GB of peak memory, measured on an Apple M4
+//! Max with 16 cores and 48 GB of memory. That measurement had memory to spare; a machine with less
+//! than the peak installed will page, and take correspondingly longer. The first run additionally
+//! downloads the trusted setup. Every aggregation generates the circuit keys afresh, because the
+//! example's parameters are sized so it can be run at all and its keys are therefore not the
+//! production ones the key cache recognises.
 //!
 //! The signer seed below is published with this source and is therefore compromised. It is fixed
 //! only so the aggregate verification key is reproducible, which is what lets the committed protocol
@@ -46,25 +51,19 @@ type D = MithrilMembershipDigest;
 /// built here because assembling one needs the rigid protocol message format, which belongs to the
 /// node rather than to this library. They were generated together with the key material below, and
 /// the two must stay in step: each message announces the aggregate verification key that the next
-/// certificate is checked against.
-const GENESIS_PROTOCOL_MESSAGE_PREIMAGE: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/examples/assets/genesis_protocol_message_preimage.bin"
-));
-const FIRST_CERTIFICATE_PROTOCOL_MESSAGE_PREIMAGE: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/examples/assets/first_certificate_protocol_message_preimage.bin"
-));
-const SECOND_CERTIFICATE_PROTOCOL_MESSAGE_PREIMAGE: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/examples/assets/second_certificate_protocol_message_preimage.bin"
-));
+/// aggregate signature is checked against.
+const GENESIS_PROTOCOL_MESSAGE_PREIMAGE: &[u8] =
+    include_bytes!("assets/genesis_protocol_message_preimage.bin");
+const FIRST_CERTIFICATE_PROTOCOL_MESSAGE_PREIMAGE: &[u8] =
+    include_bytes!("assets/first_certificate_protocol_message_preimage.bin");
+const SECOND_CERTIFICATE_PROTOCOL_MESSAGE_PREIMAGE: &[u8] =
+    include_bytes!("assets/second_certificate_protocol_message_preimage.bin");
 
 const SIGNER_SEED: [u8; 32] = [0u8; 32];
 const SIGNER_STAKES: [Stake; 4] = [1_000, 2_000, 3_000, 4_000];
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // XXX: not production parameters. They are small so the example is runnable.
+    // Not production parameters: they are small so the example is runnable.
     let parameters = Parameters {
         k: 2,
         m: 100,
@@ -97,7 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let aggregate_verification_key = clerk.compute_aggregate_verification_key();
 
     // Fail early and clearly if the signer set no longer matches the committed messages: the
-    // genesis message announces the aggregate verification key every later certificate is checked
+    // genesis message announces the aggregate verification key every later aggregate signature is
     // against, so a mismatch would otherwise surface as an opaque rejection minutes into proving.
     // Divergence in the parameters or the stakes is caught later, by the proofs themselves.
     let announced_commitment =
@@ -128,11 +127,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Advance the chain. The first step also bootstraps from genesis; each later step carries the
     // rolling state the previous one produced.
     let mut rolling_state = None;
-    for preimage in [
-        FIRST_CERTIFICATE_PROTOCOL_MESSAGE_PREIMAGE,
-        SECOND_CERTIFICATE_PROTOCOL_MESSAGE_PREIMAGE,
+    for (epoch, preimage) in [
+        (1, FIRST_CERTIFICATE_PROTOCOL_MESSAGE_PREIMAGE),
+        (2, SECOND_CERTIFICATE_PROTOCOL_MESSAGE_PREIMAGE),
     ] {
-        // Signers sign the digest of the protocol message the certificate announces.
+        // Signers sign the digest of the protocol message this step announces.
         let message: [u8; 32] = Sha256::digest(preimage).into();
 
         let signatures = signers
@@ -140,14 +139,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             .filter_map(|signer| signer.create_single_signature(&message).ok())
             .collect::<Vec<SingleSignature>>();
 
-        let (certificate, ancillary_output) = clerk.aggregate_signatures_with_type(
+        let (aggregate_signature, ancillary_output) = clerk.aggregate_signatures_with_type(
             &signatures,
             &message,
             AggregateSignatureType::IvcSnark,
             AncillaryProofInput::new(rolling_state, genesis_data.clone(), preimage.to_vec()),
         )?;
 
-        certificate.verify(
+        aggregate_signature.verify(
             &message,
             &aggregate_verification_key,
             &parameters,
@@ -162,7 +161,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .ok_or("a next-epoch step produces the rolling state the next step consumes")?,
         );
 
-        println!("certificate aggregated and verified");
+        println!("epoch {epoch}: aggregate signature produced and verified");
     }
 
     Ok(())

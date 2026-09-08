@@ -1,9 +1,11 @@
-//! Aggregating and verifying a certificate with the concatenation proof system.
+//! Aggregating and verifying an aggregate signature with the concatenation proof system.
 //!
-//! This is the proof system currently used by the Mithril network. The certificate carries the individual signatures
-//! that won the lottery, concatenated, together with the batched Merkle paths proving each signer
-//! was registered. Verification is cheap and needs no trusted setup, at the cost of a certificate
-//! that grows with the quorum.
+//! This proof system is stable, needs no feature flag, and is the one currently used by the Mithril
+//! network. Verification needs no trusted setup: it checks BLS signatures and a Merkle path against
+//! the signer-set commitment, with no circuit and no ceremony-derived parameters. The cost is size:
+//! the aggregate signature carries one entry per contributing signer, together covering at least
+//! the `k` winning lottery indices the quorum requires, plus a Merkle path batched across those
+//! signers.
 //!
 //! Run it with:
 //!
@@ -30,8 +32,8 @@ type D = MithrilMembershipDigest;
 const SIGNER_COUNT: usize = 32;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // XXX: seeded so the example produces the same certificate on every run, which keeps it usable
-    // as documentation. Never generate real key material from a fixed seed.
+    // Seeded so the example produces the same aggregate signature on every run, which keeps it
+    // documentation. Never generate real key material from a fixed seed.
     let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
 
     let parameters = Parameters {
@@ -44,7 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     rng.fill_bytes(&mut message);
 
     // Registration. Every signer publishes its verification key and stake; closing the registration
-    // fixes the signer set the certificate will be verified against.
+    // fixes the signer set the aggregate signature will be verified against.
     let mut key_registration = KeyRegistration::initialize();
     let mut initializers: Vec<Initializer> = Vec::with_capacity(SIGNER_COUNT);
     for _ in 0..SIGNER_COUNT {
@@ -78,9 +80,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let clerk = Clerk::new_clerk_from_signer(first_signer);
     let aggregate_verification_key = clerk.compute_aggregate_verification_key();
 
-    // The ancillary input carries state between certificates for proof systems that need it. The
-    // concatenation one does not, so an empty input is correct here; the recursive SNARK example
-    // shows what it is for.
+    // This proof system carries no state from one aggregate signature to the next, so the ancillary
+    // input is empty and the aggregation never reads it.
+
     let ancillary_input = AncillaryProofInput::new(
         None,
         AncillaryGenesisData::new(
@@ -95,14 +97,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         Vec::new(),
     );
 
-    let (certificate, ancillary_output) = clerk.aggregate_signatures_with_type(
+    let (aggregate_signature, ancillary_output) = clerk.aggregate_signatures_with_type(
         &signatures,
         &message,
         AggregateSignatureType::Concatenation,
         ancillary_input,
     )?;
 
-    certificate.verify(
+    aggregate_signature.verify(
         &message,
         &aggregate_verification_key,
         &parameters,
@@ -110,7 +112,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         None,
     )?;
 
-    println!("certificate aggregated and verified");
+    println!("aggregate signature produced and verified");
 
     Ok(())
 }
