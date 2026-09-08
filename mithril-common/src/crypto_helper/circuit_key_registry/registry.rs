@@ -1,5 +1,7 @@
 //! Genesis-signed registry of the circuit verification keys trusted for SNARK certificates.
 
+use std::fmt::{Display, Formatter};
+
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use thiserror::Error;
@@ -14,23 +16,58 @@ use crate::entities::Epoch;
 /// [CircuitVerificationKeyRegistry].
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum CircuitVerificationKeyRegistryError {
-    /// The digest is covered by a revoked entry for the checked epoch.
-    #[error("circuit verification key '{digest}' is revoked for epoch {epoch}")]
-    Revoked {
-        /// Digest of the revoked circuit verification key.
-        digest: CircuitVerificationKeyDigest,
+    /// Some digests are revoked or not whitelisted for the checked epoch.
+    #[error("circuit verification keys rejected for epoch {epoch}: {}", CircuitVerificationKeyRejection::join(.rejections))]
+    Rejected {
         /// Epoch for which the check was performed.
         epoch: Epoch,
+        /// Rejected digests with their reason, in the checked order.
+        rejections: Vec<CircuitVerificationKeyRejection>,
     },
+}
 
-    /// The digest is not covered by any allowed entry for the checked epoch.
-    #[error("circuit verification key '{digest}' is not whitelisted for epoch {epoch}")]
-    NotWhitelisted {
-        /// Digest of the unknown or out-of-range circuit verification key.
-        digest: CircuitVerificationKeyDigest,
-        /// Epoch for which the check was performed.
-        epoch: Epoch,
-    },
+/// Reason for which a circuit verification key digest is rejected for an epoch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CircuitVerificationKeyRejectionReason {
+    /// The digest is covered by a revoked entry.
+    Revoked,
+
+    /// The digest is not covered by any allowed entry.
+    NotWhitelisted,
+}
+
+/// A circuit verification key digest rejected by the registry, with the reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CircuitVerificationKeyRejection {
+    /// Rejected digest.
+    pub digest: CircuitVerificationKeyDigest,
+
+    /// Reason of the rejection.
+    pub reason: CircuitVerificationKeyRejectionReason,
+}
+
+impl CircuitVerificationKeyRejection {
+    /// Join the rejections in a single comma separated line.
+    fn join(rejections: &[Self]) -> String {
+        rejections
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+impl Display for CircuitVerificationKeyRejection {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.reason {
+            CircuitVerificationKeyRejectionReason::Revoked => {
+                write!(f, "'{}' is revoked", self.digest)
+            }
+            CircuitVerificationKeyRejectionReason::NotWhitelisted => {
+                write!(f, "'{}' is not whitelisted", self.digest)
+            }
+        }
+    }
 }
 
 /// Status of a circuit verification key entry over its epoch range.
@@ -89,40 +126,56 @@ pub struct CircuitVerificationKeyRegistry {
 }
 
 impl CircuitVerificationKeyRegistry {
-    /// Check that every digest is whitelisted and not revoked for the given epoch.
+    /// Check that every digest is whitelisted and not revoked for the given epoch, reporting
+    /// every rejected digest at once.
     ///
-    /// A digest fails with [Revoked](CircuitVerificationKeyRegistryError::Revoked) when any
-    /// revoked entry covers the epoch, and with
-    /// [NotWhitelisted](CircuitVerificationKeyRegistryError::NotWhitelisted) when no allowed
+    /// A digest is rejected as [Revoked](CircuitVerificationKeyRejectionReason::Revoked) when
+    /// any revoked entry covers the epoch, and as
+    /// [NotWhitelisted](CircuitVerificationKeyRejectionReason::NotWhitelisted) when no allowed
     /// entry covers it.
     pub fn check(
         &self,
         digests: &[CircuitVerificationKeyDigest],
         epoch: Epoch,
     ) -> Result<(), CircuitVerificationKeyRegistryError> {
-        digests.iter().try_for_each(|digest| {
-            let is_revoked = self.has_covering_entry_with_status(
-                digest,
-                epoch,
-                CircuitVerificationKeyStatus::Revoked,
-            );
-            let is_allowed = self.has_covering_entry_with_status(
-                digest,
-                epoch,
-                CircuitVerificationKeyStatus::Allowed,
-            );
+        let rejections: Vec<CircuitVerificationKeyRejection> = digests
+            .iter()
+            .filter_map(|digest| self.find_digest_rejection(digest, epoch))
+            .collect();
 
-            match (is_revoked, is_allowed) {
-                (true, _) => Err(CircuitVerificationKeyRegistryError::Revoked {
-                    digest: *digest,
-                    epoch,
-                }),
-                (false, false) => Err(CircuitVerificationKeyRegistryError::NotWhitelisted {
-                    digest: *digest,
-                    epoch,
-                }),
-                (false, true) => Ok(()),
-            }
+        if rejections.is_empty() {
+            Ok(())
+        } else {
+            Err(CircuitVerificationKeyRegistryError::Rejected { epoch, rejections })
+        }
+    }
+
+    /// Find why the digest is rejected for the epoch, if it is: revocation wins over an allowed
+    /// entry covering the same epoch.
+    fn find_digest_rejection(
+        &self,
+        digest: &CircuitVerificationKeyDigest,
+        epoch: Epoch,
+    ) -> Option<CircuitVerificationKeyRejection> {
+        let is_revoked = self.has_covering_entry_with_status(
+            digest,
+            epoch,
+            CircuitVerificationKeyStatus::Revoked,
+        );
+        let is_allowed = self.has_covering_entry_with_status(
+            digest,
+            epoch,
+            CircuitVerificationKeyStatus::Allowed,
+        );
+        let reason = match (is_revoked, is_allowed) {
+            (true, _) => Some(CircuitVerificationKeyRejectionReason::Revoked),
+            (false, false) => Some(CircuitVerificationKeyRejectionReason::NotWhitelisted),
+            (false, true) => None,
+        };
+
+        reason.map(|reason| CircuitVerificationKeyRejection {
+            digest: *digest,
+            reason,
         })
     }
 
@@ -282,6 +335,13 @@ mod tests {
     mod check {
         use super::*;
 
+        fn rejection(
+            digest: CircuitVerificationKeyDigest,
+            reason: CircuitVerificationKeyRejectionReason,
+        ) -> CircuitVerificationKeyRejection {
+            CircuitVerificationKeyRejection { digest, reason }
+        }
+
         #[test]
         fn accepts_digests_covered_by_an_allowed_entry() {
             let registry = registry(vec![
@@ -309,9 +369,12 @@ mod tests {
             let error = registry.check(&[digest(9)], Epoch(15)).unwrap_err();
 
             assert_eq!(
-                CircuitVerificationKeyRegistryError::NotWhitelisted {
-                    digest: digest(9),
+                CircuitVerificationKeyRegistryError::Rejected {
                     epoch: Epoch(15),
+                    rejections: vec![rejection(
+                        digest(9),
+                        CircuitVerificationKeyRejectionReason::NotWhitelisted
+                    )],
                 },
                 error
             );
@@ -329,9 +392,12 @@ mod tests {
             let error = registry.check(&[digest(1)], Epoch(21)).unwrap_err();
 
             assert_eq!(
-                CircuitVerificationKeyRegistryError::NotWhitelisted {
-                    digest: digest(1),
+                CircuitVerificationKeyRegistryError::Rejected {
                     epoch: Epoch(21),
+                    rejections: vec![rejection(
+                        digest(1),
+                        CircuitVerificationKeyRejectionReason::NotWhitelisted
+                    )],
                 },
                 error
             );
@@ -348,24 +414,49 @@ mod tests {
             let error = registry.check(&[digest(1)], Epoch(250)).unwrap_err();
 
             assert_eq!(
-                CircuitVerificationKeyRegistryError::Revoked {
-                    digest: digest(1),
+                CircuitVerificationKeyRegistryError::Rejected {
                     epoch: Epoch(250),
+                    rejections: vec![rejection(
+                        digest(1),
+                        CircuitVerificationKeyRejectionReason::Revoked
+                    )],
                 },
                 error
             );
         }
 
         #[test]
-        fn rejects_when_any_digest_of_the_list_fails() {
-            let registry = registry(vec![entry(
-                digest(1),
-                CircuitVerificationKeyStatus::Allowed,
-                10,
-                None,
-            )]);
+        fn reports_every_rejected_digest_of_the_list_with_its_reason() {
+            let registry = registry(vec![
+                entry(digest(1), CircuitVerificationKeyStatus::Allowed, 10, None),
+                entry(digest(2), CircuitVerificationKeyStatus::Revoked, 10, None),
+            ]);
 
-            registry.check(&[digest(1), digest(2)], Epoch(15)).unwrap_err();
+            let error = registry
+                .check(&[digest(1), digest(2), digest(3)], Epoch(15))
+                .unwrap_err();
+
+            assert_eq!(
+                CircuitVerificationKeyRegistryError::Rejected {
+                    epoch: Epoch(15),
+                    rejections: vec![
+                        rejection(digest(2), CircuitVerificationKeyRejectionReason::Revoked),
+                        rejection(
+                            digest(3),
+                            CircuitVerificationKeyRejectionReason::NotWhitelisted
+                        ),
+                    ],
+                },
+                error
+            );
+            assert_eq!(
+                format!(
+                    "circuit verification keys rejected for epoch 15: '{}' is revoked, '{}' is not whitelisted",
+                    digest(2),
+                    digest(3)
+                ),
+                error.to_string()
+            );
         }
 
         #[test]

@@ -233,8 +233,9 @@ mod tests {
     use crate::crypto_helper::circuit_key_registry::retriever::MockCircuitVerificationKeyRegistryRetriever;
     use crate::crypto_helper::{
         CircuitVerificationKeyEntry, CircuitVerificationKeyRegistryError,
-        CircuitVerificationKeyRegistryRetrieverError, CircuitVerificationKeyStatus,
-        GenesisEd25519Signer, GenesisSigner, SignedCircuitVerificationKeyRegistry,
+        CircuitVerificationKeyRegistryRetrieverError, CircuitVerificationKeyRejection,
+        CircuitVerificationKeyRejectionReason, CircuitVerificationKeyStatus, GenesisEd25519Signer,
+        GenesisSigner, SignedCircuitVerificationKeyRegistry,
     };
     use crate::test::double::FakeCircuitVerificationKeyRegistryRetriever;
 
@@ -303,9 +304,12 @@ mod tests {
 
             assert_eq!(
                 error.downcast_ref::<CircuitVerificationKeyRegistryError>(),
-                Some(&CircuitVerificationKeyRegistryError::NotWhitelisted {
-                    digest: digest(9),
+                Some(&CircuitVerificationKeyRegistryError::Rejected {
                     epoch: Epoch(10),
+                    rejections: vec![CircuitVerificationKeyRejection {
+                        digest: digest(9),
+                        reason: CircuitVerificationKeyRejectionReason::NotWhitelisted,
+                    }],
                 }),
                 "the registry check error must be preserved, got: {error}"
             );
