@@ -1,8 +1,8 @@
 use anyhow::anyhow;
 
 use crate::{
-    AggregateVerificationKeyForSnark, AggregationError, AncillaryProofInput, BaseFieldElement,
-    MembershipDigest, StmResult,
+    AggregateVerificationKeyForSnark, AggregationError, AncillaryGenesisData, AncillaryProofInput,
+    BaseFieldElement, MembershipDigest, SchnorrVerificationKey, StmResult,
     circuits::halo2_ivc::{
         PREIMAGE_SIZE, ProtocolMessagePreimage,
         errors::{EpochTransitionErrorKind, IvcCircuitError},
@@ -31,15 +31,8 @@ impl<D: MembershipDigest> IvcOffCircuitChecker<D> for MithrilIvcOffCircuitChecke
         ancillary_input: &AncillaryProofInput,
     ) -> StmResult<()> {
         let genesis_data = ancillary_input.genesis_data();
-
-        let genesis_verifying_key = genesis_data
-            .genesis_schnorr_verification_key()
-            .cloned()
-            .ok_or_else(|| anyhow!(AggregationError::MissingGenesisVerificationKey))?;
-        genesis_verifying_key.is_valid()?;
-
-        let genesis_message: MessageHash = genesis_data.genesis_message_preimage().try_into()?;
-        let genesis_bootstrap: IvcGenesisBootstrapInput = genesis_data.try_into()?;
+        let (genesis_verifying_key, genesis_message, genesis_bootstrap) =
+            self.check_genesis_data(genesis_data)?;
 
         let rolling_state = ancillary_input
             .prover_data()
@@ -50,41 +43,16 @@ impl<D: MembershipDigest> IvcOffCircuitChecker<D> for MithrilIvcOffCircuitChecke
         let preimage = ProtocolMessagePreimage(preimage_bytes);
 
         let certificate_message_hash = if let Some(rolling_state) = rolling_state {
-            let (transition_type, certificate_message_hash, _) =
-                rolling_state.validate_transition(&preimage, aggregate_verification_key, msg)?;
-            rolling_state.assert_protocol_parameters_unchanged(transition_type)?;
-            certificate_message_hash
+            self.check_rolling_state(msg, aggregate_verification_key, &preimage, rolling_state)?
         } else {
-            genesis_bootstrap.genesis_signature.verify(
-                &[BaseFieldElement::from(genesis_message.as_field())],
+            self.check_genesis_bootstrap(
+                msg,
+                aggregate_verification_key,
+                &preimage,
                 &genesis_verifying_key,
-            )?;
-
-            let (certificate_message_hash, certificate_merkle_tree_commitment) =
-                create_snark_message_for_next_state(aggregate_verification_key, msg)?;
-
-            let genesis_preimage = &genesis_bootstrap.genesis_protocol_message_preimage;
-            let genesis_epoch = genesis_preimage.current_epoch();
-            let expected_epoch =
-                genesis_epoch
-                    .next_epoch()
-                    .ok_or(IvcCircuitError::InvalidEpochTransition {
-                        kind: EpochTransitionErrorKind::EpochOverflow,
-                        last_committed_epoch: genesis_epoch.as_u64(),
-                    })?;
-
-            let matches_genesis_lookahead = preimage.current_epoch().is_equal(&expected_epoch)
-                && certificate_merkle_tree_commitment
-                    == genesis_preimage.next_merkle_tree_commitment();
-            if !matches_genesis_lookahead {
-                return Err(IvcCircuitError::InvalidEpochTransition {
-                    kind: EpochTransitionErrorKind::GenesisLookaheadDoesNotMatchProtocolMessage,
-                    last_committed_epoch: genesis_epoch.as_u64(),
-                }
-                .into());
-            }
-
-            certificate_message_hash
+                &genesis_message,
+                &genesis_bootstrap,
+            )?
         };
 
         let preimage_message_hash: MessageHash = (&preimage).try_into()?;
@@ -93,6 +61,90 @@ impl<D: MembershipDigest> IvcOffCircuitChecker<D> for MithrilIvcOffCircuitChecke
         }
 
         Ok(())
+    }
+}
+
+impl MithrilIvcOffCircuitChecker {
+    /// Checks that the genesis verification key is present and structurally valid, and parses
+    /// the genesis bootstrap input. Always run since the genesis verification key is
+    /// a public input on every proving step.
+    fn check_genesis_data(
+        &self,
+        genesis_data: &AncillaryGenesisData,
+    ) -> StmResult<(
+        SchnorrVerificationKey,
+        MessageHash,
+        IvcGenesisBootstrapInput,
+    )> {
+        let genesis_verifying_key = genesis_data
+            .genesis_schnorr_verification_key()
+            .cloned()
+            .ok_or_else(|| anyhow!(AggregationError::MissingGenesisVerificationKey))?;
+        genesis_verifying_key.is_valid()?;
+
+        let genesis_message: MessageHash = genesis_data.genesis_message_preimage().try_into()?;
+        let genesis_bootstrap: IvcGenesisBootstrapInput = genesis_data.try_into()?;
+
+        Ok((genesis_verifying_key, genesis_message, genesis_bootstrap))
+    }
+
+    /// Verifies the genesis signature and checks that the first real certificate matches the
+    /// genesis-announced epoch and Merkle-tree commitment lookahead. Runs only during
+    /// the genesis step.
+    fn check_genesis_bootstrap<D: MembershipDigest>(
+        &self,
+        msg: &[u8],
+        aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
+        preimage: &ProtocolMessagePreimage,
+        genesis_verifying_key: &SchnorrVerificationKey,
+        genesis_message: &MessageHash,
+        genesis_bootstrap: &IvcGenesisBootstrapInput,
+    ) -> StmResult<MessageHash> {
+        genesis_bootstrap.genesis_signature.verify(
+            &[BaseFieldElement::from(genesis_message.as_field())],
+            genesis_verifying_key,
+        )?;
+
+        let (certificate_message_hash, certificate_merkle_tree_commitment) =
+            create_snark_message_for_next_state(aggregate_verification_key, msg)?;
+
+        let genesis_preimage = &genesis_bootstrap.genesis_protocol_message_preimage;
+        let genesis_epoch = genesis_preimage.current_epoch();
+        let expected_epoch =
+            genesis_epoch
+                .next_epoch()
+                .ok_or(IvcCircuitError::InvalidEpochTransition {
+                    kind: EpochTransitionErrorKind::EpochOverflow,
+                    last_committed_epoch: genesis_epoch.as_u64(),
+                })?;
+
+        let matches_genesis_lookahead = preimage.current_epoch().is_equal(&expected_epoch)
+            && certificate_merkle_tree_commitment == genesis_preimage.next_merkle_tree_commitment();
+        if !matches_genesis_lookahead {
+            return Err(IvcCircuitError::InvalidEpochTransition {
+                kind: EpochTransitionErrorKind::GenesisLookaheadDoesNotMatchProtocolMessage,
+                last_committed_epoch: genesis_epoch.as_u64(),
+            }
+            .into());
+        }
+
+        Ok(certificate_message_hash)
+    }
+
+    /// Validates the incoming certificate's transition against the existing rolling state and
+    /// rejects a next-epoch transition that would promote a diverged protocol-parameters
+    /// announcement. Runs only when there is an existing rolling state.
+    fn check_rolling_state<D: MembershipDigest>(
+        &self,
+        msg: &[u8],
+        aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
+        preimage: &ProtocolMessagePreimage,
+        rolling_state: &IvcRollingState,
+    ) -> StmResult<MessageHash> {
+        let (transition_type, certificate_message_hash, _) =
+            rolling_state.validate_transition(preimage, aggregate_verification_key, msg)?;
+        rolling_state.assert_protocol_parameters_unchanged(transition_type)?;
+        Ok(certificate_message_hash)
     }
 }
 
