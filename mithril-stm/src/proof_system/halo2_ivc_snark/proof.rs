@@ -34,6 +34,7 @@ use crate::{
         halo2::{keys::NonRecursiveCircuitVerifyingKey, types::CircuitBase},
         halo2_ivc::{
             PREIMAGE_SIZE,
+            accumulator::check_accumulator_fixed_bases_present,
             circuit::IvcCircuitData,
             keys::{RecursiveCircuitProvingKey, RecursiveCircuitVerifyingKey},
             state::{Global, State},
@@ -185,6 +186,10 @@ where
             .assert_empty()
             .map_err(|_| IvcProofError::TranscriptNotFullyConsumed)?;
 
+        check_accumulator_fixed_bases_present(
+            &self.accumulator,
+            verifier_setup.combined_fixed_bases(),
+        )?;
         let accumulator_lhs = self.accumulator.lhs().eval(verifier_setup.combined_fixed_bases());
         let accumulator_rhs = self.accumulator.rhs().eval(verifier_setup.combined_fixed_bases());
 
