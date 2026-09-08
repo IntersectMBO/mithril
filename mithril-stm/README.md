@@ -5,22 +5,21 @@
 - `mithril-stm` is a Rust implementation of the scheme described in the paper [Mithril: Stake-based Threshold Multisignatures](https://eprint.iacr.org/2021/916.pdf) by Pyrros Chaidos and Aggelos Kiayias.
 - The BLS12-381 signature library [blst](https://github.com/supranational/blst) is used as the backend for the implementation of STM.
 - Three proof systems are available:
-  - the _trivial concatenation proof system_ (Section 4.3), currently used by the Mithril network. A certificate carries the winning signatures concatenated, so it grows with the quorum, and verification needs no trusted setup.
-  - a _non-recursive SNARK_ proof system, which replaces those signatures with a single succinct proof of the same statement.
-  - a _recursive SNARK_ proof system, in which each certificate proves the whole chain of certificates behind it, so a verifier checks one proof rather than every certificate since genesis.
+  - the [_trivial concatenation proof system_](https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/concatenation) (Section 4.3), currently used by the Mithril network. The aggregate signature carries one entry per contributing signer, together covering at least the `k` winning lottery indices the quorum requires, so its size follows the number of signers needed rather than `k` alone. Verification needs no trusted setup.
+  - a [_non-recursive SNARK_](https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/non-recursive-snark) proof system, in which the aggregate signature consists in a single succinct proof that the quorum was met, so a verifier checks one proof rather than every individual signature.
+  - a [_recursive SNARK_](https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/recursive-snark) proof system, in which each aggregate signature proves the whole chain behind it, so a verifier checks one proof rather than every aggregate signature since genesis.
 - The two SNARK proof systems are **experimental**. They are gated behind the `future_snark` feature, which also requires one of `rustls` or `native-tls` for the trusted setup download.
 - We implemented the concatenation proof system as batch proofs:
   - Individual signatures do not contain the Merkle path to prove membership of the avk. Instead, it is the role of the aggregator to generate such proofs. This allows for a more efficient implementation of batched membership proofs (or batched Merkle paths).
 - Protocol documentation is given in [Mithril Protocol in depth](https://mithril.network/doc/mithril/mithril-protocol/protocol/).
-- The API also includes _core verification_. This functionality allows a full node verifier (`CoreVerifier`) that is
-  able to verify the signatures that are generated without the registration information, i.e., `avk`. A
-  `CoreVerifier` is assumed to know identities of the signers, so, it does not need to check the registration.
-
 - This library provides:
   - The implementation of the Stake-based Threshold Multisignatures
-  - The implementation of `CoreVerifier`
   - Key registration procedure for STM signatures
-  - The tests for the library functions, STM scheme, and `CoreVerifier`
+  - The three aggregation proof systems, with their aggregate signatures and verification keys
+  - BLS signatures for the concatenation proof system, and standard and unique Schnorr signatures for the SNARK ones
+  - The membership digest, hashing with Blake2b for the concatenation proof system and with Poseidon for the SNARK ones, which keeps the membership commitment aligned with the circuits
+  - The Halo2 certificate and recursive circuits backing the two SNARK proof systems
+  - The tests for the library functions and the STM scheme
   - Benchmark tests
 
 ## Pre-requisites
@@ -71,7 +70,7 @@ cargo bench
 
 ## Examples
 
-One runnable example per proof system, each covering aggregation and verification. The sources are also reproduced in the [crate documentation](https://docs.rs/mithril-stm).
+One runnable example per proof system, each covering aggregation and verification.
 
 | Example                                                                                                                                  | Command                                                                                                               |
 | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
