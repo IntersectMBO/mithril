@@ -6,7 +6,6 @@ use crate::{
     AggregateVerificationKeyForSnark, MembershipDigest, SnarkProof, StmResult,
     circuits::halo2_ivc::{
         accumulator::check_accumulator_fixed_bases_present,
-        errors::{EpochTransitionErrorKind, IvcCircuitError},
         state::{Global, State},
         types::{MerkleTreeCommitment, MessageHash, ProtocolMessagePreimage},
     },

@@ -214,12 +214,20 @@ impl IvcRollingState {
         ))
     }
 
-    /// Asserts that the rolling state's protocol parameters have not diverged from their
-    /// lookahead value. At genesis `protocol_parameters` is zeroed while `next_protocol_parameters`
-    /// carries the bootstrap value, so genesis is exempt; every step after that must have the two
-    /// equal, since changing protocol parameters between epochs isn't currently supported.
-    pub(crate) fn assert_protocol_parameters_unchanged(&self) -> StmResult<()> {
+    /// Asserts that a `NextEpoch` transition does not promote a diverged `next_protocol_parameters`
+    /// value into `protocol_parameters`.
+    ///
+    /// A `SameEpoch` transition never consumes `next_protocol_parameters` (see `build_next_state`),
+    /// so a chain that already carries a divergence — from an earlier certificate that announced a
+    /// parameter change — can still process every remaining `SameEpoch` certificate in the epoch
+    /// where the divergence appeared; only the `NextEpoch` transition that would actually promote
+    /// the diverged value into the new epoch is rejected.
+    pub(crate) fn assert_protocol_parameters_unchanged(
+        &self,
+        transition_type: IvcTransitionType,
+    ) -> StmResult<()> {
         if !self.is_genesis()
+            && matches!(transition_type, IvcTransitionType::NextEpoch)
             && self.state().protocol_parameters != self.state().next_protocol_parameters
         {
             return Err(IvcProofError::ProtocolParametersChanged.into());
