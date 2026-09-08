@@ -32,8 +32,8 @@ use mithril_end_to_end::toolkit::{ScenarioToolkit, ScenarioToolkitContext};
 use mithril_end_to_end::{
     AggregateSignatureType, Aggregator, Client, CompatibilityChecker, CompatibilityCheckerError,
     Devnet, DevnetBootstrapArgs, DmqNodeFlavor, IpfsDevnet, IpfsDevnetBootstrapArgs,
-    MithrilInfrastructure, MithrilInfrastructureConfig, NodeVersion, ProtocolConfiguration,
-    RelaySigner, RetryableDevnetError, Signer,
+    IpfsDevnetMode, MithrilInfrastructure, MithrilInfrastructureConfig, NodeVersion,
+    ProtocolConfiguration, RelaySigner, RetryableDevnetError, Signer,
 };
 
 /// Default signed entity types used by scenarios that support multiple entities, such as Full and RunOnly.
@@ -189,6 +189,15 @@ struct NetworkTopologyArgs {
     /// Enable upload and download to an IPFS devnet
     #[clap(long)]
     use_ipfs: bool,
+
+    /// Path to an existing IPFS devnet swarm to attach to.
+    ///
+    /// The target devnet must have at least one node per aggregator plus one for the client.
+    ///
+    /// If set, the target devnet will be attached to, started if needed, and left running after the test.
+    /// If unset, a new IPFS devnet will be created in the end-to-end working directory.
+    #[clap(long, requires = "use_ipfs")]
+    ipfs_devnet_to_attach: Option<PathBuf>,
 
     /// Directory containing scripts to bootstrap an IPFS devnet
     #[clap(long, default_value = "./ipfs_devnet")]
@@ -521,12 +530,20 @@ impl App {
         *self.devnet.lock().await = Some(devnet.clone());
 
         let ipfs_devnet = if args.network_topology.use_ipfs {
+            let (mode, swarm_target_dir) =
+                if let Some(swarm_dir) = args.network_topology.ipfs_devnet_to_attach {
+                    (IpfsDevnetMode::Detached, swarm_dir)
+                } else {
+                    (IpfsDevnetMode::Spawn, work_dir.join("ipfs_devnet"))
+                };
+
             let devnet = IpfsDevnet::bootstrap(&IpfsDevnetBootstrapArgs {
                 devnet_scripts_dir: args.network_topology.ipfs_devnet_scripts_directory,
                 // One per aggregator + one for the Mithril Client
                 number_of_nodes: args.network_topology.number_of_aggregators + 1,
-                swarm_target_dir: work_dir.join("ipfs_devnet"),
+                swarm_target_dir,
                 kubo_version: None,
+                mode,
             })
             .await?;
             Some(devnet)

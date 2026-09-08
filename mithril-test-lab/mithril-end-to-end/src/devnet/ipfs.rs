@@ -14,11 +14,21 @@ use crate::utils::{ChildLoggerExt, file_utils};
 
 const IPFS_DEVNET_SCRIPT_NAME: &str = "ipfs-devnet.sh";
 
+#[derive(Debug, Copy, Clone, Default)]
+pub enum IpfsDevnetMode {
+    /// Spawn an IPFS devnet (default, only alive during the tests).
+    #[default]
+    Spawn,
+    /// Attach to an existing IPFS devnet.
+    Detached,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct IpfsDevnet {
     devnet_script_path: PathBuf,
     swarm_dir: PathBuf,
     topology: Vec<KuboNode>,
+    mode: IpfsDevnetMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +43,7 @@ pub struct IpfsDevnetBootstrapArgs {
     pub number_of_nodes: u8,
     pub swarm_target_dir: PathBuf,
     pub kubo_version: Option<semver::Version>,
+    pub mode: IpfsDevnetMode,
 }
 
 impl IpfsDevnet {
@@ -57,10 +68,59 @@ impl IpfsDevnet {
     }
 
     pub async fn bootstrap(bootstrap_args: &IpfsDevnetBootstrapArgs) -> StdResult<IpfsDevnet> {
+        match bootstrap_args.mode {
+            IpfsDevnetMode::Spawn => Self::bootstrap_new_network(bootstrap_args).await,
+            IpfsDevnetMode::Detached => Self::bootstrap_attached(bootstrap_args),
+        }
+    }
+
+    fn bootstrap_attached(bootstrap_args: &IpfsDevnetBootstrapArgs) -> StdResult<IpfsDevnet> {
         let devnet_script_path = file_utils::get_process_path(
             IPFS_DEVNET_SCRIPT_NAME,
             &bootstrap_args.devnet_scripts_dir,
         )?;
+        let swarm_dir = bootstrap_args.swarm_target_dir.to_owned();
+        let swarm_dir_entries: Vec<_> = swarm_dir
+            .read_dir()
+            .with_context(|| format!("Failed to read swarm directory: '{}'", swarm_dir.display()))?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+            .collect();
+
+        for i in 1..=bootstrap_args.number_of_nodes {
+            let expected_node = format!("kubo-node-{i}");
+            if !swarm_dir_entries
+                .iter()
+                .any(|e| e.file_name().to_string_lossy() == expected_node)
+            {
+                anyhow::bail!(
+                    "Expected node '{}' missing in attached swarm directory ('{}'), please re-initialize the devnet with at least {} nodes",
+                    expected_node,
+                    swarm_dir.display(),
+                    bootstrap_args.number_of_nodes
+                );
+            }
+        }
+
+        Ok(IpfsDevnet {
+            devnet_script_path,
+            swarm_dir: bootstrap_args.swarm_target_dir.to_owned(),
+            topology: Self::build_topology(
+                bootstrap_args.number_of_nodes,
+                &bootstrap_args.swarm_target_dir,
+            ),
+            mode: bootstrap_args.mode,
+        })
+    }
+
+    async fn bootstrap_new_network(
+        bootstrap_args: &IpfsDevnetBootstrapArgs,
+    ) -> StdResult<IpfsDevnet> {
+        let devnet_script_path = file_utils::get_process_path(
+            IPFS_DEVNET_SCRIPT_NAME,
+            &bootstrap_args.devnet_scripts_dir,
+        )?;
+
         let mut bootstrap_command = Command::new(&devnet_script_path);
         bootstrap_command
             .arg("init")
@@ -96,6 +156,7 @@ impl IpfsDevnet {
                     bootstrap_args.number_of_nodes,
                     &bootstrap_args.swarm_target_dir,
                 ),
+                mode: bootstrap_args.mode,
             }),
             Some(code) => Err(anyhow!(RetryableDevnetError(format!(
                 "IPFS Bootstrap devnet exited with status code: {code}"
@@ -113,6 +174,8 @@ impl IpfsDevnet {
     }
 
     pub async fn start(&self) -> StdResult<()> {
+        // Note: running the start command on an already running devnet does nothing, so running it
+        // against a "Detached" devnet poses no risk (if stopped, it will start, if running, it will do nothing).
         let mut run_command = self.build_command("start")?;
 
         info!("Starting the IPFS devnet"; "script" => &self.devnet_script_path.display(), "cmd" => "start");
@@ -133,6 +196,11 @@ impl IpfsDevnet {
     }
 
     pub async fn stop(&self) -> StdResult<()> {
+        if matches!(self.mode, IpfsDevnetMode::Detached) {
+            info!("IPFS devnet is in detached mode, leaving it running");
+            return Ok(());
+        }
+
         let mut run_command = self.build_command("stop")?;
 
         info!("Stopping the IPFS devnet"; "script" => &self.devnet_script_path.display(), "cmd" => "stop");
