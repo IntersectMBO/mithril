@@ -4,6 +4,22 @@
 //! labels, the dynamic-parts digest and the protocol-parameters hash, all of which live here rather
 //! than in `mithril-stm`, which cannot depend on this crate. The generator below produces them
 //! once; the comparison test keeps the committed copies honest.
+//!
+//! # Regenerating the fixtures
+//!
+//! `committed_preimages_match_the_canonical_protocol_messages` fails when the protocol message
+//! format or the canonical inputs below change without the committed files being regenerated. The
+//! runnable example duplicates the signer seed, the stakes and the protocol parameters, so those
+//! must be kept in step with the values here before regenerating. Regenerate with:
+//!
+//! ```shell
+//! cargo test -p mithril-common --features future_snark,rustls \
+//!     generate_recursive_snark_example_fixtures -- --ignored
+//! ```
+//!
+//! It takes several minutes: every certificate is proved and verified before anything is written,
+//! so a fixture is never committed unless the chain it describes actually works. The three files it
+//! writes belong to `mithril-stm/examples/assets` and are committed alongside the example.
 
 use std::fs;
 use std::path::PathBuf;
@@ -30,7 +46,7 @@ const GENESIS_SEED: [u8; 32] = [1u8; 32];
 const SIGNER_STAKES: [Stake; 4] = [1_000, 2_000, 3_000, 4_000];
 
 const QUORUM_PARAMETER: u64 = 2;
-const SECURITY_PARAMETER: u64 = 100;
+const SECURITY_PARAMETER_NUMBER_OF_LOTTERIES: u64 = 100;
 const LOTTERY_PARAMETER: f64 = 0.2;
 
 const GENESIS_EPOCH: u64 = 0;
@@ -48,7 +64,7 @@ fn fixture_directory() -> PathBuf {
 fn protocol_parameters() -> ProtocolParameters {
     ProtocolParameters {
         k: QUORUM_PARAMETER,
-        m: SECURITY_PARAMETER,
+        m: SECURITY_PARAMETER_NUMBER_OF_LOTTERIES,
         phi_f: LOTTERY_PARAMETER,
     }
 }
@@ -56,7 +72,7 @@ fn protocol_parameters() -> ProtocolParameters {
 fn stm_parameters() -> Parameters {
     Parameters {
         k: QUORUM_PARAMETER,
-        m: SECURITY_PARAMETER,
+        m: SECURITY_PARAMETER_NUMBER_OF_LOTTERIES,
         phi_f: LOTTERY_PARAMETER,
     }
 }
@@ -135,11 +151,17 @@ fn example_protocol_messages(clerk: &Clerk<ProtocolMembershipDigest>) -> [Protoc
 
 #[test]
 fn committed_preimages_match_the_canonical_protocol_messages() {
+    // The fixtures belong to `mithril-stm`, which cannot own this test because the protocol message
+    // builder lives here. Outside the workspace, in a packaged crate, they are simply absent.
+    let directory = fixture_directory();
+    if !directory.is_dir() {
+        return;
+    }
+
     let signers = example_signers();
     let clerk = Clerk::new_clerk_from_signer(&signers[0]);
     let protocol_messages = example_protocol_messages(&clerk);
 
-    let directory = fixture_directory();
     let files = [
         GENESIS_PREIMAGE_FILE,
         FIRST_CERTIFICATE_PREIMAGE_FILE,

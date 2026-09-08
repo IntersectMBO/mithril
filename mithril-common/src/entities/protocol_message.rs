@@ -510,6 +510,9 @@ impl ProtocolMessage {
     }
 }
 
+#[cfg(all(test, feature = "future_snark"))]
+mod recursive_snark_example_fixtures;
+
 #[cfg(test)]
 mod tests {
     use super::*;
