@@ -6,7 +6,8 @@ locals {
 
 resource "null_resource" "mithril_aggregator" {
   depends_on = [
-    null_resource.mithril_reverse_proxy
+    null_resource.mithril_reverse_proxy,
+    null_resource.mithril_ipfs
   ]
 
   triggers = {
@@ -29,6 +30,7 @@ resource "null_resource" "mithril_aggregator" {
     mithril_aggregator_cardano_transactions_database_connection_pool_size        = var.mithril_aggregator_cardano_transactions_database_connection_pool_size,
     mithril_aggregator_blockfrost_parameters                                     = var.mithril_aggregator_blockfrost_parameters,
     mithril_p2p_dmq_dense_topology                                               = var.mithril_p2p_dmq_dense_topology,
+    mithril_ipfs_enabled                                                         = var.mithril_ipfs_enabled,
   }
 
   connection {
@@ -178,6 +180,12 @@ if [ "$ANCILLARY_FILES_SIGNER_TYPE" = "gcp-kms" ]; then
 fi
 EOT
       ,
+      <<-EOT
+if [ "${var.mithril_ipfs_enabled}" = "true" ]; then
+  export IPFS_RPC_SERVER_CONFIG=$(jq -nc --arg url '${local.mithril_ipfs_rpc_api_url}' '{"url": $url}')
+fi
+EOT
+      ,
       "export BLOCKFROST_PARAMETERS='${var.mithril_aggregator_blockfrost_parameters}'",
       "export ALLOW_UNPARSABLE_BLOCK=${var.mithril_aggregator_allow_unparsable_block}",
       "export CARDANO_BLOCKS_TRANSACTIONS_PROVER_CACHE_POOL_SIZE=${var.mithril_aggregator_cardano_blocks_transactions_prover_cache_pool_size}",
@@ -224,6 +232,10 @@ if [ "${var.mithril_use_p2p_network}" = "true" ] && [ "${var.mithril_p2p_use_rea
   if [ "${var.mithril_p2p_network_bootstrap_peer}" != "" ]; then
     DOCKER_COMPOSE_FILES="$DOCKER_COMPOSE_FILES -f $DOCKER_DIRECTORY/docker-compose-aggregator-p2p-bootstrap-override.yaml"
   fi
+fi
+# Support for aggregator upload to IPFS
+if [ "${var.mithril_ipfs_enabled}" = "true" ]; then
+  DOCKER_COMPOSE_FILES="$DOCKER_COMPOSE_FILES -f $DOCKER_DIRECTORY/docker-compose-aggregator-ipfs-override.yaml"
 fi
 # Support for aggregator follower
 if [ "${local.mithril_aggregator_is_follower}" = "true" ]; then

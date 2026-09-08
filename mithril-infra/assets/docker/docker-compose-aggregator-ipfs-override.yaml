@@ -1,0 +1,4 @@
+services:
+  mithril-aggregator:
+    environment:
+      - IPFS_RPC_SERVER_CONFIG=${IPFS_RPC_SERVER_CONFIG}
