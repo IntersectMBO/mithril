@@ -13,8 +13,7 @@
 //! cargo run -p mithril-stm --example concatenation_aggregate_signature
 //! ```
 //!
-//! It takes well under a second and needs no special hardware, which is why it is the one example
-//! that also runs as a documentation test.
+//! It takes well under a second and needs no special hardware.
 
 use std::error::Error;
 
@@ -33,7 +32,7 @@ const SIGNER_COUNT: usize = 32;
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Seeded so the example produces the same aggregate signature on every run, which keeps it
-    // documentation. Never generate real key material from a fixed seed.
+    // usable as documentation. Never generate real key material from a fixed seed.
     let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
 
     let parameters = Parameters {

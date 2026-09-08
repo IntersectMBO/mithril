@@ -15,7 +15,7 @@
 //! ```
 //!
 //! Advancing an epoch proves the same circuit twice, under a different transcript each time. Only
-//! the Blake2b proof travels with the aggregate signature, which is the one a verifier checks; the
+//! the Blake2b proof travels with the aggregate signature, for a verifier to check; the Poseidon
 //! proof stays with the prover, seeding the rolling state so the next step can verify it inside the
 //! circuit. Anchoring at genesis costs one further Poseidon proof, so the two epochs below are five
 //! proofs in all, which is most of what the run costs.
@@ -96,9 +96,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let aggregate_verification_key = clerk.compute_aggregate_verification_key();
 
     // Fail early and clearly if the signer set no longer matches the committed messages: the
-    // genesis message announces the aggregate verification key every later aggregate signature is
-    // against, so a mismatch would otherwise surface as an opaque rejection minutes into proving.
-    // Divergence in the parameters or the stakes is caught later, by the proofs themselves.
+    // genesis message announces the aggregate verification key against which every later aggregate
+    // signature is checked, so a mismatch would otherwise surface as an opaque rejection minutes
+    // into proving. Divergence in the parameters or the stakes is caught later, by the proofs
+    // themselves.
     let announced_commitment =
         &GENESIS_PROTOCOL_MESSAGE_PREIMAGE[PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES];
     let rigid_slot = aggregate_verification_key

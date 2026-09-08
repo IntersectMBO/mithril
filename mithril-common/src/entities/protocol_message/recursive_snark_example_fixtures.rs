@@ -17,9 +17,9 @@
 //!     generate_recursive_snark_example_fixtures -- --ignored
 //! ```
 //!
-//! It takes several minutes: every certificate is proved and verified before anything is written,
-//! so a fixture is never committed unless the chain it describes actually works. The three files it
-//! writes belong to `mithril-stm/examples/assets` and are committed alongside the example.
+//! It takes several minutes: every aggregate signature is produced and verified before anything is
+//! written, so a fixture is never committed unless the chain it describes actually works. The three
+//! files it writes belong to `mithril-stm/examples/assets` and are committed alongside the example.
 
 use std::fs;
 use std::path::PathBuf;
@@ -125,7 +125,7 @@ fn aggregate_verification_key_hex(clerk: &Clerk<ProtocolMembershipDigest>) -> St
 }
 
 /// The three rigid protocol messages the example's chain consumes, in chain order: the genesis
-/// message, then one certificate per epoch. All three announce the same aggregate verification key
+/// message, then one message per epoch. All three announce the same aggregate verification key
 /// because the signer set never changes, which is what makes each next-epoch transition validate.
 fn example_protocol_messages(clerk: &Clerk<ProtocolMembershipDigest>) -> [ProtocolMessage; 3] {
     let aggregate_verification_key = aggregate_verification_key_hex(clerk);
@@ -179,7 +179,8 @@ fn committed_preimages_match_the_canonical_protocol_messages() {
     }
 }
 
-/// Regenerates the committed preimages. Expensive: every certificate is proved and then verified
+/// Regenerates the committed preimages. Expensive: every aggregate signature is produced and then
+/// verified
 /// before anything is written, so a fixture is never committed unless the chain it describes
 /// actually works. Proving alone would not establish that: the prover emits proof bytes for any
 /// witness, and only verification rejects an inconsistent one.
@@ -218,7 +219,7 @@ fn generate_recursive_snark_example_fixtures() {
             .filter_map(|signer| signer.create_single_signature(&message).ok())
             .collect::<Vec<SingleSignature>>();
 
-        let (certificate, output) = clerk
+        let (aggregate_signature, output) = clerk
             .aggregate_signatures_with_type(
                 &signatures,
                 &message,
@@ -231,7 +232,7 @@ fn generate_recursive_snark_example_fixtures() {
             )
             .expect("the example chain step must aggregate");
 
-        certificate
+        aggregate_signature
             .verify(
                 &message,
                 &aggregate_verification_key,
