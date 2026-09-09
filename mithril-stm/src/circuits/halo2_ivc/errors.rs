@@ -72,6 +72,12 @@ pub enum EpochTransitionErrorKind {
     #[error("rolling state parameters do not match the current protocol message parameters")]
     RollingStateParametersDoesNotMatchProtocolMessage,
 
+    /// The genesis preimage's lookahead (next merkle tree commitment / epoch) does not match the
+    /// first real certificate's protocol message. The mismatch is against the genesis bootstrap's
+    /// own announced values.
+    #[error("genesis lookahead parameters do not match the first certificate's protocol message")]
+    GenesisLookaheadDoesNotMatchProtocolMessage,
+
     /// Off-circuit step transition: the chain's epoch would overflow u64.
     #[error("Epoch overflow advancing past the last committed epoch")]
     EpochOverflow,

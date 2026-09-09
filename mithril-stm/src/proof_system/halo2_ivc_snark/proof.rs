@@ -34,6 +34,7 @@ use crate::{
         halo2::{keys::NonRecursiveCircuitVerifyingKey, types::CircuitBase},
         halo2_ivc::{
             PREIMAGE_SIZE,
+            accumulator::check_accumulator_fixed_bases_present,
             circuit::IvcCircuitData,
             keys::{RecursiveCircuitProvingKey, RecursiveCircuitVerifyingKey},
             state::{Global, State},
@@ -185,6 +186,10 @@ where
             .assert_empty()
             .map_err(|_| IvcProofError::TranscriptNotFullyConsumed)?;
 
+        check_accumulator_fixed_bases_present(
+            &self.accumulator,
+            verifier_setup.combined_fixed_bases(),
+        )?;
         let accumulator_lhs = self.accumulator.lhs().eval(verifier_setup.combined_fixed_bases());
         let accumulator_rhs = self.accumulator.rhs().eval(verifier_setup.combined_fixed_bases());
 
@@ -303,20 +308,6 @@ where
     }
 }
 
-/// Rejects a `rolling_state` that carries a genesis state (`step_counter == 0`).
-///
-/// The genesis step is only ever produced internally by the bootstrap path; callers reach it by
-/// passing `rolling_state = None`. A genesis state supplied as a previous step would instead run
-/// a normal step that silently ignores the certificate. Since `genesis_bootstrap` is always
-/// supplied, this is the only remaining invalid context: the previously-possible both-`Some` and
-/// both-`None` misuses are now unrepresentable.
-fn ensure_advanceable_rolling_state(rolling_state: Option<&IvcRollingState>) -> StmResult<()> {
-    if rolling_state.is_some_and(|rs| rs.is_genesis()) {
-        return Err(IvcProofError::InvalidProvingContext.into());
-    }
-    Ok(())
-}
-
 /// Everything the IVC prover needs to add one certificate to the chain, assembled by the clerk.
 /// The bootstrap path runs an internal genesis step before that certificate's own step.
 #[derive(Debug)]
@@ -424,8 +415,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
         genesis_bootstrap: &IvcGenesisBootstrapInput,
         rolling_state: Option<&IvcRollingState>,
     ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)> {
-        ensure_advanceable_rolling_state(rolling_state)?;
-
+        rolling_state.map(IvcRollingState::ensure_advanceable).transpose()?;
         // `rolling_state = None` is the first certificate: bootstrap from genesis internally,
         // then continue with the seeded state. Otherwise advance from the supplied state.
         let effective_rolling_state: &IvcRollingState = match rolling_state {
@@ -623,37 +613,39 @@ mod tests {
     use crate::{
         AggregationError, AncillaryGenesisData, AncillaryProofInput, AncillaryProverData,
         MithrilMembershipDigest, Parameters, SnarkProof,
-        circuits::halo2::{
-            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
-            keys::NonRecursiveCircuitVerifyingKey, types::CircuitBase,
-        },
-        circuits::halo2_ivc::{
-            PREIMAGE_SIZE, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
-            keys::RecursiveCircuitVerifyingKey,
-            state::Global,
-            tests::common::{
-                asset_readers::{
-                    load_embedded_following_certificate_in_epoch_asset,
-                    load_embedded_next_epoch_step_output_asset,
-                    load_embedded_recursive_chain_state_asset,
-                    load_embedded_verification_context_asset,
-                },
-                generators::{build_asset_generation_setup_from_cache, build_recursive_global},
+        circuits::{
+            halo2::{
+                NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                keys::NonRecursiveCircuitVerifyingKey, types::CircuitBase,
             },
-            types::{EpochNumber, IvcProofBytes, MessageHash, StepCounter},
+            halo2_ivc::{
+                PREIMAGE_SIZE, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                keys::RecursiveCircuitVerifyingKey,
+                state::Global,
+                tests::common::{
+                    asset_readers::{
+                        load_embedded_following_certificate_in_epoch_asset,
+                        load_embedded_next_epoch_step_output_asset,
+                        load_embedded_recursive_chain_state_asset,
+                        load_embedded_verification_context_asset,
+                    },
+                    generators::{build_asset_generation_setup_from_cache, build_recursive_global},
+                },
+                types::{EpochNumber, IvcProofBytes, MessageHash, StepCounter},
+            },
         },
         codec::TryFromBytes,
         proof_system::{
             AggregateVerificationKeyForSnark, MERKLE_TREE_DEPTH_FOR_SNARK,
             halo2_ivc_snark::{
                 build_standard_rolling_state, errors::IvcProofError,
-                rolling_state::IvcRollingState, verifier_setup::IvcVerifierSetup,
+                verifier_setup::IvcVerifierSetup,
             },
         },
         signature_scheme::{BaseFieldElement, SchnorrSigningKey, SchnorrVerificationKey},
     };
 
-    use super::{IvcChainStepBundle, IvcProof, ensure_advanceable_rolling_state};
+    use super::{IvcChainStepBundle, IvcProof};
 
     const STEP_OUTPUT_MSG: [u8; 32] = [
         22, 148, 87, 37, 149, 0, 124, 10, 156, 94, 108, 6, 78, 59, 239, 80, 126, 213, 158, 211,
@@ -1064,49 +1056,6 @@ mod tests {
                 "combined check must hold for a valid proof regardless of the combiner r={r:?}"
             );
         }
-    }
-
-    // The context guard is the first thing `IvcProver::prove` runs. It is tested directly here
-    // rather than through `prove` so the test stays fast: reaching `prove` would require building
-    // an `IvcProverSetup` (full keygen). With `genesis_bootstrap` now always supplied, a genesis
-    // `rolling_state` is the only remaining invalid context; both-`Some`/both-`None` are
-    // unrepresentable.
-    #[test]
-    fn ensure_advanceable_rolling_state_rejects_only_genesis_state() {
-        // A genesis signature is needed to build any rolling state; its value is irrelevant
-        // because the guard only inspects the step counter.
-        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-        let signing_key = SchnorrSigningKey::generate(&mut rng);
-        let genesis_signature = signing_key
-            .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
-            .expect("genesis signature should be produced");
-
-        // `None` bootstraps from genesis internally: accepted.
-        ensure_advanceable_rolling_state(None).expect("None must be accepted (genesis bootstrap)");
-
-        // A genesis rolling state (`step_counter == 0`) must be rejected.
-        let genesis_state = IvcRollingState::genesis(genesis_signature, &[]);
-        assert!(genesis_state.is_genesis());
-        let err = ensure_advanceable_rolling_state(Some(&genesis_state))
-            .expect_err("genesis rolling state must be rejected");
-        assert_eq!(
-            err.downcast_ref::<IvcProofError>(),
-            Some(&IvcProofError::InvalidProvingContext),
-            "genesis rolling state must fail with InvalidProvingContext, got: {err}"
-        );
-
-        // A non-genesis rolling state (a previous step's output) is accepted.
-        let chain_state = load_embedded_recursive_chain_state_asset()
-            .expect("recursive chain state asset should load");
-        let advanced_state = IvcRollingState::new(
-            chain_state.state,
-            chain_state.ivc_proof,
-            chain_state.accumulator,
-            chain_state.genesis_signature,
-        );
-        assert!(!advanced_state.is_genesis());
-        ensure_advanceable_rolling_state(Some(&advanced_state))
-            .expect("a non-genesis rolling state must be accepted");
     }
 
     /// Cheapest possible valid inputs for `IvcChainStepBundle::try_new`: a proof/AVK that never get

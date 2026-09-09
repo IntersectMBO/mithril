@@ -58,6 +58,12 @@ pub use halo2_snark::{
     AggregateVerificationKeyForSnark, MERKLE_TREE_DEPTH_FOR_SNARK, SnarkProof, SnarkVerifierData,
 };
 
+#[cfg(feature = "future_snark")]
+pub(crate) use halo2_ivc_snark::IvcRollingState;
+#[cfg(all(test, feature = "future_snark"))]
+pub(crate) use halo2_ivc_snark::MockIvcOffCircuitChecker;
+#[cfg(all(test, feature = "future_snark"))]
+pub(crate) use halo2_snark::RIGID_SLOT_BYTES as SNARK_AGGREGATE_VERIFICATION_KEY_RIGID_SLOT_BYTES;
 #[cfg(all(test, feature = "future_snark"))]
 pub(crate) use halo2_snark::{MockSnarkAggregateSignatureProver, SnarkProverSetup};
 #[cfg(feature = "future_snark")]
@@ -67,13 +73,6 @@ pub(crate) use halo2_snark::{
 };
 
 #[cfg(all(test, feature = "future_snark"))]
-pub(crate) use halo2_snark::RIGID_SLOT_BYTES as SNARK_AGGREGATE_VERIFICATION_KEY_RIGID_SLOT_BYTES;
-
-#[cfg(feature = "future_snark")]
-pub(crate) use halo2_ivc_snark::IvcRollingState;
-
+pub(crate) use snark_prover_factory::MockSnarkProverFactory;
 #[cfg(feature = "future_snark")]
 pub(crate) use snark_prover_factory::{NonDeterministicSnarkProverFactory, SnarkProverFactory};
-
-#[cfg(all(test, feature = "future_snark"))]
-pub(crate) use snark_prover_factory::MockSnarkProverFactory;

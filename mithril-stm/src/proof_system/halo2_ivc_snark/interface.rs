@@ -1,7 +1,9 @@
+use std::fmt::Debug;
+
 use midnight_proofs::transcript::Blake2b256;
 
 use crate::{
-    MembershipDigest, StmResult,
+    AggregateVerificationKeyForSnark, AncillaryProofInput, MembershipDigest, StmResult,
     circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey,
     proof_system::{
         IvcRollingState,
@@ -22,4 +24,23 @@ pub(crate) trait IvcChainProver<D: MembershipDigest> {
         &mut self,
         step_bundle: IvcChainStepBundle<D>,
     ) -> StmResult<(IvcProof<Blake2b256>, Option<IvcRollingState>)>;
+}
+
+/// A trait that represents the off-circuit (CPU-side) validation checks run against an incoming
+/// certificate and its ancillary data before the recursive SNARK proving path begins. Rejecting
+/// an invalid request here avoids paying for certificate/IVC proof generation on a request that
+/// could never verify.
+#[cfg_attr(test, mockall::automock)]
+pub(crate) trait IvcOffCircuitChecker<D: MembershipDigest>: Debug {
+    /// Runs off-circuit checks that mirror what the recursive circuit itself enforces in-circuit,
+    /// validating the caller-supplied certificate message, ancillary data, and aggregate
+    /// verification key before any of it is trusted for proof generation.
+    ///
+    /// Returns `Ok(())` when every check passes, otherwise the first failing check's error.
+    fn off_circuit_check(
+        &self,
+        msg: &[u8],
+        aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
+        ancillary_input: &AncillaryProofInput,
+    ) -> StmResult<()>;
 }

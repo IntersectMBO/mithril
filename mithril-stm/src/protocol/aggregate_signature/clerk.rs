@@ -7,14 +7,17 @@ use anyhow::Context;
 use anyhow::anyhow;
 
 #[cfg(all(feature = "future_snark", test))]
-use crate::proof_system::MockSnarkProverFactory;
+use crate::proof_system::{MockIvcOffCircuitChecker, MockSnarkProverFactory};
+
 #[cfg(feature = "future_snark")]
 use crate::{
     AggregateSignatureError, AncillaryProverData, AncillaryVerifierData,
     proof_system::{
         NonDeterministicSnarkProverFactory, SnarkAggregateSignatureProver, SnarkClerk,
         SnarkProverFactory, SnarkVerifierData,
-        halo2_ivc_snark::{IvcChainStepBundle, IvcVerifierData},
+        halo2_ivc_snark::{
+            IvcChainStepBundle, IvcOffCircuitChecker, IvcVerifierData, MithrilIvcOffCircuitChecker,
+        },
     },
 };
 use crate::{
@@ -40,6 +43,8 @@ pub struct Clerk<D: MembershipDigest> {
     /// A factory that returns the provers necessary to create the SNARK proofs
     #[cfg(feature = "future_snark")]
     snark_prover_factory: Arc<dyn SnarkProverFactory<D> + Send + Sync>,
+    #[cfg(feature = "future_snark")]
+    ivc_off_circuit_checker: Arc<dyn IvcOffCircuitChecker<D> + Send + Sync>,
     phantom_data: PhantomData<D>,
 }
 
@@ -55,6 +60,8 @@ impl<D: MembershipDigest> Clerk<D> {
                 .then(|| SnarkClerk::new_clerk_from_signer(signer)),
             #[cfg(feature = "future_snark")]
             snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory),
+            #[cfg(feature = "future_snark")]
+            ivc_off_circuit_checker: Arc::new(MithrilIvcOffCircuitChecker),
             phantom_data: PhantomData,
         }
     }
@@ -75,6 +82,8 @@ impl<D: MembershipDigest> Clerk<D> {
             }),
             #[cfg(feature = "future_snark")]
             snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory),
+            #[cfg(feature = "future_snark")]
+            ivc_off_circuit_checker: Arc::new(MithrilIvcOffCircuitChecker),
             phantom_data: PhantomData,
         }
     }
@@ -88,8 +97,13 @@ impl<D: MembershipDigest> Clerk<D> {
     where
         D: Send + Sync + 'static,
     {
+        let mut ivc_off_circuit_checker = MockIvcOffCircuitChecker::new();
+        ivc_off_circuit_checker
+            .expect_off_circuit_check()
+            .returning(|_, _, _| Ok(()));
         Self {
             snark_prover_factory: Arc::new(snark_prover_factory),
+            ivc_off_circuit_checker: Arc::new(ivc_off_circuit_checker),
             ..Self::new_clerk_from_signer(signer)
         }
     }
@@ -137,6 +151,12 @@ impl<D: MembershipDigest> Clerk<D> {
                 let snark_clerk = self
                     .get_snark_clerk()
                     .ok_or_else(|| anyhow!(AggregateSignatureError::MissingSnarkClerk))?;
+
+                self.ivc_off_circuit_checker.off_circuit_check(
+                    msg,
+                    &snark_clerk.compute_aggregate_verification_key_for_snark::<D>(),
+                    &ancillary_input,
+                )?;
 
                 self.aggregate_signatures_for_ivc_snark(snark_clerk, sigs, msg, ancillary_input)
             }
@@ -270,6 +290,8 @@ impl<D: MembershipDigest> Clerk<D> {
 #[cfg(test)]
 mod tests {
 
+    use std::sync::Arc;
+
     use anyhow::anyhow;
     use midnight_proofs::transcript::Blake2b256;
 
@@ -292,8 +314,8 @@ mod tests {
         },
         codec::{TryFromBytes, TryToBytes},
         proof_system::{
-            IvcRollingState, MERKLE_TREE_DEPTH_FOR_SNARK, MockSnarkAggregateSignatureProver,
-            MockSnarkProverFactory, SnarkClerk,
+            IvcRollingState, MERKLE_TREE_DEPTH_FOR_SNARK, MockIvcOffCircuitChecker,
+            MockSnarkAggregateSignatureProver, MockSnarkProverFactory, SnarkClerk,
             halo2_ivc_snark::{
                 IvcChainStepBundle, IvcProof, IvcVerifierData, MockIvcChainProver,
                 build_standard_rolling_state,
@@ -380,12 +402,12 @@ mod tests {
             self
         }
 
-        fn without_snark_prover(mut self) -> Self {
+        fn without_snark_prover_call(mut self) -> Self {
             self.snark_behavior = SnarkProverBehavior::NeverCalled;
             self
         }
 
-        fn without_ivc_prover(mut self) -> Self {
+        fn without_ivc_prover_call(mut self) -> Self {
             self.ivc_behavior = IvcProverBehavior::NeverCalled;
             self
         }
@@ -461,6 +483,23 @@ mod tests {
             }
 
             Clerk::new_clerk_from_signer_with_mock_prover_factory(signer, factory)
+        }
+
+        fn build_clerk_rejecting_checks(self, signer: &Signer<D>) -> Clerk<D> {
+            let clerk = MockProverFactory::new()
+                .without_snark_prover_call()
+                .without_ivc_prover_call()
+                .build_clerk(signer);
+
+            let mut checker = MockIvcOffCircuitChecker::new();
+            checker
+                .expect_off_circuit_check()
+                .once()
+                .return_once(|_, _, _| Err(anyhow!("checker rejection")));
+            Clerk {
+                ivc_off_circuit_checker: Arc::new(checker),
+                ..clerk
+            }
         }
     }
 
@@ -622,8 +661,8 @@ mod tests {
         let signature = signer.create_single_signature(&DUMMY_MESSAGE).unwrap();
 
         let clerk = MockProverFactory::new()
-            .without_snark_prover()
-            .without_ivc_prover()
+            .without_snark_prover_call()
+            .without_ivc_prover_call()
             .build_clerk(&signer);
 
         let (aggregate_signature, _ancillary_output) = clerk
@@ -661,7 +700,7 @@ mod tests {
         let signer = setup_single_party(PARAMS);
 
         let clerk = MockProverFactory::new()
-            .without_ivc_prover()
+            .without_ivc_prover_call()
             .snark_prover(SnarkProverBehavior::AggregatesSignaturesWithFunction(
                 Box::new(|actual_params| *actual_params == PARAMS),
             ))
@@ -679,7 +718,7 @@ mod tests {
         let signer = setup_single_party(PARAMS);
 
         let clerk = MockProverFactory::new()
-            .without_ivc_prover()
+            .without_ivc_prover_call()
             .snark_prover(SnarkProverBehavior::FailsToBuild("factory error"))
             .build_clerk(&signer);
 
@@ -693,7 +732,9 @@ mod tests {
     fn snark_aggregation_returns_verifier_data_from_prover_key() {
         let signer = setup_single_party(PARAMS);
 
-        let clerk = MockProverFactory::new().without_ivc_prover().build_clerk(&signer);
+        let clerk = MockProverFactory::new()
+            .without_ivc_prover_call()
+            .build_clerk(&signer);
 
         let (aggregate_signature, ancillary_output) =
             aggregate_snark(clerk, build_ancillary_input(None))
@@ -721,7 +762,7 @@ mod tests {
         let signer = setup_single_party(PARAMS);
 
         let clerk = MockProverFactory::new()
-            .without_ivc_prover()
+            .without_ivc_prover_call()
             .snark_prover(SnarkProverBehavior::FailsToAggregate("prover error"))
             .build_clerk(&signer);
 
@@ -859,7 +900,7 @@ mod tests {
 
         let clerk = MockProverFactory::new()
             .snark_prover(SnarkProverBehavior::FailsToAggregate("SNARK prover error"))
-            .without_ivc_prover()
+            .without_ivc_prover_call()
             .build_clerk(&signer);
 
         let err = aggregate_ivc_with_dummy_message(clerk, build_ancillary_input(None))
@@ -901,5 +942,22 @@ mod tests {
             Some(&AggregationError::MissingIvcRollingStateInAncillaryProverData),
             "missing IVC rolling state must be rejected, got: {err}"
         );
+    }
+
+    #[test]
+    fn ivc_snark_rejects_before_generating_certificate_proof_when_check_fails() {
+        let signer = setup_single_party(PARAMS);
+        let clerk = MockProverFactory::new().build_clerk_rejecting_checks(&signer);
+
+        let err = clerk
+            .aggregate_signatures_with_type(
+                &[],
+                &DUMMY_MESSAGE,
+                AggregateSignatureType::IvcSnark,
+                build_ancillary_input(None),
+            )
+            .expect_err("a rejected check must abort aggregation before any proving");
+
+        assert_eq!(err.to_string(), "checker rejection");
     }
 }

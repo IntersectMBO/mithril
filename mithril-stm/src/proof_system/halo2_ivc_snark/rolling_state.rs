@@ -18,7 +18,9 @@ use crate::{
             types::{IvcProofBytes, MerkleTreeCommitment, MessageHash, StepCounter},
         },
     },
-    proof_system::halo2_ivc_snark::prover_input_helpers::create_snark_message_for_next_state,
+    proof_system::halo2_ivc_snark::{
+        errors::IvcProofError, prover_input_helpers::create_snark_message_for_next_state,
+    },
     signature_scheme::{BaseFieldElement, StandardSchnorrSignature},
 };
 
@@ -211,6 +213,35 @@ impl IvcRollingState {
             certificate_merkle_tree_commitment,
         ))
     }
+
+    /// Asserts that a `NextEpoch` transition does not promote a diverged `next_protocol_parameters`
+    /// value into `protocol_parameters`.
+    ///
+    /// A `SameEpoch` transition never consumes `next_protocol_parameters` (see `build_next_state`),
+    /// so a chain that already carries a divergence, from an earlier certificate that announced a
+    /// parameter change, can still process every remaining `SameEpoch` certificate in the epoch
+    /// where the divergence appeared; only the `NextEpoch` transition that would actually promote
+    /// the diverged value into the new epoch is rejected.
+    pub(crate) fn assert_protocol_parameters_unchanged(
+        &self,
+        transition_type: IvcTransitionType,
+    ) -> StmResult<()> {
+        if !self.is_genesis()
+            && matches!(transition_type, IvcTransitionType::NextEpoch)
+            && self.state().protocol_parameters != self.state().next_protocol_parameters
+        {
+            return Err(IvcProofError::ProtocolParametersChanged.into());
+        }
+        Ok(())
+    }
+
+    /// Rejects `self` if that carries a genesis state (`step_counter == 0`).
+    pub(crate) fn ensure_advanceable(&self) -> StmResult<()> {
+        if self.is_genesis() {
+            return Err(IvcProofError::InvalidProvingContext.into());
+        }
+        Ok(())
+    }
 }
 
 pub(crate) mod midnight_accumulator_serde {
@@ -248,7 +279,9 @@ mod tests {
     use rand_core::SeedableRng;
 
     use crate::{
-        circuits::halo2_ivc::types::EpochNumber,
+        circuits::halo2_ivc::{
+            embedded_assets::load_embedded_recursive_chain_state_asset, types::EpochNumber,
+        },
         signature_scheme::{BaseFieldElement, SchnorrSigningKey},
     };
 
@@ -305,6 +338,53 @@ mod tests {
         let genesis_signature = build_genesis_signature();
         let rolling_state = IvcRollingState::genesis(genesis_signature, &[]);
         assert!(rolling_state.is_genesis());
+    }
+
+    // The context guard is the first thing `IvcProver::prove` runs. It is tested directly here
+    // rather than through `prove` so the test stays fast: reaching `prove` would require building
+    // an `IvcSnarkProverSetup` (full keygen). With `genesis_bootstrap` now always supplied, a genesis
+    // `rolling_state` is the only remaining invalid context; both-`Some`/both-`None` are
+    // unrepresentable.
+    #[test]
+    fn ensure_advanceable_rolling_state_rejects_only_genesis_state() {
+        // A genesis signature is needed to build any rolling state; its value is irrelevant
+        // because the guard only inspects the step counter.
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let signing_key = SchnorrSigningKey::generate(&mut rng);
+        let genesis_signature = signing_key
+            .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
+            .expect("genesis signature should be produced");
+
+        // `None` bootstraps from genesis internally: accepted.
+        None.map(IvcRollingState::ensure_advanceable)
+            .transpose()
+            .expect("None must be accepted (genesis bootstrap)");
+
+        // A genesis rolling state (`step_counter == 0`) must be rejected.
+        let genesis_state = IvcRollingState::genesis(genesis_signature, &[]);
+        assert!(genesis_state.is_genesis());
+        let err = genesis_state
+            .ensure_advanceable()
+            .expect_err("genesis rolling state must be rejected");
+        assert_eq!(
+            err.downcast_ref::<IvcProofError>(),
+            Some(&IvcProofError::InvalidProvingContext),
+            "genesis rolling state must fail with InvalidProvingContext, got: {err}"
+        );
+
+        // A non-genesis rolling state (a previous step's output) is accepted.
+        let chain_state = load_embedded_recursive_chain_state_asset()
+            .expect("recursive chain state asset should load");
+        let advanced_state = IvcRollingState::new(
+            chain_state.state,
+            chain_state.ivc_proof,
+            chain_state.accumulator,
+            chain_state.genesis_signature,
+        );
+        assert!(!advanced_state.is_genesis());
+        advanced_state
+            .ensure_advanceable()
+            .expect("a non-genesis rolling state must be accepted");
     }
 
     mod validate_transition {
