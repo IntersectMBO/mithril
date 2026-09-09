@@ -4,19 +4,22 @@
 
 - `mithril-stm` is a Rust implementation of the scheme described in the paper [Mithril: Stake-based Threshold Multisignatures](https://eprint.iacr.org/2021/916.pdf) by Pyrros Chaidos and Aggelos Kiayias.
 - The BLS12-381 signature library [blst](https://github.com/supranational/blst) is used as the backend for the implementation of STM.
-- This implementation supports the _trivial concatenation proof system_ (Section 4.3). Other proof systems such as _Bulletproofs_ or _Halo2_ are not supported in this version.
+- Three proof systems are available:
+  - the [_concatenation proof system_](https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/concatenation) (Section 4.3), currently used by the Mithril network. The aggregate signature carries one entry per contributing signer, together covering at least the `k` winning lottery indices the quorum requires, so its size follows the number of signers needed rather than `k` alone. Verification needs no trusted setup.
+  - a [_non-recursive SNARK_](https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/non-recursive-snark) proof system, in which the aggregate signature consists in a single succinct proof that the quorum was met, so a verifier checks one proof rather than every individual signature.
+  - a [_recursive SNARK_](https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/recursive-snark) proof system, in which each aggregate signature proves the whole chain behind it, so a verifier checks one proof rather than every aggregate signature since genesis.
+- The two SNARK proof systems are **experimental**. They are gated behind the `future_snark` feature, which also requires one of `rustls` or `native-tls` for the trusted setup download.
 - We implemented the concatenation proof system as batch proofs:
   - Individual signatures do not contain the Merkle path to prove membership of the avk. Instead, it is the role of the aggregator to generate such proofs. This allows for a more efficient implementation of batched membership proofs (or batched Merkle paths).
 - Protocol documentation is given in [Mithril Protocol in depth](https://mithril.network/doc/mithril/mithril-protocol/protocol/).
-- The API also includes _core verification_. This functionality allows a full node verifier (`CoreVerifier`) that is
-  able to verify the signatures that are generated without the registration information, i.e., `avk`. A
-  `CoreVerifier` is assumed to know identities of the signers, so, it does not need to check the registration.
-
 - This library provides:
   - The implementation of the Stake-based Threshold Multisignatures
-  - The implementation of `CoreVerifier`
   - Key registration procedure for STM signatures
-  - The tests for the library functions, STM scheme, and `CoreVerifier`
+  - The three aggregation proof systems, with their aggregate signatures and verification keys
+  - BLS signatures for the concatenation proof system, and standard and unique Schnorr signatures for the SNARK ones
+  - The membership digest, hashing with Blake2b for the concatenation proof system and with Poseidon for the SNARK ones, which keeps the membership commitment aligned with the circuits
+  - The Halo2 certificate and recursive circuits backing the two SNARK proof systems
+  - The tests for the library functions and the STM scheme
   - Benchmark tests
 
 ## Pre-requisites
@@ -65,107 +68,19 @@ cargo test --release
 cargo bench
 ```
 
-## Example
+## Examples
 
-The following is a simple example of the STM implementation:
+One runnable example per proof system, each covering aggregation and verification.
 
-```rust
-use blake2::{digest::consts::U32, Blake2b};
-use rand_chacha::ChaCha20Rng;
-use rand_core::{RngCore, SeedableRng};
-use rayon::prelude::*;
+| Example                                                                                                                                  | Command                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [Concatenation](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/concatenation_aggregate_signature.rs)             | `cargo run -p mithril-stm --example concatenation_aggregate_signature`                                                |
+| [Non-recursive SNARK](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/non_recursive_snark_aggregate_signature.rs) | `cargo run --release -p mithril-stm --example non_recursive_snark_aggregate_signature --features future_snark,rustls` |
+| [Recursive SNARK](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/recursive_snark_aggregate_signature.rs)         | `cargo run --release -p mithril-stm --example recursive_snark_aggregate_signature --features future_snark,rustls`     |
 
-use mithril_stm::{
-    AggregateSignatureType, AggregationError, AncillaryGenesisData, AncillaryProofInput, Clerk,
-    Initializer, KeyRegistration, Parameters, Signer, SingleSignature,
-    MithrilMembershipDigest, AggregateVerificationKey,
-};
+The concatenation example runs in well under a second. The two SNARK examples generate real proofs and are substantially more demanding; each states its measured cost and its hardware requirement in its own header. The first run of either downloads the trusted setup, unless it is already cached.
 
-type D = MithrilMembershipDigest;
-
-let nparties = 32;
-let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-let mut msg = [0u8; 16];
-rng.fill_bytes(&mut msg);
-
-//////////////////////////
-// initialization phase //
-//////////////////////////
-
-let params = Parameters {
-    k: 357,
-    m: 2642,
-    phi_f: 0.2,
-};
-
-let parties = (0..nparties)
-    .into_iter()
-    .map(|_| 1 + (rng.next_u64() % 9999))
-    .collect::<Vec<_>>();
-
-let mut key_reg = KeyRegistration::initialize();
-
-let mut ps: Vec<Initializer> = Vec::with_capacity(nparties as usize);
-for stake in parties {
-    let p = Initializer::new(params, stake, &mut rng);
-    key_reg.register(
-        p.stake,
-        &p.get_verification_key_proof_of_possession_for_concatenation(),
-        #[cfg(feature = "future_snark")] p.schnorr_verification_key,
-    )
-    .unwrap();
-    ps.push(p);
-}
-
-let closed_reg = key_reg.close_registration(&params).unwrap();
-
-let ps = ps
-    .into_par_iter()
-    .map(|p| p.try_create_signer(&closed_reg).unwrap())
-    .collect::<Vec<Signer<D>>>();
-
-/////////////////////
-// operation phase //
-/////////////////////
-
-let sigs = ps
-    .par_iter()
-    .filter_map(|p| p.create_single_signature(&msg).ok())
-    .collect::<Vec<SingleSignature>>();
-
-let clerk = Clerk::new_clerk_from_signer(&ps[0]);
-let avk: AggregateVerificationKey<D>  = clerk.compute_aggregate_verification_key();
-
-// Check all parties can verify every sig
-for s in sigs.iter() {
-    let entry = closed_reg.get_registration_entry_for_index(&s.signer_index).unwrap();
-    assert!(s.verify::<D>(&params, &entry.get_verification_key_for_concatenation(), &entry.get_stake(), &avk, &msg, #[cfg(feature = "future_snark")] None).is_ok(), "Verification failed");
-}
-
-// Aggregate a concatenation proof with random parties
-let ancillary_input = AncillaryProofInput::new(None, AncillaryGenesisData::new(#[cfg(feature = "future_snark")] Vec::new(), #[cfg(feature = "future_snark")] None, #[cfg(feature = "future_snark")] None), #[cfg(feature = "future_snark")] Vec::new());
-let msig = clerk.aggregate_signatures_with_type(&sigs, &msg, AggregateSignatureType::Concatenation, ancillary_input);
-
-match msig {
-    Ok((aggr, ancillary_proof_output)) => {
-        println!("Aggregate ok");
-        assert!(aggr.verify(&msg, &clerk.compute_aggregate_verification_key(), &params, ancillary_proof_output.verifier_data().cloned(), None).is_ok());
-    }
-    Err(error) => match error.downcast_ref::<AggregationError>() {
-        Some(AggregationError::NotEnoughSignatures(n, k)) => {
-            println!("Not enough signatures");
-            assert!(n < &params.k && k == &params.k)
-        },
-
-        Some(AggregationError::UnsupportedProofSystem(aggregate_signature_type)) => {
-            println!("Unsupported proof system: {:?}", aggregate_signature_type);
-        },
-        _ => {
-            println!("Unexpected error during aggregation: {:?}", error);
-        }
-    },
-}
-```
+[Key registration](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/key_registration.rs) shows the registration phase on its own, treating each participant individually.
 
 ## Benchmarks
 
