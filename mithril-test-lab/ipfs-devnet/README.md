@@ -148,9 +148,9 @@ For node `N`, the default local ports are:
 
 | Service | Port formula | Example for node 1 |
 | ------- | ------------ | ------------------ |
-| Swarm   | `4000 + N`   | `4001`             |
 | API     | `5000 + N`   | `5001`             |
-| Gateway | `8080 + N`   | `8081`             |
+| Gateway | `5100 + N`   | `5101`             |
+| Swarm   | `5200 + N`   | `5201`             |
 
 #### Re-initialize an existing swarm
 

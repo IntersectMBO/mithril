@@ -67,8 +67,8 @@ configure_node() {
 
   local api_port gateway_port swarm_port
   api_port=$((5000 + node_id))
-  gateway_port=$((8080 + node_id))
-  swarm_port=$((4000 + node_id))
+  gateway_port=$((5100 + node_id))
+  swarm_port=$((5200 + node_id))
 
   #---------- Write swarm key
   {
