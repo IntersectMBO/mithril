@@ -594,11 +594,9 @@ mod tests {
         #[test]
         fn cbor_encoding_is_stable() {
             let aggregate = golden_aggregate_signature();
-            let proof = match aggregate {
-                AggregateSignature::Concatenation(proof) => proof,
-                #[cfg(feature = "future_snark")]
-                _ => panic!("Expected Concatenation variant"),
-            };
+            let proof = aggregate
+                .to_concatenation_proof()
+                .expect("Expected Concatenation variant");
             let bytes = proof
                 .to_bytes()
                 .expect("ConcatenationProof serialization should not fail");
@@ -608,21 +606,17 @@ mod tests {
         #[test]
         fn cbor_encoding_is_deterministic() {
             let aggregate_1 = golden_aggregate_signature();
-            let proof_1 = match aggregate_1 {
-                AggregateSignature::Concatenation(proof) => proof,
-                #[cfg(feature = "future_snark")]
-                _ => panic!("Expected Concatenation variant"),
-            };
+            let proof_1 = aggregate_1
+                .to_concatenation_proof()
+                .expect("Expected Concatenation variant");
             let bytes_1 = proof_1
                 .to_bytes()
                 .expect("ConcatenationProof serialization should not fail");
 
             let aggregate_2 = golden_aggregate_signature();
-            let proof_2 = match aggregate_2 {
-                AggregateSignature::Concatenation(proof) => proof,
-                #[cfg(feature = "future_snark")]
-                _ => panic!("Expected Concatenation variant"),
-            };
+            let proof_2 = aggregate_2
+                .to_concatenation_proof()
+                .expect("Expected Concatenation variant");
             let bytes_2 = proof_2
                 .to_bytes()
                 .expect("ConcatenationProof serialization should not fail");

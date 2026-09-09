@@ -68,7 +68,7 @@ rayon = "1.12.0"
 reqwest = { version = "0.13.4", default-features = false, features = ["json"] }
 semver = "1.0.28"
 serde = { version = "1.0.228", features = ["derive", "rc"] }
-serde_json = "1.0.150"
+serde_json = { version = "1.0.150", features = ["raw_value"] }
 # Pin slog to `2.7.0`: `2.8.2` introduces failures in our test suite
 slog = "=2.7.0"
 slog-async = "2.8.0"

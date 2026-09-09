@@ -23,11 +23,19 @@ pub(crate) const DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE: BaseFieldElement =
 
 /// Domain Separation Tag (DST) for the lottery check. It is used as a prefix when computing
 /// the eligibility value of a signature.
-// TODO: remove this allow dead_code directive when function is called or future_snark is activated
-#[allow(dead_code)]
 pub const DOMAIN_SEPARATION_TAG_LOTTERY: BaseFieldElement =
     BaseFieldElement(JubjubBase::from_raw([
         0x4C4F_5454_5F44_5354, // "LOTT_DST" (ASCII), little-endian u64
+        0,
+        0,
+        0,
+    ]));
+
+/// Domain Separation Tag (DST) for the Poseidon hash computing the digest of a circuit
+/// verification key.
+pub(crate) const DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST: BaseFieldElement =
+    BaseFieldElement(JubjubBase::from_raw([
+        0x4356_4B44_5F44_5354, // "CVKD_DST" (ASCII), little-endian u64
         0,
         0,
         0,
@@ -44,24 +52,24 @@ pub(crate) fn compute_poseidon_digest(input: &[BaseFieldElement]) -> BaseFieldEl
 #[cfg(test)]
 mod test {
     use super::{
-        DOMAIN_SEPARATION_TAG_LOTTERY, DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE,
-        DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE,
+        DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST, DOMAIN_SEPARATION_TAG_LOTTERY,
+        DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE, DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE,
     };
 
     #[test]
     fn domain_separation_tags_are_pairwise_distinct() {
-        assert_ne!(
+        let tags = [
             DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE,
-            DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE
-        );
-        assert_ne!(
-            DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE,
-            DOMAIN_SEPARATION_TAG_LOTTERY
-        );
-        assert_ne!(
             DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE,
-            DOMAIN_SEPARATION_TAG_LOTTERY
-        );
+            DOMAIN_SEPARATION_TAG_LOTTERY,
+            DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST,
+        ];
+
+        for (index, tag) in tags.iter().enumerate() {
+            for other_tag in &tags[index + 1..] {
+                assert_ne!(tag, other_tag);
+            }
+        }
     }
 
     mod golden {
