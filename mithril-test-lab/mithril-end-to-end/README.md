@@ -49,6 +49,43 @@ To run `mithril-end-to-end` command, you must first compile the Mithril nodes:
 cargo build --release
 ```
 
+## Additional network topology options
+
+These options can be combined with the base run command shown above (see `./mithril-end-to-end --help` for the full
+list of flags).
+
+### Multiple aggregators
+
+Run several aggregators behind Mithril relays with `--number-of-aggregators` (requires `--use-relays` as soon as more
+than one aggregator is used):
+
+```bash
+./mithril-end-to-end -vvv --work-directory db/ --bin-directory ../../target/release --devnet-scripts-directory=../cardano-devnet --number-of-aggregators 3 --use-relays
+```
+
+### DMQ
+
+Use the DMQ protocol to broadcast signatures with `--use-dmq`:
+
+```bash
+./mithril-end-to-end -vvv --work-directory db/ --bin-directory ../../target/release --devnet-scripts-directory=../cardano-devnet --use-dmq
+```
+
+By default, this uses the Haskell DMQ node created within the `cardano-devnet`. Use `--dmq-node-flavor fake` instead to
+use a fake DMQ network created by the Mithril relay.
+
+### IPFS
+
+Enable upload/download of Cardano DB snapshots through IPFS with `--use-ipfs`:
+
+```bash
+./mithril-end-to-end -vvv --work-directory db/ --bin-directory ../../target/release --devnet-scripts-directory=../cardano-devnet --use-ipfs
+```
+
+By default, a fresh IPFS devnet is spawned in the working directory and stopped at the end of the run. To attach to an
+already-running IPFS devnet instead (started and left running independently of the test run), use `--ipfs-devnet-to-attach <path>`.
+The target swarm must have at least one node per aggregator, plus one for the client.
+
 ### Note for MacOS users
 
 #### `sed` compatibility

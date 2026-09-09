@@ -1,4 +1,5 @@
 use anyhow::{Context, anyhow};
+use reqwest::Url;
 use slog_scope::warn;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -18,9 +19,16 @@ pub struct Client {
 #[derive(Debug)]
 pub enum CardanoDbV2Command {
     List,
-    ListPerEpoch { epoch_specifier: EpochSpecifier },
-    Show { hash: String },
-    Download { hash: String },
+    ListPerEpoch {
+        epoch_specifier: EpochSpecifier,
+    },
+    Show {
+        hash: String,
+    },
+    Download {
+        hash: String,
+        ipfs_rpc_url: Option<Url>,
+    },
 }
 
 impl CardanoDbV2Command {
@@ -31,7 +39,13 @@ impl CardanoDbV2Command {
                 format!("list-epoch-{epoch_specifier}")
             }
             CardanoDbV2Command::Show { hash } => format!("show-{hash}"),
-            CardanoDbV2Command::Download { hash } => format!("download-{hash}"),
+            CardanoDbV2Command::Download { hash, ipfs_rpc_url } => {
+                if ipfs_rpc_url.is_some() {
+                    format!("download-ipfs-{hash}")
+                } else {
+                    format!("download-{hash}")
+                }
+            }
         }
     }
 
@@ -51,15 +65,20 @@ impl CardanoDbV2Command {
             CardanoDbV2Command::Show { hash } => {
                 vec!["snapshot".to_string(), "show".to_string(), hash.clone()]
             }
-            CardanoDbV2Command::Download { hash } => {
-                vec![
+            CardanoDbV2Command::Download { hash, ipfs_rpc_url } => {
+                let mut args = vec![
                     "download".to_string(),
                     "--include-ancillary".to_string(),
                     "--allow-override".to_string(),
                     "--download-dir".to_string(),
                     "v2".to_string(),
                     hash.clone(),
-                ]
+                ];
+                if let Some(ipfs_rpc_url) = ipfs_rpc_url {
+                    args.push("--ipfs-rpc-url".to_string());
+                    args.push(ipfs_rpc_url.to_string());
+                }
+                args
             }
         }
     }

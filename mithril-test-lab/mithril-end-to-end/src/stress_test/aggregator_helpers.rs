@@ -30,6 +30,7 @@ pub async fn bootstrap_aggregator(
         name: "genesis",
         server_port: args.server_port as u64,
         full_node: &args.full_node,
+        ipfs_kubo_node: None,
         cardano_cli_path: &args.cardano_cli_path,
         work_dir: &args.work_dir,
         store_dir: &args.work_dir.join("aggregator_store"),

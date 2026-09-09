@@ -1,5 +1,9 @@
-mod runner;
+mod cardano;
+mod ipfs;
 
-pub use runner::{
-    Devnet, DevnetBootstrapArgs, DevnetTopology, FullNode, PoolNode, RetryableDevnetError,
-};
+pub use cardano::{Devnet, DevnetBootstrapArgs, DevnetTopology, FullNode, PoolNode};
+pub use ipfs::{IpfsDevnet, IpfsDevnetBootstrapArgs, IpfsDevnetMode, KuboNode};
+
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
+#[error("Retryable devnet error: `{0}`")]
+pub struct RetryableDevnetError(pub String);

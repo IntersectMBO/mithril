@@ -413,6 +413,13 @@ jobs:
             hard_fork_latest_era_at_epoch: 0
             run_id: "#1"
             extra_args: "--mithril-era-regenesis-on-switch --aggregate-signature-type=Concatenation"
+          # Include a test for IPFS upload/download support
+          - mode: "ipfs"
+            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
+            cardano_node_version: "11.0.1"
+            hard_fork_latest_era_at_epoch: 0
+            run_id: "#1"
+            extra_args: "--use-ipfs --ipfs-devnet-scripts-directory=./mithril-test-lab/ipfs-devnet/"
     steps:
       - name: Checkout sources
         uses: actions/checkout@v6

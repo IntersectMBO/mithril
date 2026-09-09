@@ -18,7 +18,8 @@ use crate::mithril::relay_signer::RelaySignerConfiguration;
 use crate::toolkit::ScenarioToolkit;
 use crate::{
     AggregateSignatureType, Aggregator, AggregatorConfig, Client, DEVNET_MAGIC_ID, Devnet,
-    DmqNodeFlavor, FullNode, PoolNode, RelayAggregator, RelayPassive, RelaySigner, Signer,
+    DmqNodeFlavor, FullNode, IpfsDevnet, KuboNode, PoolNode, RelayAggregator, RelayPassive,
+    RelaySigner, Signer,
 };
 
 use super::signer::SignerConfig;
@@ -37,6 +38,7 @@ pub struct MithrilInfrastructureConfig {
     pub number_of_signers: u8,
     pub server_port: u64,
     pub devnet: Devnet,
+    pub ipfs_devnet: Option<IpfsDevnet>,
     pub work_dir: PathBuf,
     pub store_dir: PathBuf,
     pub artifacts_dir: PathBuf,
@@ -78,6 +80,7 @@ impl MithrilInfrastructureConfig {
             number_of_signers: 1,
             server_port: 8080,
             devnet: Devnet::default(),
+            ipfs_devnet: None,
             work_dir: PathBuf::from("/tmp/work"),
             store_dir: PathBuf::from("/tmp/store"),
             artifacts_dir: PathBuf::from("/tmp/artifacts"),
@@ -116,6 +119,7 @@ pub struct MithrilInfrastructure {
     artifacts_dir: PathBuf,
     bin_dir: PathBuf,
     devnet: Devnet,
+    ipfs_devnet: Option<IpfsDevnet>,
     aggregators: Vec<Aggregator>,
     signers: Vec<Signer>,
     relay_aggregators: Vec<RelayAggregator>,
@@ -140,6 +144,10 @@ impl MithrilInfrastructure {
         if config.use_dmq && config.dmq_node_flavor == Some(DmqNodeFlavor::Haskell) {
             config.devnet.run_dmq().await?;
         }
+        if let Some(ipfs_devnet) = &config.ipfs_devnet {
+            ipfs_devnet.start().await?;
+        }
+
         let devnet_topology = config.devnet.topology();
         let aggregator_cardano_nodes = &devnet_topology.full_nodes;
         let signer_cardano_nodes = &devnet_topology.pool_nodes;
@@ -150,9 +158,13 @@ impl MithrilInfrastructure {
         let relay_signer_registration_mode = &config.relay_signer_registration_mode;
         let relay_signature_registration_mode = &config.relay_signature_registration_mode;
 
-        let (leader_aggregator, follower_aggregators) =
-            Self::prepare_aggregators(config, aggregator_cardano_nodes, chain_observer_type)
-                .await?;
+        let (leader_aggregator, follower_aggregators) = Self::prepare_aggregators(
+            config,
+            aggregator_cardano_nodes,
+            config.ipfs_devnet.as_ref().map(|d| d.topology()),
+            chain_observer_type,
+        )
+        .await?;
 
         if leader_aggregator.is_reading_protocol_configurations_on_chain() {
             Self::register_startup_protocol_configurations(
@@ -211,6 +223,7 @@ impl MithrilInfrastructure {
             bin_dir: config.bin_dir.to_path_buf(),
             artifacts_dir: config.artifacts_dir.to_path_buf(),
             devnet: config.devnet.clone(),
+            ipfs_devnet: config.ipfs_devnet.clone(),
             aggregators: all_aggregators,
             signers,
             relay_aggregators,
@@ -285,13 +298,21 @@ impl MithrilInfrastructure {
     async fn prepare_aggregators(
         config: &MithrilInfrastructureConfig,
         full_nodes: &[FullNode],
+        ipfs_devnet: Option<&[KuboNode]>,
         chain_observer_type: &str,
     ) -> StdResult<(Aggregator, Vec<Aggregator>)> {
         let [leader_node, follower_nodes @ ..] = full_nodes else {
             panic!("Can't prepare Aggregators: No full nodes found");
         };
-        let leader_aggregator =
-            Self::prepare_aggregator(0, leader_node, config, chain_observer_type, None).await?;
+        let leader_aggregator = Self::prepare_aggregator(
+            0,
+            leader_node,
+            config,
+            chain_observer_type,
+            ipfs_devnet.and_then(|n| n.first()),
+            None,
+        )
+        .await?;
 
         let mut follower_aggregators = vec![];
         for (index, full_node) in follower_nodes.iter().enumerate() {
@@ -300,6 +321,7 @@ impl MithrilInfrastructure {
                 full_node,
                 config,
                 chain_observer_type,
+                ipfs_devnet.and_then(|n| n.get(index + 1)),
                 Some(leader_aggregator.endpoint()),
             )
             .await?;
@@ -314,6 +336,7 @@ impl MithrilInfrastructure {
         full_node: &FullNode,
         config: &MithrilInfrastructureConfig,
         chain_observer_type: &str,
+        ipfs_kubo_node: Option<&KuboNode>,
         leader_aggregator_endpoint: Option<String>,
     ) -> StdResult<Aggregator> {
         let aggregator_name = Aggregator::name_suffix(index);
@@ -326,6 +349,7 @@ impl MithrilInfrastructure {
             name: &aggregator_name,
             server_port: config.server_port + index as u64,
             full_node,
+            ipfs_kubo_node,
             cardano_cli_path: &config.devnet.cardano_cli_path(),
             work_dir: &config.work_dir,
             store_dir: &aggregator_store_dir,
@@ -580,6 +604,10 @@ impl MithrilInfrastructure {
 
     pub fn relay_passives(&self) -> &[RelayPassive] {
         &self.relay_passives
+    }
+
+    pub fn client_ipfs_node(&self) -> Option<&KuboNode> {
+        self.ipfs_devnet.as_ref().and_then(|d| d.topology().last())
     }
 
     pub fn chain_observer(&self) -> Arc<dyn ChainObserver> {

@@ -4,17 +4,13 @@ use std::fs::{self, File, read_to_string};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use thiserror::Error;
 use tokio::process::Command;
 
 use mithril_common::StdResult;
 use mithril_common::entities::{BlockHash, PartyId, TransactionHash};
 
+use crate::RetryableDevnetError;
 use crate::utils::{ChildLoggerExt, file_utils};
-
-#[derive(Error, Debug, PartialEq, Eq)]
-#[error("Retryable devnet error: `{0}`")]
-pub struct RetryableDevnetError(pub String);
 
 #[derive(Debug, Clone, Default)]
 pub struct Devnet {
@@ -436,9 +432,9 @@ impl Devnet {
 
 #[cfg(test)]
 mod tests {
-    use crate::devnet::DevnetTopology;
-    use crate::devnet::runner::{Devnet, FullNode, PoolNode};
     use std::path::PathBuf;
+
+    use super::*;
 
     #[test]
     pub fn yield_empty_topology_with_0_nodes() {
