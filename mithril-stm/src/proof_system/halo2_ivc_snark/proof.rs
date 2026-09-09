@@ -559,7 +559,11 @@ impl IvcProver<OsRng> {
         let trusted_setup_provider = TrustedSetupProvider::default();
         let certificate_key_provider =
             KeyProvider::for_non_recursive_circuit(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?;
-        let recursive_key_provider = KeyProvider::for_recursive_circuit(certificate_key_provider);
+        let recursive_key_provider = KeyProvider::for_recursive_circuit(
+            certificate_key_provider,
+            parameters,
+            MERKLE_TREE_DEPTH_FOR_SNARK,
+        )?;
         let ivc_setup = IvcProverSetup::load(&trusted_setup_provider, &recursive_key_provider)?;
 
         Ok(Self {
