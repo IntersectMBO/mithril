@@ -1,6 +1,6 @@
 [package]
 name = "mithril-stm"
-version = "0.12.14"
+version = "0.12.15"
 edition = { workspace = true }
 authors = { workspace = true }
 homepage = { workspace = true }
@@ -15,6 +15,18 @@ include = [
     ".gitignore",
     "src/circuits/halo2/non_recursive_circuit_verification_key_for_production.bin",
     "src/circuits/halo2_ivc/recursive_circuit_verification_key_for_production.bin",
+    "src/circuits/halo2/tests/golden/assets/golden_non_recursive_verification_key.bin",
+    "src/circuits/halo2_ivc/tests/assets/golden_recursive_circuit_verification_key.bin",
+    "src/circuits/halo2_ivc/tests/assets/recursive_step_output_accumulator_bytes.bin",
+    "src/circuits/halo2_ivc/tests/assets/recursive_proof_accumulator_bytes.bin",
+    "src/circuits/halo2_ivc/tests/assets/recursive_chain_state.bin",
+    "src/circuits/halo2_ivc/tests/assets/verification_context.bin",
+    "src/circuits/halo2_ivc/tests/assets/recursive_step_output.bin",
+    "src/circuits/halo2_ivc/tests/assets/genesis_step_output.bin",
+    "src/circuits/halo2_ivc/tests/assets/same_epoch_step_output.bin",
+    "src/circuits/halo2_ivc/tests/assets/first_step_cert.bin",
+    "src/circuits/halo2_ivc/tests/assets/genesis_benchmark_fixture.bin",
+    "src/proof_system/halo2_snark/golden_vectors/*.txt"
 ]
 
 [package.metadata.docs.rs]
@@ -51,7 +63,7 @@ future_snark = [
 native-tls = ["reqwest?/native-tls"]
 rustls = ["reqwest?/rustls"]
 num-integer-backend = ["dep:num-bigint", "dep:num-integer", "dep:num-rational", "dep:num-traits"]
-rug-backend = ["rug/default"]
+rug-backend = ["dep:rug"]
 
 [dependencies]
 anyhow = { workspace = true }

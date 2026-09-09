@@ -1,6 +1,6 @@
 [package]
 name = "mithril-client"
-version = "0.14.21"
+version = "0.14.22"
 description = "Mithril client library"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -25,7 +25,7 @@ default = ["num-integer-backend", "enable-http-compression"]
 full = ["fs"]
 
 # Enable file system-related functionality for Cardano database downloads
-fs = ["flume", "tar", "tokio/rt", "zstd"]
+fs = ["dep:flume", "dep:tar", "tokio/rt", "dep:zstd"]
 unstable = []
 
 # These features are for support of dependent crates only.
