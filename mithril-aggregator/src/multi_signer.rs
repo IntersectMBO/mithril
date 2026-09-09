@@ -78,7 +78,7 @@ impl MultiSignerImpl {
         protocol_multi_signer
             .verify_single_signature(&message, single_signature)
             .with_context(|| {
-                format!("Multi Signer can not verify single signature for message '{message:?}' and single signature {single_signature:#?}")
+                format!("Multi Signer can not verify single signature for message '{message:?}' from party_id '{}'", single_signature.party_id)
             })
     }
 }
