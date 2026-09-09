@@ -235,7 +235,7 @@ mod tests {
     use super::*;
 
     impl IpfsUploader {
-        fn new_for_test<P: Into<IpfsMfsDirPath>>(
+        pub(crate) fn new_for_test<P: Into<IpfsMfsDirPath>>(
             mfs_dir: P,
             mock_config: impl FnOnce(&mut MockIpfsBackendUploader),
         ) -> Self {
