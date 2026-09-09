@@ -38,10 +38,10 @@ use rand_core::{OsRng, SeedableRng};
 use sha2::{Digest, Sha256};
 
 use mithril_stm::{
-    AggregateSignatureType, AncillaryGenesisData, AncillaryProofInput, BaseFieldElement, Clerk,
-    GenesisVerificationKeyBundle, Initializer, KeyRegistration, MithrilMembershipDigest,
-    Parameters, SchnorrSigningKey, SchnorrVerificationKey, Signer, SingleSignature, Stake,
-    circuits::halo2_ivc::build_snapshot_protocol_message_preimage,
+    AggregateSignatureType, AggregateVerificationKeyForSnark, AncillaryGenesisData,
+    AncillaryProofInput, BaseFieldElement, Clerk, GenesisVerificationKeyBundle, Initializer,
+    KeyRegistration, MithrilMembershipDigest, Parameters, SchnorrSigningKey,
+    SchnorrVerificationKey, Signer, SingleSignature, Stake, circuits::halo2_ivc::PREIMAGE_SIZE,
 };
 
 type D = MithrilMembershipDigest;
@@ -58,6 +58,36 @@ const NEXT_PROTOCOL_PARAMETERS_HASH: [u8; 32] = [
     0x30, 0x6a, 0xd5, 0x96, 0x9f, 0xde, 0x8a, 0x09, 0x45, 0xf2, 0xf3, 0xcf, 0xe4, 0x53, 0x68, 0x85,
     0x45, 0xa3, 0x4e, 0x3a, 0xf7, 0xc5, 0x35, 0xef, 0xef, 0x94, 0x3f, 0x89, 0xb2, 0x14, 0x96, 0x15,
 ];
+
+/// Assembles the protocol message preimage a step announces.
+///
+/// The layout is rigid: four labels at fixed offsets, each followed by a fixed-width slot. A node
+/// builds this with `mithril_common::entities::ProtocolMessage::rigid_preimage`, which is the
+/// canonical definition; it is reproduced here because `mithril-stm` cannot depend on the crate that
+/// owns it.
+fn build_protocol_message_preimage(
+    aggregate_verification_key: &AggregateVerificationKeyForSnark<D>,
+    epoch: u64,
+) -> Result<[u8; PREIMAGE_SIZE], Box<dyn Error>> {
+    // The digest slot commits to the message parts that are not rigid, hashed as label then value.
+    let mut dynamic_parts = Sha256::new();
+    dynamic_parts.update(b"snapshot_digest");
+    dynamic_parts.update(SNAPSHOT_DIGEST.as_bytes());
+
+    let mut preimage = Vec::with_capacity(PREIMAGE_SIZE);
+    preimage.extend_from_slice(b"digest");
+    preimage.extend_from_slice(&dynamic_parts.finalize());
+    preimage.extend_from_slice(b"next_aggregate_verification_key");
+    preimage.extend_from_slice(&aggregate_verification_key.to_rigid_slot_bytes()?);
+    preimage.extend_from_slice(b"next_protocol_parameters");
+    preimage.extend_from_slice(&NEXT_PROTOCOL_PARAMETERS_HASH);
+    preimage.extend_from_slice(b"current_epoch");
+    preimage.extend_from_slice(&epoch.to_le_bytes());
+
+    Ok(preimage
+        .try_into()
+        .map_err(|_| "the preimage must be PREIMAGE_SIZE bytes")?)
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Not production parameters: they are small so the example is runnable.
@@ -100,14 +130,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // chain link up: the next-epoch step requires the commitment a message announces to be the one
     // the signer set produces.
     let protocol_message_preimages = [0u64, 1, 2]
-        .map(|epoch| {
-            build_snapshot_protocol_message_preimage(
-                SNAPSHOT_DIGEST,
-                snark_aggregate_verification_key,
-                NEXT_PROTOCOL_PARAMETERS_HASH,
-                epoch,
-            )
-        })
+        .map(|epoch| build_protocol_message_preimage(snark_aggregate_verification_key, epoch))
         .into_iter()
         .collect::<Result<Vec<_>, _>>()?;
     let genesis_protocol_message_preimage = &protocol_message_preimages[0];

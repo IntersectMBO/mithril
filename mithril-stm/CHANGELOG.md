@@ -10,7 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added a runnable example per proof system in `examples/`, each covering aggregation and verification: concatenation, non-recursive SNARK and recursive SNARK, the last advancing a chain across two epochs.
-- Added `circuits::halo2_ivc::build_snapshot_protocol_message_preimage`, which assembles the rigid protocol message preimage from an aggregate verification key, a protocol parameters hash and an epoch, so that a caller can build one without depending on `mithril-common`.
 
 ### Changed
 

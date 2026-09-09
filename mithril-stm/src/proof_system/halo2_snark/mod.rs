@@ -11,6 +11,7 @@ mod signer;
 mod single_signature;
 
 pub use aggregate_key::AggregateVerificationKeyForSnark;
+#[cfg(test)]
 pub(crate) use aggregate_key::RIGID_SLOT_BYTES;
 pub(crate) use clerk::SnarkClerk;
 pub(crate) use eligibility::{
