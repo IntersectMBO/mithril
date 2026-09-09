@@ -3,6 +3,7 @@ use semver::Version;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use mithril_common::StdResult;
 use mithril_common::crypto_helper::ManifestSigner;
 use mithril_file_archiver::FileArchiver;
 
@@ -78,16 +79,33 @@ impl DependenciesBuilder {
             logger,
         ));
 
-        // Compute the cache pool for prover service
+        // Compute the cache pool for both new and legacy prover services
         // This is done here to avoid circular dependencies between the prover service and the signed entity service
         // TODO: Make this part of a warmup phase of the aggregator?
-        if let Some(signed_entity) =
-            signed_entity_service.get_last_cardano_transaction_snapshot().await?
-        {
-            legacy_prover_service
-                .compute_cache(signed_entity.artifact.block_number)
-                .await?;
-        }
+        let warm_up_legacy_cache = async {
+            if let Some(signed_entity) =
+                signed_entity_service.get_last_cardano_transaction_snapshot().await?
+            {
+                legacy_prover_service
+                    .compute_cache(signed_entity.artifact.block_number)
+                    .await?;
+            }
+            StdResult::Ok(())
+        };
+
+        let warm_up_cache = async {
+            if let Some(signed_entity) = signed_entity_service
+                .get_last_cardano_blocks_transactions_snapshot()
+                .await?
+            {
+                prover_service
+                    .compute_cache(signed_entity.artifact.block_number_signed)
+                    .await?;
+            }
+            StdResult::Ok(())
+        };
+
+        tokio::try_join!(warm_up_legacy_cache, warm_up_cache)?;
 
         Ok(signed_entity_service)
     }
