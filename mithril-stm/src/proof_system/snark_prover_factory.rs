@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::{
     MERKLE_TREE_DEPTH_FOR_SNARK, MembershipDigest, Parameters, StmResult,
     proof_system::{
-        SnarkAggregateSignatureProver, SnarkProver,
+        SnarkAggregateSignatureProver, SnarkProver, SnarkProverSetupReuse,
         halo2_ivc_snark::{IvcChainProver, IvcProver},
     },
 };
@@ -26,21 +26,34 @@ pub(crate) trait SnarkProverFactory<D: MembershipDigest>: Debug {
 }
 
 /// Production factory: `SnarkProver<OsRng>` and `IvcProver<OsRng>` over the trusted setup.
-#[derive(Debug, Default)]
-pub(crate) struct NonDeterministicSnarkProverFactory;
+#[derive(Debug)]
+pub(crate) struct NonDeterministicSnarkProverFactory {
+    /// Whether the setups handed to the provers are reused across aggregations.
+    setup_reuse: SnarkProverSetupReuse,
+}
+
+impl NonDeterministicSnarkProverFactory {
+    /// Factory resolving the setups it hands to the provers through `setup_reuse`.
+    pub(crate) fn new(setup_reuse: SnarkProverSetupReuse) -> Self {
+        Self { setup_reuse }
+    }
+}
 
 impl<D: MembershipDigest> SnarkProverFactory<D> for NonDeterministicSnarkProverFactory {
     fn snark_aggregate_signature_prover(
         &self,
         parameters: &Parameters,
     ) -> StmResult<Box<dyn SnarkAggregateSignatureProver<D>>> {
-        Ok(Box::new(SnarkProver::try_new_non_deterministic(
-            parameters,
-            MERKLE_TREE_DEPTH_FOR_SNARK,
-        )?))
+        let setup = self
+            .setup_reuse
+            .certificate_setup(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?;
+
+        Ok(Box::new(SnarkProver::new_non_deterministic(setup)))
     }
 
     fn ivc_chain_prover(&self, parameters: &Parameters) -> StmResult<Box<dyn IvcChainProver<D>>> {
-        Ok(Box::new(IvcProver::try_new_non_deterministic(parameters)?))
+        let setup = self.setup_reuse.ivc_setup(parameters)?;
+
+        Ok(Box::new(IvcProver::new_non_deterministic(setup)))
     }
 }

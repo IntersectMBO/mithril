@@ -28,8 +28,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AggregateVerificationKeyForSnark, AggregationError, AncillaryGenesisData, AncillaryProofInput,
-    BaseFieldElement, MERKLE_TREE_DEPTH_FOR_SNARK, MembershipDigest, Parameters, SnarkProof,
-    StmResult,
+    BaseFieldElement, MembershipDigest, SnarkProof, StmResult,
     circuits::{
         halo2::{keys::NonRecursiveCircuitVerifyingKey, types::CircuitBase},
         halo2_ivc::{
@@ -40,8 +39,6 @@ use crate::{
             state::{Global, State},
             types::{CertificateProofBytes, IvcProofBytes, MessageHash, ProtocolMessagePreimage},
         },
-        key_provider::KeyProvider,
-        trusted_setup::TrustedSetupProvider,
     },
     codec,
     proof_system::halo2_ivc_snark::{
@@ -553,23 +550,12 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
 }
 
 impl IvcProver<OsRng> {
-    /// Loads the IVC setup from the trusted setup and the recursive key provider
-    /// derived from `parameters` and `MERKLE_TREE_DEPTH_FOR_SNARK`.
-    pub(crate) fn try_new_non_deterministic(parameters: &Parameters) -> StmResult<Self> {
-        let trusted_setup_provider = TrustedSetupProvider::default();
-        let certificate_key_provider =
-            KeyProvider::for_non_recursive_circuit(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?;
-        let recursive_key_provider = KeyProvider::for_recursive_circuit(
-            certificate_key_provider,
-            parameters,
-            MERKLE_TREE_DEPTH_FOR_SNARK,
-        )?;
-        let ivc_setup = IvcProverSetup::load(&trusted_setup_provider, &recursive_key_provider)?;
-
-        Ok(Self {
-            ivc_setup: Arc::new(ivc_setup),
+    /// Creates a prover over `ivc_setup`, which the factory owns the reuse of.
+    pub(crate) fn new_non_deterministic(ivc_setup: Arc<IvcProverSetup>) -> Self {
+        Self {
+            ivc_setup,
             rng: OsRng,
-        })
+        }
     }
 }
 

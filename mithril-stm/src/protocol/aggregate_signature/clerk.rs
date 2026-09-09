@@ -14,7 +14,7 @@ use crate::{
     AggregateSignatureError, AncillaryProverData, AncillaryVerifierData,
     proof_system::{
         NonDeterministicSnarkProverFactory, SnarkAggregateSignatureProver, SnarkClerk,
-        SnarkProverFactory, SnarkVerifierData,
+        SnarkProverFactory, SnarkProverSetupReuse, SnarkVerifierData,
         halo2_ivc_snark::{
             IvcChainStepBundle, IvcOffCircuitChecker, IvcVerifierData, MithrilIvcOffCircuitChecker,
         },
@@ -59,7 +59,9 @@ impl<D: MembershipDigest> Clerk<D> {
                 .has_snark_verification_keys()
                 .then(|| SnarkClerk::new_clerk_from_signer(signer)),
             #[cfg(feature = "future_snark")]
-            snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory),
+            snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory::new(
+                SnarkProverSetupReuse::Enabled,
+            )),
             #[cfg(feature = "future_snark")]
             ivc_off_circuit_checker: Arc::new(MithrilIvcOffCircuitChecker),
             phantom_data: PhantomData,
@@ -81,7 +83,9 @@ impl<D: MembershipDigest> Clerk<D> {
                 SnarkClerk::new_clerk_from_closed_key_registration(parameters, closed_registration)
             }),
             #[cfg(feature = "future_snark")]
-            snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory),
+            snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory::new(
+                SnarkProverSetupReuse::Enabled,
+            )),
             #[cfg(feature = "future_snark")]
             ivc_off_circuit_checker: Arc::new(MithrilIvcOffCircuitChecker),
             phantom_data: PhantomData,

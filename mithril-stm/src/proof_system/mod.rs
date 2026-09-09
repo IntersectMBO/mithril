@@ -21,6 +21,8 @@ mod concatenation;
 mod halo2_snark;
 #[cfg(feature = "future_snark")]
 mod snark_prover_factory;
+#[cfg(feature = "future_snark")]
+mod snark_setup_cache;
 
 /// Serialized `ParamsVerifierKZG` (i.e. `s_g2`) from the Midnight production trusted SRS.
 ///
@@ -76,3 +78,5 @@ pub(crate) use halo2_snark::{
 pub(crate) use snark_prover_factory::MockSnarkProverFactory;
 #[cfg(feature = "future_snark")]
 pub(crate) use snark_prover_factory::{NonDeterministicSnarkProverFactory, SnarkProverFactory};
+#[cfg(feature = "future_snark")]
+pub(crate) use snark_setup_cache::SnarkProverSetupReuse;

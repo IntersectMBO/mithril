@@ -23,7 +23,9 @@ use crate::circuits::halo2_ivc::{
     KZGCommitmentScheme, NativeField, PairingEngine,
     RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, VerifyingKey,
 };
-use crate::proof_system::{NonDeterministicSnarkProverFactory, SnarkProverFactory};
+use crate::proof_system::{
+    NonDeterministicSnarkProverFactory, SnarkProverFactory, SnarkProverSetupReuse,
+};
 use crate::signature_scheme::{
     BaseFieldElement, DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST,
     compute_poseidon_digest,
@@ -91,10 +93,13 @@ impl CircuitVerificationKeyDigest {
     ///
     /// The key is derived through the same prover the clerk uses to aggregate signatures, so the
     /// digest matches the one carried by the certificates produced with these parameters.
+    ///
+    /// The setup is not reused across calls: this computes a digest for the parameters it is given,
+    /// which are not necessarily the ones the process signs with, and only the verifying key is kept.
     pub fn compute_for_certificate_circuit(parameters: &Parameters) -> StmResult<Self> {
         let prover =
             SnarkProverFactory::<MithrilMembershipDigest>::snark_aggregate_signature_prover(
-                &NonDeterministicSnarkProverFactory,
+                &NonDeterministicSnarkProverFactory::new(SnarkProverSetupReuse::Disabled),
                 parameters,
             )?;
 
