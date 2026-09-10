@@ -3,12 +3,13 @@
 
 use ff::Field;
 use midnight_proofs::utils::SerdeFormat;
+use proptest::prelude::*;
 use sha2::{Digest as Sha2Digest, Sha256};
 
 use crate::circuits::halo2_ivc::{
     Accumulator, KZGCommitmentScheme, NativeField, PREIMAGE_CURRENT_EPOCH_BYTES,
     PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES, PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES,
-    PREIMAGE_SIZE, PairingEngine, RecursiveEmulation, VerifyingKey,
+    PREIMAGE_SIZE, PairingEngine, ProtocolMessagePreimage, RecursiveEmulation, VerifyingKey,
     circuit::IvcCircuitData,
     io::{ReadWithFormat, WriteWithFormat},
     protocol_message::{DynamicProtocolMessagePartKey, ProtocolMessage},
@@ -25,7 +26,8 @@ use crate::circuits::halo2_ivc::{
     },
     types::{EpochNumber, MerkleTreeCommitment, MessageHash, ProtocolParametersHash, StepCounter},
 };
-use crate::{AggregateVerificationKeyForSnark, MithrilMembershipDigest};
+use crate::codec::CODEC_VERSION_CBOR_V1;
+use crate::{AggregateVerificationKeyForSnark, BaseFieldElement, MithrilMembershipDigest};
 
 type TestAggregateVerificationKey = AggregateVerificationKeyForSnark<MithrilMembershipDigest>;
 
@@ -36,13 +38,9 @@ fn build_test_aggregate_verification_key() -> TestAggregateVerificationKey {
         .expect("valid test aggregate verification key should decode")
 }
 
-/// Minimal fixture for rigid preimage layout pinning tests.
-fn build_test_message() -> (ProtocolMessage, [u8; 44]) {
+/// Fixture for the dynamic-digest example: a 64-character hex value, the shape production sends.
+fn build_test_message() -> ProtocolMessage {
     let avk = build_test_aggregate_verification_key();
-    let avk_slot = avk
-        .to_rigid_slot_bytes()
-        .expect("test aggregate verification key should project to rigid slot");
-
     let mut message = ProtocolMessage::new();
     message.set_dynamic_message_part(
         DynamicProtocolMessagePartKey::SnapshotDigest,
@@ -53,8 +51,7 @@ fn build_test_message() -> (ProtocolMessage, [u8; 44]) {
         .expect("test aggregate verification key should project to rigid slot");
     message.set_next_protocol_parameters([7u8; 32]);
     message.set_current_epoch(42);
-
-    (message, avk_slot)
+    message
 }
 
 #[test]
@@ -231,31 +228,13 @@ fn vk_serialization_round_trip() {
 }
 
 // --- Rigid preimage layout pinning tests ---
-// These pin each label and slot to its exact byte offset in the 190-byte rigid preimage,
-// matching the layout the IVC circuit reads at PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
-// PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, and PREIMAGE_CURRENT_EPOCH_BYTES.
-
-#[test]
-fn rigid_preimage_length_is_190_bytes() {
-    let (message, _) = build_test_message();
-    let preimage = message
-        .try_rigid_preimage()
-        .expect("try_rigid_preimage should succeed for a valid message");
-    assert_eq!(preimage.len(), PREIMAGE_SIZE);
-}
-
-#[test]
-fn rigid_preimage_digest_label_is_at_offset_0() {
-    let (message, _) = build_test_message();
-    let preimage = message
-        .try_rigid_preimage()
-        .expect("try_rigid_preimage should succeed");
-    assert_eq!(&preimage[0..6], b"digest");
-}
+// The generated layout property below covers every offset. This example is kept because its
+// 64-character hex value is the shape production sends, guaranteed on every run rather than
+// sampled.
 
 #[test]
 fn rigid_preimage_dynamic_hash_is_at_offset_6() {
-    let (message, _) = build_test_message();
+    let message = build_test_message();
     let preimage = message
         .try_rigid_preimage()
         .expect("try_rigid_preimage should succeed");
@@ -267,60 +246,181 @@ fn rigid_preimage_dynamic_hash_is_at_offset_6() {
     assert_eq!(&preimage[6..38], &expected);
 }
 
-#[test]
-fn rigid_preimage_avk_label_is_at_offset_38() {
-    let (message, _) = build_test_message();
-    let preimage = message
-        .try_rigid_preimage()
-        .expect("try_rigid_preimage should succeed");
-    assert_eq!(&preimage[38..69], b"next_aggregate_verification_key");
+// --- Rigid preimage properties ---
+// The builder positions every slot by cursor arithmetic over label lengths, while the accessors
+// decode three of them through absolute range constants; the circuit hashes the whole preimage.
+// Generated values drive writer and reader against the same array, where the example fixtures
+// hold stake 1 and epoch 42 and so cannot show a slot losing its high bytes.
+
+prop_compose! {
+    /// Four shapes the builder has to keep apart: an absent entry hashes nothing while an empty
+    /// value hashes the key spelling, a 64-character hex string is the shape production sends,
+    /// and multi-byte characters matter because the hash consumes bytes, not characters.
+    fn arb_snapshot_digest()(
+        value in prop_oneof![
+            Just(None::<String>),
+            Just(Some(String::new())),
+            any::<[u8; 32]>().prop_map(|digest| Some(hex::encode(digest))),
+            prop::collection::vec(
+                prop_oneof![Just('a'), Just('Z'), Just('7'), Just('é'), Just('鍵')],
+                1usize..=32,
+            )
+            .prop_map(|characters| Some(characters.into_iter().collect::<String>())),
+        ],
+    ) -> Option<String> {
+        value
+    }
 }
 
+prop_compose! {
+    /// The legacy aggregate key decoder re-runs its own version detection on the root, so a root
+    /// beginning with the CBOR version byte reaches a separate reinterpretation path.
+    fn arb_unambiguous_aggregate_key_root()(
+        first_byte in any::<u8>().prop_filter(
+            "a root beginning with the CBOR version byte takes the nested decoder path",
+            |byte| *byte != CODEC_VERSION_CBOR_V1,
+        ),
+        remaining_bytes in any::<[u8; 31]>(),
+    ) -> [u8; 32] {
+        let mut root = [0u8; 32];
+        root[0] = first_byte;
+        root[1..].copy_from_slice(&remaining_bytes);
+        root
+    }
+}
+
+fn build_aggregate_key_from_parts(
+    root: &[u8; 32],
+    total_stake: u64,
+) -> TestAggregateVerificationKey {
+    let mut legacy_bytes = [0u8; 40];
+    legacy_bytes[0..32].copy_from_slice(root);
+    // The legacy decoder reads the stake big-endian; the rigid slot writes it little-endian.
+    legacy_bytes[32..40].copy_from_slice(&total_stake.to_be_bytes());
+    AggregateVerificationKeyForSnark::<MithrilMembershipDigest>::from_bytes(&legacy_bytes)
+        .expect("a 40-byte legacy aggregate verification key should decode")
+}
+
+fn build_rigid_message(
+    snapshot_digest: Option<&str>,
+    aggregate_key_root: &[u8; 32],
+    total_stake: u64,
+    next_protocol_parameters: [u8; 32],
+    current_epoch: u64,
+) -> ProtocolMessage {
+    let mut message = ProtocolMessage::new();
+    if let Some(value) = snapshot_digest {
+        message.set_dynamic_message_part(
+            DynamicProtocolMessagePartKey::SnapshotDigest,
+            value.to_owned(),
+        );
+    }
+    message
+        .set_next_snark_aggregate_verification_key(&build_aggregate_key_from_parts(
+            aggregate_key_root,
+            total_stake,
+        ))
+        .expect("a 32-byte root should project to the rigid slot");
+    message.set_next_protocol_parameters(next_protocol_parameters);
+    message.set_current_epoch(current_epoch);
+    message
+}
+
+/// Recomputed from the key spelling and the value bytes, so the expectation never comes from the
+/// builder under test.
+fn expected_dynamic_parts_hash(snapshot_digest: Option<&str>) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    if let Some(value) = snapshot_digest {
+        hasher.update(b"snapshot_digest");
+        hasher.update(value.as_bytes());
+    }
+    hasher.finalize().into()
+}
+
+fn reduced_field_element(bytes: &[u8; 32]) -> NativeField {
+    BaseFieldElement::from_raw(bytes)
+        .expect("from_raw applies modulus reduction and cannot fail")
+        .0
+}
+
+/// Pins the reader ranges independently of any generated value.
 #[test]
-fn rigid_preimage_avk_slot_matches_expected_output() {
-    let (message, avk_slot) = build_test_message();
-    let preimage = message
-        .try_rigid_preimage()
-        .expect("try_rigid_preimage should succeed");
+fn preimage_range_constants_match_their_literal_ranges() {
+    assert_eq!(PREIMAGE_SIZE, 190);
     assert_eq!(PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES, 69..101);
-    // AVK slot occupies 69..113: root(32) || zeros(4) || stake_LE(8).
-    assert_eq!(&preimage[69..113], &avk_slot);
-}
-
-#[test]
-fn rigid_preimage_params_label_is_at_offset_113() {
-    let (message, _) = build_test_message();
-    let preimage = message
-        .try_rigid_preimage()
-        .expect("try_rigid_preimage should succeed");
-    assert_eq!(&preimage[113..137], b"next_protocol_parameters");
-}
-
-#[test]
-fn rigid_preimage_params_slot_matches_input() {
-    let (message, _) = build_test_message();
-    let preimage = message
-        .try_rigid_preimage()
-        .expect("try_rigid_preimage should succeed");
     assert_eq!(PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, 137..169);
-    assert_eq!(&preimage[137..169], &[7u8; 32]);
-}
-
-#[test]
-fn rigid_preimage_epoch_label_is_at_offset_169() {
-    let (message, _) = build_test_message();
-    let preimage = message
-        .try_rigid_preimage()
-        .expect("try_rigid_preimage should succeed");
-    assert_eq!(&preimage[169..182], b"current_epoch");
-}
-
-#[test]
-fn rigid_preimage_epoch_slot_is_42_le() {
-    let (message, _) = build_test_message();
-    let preimage = message
-        .try_rigid_preimage()
-        .expect("try_rigid_preimage should succeed");
     assert_eq!(PREIMAGE_CURRENT_EPOCH_BYTES, 182..190);
-    assert_eq!(&preimage[182..190], &42u64.to_le_bytes());
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(100))]
+
+    #[test]
+    fn a_rigid_preimage_carries_every_value_at_its_literal_offset(
+        snapshot_digest in arb_snapshot_digest(),
+        aggregate_key_root in arb_unambiguous_aggregate_key_root(),
+        total_stake in any::<u64>(),
+        next_protocol_parameters in any::<[u8; 32]>(),
+        current_epoch in any::<u64>(),
+    ) {
+        let message = build_rigid_message(
+            snapshot_digest.as_deref(),
+            &aggregate_key_root,
+            total_stake,
+            next_protocol_parameters,
+            current_epoch,
+        );
+
+        let preimage = message
+            .try_rigid_preimage()
+            .expect("a fully populated message should assemble");
+
+        prop_assert_eq!(preimage.len(), 190);
+        prop_assert_eq!(&preimage[0..6], b"digest");
+        prop_assert_eq!(
+            &preimage[6..38],
+            &expected_dynamic_parts_hash(snapshot_digest.as_deref())
+        );
+        prop_assert_eq!(&preimage[38..69], b"next_aggregate_verification_key");
+        prop_assert_eq!(&preimage[69..101], &aggregate_key_root);
+        prop_assert_eq!(&preimage[101..105], &[0u8; 4]);
+        prop_assert_eq!(&preimage[105..113], &total_stake.to_le_bytes());
+        prop_assert_eq!(&preimage[113..137], b"next_protocol_parameters");
+        prop_assert_eq!(&preimage[137..169], &next_protocol_parameters);
+        prop_assert_eq!(&preimage[169..182], b"current_epoch");
+        prop_assert_eq!(&preimage[182..190], &current_epoch.to_le_bytes());
+    }
+
+    #[test]
+    fn a_rigid_preimage_decodes_back_to_the_values_it_was_built_from(
+        snapshot_digest in arb_snapshot_digest(),
+        aggregate_key_root in arb_unambiguous_aggregate_key_root(),
+        total_stake in any::<u64>(),
+        next_protocol_parameters in any::<[u8; 32]>(),
+        current_epoch in any::<u64>(),
+    ) {
+        let message = build_rigid_message(
+            snapshot_digest.as_deref(),
+            &aggregate_key_root,
+            total_stake,
+            next_protocol_parameters,
+            current_epoch,
+        );
+
+        let preimage = ProtocolMessagePreimage::from(
+            message
+                .try_rigid_preimage()
+                .expect("a fully populated message should assemble"),
+        );
+
+        prop_assert_eq!(preimage.current_epoch(), EpochNumber::new(current_epoch));
+        prop_assert_eq!(
+            preimage.next_merkle_tree_commitment(),
+            MerkleTreeCommitment::from_field(reduced_field_element(&aggregate_key_root))
+        );
+        prop_assert_eq!(
+            preimage.next_protocol_parameters(),
+            ProtocolParametersHash::from_field(reduced_field_element(&next_protocol_parameters))
+        );
+    }
 }
