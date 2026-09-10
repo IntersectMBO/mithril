@@ -6,14 +6,10 @@ use std::{
 use anyhow::{Context, anyhow};
 use midnight_curves::JubjubSubgroup;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use crate::{
     StandardSchnorrSignature, StmResult,
-    signature_scheme::{
-        BaseFieldElement,
-        schnorr_signature::DOMAIN_SEPARATION_TAG_SCHNORR_PROOF_OF_BOUND_POSSESSION,
-    },
+    signature_scheme::{BaseFieldElement, compute_schnorr_proof_of_bound_possession_challenge},
 };
 
 use super::{PrimeOrderProjectivePoint, ProjectivePoint, SchnorrSignatureError, SchnorrSigningKey};
@@ -57,17 +53,9 @@ impl SchnorrVerificationKey {
         prefix: &[u8],
         signature: &StandardSchnorrSignature,
     ) -> StmResult<()> {
-        let digest: [u8; 32] = Sha256::digest(
-            [
-                DOMAIN_SEPARATION_TAG_SCHNORR_PROOF_OF_BOUND_POSSESSION,
-                prefix,
-                &self.to_bytes(),
-            ]
-            .concat(),
-        )
-        .into();
-        let field_element = BaseFieldElement::from_raw(&digest)?;
-        signature.verify(&[field_element], self)
+        let field_element_for_proof_of_bound_possession =
+            compute_schnorr_proof_of_bound_possession_challenge(prefix, &self.to_bytes())?;
+        signature.verify(&[field_element_for_proof_of_bound_possession], self)
     }
 
     /// Returns the underlying Jubjub subgroup point for circuit witness encoding.
@@ -236,7 +224,7 @@ mod tests {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let sk = SchnorrSigningKey::generate(&mut rng);
         let vk = SchnorrVerificationKey::new_from_signing_key(sk.clone());
-        let prefix = b"stake=100|epoch=5|pool_id=pool1abc";
+        let prefix = b"stake=100|epoch=5|pool_id=pool1a";
 
         let signature = sk.create_proof_of_bound_possession(prefix, &mut rng).unwrap();
 
@@ -249,8 +237,8 @@ mod tests {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let sk = SchnorrSigningKey::generate(&mut rng);
         let vk = SchnorrVerificationKey::new_from_signing_key(sk.clone());
-        let prefix = b"stake=100|epoch=5|pool_id=pool1abc";
-        let replayed_prefix = b"stake=100|epoch=6|pool_id=pool1abc"; // different epoch
+        let prefix = b"stake=100|epoch=5|pool_id=pool1a";
+        let replayed_prefix = b"stake=100|epoch=6|pool_id=pool1a"; // different epoch
 
         let signature = sk.create_proof_of_bound_possession(prefix, &mut rng).unwrap();
 
@@ -264,24 +252,12 @@ mod tests {
         let sk1 = SchnorrSigningKey::generate(&mut rng);
         let sk2 = SchnorrSigningKey::generate(&mut rng);
         let vk2 = SchnorrVerificationKey::new_from_signing_key(sk2);
-        let prefix = b"stake=100|epoch=5|pool_id=pool1abc";
+        let prefix = b"stake=100|epoch=5|pool_id=pool1a";
 
         let signature = sk1.create_proof_of_bound_possession(prefix, &mut rng).unwrap();
 
         vk2.verify_proof_of_bound_possession(prefix, &signature)
             .expect_err("Proof of Bound Possession signed by sk1 must not verify against sk2's verification key");
-    }
-
-    #[test]
-    fn proof_of_bound_possession_succeeds_with_empty_prefix() {
-        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-        let sk = SchnorrSigningKey::generate(&mut rng);
-        let vk = SchnorrVerificationKey::new_from_signing_key(sk.clone());
-
-        let signature = sk.create_proof_of_bound_possession(&[], &mut rng).unwrap();
-
-        vk.verify_proof_of_bound_possession(&[], &signature)
-            .expect("Empty prefix should still round-trip successfully");
     }
 
     mod golden {

@@ -4,6 +4,8 @@ use std::{fs, path::PathBuf, sync::Arc};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
+#[cfg(feature = "future_snark")]
+use crate::entities::Epoch;
 use crate::{
     crypto_helper::{
         KesEvolutions, KesPeriod, KesSigner, KesSignerStandard, OpCert, ProtocolInitializer,
@@ -79,6 +81,8 @@ fn setup_protocol_initializer(
         kes_signer,
         kes_period,
         stake,
+        #[cfg(feature = "future_snark")]
+        Epoch::default(),
         &mut protocol_initializer_rng,
     )
     .expect("protocol initializer setup should not fail");

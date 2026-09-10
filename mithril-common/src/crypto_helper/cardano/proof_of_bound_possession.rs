@@ -1,5 +1,8 @@
+use mithril_stm::ProofOfBoundPossessionPrefixBytes;
+use sha2::{Digest, Sha256};
+
 use crate::{
-    crypto_helper::ProtocolPartyIdHash,
+    crypto_helper::ProtocolPartyIdBytes,
     entities::{Epoch, Stake},
 };
 
@@ -10,11 +13,11 @@ use crate::{
 pub(crate) struct ProofOfBoundPossessionPrefix {
     stake: Stake,
     epoch: Epoch,
-    pool_id: ProtocolPartyIdHash,
+    pool_id: ProtocolPartyIdBytes,
 }
 
 impl ProofOfBoundPossessionPrefix {
-    pub(crate) fn new(stake: Stake, epoch: Epoch, pool_id: ProtocolPartyIdHash) -> Self {
+    pub(crate) fn new(stake: Stake, epoch: Epoch, pool_id: ProtocolPartyIdBytes) -> Self {
         Self {
             stake,
             epoch,
@@ -25,12 +28,13 @@ impl ProofOfBoundPossessionPrefix {
     /// Converts a Proof of Bound Possession challenge into prefix bytes
     /// in the form:
     /// stake || epoch || pool_id
-    pub(crate) fn to_prefix_bytes(&self) -> Vec<u8> {
-        let mut prefix_bytes = Vec::new();
-        prefix_bytes.extend_from_slice(&self.stake.to_be_bytes());
-        prefix_bytes.extend_from_slice(&self.epoch.to_be_bytes());
-        prefix_bytes.extend_from_slice(&self.pool_id);
-        prefix_bytes
+    /// and hash it to a fix 32 bytes using Sha256
+    pub(crate) fn to_prefix_bytes(&self) -> ProofOfBoundPossessionPrefixBytes {
+        let mut prefix_bytes = [0u8; 44];
+        prefix_bytes[0..8].copy_from_slice(&self.stake.to_be_bytes());
+        prefix_bytes[8..16].copy_from_slice(&self.epoch.to_be_bytes());
+        prefix_bytes[16..44].copy_from_slice(&self.pool_id);
+        Sha256::digest(prefix_bytes).into()
     }
 }
 
@@ -44,12 +48,13 @@ mod tests {
 
         let bytes = prefix.to_prefix_bytes();
 
-        let mut expected = Vec::new();
-        expected.extend_from_slice(&100u64.to_be_bytes());
-        expected.extend_from_slice(&5u64.to_be_bytes());
-        expected.extend_from_slice(&[1u8; 28]);
+        let mut expected_prefix = Vec::new();
+        expected_prefix.extend_from_slice(&100u64.to_be_bytes());
+        expected_prefix.extend_from_slice(&5u64.to_be_bytes());
+        expected_prefix.extend_from_slice(&[1u8; 28]);
+        let expected_bytes: [u8; 32] = Sha256::digest(expected_prefix).into();
 
-        assert_eq!(bytes, expected);
+        assert_eq!(expected_bytes, bytes);
     }
 
     #[test]
@@ -58,12 +63,13 @@ mod tests {
 
         let bytes = prefix.to_prefix_bytes();
 
-        let mut expected = Vec::new();
-        expected.extend_from_slice(&100u64.to_be_bytes());
-        expected.extend_from_slice(&5u64.to_be_bytes());
-        expected.extend_from_slice(&[0u8; 28]);
+        let mut expected_prefix = Vec::new();
+        expected_prefix.extend_from_slice(&100u64.to_be_bytes());
+        expected_prefix.extend_from_slice(&5u64.to_be_bytes());
+        expected_prefix.extend_from_slice(&[0u8; 28]);
+        let expected_bytes: [u8; 32] = Sha256::digest(expected_prefix).into();
 
-        assert_eq!(bytes, expected);
+        assert_eq!(expected_bytes, bytes);
     }
 
     #[test]

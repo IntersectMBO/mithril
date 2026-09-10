@@ -15,7 +15,7 @@ use thiserror::Error;
 
 use crate::StdResult;
 use crate::crypto_helper::cardano::ProtocolRegistrationErrorWrapper;
-use crate::crypto_helper::{KesPeriod, ProtocolPartyId, ProtocolPartyIdHash, encode_bech32};
+use crate::crypto_helper::{KesPeriod, ProtocolPartyId, ProtocolPartyIdBytes, encode_bech32};
 
 use super::SerDeShelleyFileFormat;
 
@@ -252,7 +252,7 @@ impl OpCert {
     }
 
     /// Compute protocol party id as raw bytes, without bech32 encoding.
-    pub fn compute_protocol_party_id_as_bytes(&self) -> ProtocolPartyIdHash {
+    pub fn compute_protocol_party_id_as_bytes(&self) -> ProtocolPartyIdBytes {
         let mut hasher = Blake2b::<U28>::new();
         hasher.update(self.cold_vk.as_bytes());
         let mut pool_id = [0u8; 28];
@@ -327,8 +327,55 @@ mod tests {
     use kes_summed_ed25519::{kes::Sum6Kes, traits::KesSk};
     use std::path::PathBuf;
 
+    const GOLDEN_PARTY_ID: &str = "pool1mxyec46067n3querj9cxkk0g0zlag93pf3ya9vuyr3wgkq2e6t7";
+    const GOLDEN_PARTY_ID_AS_HASH: &str =
+        "d9899c574fd7a710732391706b59e878bfd416214c49d2b3841c5c8b";
+
+    const GOLDEN_PARTY_ID_AS_BYTES: [u8; 28] = [
+        217, 137, 156, 87, 79, 215, 167, 16, 115, 35, 145, 112, 107, 89, 232, 120, 191, 212, 22,
+        33, 76, 73, 210, 179, 132, 28, 92, 139,
+    ];
+
     fn setup_temp_directory(test_name: &str) -> PathBuf {
         TempDir::create("mithril_cardano_opcert", test_name)
+    }
+
+    fn deterministic_opcert() -> OpCert {
+        let keypair = ColdKeyGenerator::create_deterministic_keypair([0u8; 32]);
+        let mut dummy_key_buffer = [0u8; Sum6Kes::SIZE + 4];
+        let mut dummy_seed = [0u8; 32];
+        let (_, kes_verification_key) = Sum6Kes::keygen(&mut dummy_key_buffer, &mut dummy_seed);
+
+        OpCert::new(kes_verification_key, 0, KesPeriod(0), keypair)
+    }
+
+    #[test]
+    fn compute_protocol_party_id_golden_value() {
+        let operational_certificate = deterministic_opcert();
+
+        let party_id = operational_certificate
+            .compute_protocol_party_id()
+            .expect("compute protocol party_id should not fail");
+
+        assert_eq!(GOLDEN_PARTY_ID.to_string(), party_id);
+    }
+
+    #[test]
+    fn compute_protocol_party_id_as_hash_golden_value() {
+        let operational_certificate = deterministic_opcert();
+
+        let party_id_as_hash = operational_certificate.compute_protocol_party_id_as_hash();
+
+        assert_eq!(GOLDEN_PARTY_ID_AS_HASH.to_string(), party_id_as_hash);
+    }
+
+    #[test]
+    fn compute_protocol_party_id_as_bytes_golden_value() {
+        let operational_certificate = deterministic_opcert();
+
+        let party_id_bytes = operational_certificate.compute_protocol_party_id_as_bytes();
+
+        assert_eq!(GOLDEN_PARTY_ID_AS_BYTES, party_id_bytes);
     }
 
     #[test]
@@ -353,16 +400,10 @@ mod tests {
         let party_id = operational_certificate
             .compute_protocol_party_id()
             .expect("compute protocol party_id should not fail");
-        assert_eq!(
-            "pool1mxyec46067n3querj9cxkk0g0zlag93pf3ya9vuyr3wgkq2e6t7".to_string(),
-            party_id
-        );
+        assert_eq!(GOLDEN_PARTY_ID.to_string(), party_id);
 
         let party_id_as_hash = operational_certificate.compute_protocol_party_id_as_hash();
-        assert_eq!(
-            "d9899c574fd7a710732391706b59e878bfd416214c49d2b3841c5c8b".to_string(),
-            party_id_as_hash
-        );
+        assert_eq!(GOLDEN_PARTY_ID_AS_HASH.to_string(), party_id_as_hash);
 
         let operational_certificate_bytes_without_cold_vk = operational_certificate
             .get_opcert_without_cold_verification_key()
