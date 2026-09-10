@@ -7,8 +7,8 @@ use crate::{
 };
 
 /// Structure representing the information needed to create a prefix
-/// for the proof of bound possession.
-/// It is used to compute the hash value signed for the Proof of Bound Possession :
+/// for the Proof of Bound Possession (PoBP).
+/// It is used to compute the hash value signed for the PoBP :
 /// H(DST || prefix || vk)
 pub(crate) struct ProofOfBoundPossessionPrefix {
     stake: Stake,
@@ -25,7 +25,7 @@ impl ProofOfBoundPossessionPrefix {
         }
     }
 
-    /// Converts a proof of bound possession challenge into prefix bytes
+    /// Converts a Proof of Bound Possession challenge into prefix bytes
     /// in the form:
     /// stake || epoch || len(pool_id) || pool_id
     ///

@@ -118,7 +118,7 @@ pub struct StmInitializerWrapper {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     kes_signature_for_snark: Option<Sum6KesSig>,
 
-    /// The proof of bound possession of the Schnorr signing key for the SNARK proof system
+    /// The Proof of Bound Possession of the Schnorr signing key for the SNARK proof system
     #[cfg(feature = "future_snark")]
     #[serde(skip_serializing_if = "Option::is_none", default)]
     proof_of_bound_possession_for_snark: Option<StandardSchnorrSignature>,
@@ -232,7 +232,7 @@ impl StmInitializerWrapper {
         self.kes_signature_for_snark.map(|k| k.into())
     }
 
-    /// Extract the proof of bound possession of the Schnorr signing key
+    /// Extract the Proof of Bound Possession of the Schnorr signing key
     /// for the SNARK proof system.
     #[cfg(feature = "future_snark")]
     pub fn proof_of_bound_possession_for_snark(&self) -> Option<StandardSchnorrSignature> {

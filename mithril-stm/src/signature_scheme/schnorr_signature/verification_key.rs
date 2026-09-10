@@ -46,7 +46,7 @@ impl SchnorrVerificationKey {
         Ok(())
     }
 
-    /// Implementation of the verification of the proof of bound possession of a Schnorr signing key.
+    /// Implementation of the verification of the Proof of Bound Possession of a Schnorr signing key.
     ///
     /// This function receives a prefix and verifies a standard Schnorr signature of:
     /// Sha256("SCHNORR_POBP_DST" || prefix || verification_key_bytes)
@@ -241,7 +241,7 @@ mod tests {
         let signature = sk.create_proof_of_bound_possession(prefix, &mut rng).unwrap();
 
         vk.verify_proof_of_bound_possession(prefix, &signature)
-            .expect("Valid PoBP should verify successfully");
+            .expect("Valid Proof of Bound Possession should verify successfully");
     }
 
     #[test]
@@ -255,7 +255,7 @@ mod tests {
         let signature = sk.create_proof_of_bound_possession(prefix, &mut rng).unwrap();
 
         vk.verify_proof_of_bound_possession(replayed_prefix, &signature)
-            .expect_err("PoBP signed for one prefix must not verify against a different prefix");
+            .expect_err("Proof of Bound Possession signed for one prefix must not verify against a different prefix");
     }
 
     #[test]
@@ -269,7 +269,7 @@ mod tests {
         let signature = sk1.create_proof_of_bound_possession(prefix, &mut rng).unwrap();
 
         vk2.verify_proof_of_bound_possession(prefix, &signature)
-            .expect_err("PoBP signed by sk1 must not verify against sk2's verification key");
+            .expect_err("Proof of Bound Possession signed by sk1 must not verify against sk2's verification key");
     }
 
     #[test]

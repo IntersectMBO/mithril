@@ -164,10 +164,10 @@ impl SchnorrSigningKey {
         })
     }
 
-    /// Implementation of the creation of the proof of bound possession of the Schnorr signing key.
+    /// Implementation of the creation of the Proof of Bound Possession (PoBP) of the Schnorr signing key.
     ///
     /// This function receives a prefix and uses a standard Schnorr signature to
-    /// create a proof of bound possession of the signing key by signing:
+    /// create a PoBP of the signing key by signing:
     /// Sha256("SCHNORR_POBP_DST" || prefix || verification_key_bytes)
     /// The prefix is used to bound the signing key to a given stake, epoch and pool_id.
     pub fn create_proof_of_bound_possession<R: RngCore + CryptoRng>(
@@ -304,7 +304,7 @@ mod tests {
         }
     }
 
-    mod golden_pobp {
+    mod golden_proof_of_bound_possession {
 
         use crate::StandardSchnorrSignature;
 

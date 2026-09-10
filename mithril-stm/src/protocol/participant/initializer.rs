@@ -153,7 +153,7 @@ impl Initializer {
         ))
     }
 
-    /// Creates a proof of bound possession for the Schnorr signing key of the
+    /// Creates a Proof of Bound Possession for the Schnorr signing key of the
     /// Initializer for a given prefix if there is one
     #[cfg(feature = "future_snark")]
     pub fn create_proof_of_bound_possession<R: RngCore + CryptoRng>(
@@ -308,7 +308,7 @@ mod tests {
 
             let signature = initializer
                 .create_proof_of_bound_possession(prefix, &mut rng)
-                .expect("PoBP creation should not fail")
+                .expect("Proof of Bound Possession creation should not fail")
                 .expect(
                     "Initializer::new always creates a schnorr key when future_snark is enabled",
                 );
@@ -317,7 +317,9 @@ mod tests {
                 .schnorr_verification_key
                 .expect("schnorr verification key should be present")
                 .verify_proof_of_bound_possession(prefix, &signature)
-                .expect("PoBP produced by Initializer should verify successfully");
+                .expect(
+                    "Proof of Bound Possession produced by Initializer should verify successfully",
+                );
         }
 
         #[test]
@@ -327,13 +329,13 @@ mod tests {
             initializer.strip_snark_keys();
             let prefix = b"stake=100|epoch=5|pool_id=pool1abc";
 
-            let result = initializer
-                .create_proof_of_bound_possession(prefix, &mut rng)
-                .expect("PoBP creation should not fail even without a schnorr key");
+            let result = initializer.create_proof_of_bound_possession(prefix, &mut rng).expect(
+                "Proof of Bound Possession creation should not fail even without a schnorr key",
+            );
 
             assert!(
                 result.is_none(),
-                "No schnorr key means no PoBP should be created"
+                "No schnorr key means no Proof of Bound Possession should be created"
             );
         }
     }
