@@ -13,10 +13,11 @@ resource "null_resource" "mithril_ipfs" {
   ]
 
   triggers = {
-    vm_instance         = google_compute_instance.vm_instance.id,
-    ipfs_image_id       = var.ipfs_image_id,
-    ipfs_image_registry = var.ipfs_image_registry,
-    ipfs_storage_max    = var.mithril_ipfs_storage_max,
+    vm_instance              = google_compute_instance.vm_instance.id,
+    image_id                 = var.mithril_image_id,
+    ipfs_image_id            = var.ipfs_image_id,
+    ipfs_image_registry      = var.ipfs_image_registry,
+    mithril_ipfs_storage_max = var.mithril_ipfs_storage_max,
   }
 
   connection {
@@ -45,7 +46,7 @@ resource "null_resource" "mithril_ipfs" {
       "export LOGGING_MAX_SIZE='${var.mithril_container_logging_max_size}'",
       "export LOGGING_MAX_FILE='${var.mithril_container_logging_max_file}'",
       "export CURRENT_UID=$(id -u)",
-      "docker compose -f /home/curry/docker/docker-compose-ipfs.yaml --profile all up -d",
+      "docker compose -f /home/curry/docker/docker-compose-ipfs.yaml --profile all up -d --wait --wait-timeout 120",
     ]
   }
 }
