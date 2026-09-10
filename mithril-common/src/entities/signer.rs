@@ -1,6 +1,7 @@
 #[cfg(feature = "future_snark")]
 use crate::crypto_helper::{
-    ProtocolSignerVerificationKeyForSnark, ProtocolSignerVerificationKeySignatureForSnark,
+    ProtocolSignerProofOfBoundPossessionForSnark, ProtocolSignerVerificationKeyForSnark,
+    ProtocolSignerVerificationKeySignatureForSnark,
 };
 use crate::{
     crypto_helper::{
@@ -56,6 +57,12 @@ pub struct Signer {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub verification_key_signature_for_snark:
         Option<ProtocolSignerVerificationKeySignatureForSnark>,
+
+    /// The Proof of Bound Possession of the Schnorr signing key for the SNARK proof system.
+    /// Can be verified using the [`Signer::verification_key_for_snark`]
+    #[cfg(feature = "future_snark")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    proof_of_bound_possession_for_snark: Option<ProtocolSignerProofOfBoundPossessionForSnark>,
 }
 
 impl PartialEq for Signer {
@@ -111,6 +118,11 @@ impl Signer {
         {
             hasher.update(verification_key_signature_for_snark.to_json_hex().unwrap().as_bytes());
         }
+        #[cfg(feature = "future_snark")]
+        if let Some(proof_of_bound_possession_for_snark) = &self.proof_of_bound_possession_for_snark
+        {
+            hasher.update(proof_of_bound_possession_for_snark.to_bytes_hex().unwrap().as_bytes());
+        }
 
         hex::encode(hasher.finalize())
     }
@@ -149,6 +161,10 @@ impl Debug for Signer {
                         .field(
                             "verification_key_signature_for_snark",
                             &format_args!("{:?}", self.verification_key_signature_for_snark),
+                        )
+                        .field(
+                            "proof_of_bound_possession_for_snark",
+                            &format_args!("{:?}", self.proof_of_bound_possession_for_snark),
                         );
                 }
 
@@ -172,6 +188,8 @@ impl From<SignerWithStake> for Signer {
             verification_key_for_snark: other.verification_key_for_snark,
             #[cfg(feature = "future_snark")]
             verification_key_signature_for_snark: other.verification_key_signature_for_snark,
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: other.proof_of_bound_possession_for_snark,
         }
     }
 }
@@ -221,6 +239,12 @@ pub struct SignerWithStake {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub verification_key_signature_for_snark:
         Option<ProtocolSignerVerificationKeySignatureForSnark>,
+
+    /// The Proof of Bound Possession of the Schnorr signing key for the SNARK proof system.
+    /// Can be verified using the [`Signer::verification_key_for_snark`]
+    #[cfg(feature = "future_snark")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    proof_of_bound_possession_for_snark: Option<ProtocolSignerProofOfBoundPossessionForSnark>,
 }
 
 impl PartialEq for SignerWithStake {
@@ -256,6 +280,8 @@ impl SignerWithStake {
             verification_key_for_snark: signer.verification_key_for_snark,
             #[cfg(feature = "future_snark")]
             verification_key_signature_for_snark: signer.verification_key_signature_for_snark,
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: signer.proof_of_bound_possession_for_snark,
         }
     }
 
@@ -268,6 +294,7 @@ impl SignerWithStake {
     pub fn without_snark_fields(mut self) -> Self {
         self.verification_key_for_snark = None;
         self.verification_key_signature_for_snark = None;
+        self.proof_of_bound_possession_for_snark = None;
         self
     }
 
@@ -307,6 +334,11 @@ impl SignerWithStake {
         {
             hasher.update(verification_key_signature_for_snark.to_json_hex().unwrap().as_bytes());
         }
+        #[cfg(feature = "future_snark")]
+        if let Some(proof_of_bound_possession_for_snark) = &self.proof_of_bound_possession_for_snark
+        {
+            hasher.update(proof_of_bound_possession_for_snark.to_bytes_hex().unwrap().as_bytes());
+        }
 
         hex::encode(hasher.finalize())
     }
@@ -345,6 +377,10 @@ impl Debug for SignerWithStake {
                         .field(
                             "verification_key_signature_for_snark",
                             &format_args!("{:?}", self.verification_key_signature_for_snark),
+                        )
+                        .field(
+                            "proof_of_bound_possession_for_snark",
+                            &format_args!("{:?}", self.proof_of_bound_possession_for_snark),
                         );
                 }
 
@@ -378,6 +414,8 @@ mod tests {
             verification_key_for_snark: None,
             #[cfg(feature = "future_snark")]
             verification_key_signature_for_snark: None,
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: None,
         };
         let signer_with_stake = SignerWithStake {
             party_id: "1".to_string(),
@@ -390,6 +428,8 @@ mod tests {
             verification_key_for_snark: None,
             #[cfg(feature = "future_snark")]
             verification_key_signature_for_snark: None,
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: None,
         };
 
         let signer_into: Signer = signer_with_stake.into();
@@ -413,6 +453,8 @@ mod tests {
             verification_key_for_snark: None,
             #[cfg(feature = "future_snark")]
             verification_key_signature_for_snark: None,
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: None,
         };
 
         assert_eq!(HASH_EXPECTED, build_signer("1", 3).compute_hash());

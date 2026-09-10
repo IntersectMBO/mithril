@@ -435,7 +435,7 @@ pub struct SignerRegistrationParameters {
         Option<ProtocolSignerVerificationKeySignatureForSnark>,
 
     /// The Proof of Bound Possession of the Schnorr signing key for the SNARK proof system.
-    /// Can be verifies using the [`SignerRegistrationParameters::verification_key_for_snark`]
+    /// Can be verified using the [`SignerRegistrationParameters::verification_key_for_snark`]
     #[cfg(feature = "future_snark")]
     proof_of_bound_possession_for_snark: Option<ProtocolSignerProofOfBoundPossessionForSnark>,
 }
