@@ -66,6 +66,8 @@ pub fn protocol_initializer<S: Into<String>>(
         None,
         kes_period,
         stake,
+        #[cfg(feature = "future_snark")]
+        Epoch::default(),
         &mut rng,
     )
     .unwrap()
