@@ -15,7 +15,7 @@ use thiserror::Error;
 
 use crate::StdResult;
 use crate::crypto_helper::cardano::ProtocolRegistrationErrorWrapper;
-use crate::crypto_helper::{KesPeriod, ProtocolPartyId, encode_bech32};
+use crate::crypto_helper::{KesPeriod, ProtocolPartyId, ProtocolPartyIdHash, encode_bech32};
 
 use super::SerDeShelleyFileFormat;
 
@@ -242,18 +242,22 @@ impl OpCert {
 
     /// Compute protocol party id as pool id bech 32
     pub fn compute_protocol_party_id(&self) -> Result<ProtocolPartyId, OpCertError> {
-        let mut hasher = Blake2b::<U28>::new();
-        hasher.update(self.cold_vk.as_bytes());
-        let mut pool_id = [0u8; 28];
-        pool_id.copy_from_slice(hasher.finalize().as_bytes());
-        encode_bech32("pool", &pool_id).map_err(|_| OpCertError::PoolAddressEncoding)
+        encode_bech32("pool", &self.compute_protocol_party_id_as_bytes())
+            .map_err(|_| OpCertError::PoolAddressEncoding)
     }
 
     /// Compute protocol party id as hash
     pub fn compute_protocol_party_id_as_hash(&self) -> String {
+        hex::encode(self.compute_protocol_party_id_as_bytes())
+    }
+
+    /// Compute protocol party id as raw bytes, without bech32 encoding.
+    pub fn compute_protocol_party_id_as_bytes(&self) -> ProtocolPartyIdHash {
         let mut hasher = Blake2b::<U28>::new();
         hasher.update(self.cold_vk.as_bytes());
-        hex::encode(hasher.finalize())
+        let mut pool_id = [0u8; 28];
+        pool_id.copy_from_slice(hasher.finalize().as_bytes());
+        pool_id
     }
 
     /// Compute the hash of an OpCert
