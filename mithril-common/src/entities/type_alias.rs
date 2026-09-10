@@ -48,6 +48,9 @@ pub type HexEncodedVerificationKeyForSnark = HexEncodedKey;
 /// Hex encoded Verification Key Signature for SNARK
 pub type HexEncodedVerificationKeySignatureForSnark = HexEncodedKey;
 
+/// Hex encoded Proof of Bound Possession for SNARK
+pub type HexEncodedProofOfBoundPossessionForSnark = HexEncodedKey;
+
 /// Hex encoded Operational Certificate
 pub type HexEncodedOpCert = HexEncodedKey;
 

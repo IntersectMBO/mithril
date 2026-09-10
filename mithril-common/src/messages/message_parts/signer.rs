@@ -17,9 +17,13 @@ use crate::{
 #[cfg(feature = "future_snark")]
 use crate::{
     crypto_helper::{
-        ProtocolSignerVerificationKeyForSnark, ProtocolSignerVerificationKeySignatureForSnark,
+        ProtocolSignerProofOfBoundPossessionForSnark, ProtocolSignerVerificationKeyForSnark,
+        ProtocolSignerVerificationKeySignatureForSnark,
     },
-    entities::{HexEncodedVerificationKeyForSnark, HexEncodedVerificationKeySignatureForSnark},
+    entities::{
+        HexEncodedProofOfBoundPossessionForSnark, HexEncodedVerificationKeyForSnark,
+        HexEncodedVerificationKeySignatureForSnark,
+    },
 };
 
 /// Signer with Stake Message
@@ -67,6 +71,11 @@ pub struct SignerWithStakeMessagePart {
     #[cfg(feature = "future_snark")]
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub verification_key_signature_for_snark: Option<HexEncodedVerificationKeySignatureForSnark>,
+
+    /// The Proof of Bound Possession of the Schnorr signing key for the SNARK proof system.
+    #[cfg(feature = "future_snark")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub proof_of_bound_possession_for_snark: Option<HexEncodedProofOfBoundPossessionForSnark>,
 }
 
 impl SignerWithStakeMessagePart {
@@ -131,6 +140,19 @@ impl TryInto<SignerWithStake> for SignerWithStakeMessagePart {
                     self.party_id
                 )
             })?;
+        #[cfg(feature = "future_snark")]
+        let proof_of_bound_possession_for_snark: Option<
+            ProtocolSignerProofOfBoundPossessionForSnark,
+        > = self
+            .proof_of_bound_possession_for_snark
+            .map(|f| f.try_into())
+            .transpose()
+            .with_context(|| {
+                format!(
+                    "Error while parsing SNARK proof of bound possession message, party_id = '{}'",
+                    self.party_id
+                )
+            })?;
         let operational_certificate: Option<ProtocolOpCert> = self
             .operational_certificate
             .map(|f| f.try_into())
@@ -152,6 +174,8 @@ impl TryInto<SignerWithStake> for SignerWithStakeMessagePart {
             verification_key_for_snark,
             #[cfg(feature = "future_snark")]
             verification_key_signature_for_snark,
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark,
         };
         Ok(value)
     }
@@ -181,6 +205,10 @@ impl From<SignerWithStake> for SignerWithStakeMessagePart {
             verification_key_signature_for_snark: value
                 .verification_key_signature_for_snark
                 .map(|s| s.try_into().unwrap()),
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: value
+                .proof_of_bound_possession_for_snark
+                .map(|p| p.try_into().unwrap()),
         }
     }
 }
@@ -218,6 +246,10 @@ impl Debug for SignerWithStakeMessagePart {
                         .field(
                             "verification_key_signature_for_snark",
                             &format_args!("{:?}", self.verification_key_signature_for_snark),
+                        )
+                        .field(
+                            "proof_of_bound_possession_for_snark",
+                            &format_args!("{:?}", self.proof_of_bound_possession_for_snark),
                         );
                 }
 
@@ -271,6 +303,11 @@ pub struct SignerMessagePart {
     #[cfg(feature = "future_snark")]
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub verification_key_signature_for_snark: Option<HexEncodedVerificationKeySignatureForSnark>,
+
+    /// The Proof of Bound Possession of the Schnorr signing key for the SNARK proof system.
+    #[cfg(feature = "future_snark")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub proof_of_bound_possession_for_snark: Option<HexEncodedProofOfBoundPossessionForSnark>,
 }
 
 impl SignerMessagePart {
@@ -292,6 +329,7 @@ impl SignerMessagePart {
     pub fn without_snark_fields(mut self) -> Self {
         self.verification_key_for_snark = None;
         self.verification_key_signature_for_snark = None;
+        self.proof_of_bound_possession_for_snark = None;
         self
     }
 
@@ -349,6 +387,19 @@ impl TryInto<Signer> for SignerMessagePart {
                     self.party_id
                 )
             })?;
+        #[cfg(feature = "future_snark")]
+        let proof_of_bound_possession_for_snark: Option<
+            ProtocolSignerProofOfBoundPossessionForSnark,
+        > = self
+            .proof_of_bound_possession_for_snark
+            .map(|f| f.try_into())
+            .transpose()
+            .with_context(|| {
+                format!(
+                    "Error while parsing SNARK proof of bound possession message, party_id = '{}'",
+                    self.party_id
+                )
+            })?;
         let operational_certificate: Option<ProtocolOpCert> = self
             .operational_certificate
             .map(|f| f.try_into())
@@ -370,6 +421,8 @@ impl TryInto<Signer> for SignerMessagePart {
             verification_key_for_snark,
             #[cfg(feature = "future_snark")]
             verification_key_signature_for_snark,
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark,
         };
         Ok(value)
     }
@@ -398,6 +451,10 @@ impl From<Signer> for SignerMessagePart {
             verification_key_signature_for_snark: value
                 .verification_key_signature_for_snark
                 .map(|s| s.try_into().unwrap()),
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: value
+                .proof_of_bound_possession_for_snark
+                .map(|p| p.try_into().unwrap()),
         }
     }
 }
@@ -435,6 +492,10 @@ impl Debug for SignerMessagePart {
                         .field(
                             "verification_key_signature_for_snark",
                             &format_args!("{:?}", self.verification_key_signature_for_snark),
+                        )
+                        .field(
+                            "proof_of_bound_possession_for_snark",
+                            &format_args!("{:?}", self.proof_of_bound_possession_for_snark),
                         );
                 }
 
@@ -467,6 +528,8 @@ mod tests {
                     verification_key_for_snark: None,
                     #[cfg(feature = "future_snark")]
                     verification_key_signature_for_snark: None,
+                    #[cfg(feature = "future_snark")]
+                    proof_of_bound_possession_for_snark: None
                 }
         }
 
@@ -486,6 +549,8 @@ mod tests {
                     verification_key_for_snark: None,
                     #[cfg(feature = "future_snark")]
                     verification_key_signature_for_snark: None,
+                    #[cfg(feature = "future_snark")]
+                    proof_of_bound_possession_for_snark: None
                 }
         }
 
@@ -532,6 +597,9 @@ mod tests {
                     #[cfg(feature = "future_snark")]
                     verification_key_signature_for_snark: signer_message_part
                         .verification_key_signature_for_snark,
+                    #[cfg(feature = "future_snark")]
+                    proof_of_bound_possession_for_snark: signer_message_part
+                        .proof_of_bound_possession_for_snark,
                 }
             }
 
@@ -552,6 +620,9 @@ mod tests {
                     #[cfg(feature = "future_snark")]
                     verification_key_signature_for_snark: signer_message_part
                         .verification_key_signature_for_snark,
+                    #[cfg(feature = "future_snark")]
+                    proof_of_bound_possession_for_snark: signer_message_part
+                        .proof_of_bound_possession_for_snark,
                 }
             }
 
@@ -581,6 +652,7 @@ mod tests {
                 kes_evolutions: None,
                 verification_key_for_snark: Some("snark-vk-1".to_string()),
                 verification_key_signature_for_snark: Some("snark-sig-1".to_string()),
+                proof_of_bound_possession_for_snark: Some("snark-pobp-1".to_string()),
             }
         }
 
@@ -593,6 +665,7 @@ mod tests {
                 kes_evolutions: None,
                 verification_key_for_snark: None,
                 verification_key_signature_for_snark: None,
+                proof_of_bound_possession_for_snark: None,
             }
         }
 

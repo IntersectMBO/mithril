@@ -62,7 +62,7 @@ pub struct Signer {
     /// Can be verified using the [`Signer::verification_key_for_snark`]
     #[cfg(feature = "future_snark")]
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    proof_of_bound_possession_for_snark: Option<ProtocolSignerProofOfBoundPossessionForSnark>,
+    pub proof_of_bound_possession_for_snark: Option<ProtocolSignerProofOfBoundPossessionForSnark>,
 }
 
 impl PartialEq for Signer {
@@ -241,10 +241,10 @@ pub struct SignerWithStake {
         Option<ProtocolSignerVerificationKeySignatureForSnark>,
 
     /// The Proof of Bound Possession of the Schnorr signing key for the SNARK proof system.
-    /// Can be verified using the [`Signer::verification_key_for_snark`]
+    /// Can be verified using the [`SignerWithStake::verification_key_for_snark`]
     #[cfg(feature = "future_snark")]
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    proof_of_bound_possession_for_snark: Option<ProtocolSignerProofOfBoundPossessionForSnark>,
+    pub proof_of_bound_possession_for_snark: Option<ProtocolSignerProofOfBoundPossessionForSnark>,
 }
 
 impl PartialEq for SignerWithStake {

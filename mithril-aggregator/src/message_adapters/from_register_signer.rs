@@ -48,6 +48,14 @@ impl TryFromMessageAdapter<RegisterSignerMessage, Signer> for FromRegisterSigner
                     })
                 })
                 .transpose()?,
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: register_signer_message
+                .proof_of_bound_possession_for_snark.map(|proof_of_bound_possession_for_snark| {
+                    proof_of_bound_possession_for_snark.try_into().with_context(|| {
+                        "'FromRegisterSignerAdapter' can not convert the Proof of Bound Possession for SNARK"
+                    })
+                })
+                .transpose()?,
         })
     }
 }

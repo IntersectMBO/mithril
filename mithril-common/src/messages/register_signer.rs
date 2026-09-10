@@ -8,7 +8,8 @@ use crate::entities::{
 };
 #[cfg(feature = "future_snark")]
 use crate::entities::{
-    HexEncodedVerificationKeyForSnark, HexEncodedVerificationKeySignatureForSnark,
+    HexEncodedProofOfBoundPossessionForSnark, HexEncodedVerificationKeyForSnark,
+    HexEncodedVerificationKeySignatureForSnark,
 };
 
 /// Register Signer Message
@@ -56,6 +57,11 @@ pub struct RegisterSignerMessage {
     #[cfg(feature = "future_snark")]
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub verification_key_signature_for_snark: Option<HexEncodedVerificationKeySignatureForSnark>,
+
+    /// The encoded Proof of Bound Possession of the Schnorr signing key for the SNARK proof system
+    #[cfg(feature = "future_snark")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub proof_of_bound_possession_for_snark: Option<HexEncodedProofOfBoundPossessionForSnark>,
 }
 
 impl Debug for RegisterSignerMessage {
@@ -91,6 +97,10 @@ impl Debug for RegisterSignerMessage {
                         .field(
                             "verification_key_signature_for_snark",
                             &format_args!("{:?}", self.verification_key_signature_for_snark),
+                        )
+                        .field(
+                            "proof_of_bound_possession_for_snark",
+                            &format_args!("{:?}", self.proof_of_bound_possession_for_snark),
                         );
                 }
 
@@ -126,6 +136,8 @@ mod tests {
             verification_key_for_snark: None,
             #[cfg(feature = "future_snark")]
             verification_key_signature_for_snark: None,
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: None
         }
     }
 
