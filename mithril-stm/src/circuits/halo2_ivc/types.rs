@@ -184,6 +184,8 @@ impl StepCounter {
 
 #[cfg(test)]
 mod protocol_message_preimage_tests {
+    use proptest::prelude::*;
+
     use super::*;
 
     #[test]
@@ -236,6 +238,84 @@ mod protocol_message_preimage_tests {
         let expected =
             MerkleTreeCommitment::from_field(BaseFieldElement::from_raw(&[0xFF; 32]).unwrap().0);
         assert_eq!(preimage.next_merkle_tree_commitment(), expected);
+    }
+
+    /// Bytes of `preimage` outside `range`, each flipped by a nonzero mask so the
+    /// mutation is guaranteed rather than sampled.
+    fn flip_bytes_outside_range(
+        preimage: &[u8; PREIMAGE_SIZE],
+        range: std::ops::Range<usize>,
+        mask: u8,
+    ) -> [u8; PREIMAGE_SIZE] {
+        let mut mutated = *preimage;
+        for (offset, byte) in mutated.iter_mut().enumerate() {
+            if !range.contains(&offset) {
+                *byte ^= mask;
+            }
+        }
+        mutated
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn each_accessor_decodes_only_its_own_range(bytes in any::<[u8; PREIMAGE_SIZE]>()) {
+            let preimage = ProtocolMessagePreimage::new(bytes);
+
+            let epoch_bytes: [u8; 8] = bytes[PREIMAGE_CURRENT_EPOCH_BYTES].try_into().unwrap();
+            prop_assert_eq!(
+                preimage.current_epoch(),
+                EpochNumber::new(u64::from_le_bytes(epoch_bytes)),
+            );
+
+            let commitment_bytes: [u8; 32] =
+                bytes[PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES].try_into().unwrap();
+            prop_assert_eq!(
+                preimage.next_merkle_tree_commitment(),
+                MerkleTreeCommitment::from_field(
+                    BaseFieldElement::from_raw(&commitment_bytes).unwrap().0,
+                ),
+            );
+
+            let parameters_bytes: [u8; 32] =
+                bytes[PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES].try_into().unwrap();
+            prop_assert_eq!(
+                preimage.next_protocol_parameters(),
+                ProtocolParametersHash::from_field(
+                    BaseFieldElement::from_raw(&parameters_bytes).unwrap().0,
+                ),
+            );
+        }
+
+        #[test]
+        fn flipping_every_byte_outside_a_range_leaves_that_accessor_unchanged(
+            bytes in any::<[u8; PREIMAGE_SIZE]>(),
+            mask in 1u8..=u8::MAX,
+        ) {
+            let preimage = ProtocolMessagePreimage::new(bytes);
+
+            let flipped_outside_epoch = ProtocolMessagePreimage::new(
+                flip_bytes_outside_range(&bytes, PREIMAGE_CURRENT_EPOCH_BYTES, mask),
+            );
+            prop_assert_eq!(flipped_outside_epoch.current_epoch(), preimage.current_epoch());
+
+            let flipped_outside_commitment = ProtocolMessagePreimage::new(
+                flip_bytes_outside_range(&bytes, PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES, mask),
+            );
+            prop_assert_eq!(
+                flipped_outside_commitment.next_merkle_tree_commitment(),
+                preimage.next_merkle_tree_commitment(),
+            );
+
+            let flipped_outside_parameters = ProtocolMessagePreimage::new(
+                flip_bytes_outside_range(&bytes, PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, mask),
+            );
+            prop_assert_eq!(
+                flipped_outside_parameters.next_protocol_parameters(),
+                preimage.next_protocol_parameters(),
+            );
+        }
     }
 }
 
