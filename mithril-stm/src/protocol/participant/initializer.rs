@@ -12,8 +12,8 @@ use crate::{
 };
 #[cfg(feature = "future_snark")]
 use crate::{
-    ClosedRegistrationEntry, RegistrationEntryForSnark, VerificationKeyForSnark,
-    proof_system::SnarkProofSigner, signature_scheme::SchnorrSigningKey,
+    ClosedRegistrationEntry, RegistrationEntryForSnark, StandardSchnorrSignature,
+    VerificationKeyForSnark, proof_system::SnarkProofSigner, signature_scheme::SchnorrSigningKey,
 };
 
 use crate::codec;
@@ -153,6 +153,22 @@ impl Initializer {
         ))
     }
 
+    /// Creates a proof of bound possession for the Schnorr signing key of the
+    /// Initializer for a given prefix if there is one
+    #[cfg(feature = "future_snark")]
+    pub fn create_proof_of_bound_possession<R: RngCore + CryptoRng>(
+        &self,
+        prefix: &[u8],
+        rng: &mut R,
+    ) -> StmResult<Option<StandardSchnorrSignature>> {
+        self.schnorr_signing_key
+            .as_ref()
+            .map(|schnorr_signing_key| {
+                schnorr_signing_key.create_proof_of_bound_possession(prefix, rng)
+            })
+            .transpose()
+    }
+
     /// Extract the verification key with proof of possession.
     pub fn get_verification_key_proof_of_possession_for_concatenation(
         &self,
@@ -266,6 +282,61 @@ impl PartialEq for Initializer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "future_snark")]
+    mod proof_of_bound_possession {
+        use rand_chacha::ChaCha20Rng;
+        use rand_core::SeedableRng;
+
+        use crate::Parameters;
+
+        use super::*;
+
+        fn test_parameters() -> Parameters {
+            Parameters {
+                m: 100,
+                k: 5,
+                phi_f: 0.2,
+            }
+        }
+
+        #[test]
+        fn returns_some_signature_when_schnorr_key_present_and_it_verifies() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let initializer = Initializer::new(test_parameters(), 100, &mut rng);
+            let prefix = b"stake=100|epoch=5|pool_id=pool1abc";
+
+            let signature = initializer
+                .create_proof_of_bound_possession(prefix, &mut rng)
+                .expect("PoBP creation should not fail")
+                .expect(
+                    "Initializer::new always creates a schnorr key when future_snark is enabled",
+                );
+
+            initializer
+                .schnorr_verification_key
+                .expect("schnorr verification key should be present")
+                .verify_proof_of_bound_possession(prefix, &signature)
+                .expect("PoBP produced by Initializer should verify successfully");
+        }
+
+        #[test]
+        fn returns_none_when_schnorr_key_absent() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let mut initializer = Initializer::new(test_parameters(), 100, &mut rng);
+            initializer.strip_snark_keys();
+            let prefix = b"stake=100|epoch=5|pool_id=pool1abc";
+
+            let result = initializer
+                .create_proof_of_bound_possession(prefix, &mut rng)
+                .expect("PoBP creation should not fail even without a schnorr key");
+
+            assert!(
+                result.is_none(),
+                "No schnorr key means no PoBP should be created"
+            );
+        }
+    }
 
     mod golden {
         use rand_chacha::ChaCha20Rng;
