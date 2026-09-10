@@ -6,8 +6,7 @@ locals {
 
 resource "null_resource" "mithril_aggregator" {
   depends_on = [
-    null_resource.mithril_reverse_proxy,
-    null_resource.mithril_ipfs
+    null_resource.mithril_reverse_proxy
   ]
 
   triggers = {
