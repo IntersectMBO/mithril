@@ -1,6 +1,6 @@
-//! Unique Schnorr Signature module
+//! Schnorr Signature module
 //!
-//! This module implements a variant of the Schnorr signature algorithm.
+//! This module implements standard Schnorr signature and a variant of the algorithm.
 //! Specifically, it extends the classic scheme by appending a deterministic
 //! value derived solely from the message and the signing key. This ungrindable
 //! value produces a unique, reproducible identification tag for each signature,
@@ -21,6 +21,10 @@ pub use signing_key::*;
 pub use standard_signature::*;
 pub use unique_signature::*;
 pub use verification_key::*;
+
+/// Domain Separation Tag (DST) for the Schnorr Proof of Bound Possession.
+const DOMAIN_SEPARATION_TAG_SCHNORR_PROOF_OF_BOUND_POSSESSION: &[u8] = b"SCHNORR_POBP_DST";
+
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
