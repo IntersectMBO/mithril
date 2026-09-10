@@ -425,7 +425,7 @@ variable "mithril_ipfs_enabled" {
 variable "mithril_ipfs_storage_max" {
   type        = string
   description = "The maximum disk space used by the IPFS node datastore"
-  default     = "100GB"
+  default     = "50GB"
 }
 
 variable "ipfs_image_id" {

@@ -13,7 +13,8 @@ resource "null_resource" "mithril_monitoring" {
     prometheus_auth_username = var.prometheus_auth_username,
     prometheus_auth_password = var.prometheus_auth_password,
     loki_auth_username       = var.loki_auth_username,
-    loki_auth_password       = var.loki_auth_password
+    loki_auth_password       = var.loki_auth_password,
+    mithril_ipfs_enabled     = var.mithril_ipfs_enabled
   }
 
   connection {
@@ -31,6 +32,16 @@ resource "null_resource" "mithril_monitoring" {
 set -e
 # Copy prometheus base configuration
 cp /home/curry/docker/prometheus/prometheus-base.yml /home/curry/docker/prometheus/prometheus.yml
+# Setup prometheus targets configuration for the IPFS node
+if [ "${var.mithril_ipfs_enabled}" = "true" ] ; then
+cat >> /home/curry/docker/prometheus/prometheus.yml << EOF
+
+  - job_name: "ipfs-node"
+    metrics_path: /debug/metrics/prometheus
+    static_configs:
+      - targets: ["ipfs-node:5001"]
+EOF
+fi
 # Setup prometheus remote write
 if [ -n "${var.prometheus_ingest_host}" ] ; then 
 cat >> /home/curry/docker/prometheus/prometheus.yml << EOF
@@ -96,6 +107,10 @@ MITHRIL_SIGNER_NODES=$(docker ps --format='{{.Names}},' | grep "mithril-signer" 
 for MITHRIL_SIGNER_NODE in $MITHRIL_SIGNER_NODES; do
     echo "  /data/$MITHRIL_SIGNER_NODE/mithril: 1" >> /home/curry/docker/prometheus/disk_usage_exporter/disk_usage_exporter.yml 
 done
+# Setup disk usage exporter target for the IPFS node datastore
+if [ "${var.mithril_ipfs_enabled}" = "true" ] ; then
+    echo "  /data/ipfs: 1" >> /home/curry/docker/prometheus/disk_usage_exporter/disk_usage_exporter.yml
+fi
 EOT
     ]
   }
