@@ -117,13 +117,15 @@ mithril_ipfs_enabled = true
 
 The node then runs in the `ipfs-node` container next to the other services of the VM, with:
 
-- its datastore on the data disk, in `data/$CARDANO_NETWORK/ipfs`, sized by `mithril_ipfs_storage_max` (defaults to `100GB`), which is the target used by the garbage collector and not a hard limit;
+- its datastore on the data disk, in `data/$CARDANO_NETWORK/ipfs`;
 - its RPC API reachable at `http://ipfs-node:5001/`, on the internal `mithril_network` Docker network only;
-- its libp2p swarm published on port `4001` (TCP and UDP), which is opened in the firewall of the VM.
+- its libp2p swarm published on port `4001` (TCP and UDP), which is opened in the firewall of the VM;
+- a DHT client routing mode, so it publishes provider records and stays dialable without serving routing queries for the whole public network;
+- connection, memory and container limits, so it does not compete with the Cardano node and the aggregator for the resources of the VM.
 
 :warning: The RPC API grants admin level access on the node and must never be exposed publicly.
 
-:warning: The node copies the published archives in its datastore, so the data disk of the VM must be sized to hold both the archives of the aggregator and their copy in the datastore.
+:warning: **The datastore grows without bound.** The aggregator adds every immutable archive to the `/mithril` MFS directory and never removes any, and content referenced from the MFS is protected from the garbage collector, so `ipfs repo gc` reclaims nothing on its own. `mithril_ipfs_storage_max` (defaults to `50GB`) is only the watermark of the garbage collector, not a write limit. The datastore shares the data disk of the VM with the Cardano node database, the aggregator stores and the monitoring, so it must be pruned (see below) before it fills that disk.
 
 The aggregator is configured with the `IPFS_RPC_SERVER_CONFIG` environment variable, which enables the upload of the immutable archives to the node.
 
@@ -133,12 +135,15 @@ The `ipfs.**.api.mithril.network` DNS record points to the VM, and terraform out
 terraform output mithril_ipfs_swarm_dial_to
 ```
 
+:warning: This address carries no `/p2p/**PEER_ID**` component, so it is informational only. Use the full multiaddress below to dial or peer with the node.
+
 ### Download artifacts from the node
 
-The Mithril client retrieves the artifacts through its own IPFS node. To use the deployed node as a peer, retrieve its full multiaddress first:
+The Mithril client retrieves the artifacts through its own IPFS node. To use the deployed node as a peer, retrieve its full public multiaddress first:
 
 ```bash
-docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 id -f "<addrs>"
+docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 id -f "<addrs>" \
+    | grep "/tcp/4001/p2p/" | grep -v "127.0.0.1"
 ```
 
 Then, on the client host, peer a local Kubo node with it and download a Cardano database:
@@ -146,10 +151,26 @@ Then, on the client host, peer a local Kubo node with it and download a Cardano 
 ```bash
 ipfs swarm peering add **NODE_MULTIADDRESS**
 
+export GENESIS_VERIFICATION_KEY=$(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/**ENVIRONMENT**/genesis.vkey)
+
 mithril-client --unstable \
     --aggregator-endpoint https://aggregator.**.api.mithril.network/aggregator \
     cardano-db download latest \
     --ipfs-rpc-url http://127.0.0.1:5001/
+```
+
+:warning: A successful download does **not** prove that the artifacts came from IPFS: the client sorts the IPFS location first but silently falls back to the cloud storage, and the aggregator only fails when every upload target failed. Assert the IPFS path explicitly instead:
+
+```bash
+# The node must list the archives published by the aggregator
+docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 files ls -l /mithril
+
+# The artifact must advertise an 'ipfs' location
+wget -q -O - https://aggregator.**.api.mithril.network/aggregator/artifact/cardano-database \
+    | jq '.[0].locations.immutables'
+
+# The client must not log a fallback for the IPFS location
+mithril-client -vvv --unstable ... 2>&1 | grep "for location Ipfs"
 ```
 
 ### Operate the node
@@ -161,15 +182,21 @@ docker logs -f ipfs-node
 # Display the peers connected to the node
 docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 swarm peers
 
-# Display the disk space used by the datastore
+# Display the disk space used by the datastore (also graphed by the disk usage exporter)
 docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 repo stat
 
 # List the archives published by the aggregator
 docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 files ls -l /mithril
+```
 
-# Reclaim the disk space of the unpinned blocks
+To reclaim disk space, remove the obsolete archives from the MFS directory first, then run the garbage collector:
+
+```bash
+docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 files rm -r /mithril/**ARCHIVE**
 docker exec ipfs-node ipfs --api=/ip4/127.0.0.1/tcp/5001 repo gc
 ```
+
+The node is scraped by prometheus on the `ipfs-node` job, and the size of its datastore is reported by the disk usage exporter on the `/data/ipfs` path.
 
 ## Tools
 
