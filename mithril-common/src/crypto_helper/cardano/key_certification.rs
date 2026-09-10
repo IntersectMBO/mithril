@@ -31,9 +31,12 @@ use crate::{
 };
 #[cfg(feature = "future_snark")]
 use crate::{
-    crypto_helper::cardano::ProofOfBoundPossessionPrefix,
-    crypto_helper::types::{
-        ProtocolSignerVerificationKeyForSnark, ProtocolSignerVerificationKeySignatureForSnark,
+    crypto_helper::{
+        ProtocolSignerProofOfBoundPossessionForSnark,
+        cardano::ProofOfBoundPossessionPrefix,
+        types::{
+            ProtocolSignerVerificationKeyForSnark, ProtocolSignerVerificationKeySignatureForSnark,
+        },
     },
     entities::Epoch,
 };
@@ -81,6 +84,10 @@ pub enum ProtocolRegistrationErrorWrapper {
     /// Error raised when a core registration error occurs
     #[error("core registration error")]
     CoreRegister(#[source] RegisterError),
+
+    /// Error raised when a proof of bound possession for snark is needed but not provided
+    #[error("missing proof of bound possession for snark")]
+    ProofOfBoundPossessionForSnarkMissing,
 }
 
 /// New initializer error
@@ -235,8 +242,10 @@ impl StmInitializerWrapper {
     /// Extract the Proof of Bound Possession of the Schnorr signing key
     /// for the SNARK proof system.
     #[cfg(feature = "future_snark")]
-    pub fn proof_of_bound_possession_for_snark(&self) -> Option<StandardSchnorrSignature> {
-        self.proof_of_bound_possession_for_snark
+    pub fn proof_of_bound_possession_for_snark(
+        &self,
+    ) -> Option<ProtocolSignerProofOfBoundPossessionForSnark> {
+        self.proof_of_bound_possession_for_snark.map(|pobp| pobp.into())
     }
 
     /// Remove the SNARK-related keys from the underlying initializer and the
@@ -424,6 +433,11 @@ pub struct SignerRegistrationParameters {
     #[cfg(feature = "future_snark")]
     pub verification_key_signature_for_snark:
         Option<ProtocolSignerVerificationKeySignatureForSnark>,
+
+    /// The Proof of Bound Possession of the Schnorr signing key for the SNARK proof system.
+    /// Can be verifies using the [`SignerRegistrationParameters::verification_key_for_snark`]
+    #[cfg(feature = "future_snark")]
+    proof_of_bound_possession_for_snark: Option<ProtocolSignerProofOfBoundPossessionForSnark>,
 }
 
 /// Wrapper structure for [MithrilStm:KeyRegistration](mithril_stm::key_reg::KeyRegistration).
@@ -472,6 +486,26 @@ impl KeyRegWrapper {
             })
     }
 
+    /// Verifies a Proof of Bound Possession of a Schnorr signing key
+    /// using a bounding prefix (stake||epoch||pool_id) and the verification
+    /// key attached to the signing key.
+    #[cfg(feature = "future_snark")]
+    fn verify_proof_of_bound_possession_for_snark(
+        &self,
+        stake: Stake,
+        epoch: Epoch,
+        pool_id: ProtocolPartyId,
+        schnorr_verification_key: VerificationKeyForSnark,
+        proof_of_bound_possession_for_snark: Option<StandardSchnorrSignature>,
+    ) -> StdResult<()> {
+        let proof_of_bound_possession = proof_of_bound_possession_for_snark
+            .ok_or(ProtocolRegistrationErrorWrapper::ProofOfBoundPossessionForSnarkMissing)?;
+        let prefix_bytes =
+            ProofOfBoundPossessionPrefix::new(stake, epoch, pool_id).to_prefix_bytes()?;
+        schnorr_verification_key
+            .verify_proof_of_bound_possession(&prefix_bytes, &proof_of_bound_possession)
+    }
+
     /// Register a new party. For a successful registration, the registrar needs to
     /// provide the OpCert (in cbor form), the cold VK, a KES signature, and a
     /// Mithril key (with its corresponding Proof of Possession).
@@ -481,6 +515,7 @@ impl KeyRegWrapper {
     pub fn register(
         &mut self,
         parameters: SignerRegistrationParameters,
+        #[cfg(feature = "future_snark")] epoch: Epoch,
     ) -> StdResult<ProtocolPartyId> {
         let pool_id_bech32: ProtocolPartyId =
             if let Some(opcert) = &parameters.operational_certificate {
@@ -498,6 +533,10 @@ impl KeyRegWrapper {
                 )
                 .with_context(|| "invalid KES signature for Concatenation")?;
 
+                let pool_id_bech32 = opcert
+                    .compute_protocol_party_id()
+                    .map_err(|_| ProtocolRegistrationErrorWrapper::PoolAddressEncoding)?;
+
                 #[cfg(feature = "future_snark")]
                 if let Some(verification_key_for_snark) = &parameters.verification_key_for_snark {
                     self.verify_kes_signature(
@@ -509,11 +548,23 @@ impl KeyRegWrapper {
                         kes_evolutions,
                     )
                     .with_context(|| "invalid KES signature for SNARK")?;
+
+                    let stake = *self
+                        .stake_distribution
+                        .get(&pool_id_bech32)
+                        .ok_or(ProtocolRegistrationErrorWrapper::PartyIdNonExisting)?;
+
+                    self.verify_proof_of_bound_possession_for_snark(
+                        stake,
+                        epoch,
+                        pool_id_bech32.clone(),
+                        **verification_key_for_snark,
+                        parameters.proof_of_bound_possession_for_snark.map(|s| s.into_inner()),
+                    )
+                    .with_context(|| "invalid Proof of Bound Possession for SNARK")?;
                 }
 
-                opcert
-                    .compute_protocol_party_id()
-                    .map_err(|_| ProtocolRegistrationErrorWrapper::PoolAddressEncoding)?
+                pool_id_bech32
             } else {
                 if cfg!(not(feature = "allow_skip_signer_certification")) {
                     Err(ProtocolRegistrationErrorWrapper::OpCertMissing)?
@@ -616,22 +667,31 @@ mod test {
             .expect("opcert deserialization should not fail")
             .into();
 
-        let key_registration_1 = key_reg.register(SignerRegistrationParameters {
-            party_id: None,
-            operational_certificate: Some(opcert1),
-            verification_key_signature_for_concatenation: initializer_1
-                .verification_key_signature_for_concatenation(),
-            kes_evolutions: Some(KesEvolutions(0)),
-            verification_key_for_concatenation: initializer_1
-                .stm_initializer
-                .get_verification_key_proof_of_possession_for_concatenation()
-                .into(),
+        let key_registration_1 = key_reg.register(
+            SignerRegistrationParameters {
+                party_id: None,
+                operational_certificate: Some(opcert1),
+                verification_key_signature_for_concatenation: initializer_1
+                    .verification_key_signature_for_concatenation(),
+                kes_evolutions: Some(KesEvolutions(0)),
+                verification_key_for_concatenation: initializer_1
+                    .stm_initializer
+                    .get_verification_key_proof_of_possession_for_concatenation()
+                    .into(),
+                #[cfg(feature = "future_snark")]
+                verification_key_for_snark: initializer_1
+                    .verification_key_for_snark()
+                    .map(Into::into),
+                #[cfg(feature = "future_snark")]
+                verification_key_signature_for_snark: initializer_1
+                    .verification_key_signature_for_snark(),
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: initializer_1
+                    .proof_of_bound_possession_for_snark(),
+            },
             #[cfg(feature = "future_snark")]
-            verification_key_for_snark: initializer_1.verification_key_for_snark().map(Into::into),
-            #[cfg(feature = "future_snark")]
-            verification_key_signature_for_snark: initializer_1
-                .verification_key_signature_for_snark(),
-        });
+            Epoch::default(),
+        );
         assert!(key_registration_1.is_ok());
 
         let initializer_2 = StmInitializerWrapper::setup(
@@ -641,7 +701,7 @@ mod test {
                 operational_certificate_file_2.clone(),
             ))),
             Some(KesPeriod(0)),
-            10,
+            3,
             #[cfg(feature = "future_snark")]
             Epoch::default(),
             &mut rng,
@@ -652,22 +712,31 @@ mod test {
             .expect("opcert deserialization should not fail")
             .into();
 
-        let key_registration_2 = key_reg.register(SignerRegistrationParameters {
-            party_id: None,
-            operational_certificate: Some(opcert2),
-            verification_key_signature_for_concatenation: initializer_2
-                .verification_key_signature_for_concatenation(),
-            kes_evolutions: Some(KesEvolutions(0)),
-            verification_key_for_concatenation: initializer_2
-                .stm_initializer
-                .get_verification_key_proof_of_possession_for_concatenation()
-                .into(),
+        let key_registration_2 = key_reg.register(
+            SignerRegistrationParameters {
+                party_id: None,
+                operational_certificate: Some(opcert2),
+                verification_key_signature_for_concatenation: initializer_2
+                    .verification_key_signature_for_concatenation(),
+                kes_evolutions: Some(KesEvolutions(0)),
+                verification_key_for_concatenation: initializer_2
+                    .stm_initializer
+                    .get_verification_key_proof_of_possession_for_concatenation()
+                    .into(),
+                #[cfg(feature = "future_snark")]
+                verification_key_for_snark: initializer_2
+                    .verification_key_for_snark()
+                    .map(Into::into),
+                #[cfg(feature = "future_snark")]
+                verification_key_signature_for_snark: initializer_2
+                    .verification_key_signature_for_snark(),
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: initializer_2
+                    .proof_of_bound_possession_for_snark(),
+            },
             #[cfg(feature = "future_snark")]
-            verification_key_for_snark: initializer_2.verification_key_for_snark().map(Into::into),
-            #[cfg(feature = "future_snark")]
-            verification_key_signature_for_snark: initializer_2
-                .verification_key_signature_for_snark(),
-        });
+            Epoch::default(),
+        );
         assert!(key_registration_2.is_ok())
     }
 

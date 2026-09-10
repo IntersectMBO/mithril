@@ -12,4 +12,4 @@ pub use kes::*;
 pub use key_certification::*;
 pub use opcert::*;
 #[cfg(feature = "future_snark")]
-pub use proof_of_bound_possession::*;
+pub(crate) use proof_of_bound_possession::*;

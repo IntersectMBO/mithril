@@ -37,7 +37,9 @@ mod binary_mithril_stm {
         VerificationKeyProofOfPossessionForConcatenation,
     };
     #[cfg(feature = "future_snark")]
-    use mithril_stm::{AggregateVerificationKeyForSnark, VerificationKeyForSnark};
+    use mithril_stm::{
+        AggregateVerificationKeyForSnark, StandardSchnorrSignature, VerificationKeyForSnark,
+    };
 
     use super::*;
 
@@ -151,6 +153,20 @@ mod binary_mithril_stm {
 
     #[cfg(feature = "future_snark")]
     impl TryFromBytes for AggregateVerificationKeyForSnark<D> {
+        fn try_from_bytes(bytes: &[u8]) -> StdResult<Self> {
+            Self::from_bytes(bytes)
+        }
+    }
+
+    #[cfg(feature = "future_snark")]
+    impl TryToBytes for StandardSchnorrSignature {
+        fn to_bytes_vec(&self) -> StdResult<Vec<u8>> {
+            Ok(self.to_bytes().to_vec())
+        }
+    }
+
+    #[cfg(feature = "future_snark")]
+    impl TryFromBytes for StandardSchnorrSignature {
         fn try_from_bytes(bytes: &[u8]) -> StdResult<Self> {
             Self::from_bytes(bytes)
         }
