@@ -46,6 +46,13 @@ impl TryToMessageAdapter<(Epoch, Signer), RegisterSignerMessage>
                     signer.verification_key_signature_for_snark
                 )
             })?,
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: signer.proof_of_bound_possession_for_snark.map(TryInto::try_into).transpose().with_context(|| {
+                format!(
+                "'ToRegisterSignerMessageAdapter' can not convert the Proof of Bound Possession for SNARK: '{:?}'",
+                signer.proof_of_bound_possession_for_snark
+                )
+            })?,
         };
 
         Ok(message)
