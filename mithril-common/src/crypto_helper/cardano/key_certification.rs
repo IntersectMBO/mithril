@@ -11,17 +11,13 @@ use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[cfg(feature = "future_snark")]
-use mithril_stm::VerificationKeyForSnark;
 use mithril_stm::{
     ClosedKeyRegistration, Initializer, KeyRegistration, MithrilMembershipDigest, Parameters,
     RegisterError, Signer, Stake, VerificationKeyProofOfPossessionForConcatenation,
 };
-
 #[cfg(feature = "future_snark")]
-use crate::crypto_helper::types::{
-    ProtocolSignerVerificationKeyForSnark, ProtocolSignerVerificationKeySignatureForSnark,
-};
+use mithril_stm::{StandardSchnorrSignature, VerificationKeyForSnark};
+
 use crate::{
     StdError, StdResult,
     crypto_helper::{
@@ -32,6 +28,17 @@ use crate::{
             ProtocolSignerVerificationKeySignatureForConcatenation, ProtocolStakeDistribution,
         },
     },
+};
+#[cfg(feature = "future_snark")]
+use crate::{
+    crypto_helper::{
+        ProtocolPartyIdHash, ProtocolSignerProofOfBoundPossessionForSnark,
+        cardano::ProofOfBoundPossessionPrefix,
+        types::{
+            ProtocolSignerVerificationKeyForSnark, ProtocolSignerVerificationKeySignatureForSnark,
+        },
+    },
+    entities::Epoch,
 };
 
 // Protocol types alias
@@ -77,6 +84,10 @@ pub enum ProtocolRegistrationErrorWrapper {
     /// Error raised when a core registration error occurs
     #[error("core registration error")]
     CoreRegister(#[source] RegisterError),
+
+    /// Error raised when a proof of bound possession for snark is needed but not provided
+    #[error("missing proof of bound possession for snark")]
+    ProofOfBoundPossessionForSnarkMissing,
 }
 
 /// New initializer error
@@ -113,6 +124,11 @@ pub struct StmInitializerWrapper {
     #[cfg(feature = "future_snark")]
     #[serde(skip_serializing_if = "Option::is_none", default)]
     kes_signature_for_snark: Option<Sum6KesSig>,
+
+    /// The Proof of Bound Possession of the Schnorr signing key for the SNARK proof system
+    #[cfg(feature = "future_snark")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    proof_of_bound_possession_for_snark: Option<StandardSchnorrSignature>,
 }
 
 impl StmInitializerWrapper {
@@ -124,12 +140,15 @@ impl StmInitializerWrapper {
         kes_signer: Option<Arc<dyn KesSigner>>,
         current_kes_period: Option<KesPeriod>,
         stake: Stake,
+        #[cfg(feature = "future_snark")] epoch: Epoch,
         rng: &mut R,
     ) -> StdResult<Self> {
         let stm_initializer = Initializer::new(params, stake, rng);
         let kes_signature;
         #[cfg(feature = "future_snark")]
         let kes_signature_for_snark;
+        #[cfg(feature = "future_snark")]
+        let proof_of_bound_possession_for_snark;
 
         if let Some(kes_signer) = kes_signer {
             let (signature, _op_cert) = kes_signer.sign(
@@ -142,18 +161,30 @@ impl StmInitializerWrapper {
 
             #[cfg(feature = "future_snark")]
             {
-                kes_signature_for_snark = if let Some(schnorr_verification_key) =
-                    &stm_initializer.schnorr_verification_key
-                {
-                    let (signature, _op_cert) = kes_signer.sign(
-                        &schnorr_verification_key.to_bytes(),
-                        current_kes_period.unwrap_or_default(),
-                    )?;
+                (kes_signature_for_snark, proof_of_bound_possession_for_snark) =
+                    if let Some(schnorr_verification_key) =
+                        &stm_initializer.schnorr_verification_key
+                    {
+                        let (signature, op_cert) = kes_signer.sign(
+                            &schnorr_verification_key.to_bytes(),
+                            current_kes_period.unwrap_or_default(),
+                        )?;
+                        let proof_of_bound_possession_prefix = ProofOfBoundPossessionPrefix::new(
+                            stake,
+                            epoch,
+                            op_cert.compute_protocol_party_id_as_bytes(),
+                        );
 
-                    Some(signature)
-                } else {
-                    None
-                };
+                        let proof_of_bound_possession = stm_initializer
+                            .create_proof_of_bound_possession(
+                                &proof_of_bound_possession_prefix.to_prefix_bytes(),
+                                rng,
+                            )?;
+
+                        (Some(signature), proof_of_bound_possession)
+                    } else {
+                        (None, None)
+                    };
             }
         } else {
             println!(
@@ -163,6 +194,7 @@ impl StmInitializerWrapper {
             #[cfg(feature = "future_snark")]
             {
                 kes_signature_for_snark = None;
+                proof_of_bound_possession_for_snark = None;
             }
         };
 
@@ -171,6 +203,8 @@ impl StmInitializerWrapper {
             kes_signature_for_concatenation: kes_signature,
             #[cfg(feature = "future_snark")]
             kes_signature_for_snark,
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark,
         })
     }
 
@@ -203,8 +237,17 @@ impl StmInitializerWrapper {
         self.kes_signature_for_snark.map(|k| k.into())
     }
 
-    /// Remove the SNARK-related keys from the underlying initializer and the
-    /// corresponding KES signature.
+    /// Extract the Proof of Bound Possession of the Schnorr signing key
+    /// for the SNARK proof system.
+    #[cfg(feature = "future_snark")]
+    pub fn proof_of_bound_possession_for_snark(
+        &self,
+    ) -> Option<ProtocolSignerProofOfBoundPossessionForSnark> {
+        self.proof_of_bound_possession_for_snark.map(|pobp| pobp.into())
+    }
+
+    /// Remove the SNARK-related keys from the underlying initializer, their proof
+    /// of bound possession and the corresponding KES signature.
     ///
     /// This is used during eras that do not yet support SNARK proofs to ensure the
     /// initializer's registration entry matches the closed key registration built from
@@ -213,6 +256,7 @@ impl StmInitializerWrapper {
     pub fn strip_snark_keys(&mut self) {
         self.stm_initializer.strip_snark_keys();
         self.kes_signature_for_snark = None;
+        self.proof_of_bound_possession_for_snark = None;
     }
 
     /// Extract the protocol parameters of the initializer
@@ -239,95 +283,6 @@ impl StmInitializerWrapper {
     /// This function fails if the initializer is not registered.
     pub fn new_signer(self, closed_reg: ClosedKeyRegistration) -> StdResult<Signer<D>> {
         self.stm_initializer.try_create_signer(&closed_reg)
-    }
-
-    /// Convert to bytes
-    ///
-    /// * Length-prefixed STM Initializer (dynamic size)
-    /// * Optional KES signature for the concatenation proof system (fixed size)
-    /// * Optional KES signature for the SNARK proof system (fixed size, when `future_snark` feature is enabled and if some KES signature for concatenation)
-    pub fn to_bytes(&self) -> StdResult<Vec<u8>> {
-        let mut out = Vec::new();
-
-        let stm_initializer_bytes = self.stm_initializer.to_bytes()?;
-        out.extend_from_slice(
-            &u64::try_from(stm_initializer_bytes.len())
-                .context("STM initializer byte length should fit in u64")?
-                .to_be_bytes(),
-        );
-        out.extend_from_slice(&stm_initializer_bytes);
-
-        if let Some(kes_signature_for_concatenation) = &self.kes_signature_for_concatenation {
-            out.extend_from_slice(&kes_signature_for_concatenation.to_bytes());
-
-            #[cfg(feature = "future_snark")]
-            if let Some(kes_signature_for_snark) = &self.kes_signature_for_snark {
-                out.extend_from_slice(&kes_signature_for_snark.to_bytes());
-            }
-        }
-
-        Ok(out)
-    }
-
-    /// Convert a slice of bytes to an `StmInitializerWrapper`
-    /// # Error
-    /// The function fails if the given string of bytes is not of required size.
-    pub fn from_bytes(bytes: &[u8]) -> StdResult<Self> {
-        let mut bytes_index = 0;
-
-        let mut u64_bytes = [0u8; 8];
-        u64_bytes.copy_from_slice(
-            bytes
-                .get(bytes_index..bytes_index + 8)
-                .ok_or(RegisterError::SerializationError)?,
-        );
-        let stm_initializer_size = usize::try_from(u64::from_be_bytes(u64_bytes))
-            .map_err(|_| RegisterError::SerializationError)?;
-
-        let stm_initializer = Initializer::from_bytes(
-            bytes
-                .get(bytes_index + 8..bytes_index + 8 + stm_initializer_size)
-                .ok_or(RegisterError::SerializationError)?,
-        )?;
-        bytes_index += 8 + stm_initializer_size;
-
-        let kes_signature_for_concatenation;
-        #[cfg(feature = "future_snark")]
-        let kes_signature_for_snark;
-        if let Some(kes_signature) = bytes.get(bytes_index..bytes_index + Sum6KesSig::SIZE) {
-            kes_signature_for_concatenation = Some(
-                Sum6KesSig::from_bytes(kes_signature)
-                    .map_err(|_| RegisterError::SerializationError)?,
-            );
-
-            #[cfg(feature = "future_snark")]
-            {
-                bytes_index += Sum6KesSig::SIZE;
-                kes_signature_for_snark = if let Some(snark_kes_signature) =
-                    bytes.get(bytes_index..bytes_index + Sum6KesSig::SIZE)
-                {
-                    let snark_kes_signature = Sum6KesSig::from_bytes(snark_kes_signature)
-                        .map_err(|_| RegisterError::SerializationError)?;
-
-                    Some(snark_kes_signature)
-                } else {
-                    None
-                };
-            }
-        } else {
-            kes_signature_for_concatenation = None;
-            #[cfg(feature = "future_snark")]
-            {
-                kes_signature_for_snark = None;
-            }
-        }
-
-        Ok(Self {
-            stm_initializer,
-            kes_signature_for_concatenation,
-            #[cfg(feature = "future_snark")]
-            kes_signature_for_snark,
-        })
     }
 }
 
@@ -368,6 +323,11 @@ pub struct SignerRegistrationParameters {
     #[cfg(feature = "future_snark")]
     pub verification_key_signature_for_snark:
         Option<ProtocolSignerVerificationKeySignatureForSnark>,
+
+    /// The Proof of Bound Possession of the Schnorr signing key for the SNARK proof system.
+    /// Can be verified using the [`SignerRegistrationParameters::verification_key_for_snark`]
+    #[cfg(feature = "future_snark")]
+    proof_of_bound_possession_for_snark: Option<ProtocolSignerProofOfBoundPossessionForSnark>,
 }
 
 /// Wrapper structure for [MithrilStm:KeyRegistration](mithril_stm::key_reg::KeyRegistration).
@@ -416,6 +376,26 @@ impl KeyRegWrapper {
             })
     }
 
+    /// Verifies a Proof of Bound Possession of a Schnorr signing key
+    /// using a bounding prefix (stake||epoch||pool_id) and the verification
+    /// key attached to the signing key.
+    #[cfg(feature = "future_snark")]
+    fn verify_proof_of_bound_possession_for_snark(
+        &self,
+        stake: Stake,
+        epoch: Epoch,
+        pool_id: ProtocolPartyIdHash,
+        schnorr_verification_key: VerificationKeyForSnark,
+        proof_of_bound_possession_for_snark: Option<StandardSchnorrSignature>,
+    ) -> StdResult<()> {
+        let proof_of_bound_possession = proof_of_bound_possession_for_snark
+            .ok_or(ProtocolRegistrationErrorWrapper::ProofOfBoundPossessionForSnarkMissing)?;
+        let prefix_bytes =
+            ProofOfBoundPossessionPrefix::new(stake, epoch, pool_id).to_prefix_bytes();
+        schnorr_verification_key
+            .verify_proof_of_bound_possession(&prefix_bytes, &proof_of_bound_possession)
+    }
+
     /// Register a new party. For a successful registration, the registrar needs to
     /// provide the OpCert (in cbor form), the cold VK, a KES signature, and a
     /// Mithril key (with its corresponding Proof of Possession).
@@ -425,6 +405,7 @@ impl KeyRegWrapper {
     pub fn register(
         &mut self,
         parameters: SignerRegistrationParameters,
+        #[cfg(feature = "future_snark")] epoch: Epoch,
     ) -> StdResult<ProtocolPartyId> {
         let pool_id_bech32: ProtocolPartyId =
             if let Some(opcert) = &parameters.operational_certificate {
@@ -442,6 +423,10 @@ impl KeyRegWrapper {
                 )
                 .with_context(|| "invalid KES signature for Concatenation")?;
 
+                let pool_id_bech32 = opcert
+                    .compute_protocol_party_id()
+                    .map_err(|_| ProtocolRegistrationErrorWrapper::PoolAddressEncoding)?;
+
                 #[cfg(feature = "future_snark")]
                 if let Some(verification_key_for_snark) = &parameters.verification_key_for_snark {
                     self.verify_kes_signature(
@@ -453,11 +438,23 @@ impl KeyRegWrapper {
                         kes_evolutions,
                     )
                     .with_context(|| "invalid KES signature for SNARK")?;
+
+                    let stake = *self
+                        .stake_distribution
+                        .get(&pool_id_bech32)
+                        .ok_or(ProtocolRegistrationErrorWrapper::PartyIdNonExisting)?;
+
+                    self.verify_proof_of_bound_possession_for_snark(
+                        stake,
+                        epoch,
+                        opcert.compute_protocol_party_id_as_bytes(),
+                        **verification_key_for_snark,
+                        parameters.proof_of_bound_possession_for_snark.map(|s| s.into_inner()),
+                    )
+                    .with_context(|| "invalid Proof of Bound Possession for SNARK")?;
                 }
 
-                opcert
-                    .compute_protocol_party_id()
-                    .map_err(|_| ProtocolRegistrationErrorWrapper::PoolAddressEncoding)?
+                pool_id_bech32
             } else {
                 if cfg!(not(feature = "allow_skip_signer_certification")) {
                     Err(ProtocolRegistrationErrorWrapper::OpCertMissing)?
@@ -550,6 +547,8 @@ mod test {
             ))),
             Some(KesPeriod(0)),
             10,
+            #[cfg(feature = "future_snark")]
+            Epoch::default(),
             &mut rng,
         )
         .unwrap();
@@ -558,22 +557,31 @@ mod test {
             .expect("opcert deserialization should not fail")
             .into();
 
-        let key_registration_1 = key_reg.register(SignerRegistrationParameters {
-            party_id: None,
-            operational_certificate: Some(opcert1),
-            verification_key_signature_for_concatenation: initializer_1
-                .verification_key_signature_for_concatenation(),
-            kes_evolutions: Some(KesEvolutions(0)),
-            verification_key_for_concatenation: initializer_1
-                .stm_initializer
-                .get_verification_key_proof_of_possession_for_concatenation()
-                .into(),
+        let key_registration_1 = key_reg.register(
+            SignerRegistrationParameters {
+                party_id: None,
+                operational_certificate: Some(opcert1),
+                verification_key_signature_for_concatenation: initializer_1
+                    .verification_key_signature_for_concatenation(),
+                kes_evolutions: Some(KesEvolutions(0)),
+                verification_key_for_concatenation: initializer_1
+                    .stm_initializer
+                    .get_verification_key_proof_of_possession_for_concatenation()
+                    .into(),
+                #[cfg(feature = "future_snark")]
+                verification_key_for_snark: initializer_1
+                    .verification_key_for_snark()
+                    .map(Into::into),
+                #[cfg(feature = "future_snark")]
+                verification_key_signature_for_snark: initializer_1
+                    .verification_key_signature_for_snark(),
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: initializer_1
+                    .proof_of_bound_possession_for_snark(),
+            },
             #[cfg(feature = "future_snark")]
-            verification_key_for_snark: initializer_1.verification_key_for_snark().map(Into::into),
-            #[cfg(feature = "future_snark")]
-            verification_key_signature_for_snark: initializer_1
-                .verification_key_signature_for_snark(),
-        });
+            Epoch::default(),
+        );
         assert!(key_registration_1.is_ok());
 
         let initializer_2 = StmInitializerWrapper::setup(
@@ -583,7 +591,9 @@ mod test {
                 operational_certificate_file_2.clone(),
             ))),
             Some(KesPeriod(0)),
-            10,
+            3,
+            #[cfg(feature = "future_snark")]
+            Epoch::default(),
             &mut rng,
         )
         .unwrap();
@@ -592,22 +602,31 @@ mod test {
             .expect("opcert deserialization should not fail")
             .into();
 
-        let key_registration_2 = key_reg.register(SignerRegistrationParameters {
-            party_id: None,
-            operational_certificate: Some(opcert2),
-            verification_key_signature_for_concatenation: initializer_2
-                .verification_key_signature_for_concatenation(),
-            kes_evolutions: Some(KesEvolutions(0)),
-            verification_key_for_concatenation: initializer_2
-                .stm_initializer
-                .get_verification_key_proof_of_possession_for_concatenation()
-                .into(),
+        let key_registration_2 = key_reg.register(
+            SignerRegistrationParameters {
+                party_id: None,
+                operational_certificate: Some(opcert2),
+                verification_key_signature_for_concatenation: initializer_2
+                    .verification_key_signature_for_concatenation(),
+                kes_evolutions: Some(KesEvolutions(0)),
+                verification_key_for_concatenation: initializer_2
+                    .stm_initializer
+                    .get_verification_key_proof_of_possession_for_concatenation()
+                    .into(),
+                #[cfg(feature = "future_snark")]
+                verification_key_for_snark: initializer_2
+                    .verification_key_for_snark()
+                    .map(Into::into),
+                #[cfg(feature = "future_snark")]
+                verification_key_signature_for_snark: initializer_2
+                    .verification_key_signature_for_snark(),
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: initializer_2
+                    .proof_of_bound_possession_for_snark(),
+            },
             #[cfg(feature = "future_snark")]
-            verification_key_for_snark: initializer_2.verification_key_for_snark().map(Into::into),
-            #[cfg(feature = "future_snark")]
-            verification_key_signature_for_snark: initializer_2
-                .verification_key_signature_for_snark(),
-        });
+            Epoch::default(),
+        );
         assert!(key_registration_2.is_ok())
     }
 
@@ -659,46 +678,5 @@ mod test {
     fn golden_initializer_deserialization() {
         let _: StmInitializerWrapper = serde_json::from_str(GOLDEN_STM_INITIALIZER_WRAPPER_JSON)
             .expect("Deserializing a StmInitializerWrapper should not fail");
-    }
-
-    #[test]
-    fn test_initializer_wrapper_conversions() {
-        let stm_initializer_wrapper_json = GOLDEN_STM_INITIALIZER_WRAPPER_JSON;
-
-        let stm_initializer_wrapper_from_json: StmInitializerWrapper =
-            serde_json::from_str(stm_initializer_wrapper_json)
-                .expect("Deserializing a StmInitializerWrapper should not fail");
-        let stm_initializer_wrapper_from_json_to_json =
-            serde_json::to_string(&stm_initializer_wrapper_from_json)
-                .expect("Serializing a StmInitializerWrapper to json should not fail");
-
-        let stm_initializer_wrapper_bytes = stm_initializer_wrapper_from_json
-            .to_bytes()
-            .expect("Serializing a StmInitializerWrapper to bytes should not fail");
-        let stm_initializer_wrapper_from_bytes =
-            StmInitializerWrapper::from_bytes(&stm_initializer_wrapper_bytes)
-                .expect("Deserializing a StmInitializerWrapper from bytes should not fail");
-        let stm_initializer_wrapper_from_bytes_to_json =
-            serde_json::to_string(&stm_initializer_wrapper_from_bytes)
-                .expect("Serializing a StmInitializerWrapper to json should not fail");
-
-        assert_eq!(
-            stm_initializer_wrapper_from_json_to_json,
-            stm_initializer_wrapper_from_bytes_to_json
-        );
-
-        let mut stm_initializer_wrapper_from_json = stm_initializer_wrapper_from_json;
-        stm_initializer_wrapper_from_json.kes_signature_for_concatenation = None;
-
-        let stm_initializer_wrapper_bytes = stm_initializer_wrapper_from_json
-            .to_bytes()
-            .expect("Serializing a StmInitializerWrapper to bytes should not fail");
-        let stm_initializer_wrapper_from_bytes =
-            StmInitializerWrapper::from_bytes(&stm_initializer_wrapper_bytes)
-                .expect("Deserializing a StmInitializerWrapper from bytes should not fail");
-        assert_eq!(
-            None,
-            stm_initializer_wrapper_from_bytes.kes_signature_for_concatenation
-        );
     }
 }
