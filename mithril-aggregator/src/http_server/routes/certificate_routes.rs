@@ -1,14 +1,14 @@
 use warp::Filter;
+use warp::filters::BoxedFilter;
 
 use crate::http_server::routes::middlewares;
 use crate::http_server::routes::router::RouterState;
 
-pub fn routes(
-    router_state: &RouterState,
-) -> impl Filter<Extract = (impl warp::Reply + use<>,), Error = warp::Rejection> + Clone + use<> {
+pub fn routes(router_state: &RouterState) -> BoxedFilter<(impl warp::Reply + use<>,)> {
     certificate_certificates(router_state)
         .or(certificate_genesis(router_state))
         .or(certificate_certificate_hash(router_state))
+        .boxed()
 }
 
 /// GET /certificates

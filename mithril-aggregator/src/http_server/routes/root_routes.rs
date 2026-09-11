@@ -1,11 +1,10 @@
 use super::middlewares;
 use crate::http_server::routes::router::RouterState;
 use warp::Filter;
+use warp::filters::BoxedFilter;
 
-pub fn routes(
-    router_state: &RouterState,
-) -> impl Filter<Extract = (impl warp::Reply + use<>,), Error = warp::Rejection> + Clone + use<> {
-    root(router_state)
+pub fn routes(router_state: &RouterState) -> BoxedFilter<(impl warp::Reply + use<>,)> {
+    root(router_state).boxed()
 }
 
 /// GET /
