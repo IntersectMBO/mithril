@@ -11,7 +11,10 @@
 
 use super::{Accumulator, EmulatedCurve, Msm, NativeField, RecursiveEmulation};
 use midnight_curves::serde::SerdeObject;
-use midnight_proofs::utils::{SerdeFormat, helpers::ProcessedSerdeObject};
+use midnight_proofs::utils::{
+    SerdeFormat,
+    helpers::{ProcessedSerdeObject, byte_length},
+};
 use std::{collections::BTreeMap, io, io::Read};
 
 pub trait WriteWithFormat {
@@ -58,8 +61,15 @@ impl ReadWithFormat for Msm<RecursiveEmulation> {
         reader.read_exact(&mut num_bases)?;
         let num_bases = u32::from_le_bytes(num_bases);
 
+        // The unchecked point reader panics rather than erroring on a short payload, so each
+        // point is gathered before it is decoded. The width comes from the same format the
+        // caller passed, and one buffer is reused across the loop.
+        let mut point_bytes = vec![0u8; byte_length::<EmulatedCurve>(format)];
         let bases: Vec<_> = (0..num_bases)
-            .map(|_| EmulatedCurve::read(reader, format))
+            .map(|_| {
+                reader.read_exact(&mut point_bytes)?;
+                EmulatedCurve::read(&mut point_bytes.as_slice(), format)
+            })
             .collect::<Result<_, _>>()?;
 
         let mut num_scalars = [0u8; 4];
@@ -245,6 +255,21 @@ mod tests {
         Ok(())
     }
 
+    /// The shortest truncation there is: one point declared, no payload. Pinned deterministically
+    /// because the strict-prefix property's shortest case depends on its generated counts.
+    #[test]
+    fn a_declared_point_with_no_payload_is_rejected() {
+        let encoding = 1u32.to_le_bytes();
+
+        let error = Msm::<RecursiveEmulation>::read(
+            &mut encoding.as_slice(),
+            SerdeFormat::RawBytesUnchecked,
+        )
+        .expect_err("a declared point with no payload must be rejected");
+
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+    }
+
     /// A key length beyond the remaining input is reported as end of input. This does not observe
     /// the allocation itself: the previous implementation reached the same error once its
     /// prefix-sized allocation succeeded, so that part of the read path rests on inspection.
@@ -294,7 +319,6 @@ mod tests {
         }
 
         #[test]
-        #[ignore = "a truncated point payload panics in the unchecked point reader instead of returning an error"]
         fn a_truncated_encoding_is_rejected(original in arb_msm()) {
             let encoded = encode_to_bytes(&original);
             for truncated_length in 0..encoded.len() {
