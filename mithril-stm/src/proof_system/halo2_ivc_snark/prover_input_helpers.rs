@@ -124,6 +124,8 @@ pub(crate) fn build_next_accumulator(
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::sync::OnceLock;
+
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
 
@@ -140,12 +142,17 @@ pub(crate) mod tests {
 
     use super::*;
 
+    /// Deterministic, and none of the helpers under test read it, so one signature is minted for
+    /// the whole run rather than a Schnorr key generated per fixture.
     fn build_signature() -> StandardSchnorrSignature {
-        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-        let signing_key = SchnorrSigningKey::generate(&mut rng);
-        signing_key
-            .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
-            .expect("standard schnorr signing should succeed for a synthetic message")
+        static SIGNATURE: OnceLock<StandardSchnorrSignature> = OnceLock::new();
+        *SIGNATURE.get_or_init(|| {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let signing_key = SchnorrSigningKey::generate(&mut rng);
+            signing_key
+                .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
+                .expect("standard schnorr signing should succeed for a synthetic message")
+        })
     }
 
     pub(crate) fn build_rolling_state(
@@ -211,8 +218,6 @@ pub(crate) mod tests {
     }
 
     mod build_next_state {
-        use std::sync::OnceLock;
-
         use proptest::prelude::*;
 
         use super::*;
@@ -222,13 +227,6 @@ pub(crate) mod tests {
         // The helper's whole job is choosing, per output field, between the rolling state, the
         // certificate arguments and the preimage. Each source is generated independently so that a
         // wrong choice shows up, rather than being hidden by two sources holding the same value.
-
-        /// `build_next_state` never reads the signature, so one is minted for the whole run
-        /// rather than generating a Schnorr key per case.
-        fn cached_signature() -> StandardSchnorrSignature {
-            static SIGNATURE: OnceLock<StandardSchnorrSignature> = OnceLock::new();
-            *SIGNATURE.get_or_init(build_signature)
-        }
 
         fn reduced_field_element(bytes: &[u8; 32]) -> NativeField {
             BaseFieldElement::from_raw(bytes)
@@ -280,7 +278,7 @@ pub(crate) mod tests {
                 ),
                 IvcProofBytes::empty(),
                 trivial_accumulator(&[]),
-                cached_signature(),
+                build_signature(),
             )
         }
 
