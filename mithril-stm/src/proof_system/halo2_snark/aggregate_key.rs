@@ -87,11 +87,15 @@ impl<D: MembershipDigest> AggregateVerificationKeyForSnark<D> {
         }
 
         let commitment_end = bytes.len() - 8;
-        let merkle_tree_commitment = MerkleTreeCommitment::from_bytes(
+        // The legacy layout puts a raw digest here, and this decoder has already classified the
+        // input as legacy. Going back through `MerkleTreeCommitment::from_bytes` would re-run
+        // version detection on the digest and reinterpret a root that happens to look like CBOR.
+        let merkle_tree_commitment = MerkleTreeCommitment::new(
             bytes
                 .get(..commitment_end)
-                .ok_or(MerkleTreeError::SerializationError)?,
-        )?;
+                .ok_or(MerkleTreeError::SerializationError)?
+                .to_vec(),
+        );
 
         let mut u64_bytes = [0u8; 8];
         u64_bytes.copy_from_slice(
@@ -252,6 +256,161 @@ mod tests {
             let decoded = AggregateVerificationKeyForSnark::<D>::from_bytes(&legacy_bytes)
                 .expect("Legacy data starting with 0x01 should fall back to legacy decoder");
             assert_eq!(decoded.get_total_stake(), 42);
+        }
+    }
+
+    mod properties {
+        use proptest::prelude::*;
+
+        use crate::codec::CODEC_VERSION_CBOR_V1;
+        use crate::membership_commitment::MerkleTreeCommitment;
+
+        use super::*;
+
+        fn legacy_bytes(root: &[u8], total_stake: u64) -> Vec<u8> {
+            let mut bytes = root.to_vec();
+            // The legacy decoder reads the stake big-endian; the rigid slot writes it little-endian.
+            bytes.extend_from_slice(&total_stake.to_be_bytes());
+            bytes
+        }
+
+        fn assert_carries(
+            aggregate_key: &AggregateVerificationKeyForSnark<D>,
+            root: &[u8; 32],
+            total_stake: u64,
+        ) -> Result<(), TestCaseError> {
+            prop_assert_eq!(
+                aggregate_key.get_merkle_tree_commitment().root.as_slice(),
+                root.as_slice()
+            );
+            prop_assert_eq!(aggregate_key.get_total_stake(), total_stake);
+            Ok(())
+        }
+
+        prop_compose! {
+            /// A root whose first byte is not the CBOR version byte takes the legacy path in both
+            /// the key decoder and the commitment decoder nested inside it.
+            fn arb_unambiguous_root()(
+                first_byte in any::<u8>().prop_filter(
+                    "a root beginning with the version byte selects the CBOR branch",
+                    |byte| *byte != CODEC_VERSION_CBOR_V1,
+                ),
+                remaining_bytes in any::<[u8; 31]>(),
+            ) -> [u8; 32] {
+                let mut root = [0u8; 32];
+                root[0] = first_byte;
+                root[1..].copy_from_slice(&remaining_bytes);
+                root
+            }
+        }
+
+        prop_compose! {
+            /// The version byte only selects the branch; what makes the CBOR attempt fail is the
+            /// byte after it. A CBOR unsigned integer cannot open this struct, so the fallback is
+            /// reached by construction rather than because random bytes rarely parse.
+            fn arb_root_forcing_the_legacy_fallback()(
+                unsigned_integer_header in 0x00u8..=0x17,
+                remaining_bytes in any::<[u8; 30]>(),
+            ) -> [u8; 32] {
+                let mut root = [0u8; 32];
+                root[0] = CODEC_VERSION_CBOR_V1;
+                root[1] = unsigned_integer_header;
+                root[2..].copy_from_slice(&remaining_bytes);
+                root
+            }
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(100))]
+
+            #[test]
+            fn an_unambiguous_legacy_key_survives_the_cbor_round_trip(
+                root in arb_unambiguous_root(),
+                total_stake in any::<u64>(),
+            ) {
+                let decoded =
+                    AggregateVerificationKeyForSnark::<D>::from_bytes(&legacy_bytes(&root, total_stake))
+                        .expect("a 40-byte legacy key should decode");
+                assert_carries(&decoded, &root, total_stake)?;
+
+                let re_encoded = decoded.to_bytes().expect("encoding should not fail");
+                let round_tripped = AggregateVerificationKeyForSnark::<D>::from_bytes(&re_encoded)
+                    .expect("the encoder's own output should decode");
+                assert_carries(&round_tripped, &root, total_stake)?;
+            }
+
+            #[test]
+            fn a_legacy_key_whose_root_begins_with_the_version_byte_falls_back(
+                root in arb_root_forcing_the_legacy_fallback(),
+                total_stake in any::<u64>(),
+            ) {
+                let decoded =
+                    AggregateVerificationKeyForSnark::<D>::from_bytes(&legacy_bytes(&root, total_stake))
+                        .expect("the legacy fallback should decode");
+                assert_carries(&decoded, &root, total_stake)?;
+
+                let re_encoded = decoded.to_bytes().expect("encoding should not fail");
+                let round_tripped = AggregateVerificationKeyForSnark::<D>::from_bytes(&re_encoded)
+                    .expect("the encoder's own output should decode");
+                assert_carries(&round_tripped, &root, total_stake)?;
+            }
+
+            #[test]
+            fn the_rigid_slot_carries_the_root_the_pad_and_the_little_endian_stake(
+                root in any::<[u8; 32]>(),
+                total_stake in any::<u64>(),
+                sampled_invalid_width in (0usize..=64).prop_filter(
+                    "32 is the only accepted width",
+                    |width| *width != 32,
+                ),
+            ) {
+                let aggregate_key = AggregateVerificationKeyForSnark::<D> {
+                    merkle_tree_commitment: MerkleTreeCommitment::new(root.to_vec()),
+                    total_stake,
+                };
+
+                let slot = aggregate_key
+                    .to_rigid_slot_bytes()
+                    .expect("a 32-byte root should project");
+                prop_assert_eq!(slot.len(), 44);
+                prop_assert_eq!(&slot[0..32], &root);
+                prop_assert_eq!(&slot[32..36], &[0u8; 4]);
+                prop_assert_eq!(&slot[36..44], &total_stake.to_le_bytes());
+
+                // The widths either side of 32, and the empty root, are forced: a width sampled
+                // from 0..=64 reaches each of them about once in sixty-four cases.
+                for width in [0, 31, 33, sampled_invalid_width] {
+                    let unprojectable = AggregateVerificationKeyForSnark::<D> {
+                        merkle_tree_commitment: MerkleTreeCommitment::new(vec![0u8; width]),
+                        total_stake,
+                    };
+                    prop_assert!(
+                        unprojectable.to_rigid_slot_bytes().is_err(),
+                        "a root of {width} bytes must not project"
+                    );
+                }
+            }
+        }
+
+        /// The legacy layout puts a raw digest in this slot, so a root that happens to be valid
+        /// CBOR must not be reinterpreted by the nested commitment decoder.
+        #[test]
+        fn a_legacy_root_that_is_valid_cbor_survives_decoding() {
+            let mut root = [0u8; 32];
+            root[0..16].copy_from_slice(&[
+                0x01, 0xa2, 0x64, 0x72, 0x6f, 0x6f, 0x74, 0x80, 0x66, 0x68, 0x61, 0x73, 0x68, 0x65,
+                0x72, 0xf6,
+            ]);
+
+            let decoded =
+                AggregateVerificationKeyForSnark::<D>::from_bytes(&legacy_bytes(&root, 7))
+                    .expect("the input decodes; the question is what it decodes to");
+
+            assert_eq!(
+                decoded.get_merkle_tree_commitment().root.as_slice(),
+                root.as_slice(),
+                "the 32-byte root must survive decoding"
+            );
         }
     }
 

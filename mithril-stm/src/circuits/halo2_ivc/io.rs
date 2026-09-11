@@ -11,8 +11,11 @@
 
 use super::{Accumulator, EmulatedCurve, Msm, NativeField, RecursiveEmulation};
 use midnight_curves::serde::SerdeObject;
-use midnight_proofs::utils::{SerdeFormat, helpers::ProcessedSerdeObject};
-use std::{collections::BTreeMap, io};
+use midnight_proofs::utils::{
+    SerdeFormat,
+    helpers::{ProcessedSerdeObject, byte_length},
+};
+use std::{collections::BTreeMap, io, io::Read};
 
 pub trait WriteWithFormat {
     fn write<W: io::Write>(&self, w: &mut W, format: SerdeFormat) -> io::Result<()>;
@@ -58,13 +61,29 @@ impl ReadWithFormat for Msm<RecursiveEmulation> {
         reader.read_exact(&mut num_bases)?;
         let num_bases = u32::from_le_bytes(num_bases);
 
+        // The unchecked point reader panics rather than erroring on a short payload, so each
+        // point is gathered before it is decoded. The width comes from the same format the
+        // caller passed, and one buffer is reused across the loop.
+        let mut point_bytes = vec![0u8; byte_length::<EmulatedCurve>(format)];
         let bases: Vec<_> = (0..num_bases)
-            .map(|_| EmulatedCurve::read(reader, format))
+            .map(|_| {
+                reader.read_exact(&mut point_bytes)?;
+                EmulatedCurve::read(&mut point_bytes.as_slice(), format)
+            })
             .collect::<Result<_, _>>()?;
 
         let mut num_scalars = [0u8; 4];
         reader.read_exact(&mut num_scalars)?;
         let num_scalars = u32::from_le_bytes(num_scalars);
+
+        // `Msm::new` asserts the two counts agree, so a mismatch has to be rejected here rather
+        // than carried into the constructor.
+        if num_scalars != num_bases {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("MSM declares {num_bases} bases and {num_scalars} scalars"),
+            ));
+        }
 
         let scalars: Vec<_> = (0..num_scalars)
             .map(|_| NativeField::read_raw(reader))
@@ -80,8 +99,17 @@ impl ReadWithFormat for Msm<RecursiveEmulation> {
             reader.read_exact(&mut key_len)?;
             let key_len = u32::from_le_bytes(key_len);
 
-            let mut key_bytes = vec![0u8; key_len as usize];
-            reader.read_exact(&mut key_bytes)?;
+            // Reading through `take` grows the buffer as bytes arrive, so an overstated prefix
+            // cannot size an allocation on its own.
+            let mut key_bytes = Vec::new();
+            let bytes_read =
+                reader.by_ref().take(u64::from(key_len)).read_to_end(&mut key_bytes)?;
+            if bytes_read != key_len as usize {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    format!("fixed-base key declares {key_len} bytes, {bytes_read} available"),
+                ));
+            }
             let key = String::from_utf8(key_bytes)
                 .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid UTF-8 key"))?;
 
@@ -106,5 +134,218 @@ impl ReadWithFormat for Accumulator<RecursiveEmulation> {
         let lhs = Msm::read(reader, format)?;
         let rhs = Msm::read(reader, format)?;
         Ok(Accumulator::<RecursiveEmulation>::new(lhs, rhs))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ff::Field;
+    use group::Group;
+    use proptest::prelude::*;
+
+    use super::*;
+    use crate::BaseFieldElement;
+
+    /// Four distinct non-identity points, so a substituted or reordered base is observable.
+    fn distinct_non_identity_points() -> [EmulatedCurve; 4] {
+        let generator = EmulatedCurve::generator();
+        let doubled = generator.double();
+        [generator, doubled, doubled + generator, doubled.double()]
+    }
+
+    fn scalar_from_bytes(bytes: [u8; 32]) -> NativeField {
+        BaseFieldElement::from_raw(&bytes)
+            .expect("from_raw applies modulus reduction and cannot fail")
+            .0
+    }
+
+    fn encode_to_bytes<T: WriteWithFormat>(value: &T) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        value
+            .write(&mut bytes, SerdeFormat::RawBytesUnchecked)
+            .expect("writing to a vector cannot fail");
+        bytes
+    }
+
+    prop_compose! {
+        fn arb_scalar_bytes()(bytes in prop_oneof![Just([0u8; 32]), any::<[u8; 32]>()]) -> [u8; 32] {
+            bytes
+        }
+    }
+
+    prop_compose! {
+        /// Key shapes the committed assets never carry: empty, and multi-byte UTF-8.
+        fn arb_fixed_base_key()(key in prop_oneof![
+            Just(String::new()),
+            "[a-zA-Z0-9_-]{1,16}",
+            Just("clé".to_owned()),
+            Just("鍵".to_owned()),
+        ]) -> String {
+            key
+        }
+    }
+
+    prop_compose! {
+        fn arb_msm_with_pair_count(pair_count: usize)(
+            point_indices in prop::collection::vec(0usize..4, pair_count),
+            scalar_bytes in prop::collection::vec(arb_scalar_bytes(), pair_count),
+            named_entries in prop::collection::vec(
+                (arb_fixed_base_key(), arb_scalar_bytes()), 0usize..=8,
+            ),
+        ) -> Msm<RecursiveEmulation> {
+            let points = distinct_non_identity_points();
+            let bases: Vec<EmulatedCurve> =
+                point_indices.iter().map(|index| points[*index]).collect();
+            let scalars: Vec<NativeField> =
+                scalar_bytes.into_iter().map(scalar_from_bytes).collect();
+            let fixed_base_scalars: BTreeMap<String, NativeField> = named_entries
+                .into_iter()
+                .map(|(key, bytes)| (key, scalar_from_bytes(bytes)))
+                .collect();
+            Msm::new(&bases, &scalars, &fixed_base_scalars)
+        }
+    }
+
+    prop_compose! {
+        fn arb_msm()(pair_count in 0usize..=4)(
+            msm in arb_msm_with_pair_count(pair_count),
+        ) -> Msm<RecursiveEmulation> {
+            msm
+        }
+    }
+
+    prop_compose! {
+        /// The two sides always differ in pair count, so a swapped `lhs`/`rhs` is observable.
+        fn arb_accumulator()(lhs_pair_count in 0usize..=4, offset in 1usize..=4)(
+            lhs in arb_msm_with_pair_count(lhs_pair_count),
+            rhs in arb_msm_with_pair_count((lhs_pair_count + offset) % 5),
+        ) -> Accumulator<RecursiveEmulation> {
+            Accumulator::new(lhs, rhs)
+        }
+    }
+
+    /// Encodes an MSM whose declared point and scalar counts disagree, with every
+    /// component itself well formed so the reader reaches the constructor.
+    fn encode_with_mismatched_counts(point_count: usize, scalar_count: usize) -> Vec<u8> {
+        let points = distinct_non_identity_points();
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(point_count as u32).to_le_bytes());
+        for index in 0..point_count {
+            points[index % points.len()]
+                .write(&mut bytes, SerdeFormat::RawBytesUnchecked)
+                .expect("writing to a vector cannot fail");
+        }
+        bytes.extend_from_slice(&(scalar_count as u32).to_le_bytes());
+        for _ in 0..scalar_count {
+            NativeField::ZERO
+                .write_raw(&mut bytes)
+                .expect("writing to a vector cannot fail");
+        }
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes
+    }
+
+    fn assert_msm_components_match(
+        decoded: &Msm<RecursiveEmulation>,
+        original: &Msm<RecursiveEmulation>,
+    ) -> Result<(), TestCaseError> {
+        prop_assert_eq!(decoded.bases(), original.bases());
+        prop_assert_eq!(decoded.scalars(), original.scalars());
+        prop_assert_eq!(decoded.fixed_base_scalars(), original.fixed_base_scalars());
+        Ok(())
+    }
+
+    /// The shortest truncation there is: one point declared, no payload. Pinned deterministically
+    /// because the strict-prefix property's shortest case depends on its generated counts.
+    #[test]
+    fn a_declared_point_with_no_payload_is_rejected() {
+        let encoding = 1u32.to_le_bytes();
+
+        let error = Msm::<RecursiveEmulation>::read(
+            &mut encoding.as_slice(),
+            SerdeFormat::RawBytesUnchecked,
+        )
+        .expect_err("a declared point with no payload must be rejected");
+
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+    }
+
+    /// A key length beyond the remaining input is reported as end of input. This does not observe
+    /// the allocation itself: the previous implementation reached the same error once its
+    /// prefix-sized allocation succeeded, so that part of the read path rests on inspection.
+    #[test]
+    fn a_fixed_base_key_longer_than_the_input_is_rejected() {
+        let mut encoding = Vec::new();
+        encoding.extend_from_slice(&0u32.to_le_bytes()); // no bases
+        encoding.extend_from_slice(&0u32.to_le_bytes()); // no scalars
+        encoding.extend_from_slice(&1u32.to_le_bytes()); // one named entry
+        encoding.extend_from_slice(&u32::MAX.to_le_bytes()); // whose key claims 4 GiB
+
+        let error = Msm::<RecursiveEmulation>::read(
+            &mut encoding.as_slice(),
+            SerdeFormat::RawBytesUnchecked,
+        )
+        .expect_err("a key longer than the remaining bytes must be rejected");
+
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn msm_round_trip_preserves_every_component(original in arb_msm()) {
+            let encoded = encode_to_bytes(&original);
+            let mut remaining = encoded.as_slice();
+            let decoded = Msm::<RecursiveEmulation>::read(
+                &mut remaining, SerdeFormat::RawBytesUnchecked,
+            )?;
+
+            prop_assert!(remaining.is_empty(), "the reader must consume the whole encoding");
+            assert_msm_components_match(&decoded, &original)?;
+        }
+
+        #[test]
+        fn accumulator_round_trip_preserves_both_sides(original in arb_accumulator()) {
+            let encoded = encode_to_bytes(&original);
+            let mut remaining = encoded.as_slice();
+            let decoded = Accumulator::<RecursiveEmulation>::read(
+                &mut remaining, SerdeFormat::RawBytesUnchecked,
+            )?;
+
+            prop_assert!(remaining.is_empty(), "the reader must consume the whole encoding");
+            assert_msm_components_match(&decoded.lhs(), &original.lhs())?;
+            assert_msm_components_match(&decoded.rhs(), &original.rhs())?;
+        }
+
+        #[test]
+        fn a_truncated_encoding_is_rejected(original in arb_msm()) {
+            let encoded = encode_to_bytes(&original);
+            for truncated_length in 0..encoded.len() {
+                let mut remaining = &encoded[..truncated_length];
+                prop_assert!(
+                    Msm::<RecursiveEmulation>::read(
+                        &mut remaining, SerdeFormat::RawBytesUnchecked,
+                    ).is_err(),
+                    "a strict prefix of length {truncated_length} must be rejected",
+                );
+            }
+        }
+
+        #[test]
+        fn mismatched_point_and_scalar_counts_are_rejected(
+            point_count in 0usize..=2, scalar_count in 0usize..=2,
+        ) {
+            prop_assume!(point_count != scalar_count);
+            let encoded = encode_with_mismatched_counts(point_count, scalar_count);
+            let mut remaining = encoded.as_slice();
+
+            prop_assert!(
+                Msm::<RecursiveEmulation>::read(
+                    &mut remaining, SerdeFormat::RawBytesUnchecked,
+                ).is_err(),
+                "an encoding declaring {point_count} points and {scalar_count} scalars must be rejected",
+            );
+        }
     }
 }
