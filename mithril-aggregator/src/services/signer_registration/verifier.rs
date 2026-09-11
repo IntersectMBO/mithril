@@ -4,7 +4,6 @@ use anyhow::Context;
 use async_trait::async_trait;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserver;
-#[cfg(feature = "future_snark")]
 use mithril_common::entities::Epoch;
 use mithril_common::{
     StdResult,
@@ -33,8 +32,10 @@ impl SignerRegistrationVerifier for MithrilSignerRegistrationVerifier {
         &self,
         signer: &Signer,
         stake_distribution: &StakeDistribution,
-        #[cfg(feature = "future_snark")] epoch: Epoch,
+        epoch: Epoch,
     ) -> StdResult<SignerWithStake> {
+        #[cfg(not(feature = "future_snark"))]
+        let _epoch = epoch;
         let mut key_registration = ProtocolKeyRegistration::init(
             &stake_distribution
                 .iter()
@@ -111,7 +112,6 @@ mod tests {
             .verify(
                 &signer_to_register,
                 &fixture.stake_distribution(),
-                #[cfg(feature = "future_snark")]
                 Epoch::default(),
             )
             .await
@@ -134,7 +134,6 @@ mod tests {
             .verify(
                 &signer_to_register,
                 &fixture.stake_distribution(),
-                #[cfg(feature = "future_snark")]
                 Epoch::default(),
             )
             .await

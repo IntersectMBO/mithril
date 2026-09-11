@@ -58,6 +58,10 @@ pub fn generate_register_signer_message(
             verification_key_signature_for_snark: signer
                 .verification_key_signature_for_snark
                 .map(|s| s.to_json_hex().unwrap()),
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: signer
+                .proof_of_bound_possession_for_snark
+                .map(|p| p.to_bytes_hex().unwrap()),
         })
         .collect::<Vec<_>>()
 }
