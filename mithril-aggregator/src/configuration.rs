@@ -322,6 +322,15 @@ pub trait ConfigurationSource {
         panic!("custom_origin_tag_white_list is not implemented.");
     }
 
+    /// Path to the signed circuit verification key registry file enforced on the certificates
+    /// whose aggregate signature type requires it.
+    ///
+    /// Defaults to the `circuit-verification-key-registry.json` file in the data stores directory.
+    fn circuit_verification_key_registry_path(&self) -> PathBuf {
+        self.data_stores_directory()
+            .join(CIRCUIT_VERIFICATION_KEY_REGISTRY_FILE_NAME)
+    }
+
     /// Get the server URL.
     fn get_server_url(&self) -> StdResult<SanitizedUrlWithTrailingSlash> {
         panic!("get_server_url is not implemented.");
@@ -426,6 +435,11 @@ pub trait ConfigurationSource {
         panic!("signature_processor_wait_delay_on_error_ms is not implemented.");
     }
 }
+
+/// File name of the signed circuit verification key registry, joined to the data stores
+/// directory as the default registry path.
+pub const CIRCUIT_VERIFICATION_KEY_REGISTRY_FILE_NAME: &str =
+    "circuit-verification-key-registry.json";
 
 /// Serve command configuration
 #[derive(Debug, Clone, Deserialize, Documenter)]
@@ -657,6 +671,12 @@ pub struct ServeCommandConfiguration {
 
     /// Delay to wait between two signature processing attempts after an error
     pub signature_processor_wait_delay_on_error_ms: u64,
+
+    /// Path to the signed circuit verification key registry file enforced on the certificates
+    /// whose aggregate signature type requires it.
+    ///
+    /// Defaults to the `circuit-verification-key-registry.json` file in the data stores directory.
+    pub circuit_verification_key_registry_path: Option<PathBuf>,
 }
 
 /// Uploader needed to copy the snapshot once computed.
@@ -835,6 +855,7 @@ impl ServeCommandConfiguration {
             custom_origin_tag_white_list: None,
             aggregate_signature_type: AggregateSignatureType::Concatenation,
             signature_processor_wait_delay_on_error_ms: 5000,
+            circuit_verification_key_registry_path: None,
         }
     }
 
@@ -1038,6 +1059,15 @@ impl ConfigurationSource for ServeCommandConfiguration {
 
     fn custom_origin_tag_white_list(&self) -> Option<String> {
         self.custom_origin_tag_white_list.clone()
+    }
+
+    fn circuit_verification_key_registry_path(&self) -> PathBuf {
+        self.circuit_verification_key_registry_path
+            .clone()
+            .unwrap_or_else(|| {
+                self.data_stores_directory
+                    .join(CIRCUIT_VERIFICATION_KEY_REGISTRY_FILE_NAME)
+            })
     }
 
     fn get_server_url(&self) -> StdResult<SanitizedUrlWithTrailingSlash> {

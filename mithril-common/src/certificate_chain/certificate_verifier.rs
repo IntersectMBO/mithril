@@ -11,7 +11,9 @@ use mithril_stm::{AggregateSignatureType, AncillaryVerifierData};
 
 use crate::StdResult;
 #[cfg(feature = "future_snark")]
-use crate::crypto_helper::ProtocolAggregateVerificationKeyForSnark;
+use crate::crypto_helper::{
+    CircuitVerificationKeyCertifier, ProtocolAggregateVerificationKeyForSnark,
+};
 use crate::crypto_helper::{
     GenesisEd25519Error, GenesisVerifier, ProtocolAggregateVerificationKey,
     ProtocolAggregateVerificationKeyForConcatenation, ProtocolMultiSignature,
@@ -90,6 +92,14 @@ pub enum CertificateVerifierError {
     /// certificate that's not a standard certificate.
     #[error("can't validate standard certificate: given certificate isn't a standard certificate")]
     InvalidStandardCertificateProvided,
+
+    /// Error raised when a certificate whose aggregate signature type requires certified circuit
+    /// verification keys carries no ancillary verifier data.
+    #[cfg(feature = "future_snark")]
+    #[error(
+        "certificate is missing the ancillary verifier data carrying its circuit verification keys"
+    )]
+    MissingAncillaryVerifierData,
 }
 
 /// CertificateVerifier is the cryptographic engine in charge of verifying multi signatures and
@@ -128,20 +138,30 @@ pub struct MithrilCertificateVerifier {
     logger: Logger,
     certificate_retriever: Arc<dyn CertificateRetriever>,
     genesis_verifier: Arc<GenesisVerifier>,
+    #[cfg(feature = "future_snark")]
+    circuit_verification_key_certifier: Arc<dyn CircuitVerificationKeyCertifier>,
 }
 
 impl MithrilCertificateVerifier {
     /// MithrilCertificateVerifier factory
+    ///
+    /// The circuit verification key certifier enforces the circuit verification key registry on
+    /// the certificates whose aggregate signature type requires it.
     pub fn new(
         logger: Logger,
         certificate_retriever: Arc<dyn CertificateRetriever>,
         genesis_verifier: Arc<GenesisVerifier>,
+        #[cfg(feature = "future_snark")] circuit_verification_key_certifier: Arc<
+            dyn CircuitVerificationKeyCertifier,
+        >,
     ) -> Self {
         debug!(logger, "New MithrilCertificateVerifier created");
         Self {
             logger: logger.new_with_component_name::<Self>(),
             certificate_retriever,
             genesis_verifier,
+            #[cfg(feature = "future_snark")]
+            circuit_verification_key_certifier,
         }
     }
 
@@ -186,6 +206,44 @@ impl MithrilCertificateVerifier {
                 genesis_verification_key_bundle,
             )
             .map_err(|e| CertificateVerifierError::VerifyMultiSignature(e.to_string()))
+    }
+
+    /// Verify that the circuit verification keys carried by the certificate are certified by the
+    /// genesis-signed registry, for the aggregate signature types that require it.
+    ///
+    /// The digests are taken from the ancillary verifier data the aggregate signature is verified
+    /// against, so certifying them certifies the circuits used to produce the signature.
+    #[cfg(feature = "future_snark")]
+    async fn verify_certified_circuit_verification_keys(
+        &self,
+        certificate: &Certificate,
+    ) -> StdResult<()> {
+        let requires_certification = certificate.signature.aggregate_signature_type().is_some_and(
+            |aggregate_signature_type| {
+                aggregate_signature_type.requires_certified_circuit_verification_keys()
+            },
+        );
+        if !requires_certification {
+            return Ok(());
+        }
+
+        let ancillary_verifier_data = certificate
+            .ancillary_verifier_data
+            .as_ref()
+            .ok_or(CertificateVerifierError::MissingAncillaryVerifierData)?;
+
+        self.circuit_verification_key_certifier
+            .check(
+                &ancillary_verifier_data.circuit_verification_key_digests(),
+                certificate.epoch,
+            )
+            .await
+            .with_context(|| {
+                format!(
+                    "Certificate verifier failed certifying the circuit verification keys of certificate '{}'",
+                    certificate.hash
+                )
+            })
     }
 
     /// Verify the parts of a standard certificate that do not depend on its predecessor: its hash,
@@ -462,6 +520,8 @@ impl CertificateVerifier for MithrilCertificateVerifier {
         certificate: &Certificate,
         previous_certificate: &Certificate,
     ) -> StdResult<()> {
+        #[cfg(feature = "future_snark")]
+        self.verify_certified_circuit_verification_keys(certificate).await?;
         self.verify_standard_certificate_integrity(certificate)?;
         self.verify_epoch_chaining(certificate, previous_certificate)?;
         self.verify_previous_hash_matches_previous_certificate_hash(
@@ -498,6 +558,8 @@ impl CertificateVerifier for MithrilCertificateVerifier {
         if certificate.signature.aggregate_signature_type().is_some_and(
             |aggregate_signature_type| aggregate_signature_type.certifies_full_certificate_chain(),
         ) {
+            #[cfg(feature = "future_snark")]
+            self.verify_certified_circuit_verification_keys(certificate).await?;
             self.verify_standard_certificate_integrity(certificate)?;
 
             return Ok(None);
@@ -520,6 +582,8 @@ mod tests {
 
     use mithril_stm::{AggregateSignatureType, AncillaryProofInput};
 
+    #[cfg(feature = "future_snark")]
+    use crate::test::double::FakeCircuitVerificationKeyCertifier;
     use crate::test::{
         TestLogger,
         builder::{CertificateChainBuilder, CertificateChainBuilderContext, MithrilFixtureBuilder},
@@ -573,6 +637,8 @@ mod tests {
                 TestLogger::stdout(),
                 Arc::new(self.mock_certificate_retriever),
                 genesis_verifier,
+                #[cfg(feature = "future_snark")]
+                Arc::new(FakeCircuitVerificationKeyCertifier::that_fails()),
             )
         }
     }
@@ -616,6 +682,8 @@ mod tests {
             TestLogger::stdout(),
             Arc::new(MockCertificateRetriever::new()),
             Arc::new(genesis_verifier),
+            #[cfg(feature = "future_snark")]
+            Arc::new(FakeCircuitVerificationKeyCertifier::that_fails()),
         );
         let message_tampered = message_hash[1..].to_vec();
         assert!(
@@ -1198,6 +1266,8 @@ mod tests {
             TestLogger::stdout(),
             Arc::new(certificate_retriever),
             Arc::new(fake_certificates.genesis_verifier.clone()),
+            #[cfg(feature = "future_snark")]
+            Arc::new(FakeCircuitVerificationKeyCertifier::that_fails()),
         );
         let certificate_to_verify = fake_certificates[0].clone();
 
@@ -1218,6 +1288,8 @@ mod tests {
             TestLogger::stdout(),
             Arc::new(certificate_retriever),
             Arc::new(fake_certificates.genesis_verifier.clone()),
+            #[cfg(feature = "future_snark")]
+            Arc::new(FakeCircuitVerificationKeyCertifier::that_fails()),
         );
         let certificate_to_verify = fake_certificates[0].clone();
 
@@ -1833,6 +1905,103 @@ mod tests {
                         "AVK chaining dispatch (SNARK) must succeed across the Pythagoras to Lagrange era transition",
                     );
             }
+        }
+    }
+
+    #[cfg(feature = "future_snark")]
+    mod certified_circuit_verification_keys {
+        use crate::crypto_helper::{
+            CircuitVerificationKeyCertifier, MithrilCircuitVerificationKeyCertifier,
+        };
+        use crate::test::double::{
+            FakeCircuitVerificationKeyRegistryRetriever, fake_data::snark_aggregate_signature,
+        };
+
+        use super::*;
+
+        fn promote_to_snark_aggregate_signature_without_ancillary_data(
+            mut certificate: Certificate,
+        ) -> Certificate {
+            let CertificateSignature::MultiSignature(entity_type, _) =
+                certificate.signature.clone()
+            else {
+                panic!("certificate signature must be a multi signature");
+            };
+            certificate.signature =
+                CertificateSignature::MultiSignature(entity_type, snark_aggregate_signature());
+            certificate.ancillary_verifier_data = None;
+            certificate
+        }
+
+        fn failing_certifier() -> Arc<dyn CircuitVerificationKeyCertifier> {
+            Arc::new(MithrilCircuitVerificationKeyCertifier::new(
+                Arc::new(FakeCircuitVerificationKeyRegistryRetriever::that_fails()),
+                fake_genesis_verifier(),
+            ))
+        }
+
+        #[tokio::test]
+        async fn skips_the_check_for_a_concatenation_certificate() {
+            let fake_certificates = setup_certificate_chain(2, 1);
+            let verifier = MithrilCertificateVerifier::new(
+                TestLogger::stdout(),
+                Arc::new(MockCertificateRetriever::new()),
+                Arc::new(fake_certificates.genesis_verifier.clone()),
+                failing_certifier(),
+            );
+
+            verifier
+                .verify_certified_circuit_verification_keys(&fake_certificates[0])
+                .await
+                .expect("a concatenation certificate must not be checked against the registry");
+        }
+
+        #[tokio::test]
+        async fn rejects_a_snark_certificate_without_ancillary_verifier_data() {
+            let fake_certificates = setup_certificate_chain(2, 1);
+            let certificate = promote_to_snark_aggregate_signature_without_ancillary_data(
+                fake_certificates[0].clone(),
+            );
+            let verifier = MithrilCertificateVerifier::new(
+                TestLogger::stdout(),
+                Arc::new(MockCertificateRetriever::new()),
+                Arc::new(fake_certificates.genesis_verifier.clone()),
+                failing_certifier(),
+            );
+
+            let error = verifier
+                .verify_certified_circuit_verification_keys(&certificate)
+                .await
+                .expect_err("a SNARK certificate without ancillary verifier data must be rejected");
+
+            assert_error_matches!(
+                CertificateVerifierError::MissingAncillaryVerifierData,
+                error
+            );
+        }
+
+        #[tokio::test]
+        async fn verify_standard_certificate_enforces_the_check_before_any_other_verification() {
+            let fake_certificates = setup_certificate_chain(2, 1);
+            let certificate = promote_to_snark_aggregate_signature_without_ancillary_data(
+                fake_certificates[0].clone(),
+            );
+            let verifier = MithrilCertificateVerifier::new(
+                TestLogger::stdout(),
+                Arc::new(MockCertificateRetriever::new()),
+                Arc::new(fake_certificates.genesis_verifier.clone()),
+                failing_certifier(),
+            );
+
+            let error = verifier
+                .verify_standard_certificate(&certificate, &fake_certificates[1])
+                .await
+                .expect_err("standard certificate verification must enforce the check");
+
+            assert_error_matches!(
+                CertificateVerifierError::MissingAncillaryVerifierData,
+                error
+            );
         }
     }
 }

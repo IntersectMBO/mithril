@@ -42,6 +42,7 @@ Release manager:
 
 - Prepares the release of this update
 - Schedule the re-genesis of the certificate chain
+- Publishes the new version of the circuit verification key registry (see [circuit-key-registry](../circuit-key-registry/README.md))
 
 ## Update of the golden value
 
@@ -62,6 +63,10 @@ cargo test -p mithril-stm --features future_snark,rustls --release write_recursi
 ```
 
 that will update the files holding the values of the production keys, `mithril-stm/src/circuits/halo2/non_recursive_circuit_verification_key_for_production.bin` and `mithril-stm/src/circuits/halo2_ivc/recursive_circuit_verification_key_for_production.bin`.
+
+## Update of the circuit verification key registry
+
+Changing a circuit changes its verification key, and thus its digest in the circuit verification key registry. A new registry version must be authored, signed with the genesis key and published at the root of the repository, whitelisting the new keys and closing (or revoking, in case of a vulnerability) the outgoing ones, following the [circuit-key-registry](../circuit-key-registry/README.md) runbook. Clients download the registry file from its raw GitHub URL on `main`, so without this publication they reject the certificates produced with the new keys.
 
 ## Scheduling of the re-genesis
 

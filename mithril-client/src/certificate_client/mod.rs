@@ -70,6 +70,8 @@ pub use verify_cache::MemoryCertificateVerifierCache;
 pub(crate) mod tests_utils {
     use mithril_common::entities::Certificate;
     use mithril_common::messages::CertificateMessage;
+    #[cfg(feature = "future_snark")]
+    use mithril_common::test::double::FakeCircuitVerificationKeyRegistryRetriever;
     use mockall::predicate::eq;
     use std::sync::Arc;
 
@@ -136,6 +138,8 @@ pub(crate) mod tests_utils {
                             FeedbackSender::new(&self.feedback_receivers),
                             #[cfg(feature = "unstable")]
                             self.verifier_cache,
+                            #[cfg(feature = "future_snark")]
+                            Arc::new(FakeCircuitVerificationKeyRegistryRetriever::that_fails()),
                             logger.clone(),
                         )
                         .unwrap(),

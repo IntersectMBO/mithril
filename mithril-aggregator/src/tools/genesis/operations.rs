@@ -29,6 +29,10 @@ use crate::{
 };
 #[cfg(feature = "future_snark")]
 use mithril_common::crypto_helper::{
+    CircuitVerificationKeyRegistryRetriever, MithrilCircuitVerificationKeyCertifier,
+};
+#[cfg(feature = "future_snark")]
+use mithril_common::crypto_helper::{
     GenesisBundleError, GenesisEd25519SecretKey, GenesisSchnorrSigner, GenesisSigningKeyBundle,
     GenesisVerificationKeyBundle, ProtocolKey, sha256_digest, signed_message_from_digest,
 };
@@ -55,6 +59,8 @@ pub struct GenesisToolsConfiguration {
 pub struct GenesisTools {
     configuration: GenesisToolsConfiguration,
     certificate_repository: Arc<CertificateRepository>,
+    #[cfg(feature = "future_snark")]
+    circuit_verification_key_registry_retriever: Arc<dyn CircuitVerificationKeyRegistryRetriever>,
     logger: Logger,
 }
 
@@ -63,11 +69,16 @@ impl GenesisTools {
     pub fn new(
         configuration: GenesisToolsConfiguration,
         certificate_repository: Arc<CertificateRepository>,
+        #[cfg(feature = "future_snark")] circuit_verification_key_registry_retriever: Arc<
+            dyn CircuitVerificationKeyRegistryRetriever,
+        >,
         logger: Logger,
     ) -> Self {
         Self {
             configuration,
             certificate_repository,
+            #[cfg(feature = "future_snark")]
+            circuit_verification_key_registry_retriever,
             logger,
         }
     }
@@ -82,6 +93,11 @@ impl GenesisTools {
             self.logger.clone(),
             self.certificate_repository.clone(),
             Arc::new(genesis_verifier.clone()),
+            #[cfg(feature = "future_snark")]
+            Arc::new(MithrilCircuitVerificationKeyCertifier::new(
+                self.circuit_verification_key_registry_retriever.clone(),
+                Arc::new(genesis_verifier.clone()),
+            )),
         )
     }
 
@@ -125,6 +141,8 @@ impl GenesisTools {
         Ok(Self::new(
             configuration,
             certificate_repository,
+            #[cfg(feature = "future_snark")]
+            dependencies.circuit_verification_key_registry_retriever,
             dependencies.logger,
         ))
     }
@@ -466,6 +484,11 @@ mod tests {
         test::{TempDir, builder::MithrilFixtureBuilder, double::fake_data},
     };
 
+    #[cfg(feature = "future_snark")]
+    use mithril_common::test::double::{
+        FakeCircuitVerificationKeyCertifier, FakeCircuitVerificationKeyRegistryRetriever,
+    };
+
     use crate::database::test_helper::main_db_connection;
     use crate::test::TestLogger;
 
@@ -512,6 +535,8 @@ mod tests {
             TestLogger::stdout(),
             certificate_store.clone(),
             genesis_verifier.clone(),
+            #[cfg(feature = "future_snark")]
+            Arc::new(FakeCircuitVerificationKeyCertifier::that_fails()),
         ));
         let configuration = GenesisToolsConfiguration {
             network: fake_data::network(),
@@ -523,6 +548,8 @@ mod tests {
         let genesis_tools = GenesisTools::new(
             configuration,
             certificate_store.clone(),
+            #[cfg(feature = "future_snark")]
+            Arc::new(FakeCircuitVerificationKeyRegistryRetriever::that_fails()),
             TestLogger::stdout(),
         );
 
