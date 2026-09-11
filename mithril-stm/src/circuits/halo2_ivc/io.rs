@@ -12,7 +12,7 @@
 use super::{Accumulator, EmulatedCurve, Msm, NativeField, RecursiveEmulation};
 use midnight_curves::serde::SerdeObject;
 use midnight_proofs::utils::{SerdeFormat, helpers::ProcessedSerdeObject};
-use std::{collections::BTreeMap, io};
+use std::{collections::BTreeMap, io, io::Read};
 
 pub trait WriteWithFormat {
     fn write<W: io::Write>(&self, w: &mut W, format: SerdeFormat) -> io::Result<()>;
@@ -89,8 +89,17 @@ impl ReadWithFormat for Msm<RecursiveEmulation> {
             reader.read_exact(&mut key_len)?;
             let key_len = u32::from_le_bytes(key_len);
 
-            let mut key_bytes = vec![0u8; key_len as usize];
-            reader.read_exact(&mut key_bytes)?;
+            // Reading through `take` grows the buffer as bytes arrive, so an overstated prefix
+            // cannot size an allocation on its own.
+            let mut key_bytes = Vec::new();
+            let bytes_read =
+                reader.by_ref().take(u64::from(key_len)).read_to_end(&mut key_bytes)?;
+            if bytes_read != key_len as usize {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    format!("fixed-base key declares {key_len} bytes, {bytes_read} available"),
+                ));
+            }
             let key = String::from_utf8(key_bytes)
                 .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid UTF-8 key"))?;
 
@@ -234,6 +243,26 @@ mod tests {
         prop_assert_eq!(decoded.scalars(), original.scalars());
         prop_assert_eq!(decoded.fixed_base_scalars(), original.fixed_base_scalars());
         Ok(())
+    }
+
+    /// A key length beyond the remaining input is reported as end of input. This does not observe
+    /// the allocation itself: the previous implementation reached the same error once its
+    /// prefix-sized allocation succeeded, so that part of the read path rests on inspection.
+    #[test]
+    fn a_fixed_base_key_longer_than_the_input_is_rejected() {
+        let mut encoding = Vec::new();
+        encoding.extend_from_slice(&0u32.to_le_bytes()); // no bases
+        encoding.extend_from_slice(&0u32.to_le_bytes()); // no scalars
+        encoding.extend_from_slice(&1u32.to_le_bytes()); // one named entry
+        encoding.extend_from_slice(&u32::MAX.to_le_bytes()); // whose key claims 4 GiB
+
+        let error = Msm::<RecursiveEmulation>::read(
+            &mut encoding.as_slice(),
+            SerdeFormat::RawBytesUnchecked,
+        )
+        .expect_err("a key longer than the remaining bytes must be rejected");
+
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
     }
 
     proptest! {
