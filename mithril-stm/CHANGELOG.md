@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.17 (09-11-2026)
+
+### Changed
+
+- Loaded the SNARK prover setups once per process instead of once per aggregation, through a cache the prover factory reads, which takes the SRS read and the key deserialization out of every signing round at the cost of keeping them resident. Reuse is a policy carried by `NonDeterministicSnarkProverFactory::new`, and a cached setup is only served to the protocol parameters and Merkle tree depth it was derived for.
+
+### Fixed
+
+- Keyed the on-disk circuit key cache by configuration, its entries having been compared against the embedded production verifying key: a node running any other protocol parameters always found them stale and re-derived both key pairs from the SRS at every aggregation.
+
 ## 0.12.14 (09-09-2026)
 
 ### Added
