@@ -341,5 +341,13 @@ alter table certificate add column ancillary_prover_data text;
 alter table certificate add column ancillary_verifier_data text;
         "#,
         ),
+        // Migration 45
+        // Add Proof of Bound Possession of the SNARK signing key columns to `signer_registration` table.
+        SqlMigration::new(
+            45,
+            r#"
+alter table signer_registration add column proof_of_bound_possession_for_snark text;
+        "#,
+        ),
     ]
 }
