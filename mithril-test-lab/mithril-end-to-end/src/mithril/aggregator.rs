@@ -18,10 +18,9 @@ use mithril_common::{CardanoNetwork, StdResult, entities};
 use crate::utils::{EnvVars, MithrilCommand, NodeVersion};
 use crate::{
     ANCILLARY_MANIFEST_SECRET_KEY, AggregateSignatureType, DEVNET_DMQ_MAGIC_ID, DEVNET_MAGIC_ID,
-    DmqNodeFlavor, ERA_MARKERS_SECRET_KEY, ERA_MARKERS_VERIFICATION_KEY, FullNode,
-    GENESIS_SECRET_KEY, GENESIS_VERIFICATION_KEY, KuboNode,
-    PROTOCOL_CONFIGURATION_MARKERS_SECRET_KEY, PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY,
-    RetryableDevnetError,
+    DmqNodeFlavor, ERA_MARKERS_SECRET_KEY, ERA_MARKERS_VERIFICATION_KEY, FullNode, GenesisKeys,
+    KuboNode, PROTOCOL_CONFIGURATION_MARKERS_SECRET_KEY,
+    PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY, RetryableDevnetError,
 };
 
 #[derive(Debug)]
@@ -48,6 +47,7 @@ pub struct AggregatorConfig<'a> {
     pub aggregate_signature_type: AggregateSignatureType,
     pub chain_observer_type: &'a str,
     pub leader_aggregator_endpoint: &'a Option<String>,
+    pub genesis_keys: GenesisKeys,
     pub use_dmq: bool,
     pub dmq_node_flavor: &'a Option<DmqNodeFlavor>,
 }
@@ -134,8 +134,14 @@ impl Aggregator {
                 "CARDANO_CLI_PATH",
                 aggregator_config.cardano_cli_path.to_str().unwrap(),
             ),
-            ("GENESIS_VERIFICATION_KEY", GENESIS_VERIFICATION_KEY),
-            ("GENESIS_SECRET_KEY", GENESIS_SECRET_KEY),
+            (
+                "GENESIS_VERIFICATION_KEY",
+                aggregator_config.genesis_keys.verification_key,
+            ),
+            (
+                "GENESIS_SECRET_KEY",
+                aggregator_config.genesis_keys.secret_key,
+            ),
             (
                 "ERA_READER_ADAPTER_TYPE",
                 aggregator_config.mithril_era_reader_adapter,

@@ -18,8 +18,8 @@ use crate::mithril::relay_signer::RelaySignerConfiguration;
 use crate::toolkit::ScenarioToolkit;
 use crate::{
     AggregateSignatureType, Aggregator, AggregatorConfig, Client, DEVNET_MAGIC_ID, Devnet,
-    DmqNodeFlavor, FullNode, IpfsDevnet, KuboNode, PoolNode, RelayAggregator, RelayPassive,
-    RelaySigner, Signer,
+    DmqNodeFlavor, FullNode, GenesisKeys, IpfsDevnet, KuboNode, PoolNode, RelayAggregator,
+    RelayPassive, RelaySigner, Signer,
 };
 
 use super::signer::SignerConfig;
@@ -52,6 +52,7 @@ pub struct MithrilInfrastructureConfig {
     pub startup_protocol_configuration: ProtocolConfiguration,
     pub signed_entity_types: Vec<String>,
     pub aggregate_signature_type: AggregateSignatureType,
+    pub genesis_keys: GenesisKeys,
     pub use_relays: bool,
     pub relay_signer_registration_mode: String,
     pub relay_signature_registration_mode: String,
@@ -102,6 +103,7 @@ impl MithrilInfrastructureConfig {
             },
             signed_entity_types: vec!["type1".to_string()],
             aggregate_signature_type: AggregateSignatureType::Concatenation,
+            genesis_keys: GenesisKeys::LEGACY,
             use_relays: false,
             relay_signer_registration_mode: "passthrough".to_string(),
             relay_signature_registration_mode: "passthrough".to_string(),
@@ -132,6 +134,7 @@ pub struct MithrilInfrastructure {
     era_reader_adapter: String,
     use_era_specific_work_dir: bool,
     aggregate_signature_type: AggregateSignatureType,
+    genesis_keys: GenesisKeys,
 }
 
 impl MithrilInfrastructure {
@@ -236,6 +239,7 @@ impl MithrilInfrastructure {
             era_reader_adapter: config.mithril_era_reader_adapter.clone(),
             use_era_specific_work_dir: config.use_era_specific_work_dir,
             aggregate_signature_type: config.aggregate_signature_type,
+            genesis_keys: config.genesis_keys,
         })
     }
 
@@ -369,6 +373,7 @@ impl MithrilInfrastructure {
             aggregate_signature_type: config.aggregate_signature_type,
             chain_observer_type,
             leader_aggregator_endpoint: &leader_aggregator_endpoint,
+            genesis_keys: config.genesis_keys,
             use_dmq: config.use_dmq,
             dmq_node_flavor: &config.dmq_node_flavor,
         })?;
@@ -642,7 +647,12 @@ impl MithrilInfrastructure {
             artifacts_dir
         };
 
-        Client::new(aggregator.endpoint(), &work_dir, &self.bin_dir)
+        Client::new(
+            aggregator.endpoint(),
+            &work_dir,
+            &self.bin_dir,
+            self.genesis_keys,
+        )
     }
 
     pub async fn tail_logs(&self, number_of_line: u64) -> StdResult<()> {

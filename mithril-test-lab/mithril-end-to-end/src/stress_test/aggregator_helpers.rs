@@ -11,7 +11,7 @@ use mithril_common::{
 };
 
 use crate::{
-    AggregateSignatureType, Aggregator, AggregatorConfig,
+    AggregateSignatureType, Aggregator, AggregatorConfig, GenesisKeys,
     stress_test::{entities::AggregatorParameters, fake_chain, fake_signer, wait},
 };
 
@@ -48,6 +48,7 @@ pub async fn bootstrap_aggregator(
         aggregate_signature_type: AggregateSignatureType::Concatenation,
         chain_observer_type,
         leader_aggregator_endpoint: &None,
+        genesis_keys: GenesisKeys::LEGACY,
         use_dmq: false,
         dmq_node_flavor: &None,
     })
