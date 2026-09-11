@@ -151,14 +151,14 @@ jobs:
             timeout_minutes: 120
           - mode: "minimal-snark"
             aggregate_signature_type: "Snark"
-            run_args: "--mithril-era=lagrange --cardano-slot-length 1.0 --cardano-epoch-length 2400 --mithril-run-interval 240000"
+            run_args: "--mithril-era=lagrange --cardano-slot-length 1.0 --cardano-epoch-length 600 --mithril-run-interval 60000"
             scenario_args: "minimal --signed-entity-type ${{ inputs.minimal-scenario-signed-entity-types }}"
-            timeout_minutes: 350
+            timeout_minutes: 100
           - mode: "minimal-ivc-snark"
             aggregate_signature_type: "IvcSnark"
-            run_args: "--mithril-era=lagrange --cardano-slot-length 1.0 --cardano-epoch-length 2400 --mithril-run-interval 240000"
+            run_args: "--mithril-era=lagrange --cardano-slot-length 1.0 --cardano-epoch-length 900 --mithril-run-interval 120000"
             scenario_args: "minimal --signed-entity-type ${{ inputs.minimal-scenario-signed-entity-types }}"
-            timeout_minutes: 350
+            timeout_minutes: 150
           - mode: "full-concatenation"
             aggregate_signature_type: "Concatenation"
             run_args: "--cardano-slot-length 1.0 --cardano-epoch-length 60"
