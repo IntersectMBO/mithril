@@ -152,6 +152,7 @@ jobs:
             "minimal-snark",
             "minimal-ivc-snark",
             "full-concatenation",
+            "full-mixed-ivc-chained",
           ]
         include:
           - mode: "minimal-concatenation"
@@ -174,24 +175,35 @@ jobs:
             run_args: "--cardano-slot-length 1.0 --cardano-epoch-length 60"
             scenario_args: "full --signed-entity-types ${{ inputs.full-scenario-signed-entity-types }}"
             timeout_minutes: 120
+          # Sized for a 16 cores machine (e.g. 'e2-standard-16'), exceeds the standard GitHub runners capacity
+          - mode: "full-mixed-ivc-chained"
+            aggregate_signature_type: "Concatenation,IvcSnark,IvcSnark"
+            run_args: "--mithril-era=pythagoras --mithril-next-era=lagrange --mithril-era-regenesis-on-switch --cardano-slot-length 1.0 --cardano-epoch-length 900 --mithril-run-interval 60000 --number-of-aggregators=3 --chain-follower-aggregators --use-relays --relay-signer-registration-mode=passthrough --relay-signature-registration-mode=p2p"
+            scenario_args: "full --signed-entity-types CardanoStakeDistribution"
+            timeout_minutes: 390
+            skip: true
 
     steps:
       - name: Checkout
+        if: ${{ !matrix.skip }}
         uses: actions/checkout@v6
 
       - name: Download binaries
+        if: ${{ !matrix.skip }}
         uses: actions/download-artifact@v8
         with:
           name: mithril-binaries-e2e
           path: ./mithril-binaries
 
       - name: Download e2e runner
+        if: ${{ !matrix.skip }}
         uses: actions/download-artifact@v8
         with:
           name: e2e-runner
           path: ./mithril-binaries
 
       - name: Prepare binaries
+        if: ${{ !matrix.skip }}
         shell: bash
         run: |
           chmod +x ./mithril-binaries/mithril-aggregator
@@ -202,6 +214,7 @@ jobs:
           mkdir -p artifacts
 
       - name: Run E2E tests
+        if: ${{ !matrix.skip }}
         uses: nick-fields/retry@v4
         with:
           shell: bash
