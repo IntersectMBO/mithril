@@ -129,15 +129,41 @@ jobs:
           name: e2e-runner
           path: target/release/mithril-end-to-end
 
-  minimal-e2e:
+  e2e:
     runs-on: ubuntu-24.04
     needs: [prepare-env-variables, prepare-binaries, prepare-e2e-runner]
     strategy:
       fail-fast: false
       matrix:
         cardano_node_version: ${{ fromJSON(needs.prepare-env-variables.outputs.cardano_node_versions) }}
-        aggregate_signature_type: ["Concatenation"] #  Todo: add "Snark" once the snark certificate chain is ready
-        extra_args: ["--cardano-slot-length 1.0 --cardano-epoch-length 60"]
+        mode:
+          [
+            "minimal-concatenation",
+            "minimal-snark",
+            "minimal-ivc-snark",
+            "full-concatenation",
+          ]
+        include:
+          - mode: "minimal-concatenation"
+            aggregate_signature_type: "Concatenation"
+            run_args: "--cardano-slot-length 1.0 --cardano-epoch-length 60"
+            scenario_args: "minimal --signed-entity-type ${{ inputs.minimal-scenario-signed-entity-types }}"
+            timeout_minutes: 120
+          - mode: "minimal-snark"
+            aggregate_signature_type: "Snark"
+            run_args: "--mithril-era=lagrange --cardano-slot-length 1.0 --cardano-epoch-length 2400 --mithril-run-interval 240000"
+            scenario_args: "minimal --signed-entity-type ${{ inputs.minimal-scenario-signed-entity-types }}"
+            timeout_minutes: 350
+          - mode: "minimal-ivc-snark"
+            aggregate_signature_type: "IvcSnark"
+            run_args: "--mithril-era=lagrange --cardano-slot-length 1.0 --cardano-epoch-length 2400 --mithril-run-interval 240000"
+            scenario_args: "minimal --signed-entity-type ${{ inputs.minimal-scenario-signed-entity-types }}"
+            timeout_minutes: 350
+          - mode: "full-concatenation"
+            aggregate_signature_type: "Concatenation"
+            run_args: "--cardano-slot-length 1.0 --cardano-epoch-length 60"
+            scenario_args: "full --signed-entity-types ${{ inputs.full-scenario-signed-entity-types }}"
+            timeout_minutes: 120
 
     steps:
       - name: Checkout
@@ -171,7 +197,7 @@ jobs:
           shell: bash
           max_attempts: 3
           retry_on_exit_code: 2
-          timeout_minutes: 120
+          timeout_minutes: ${{ matrix.timeout_minutes }}
           warning_on_retry: true
           command: |
             ./mithril-binaries/mithril-end-to-end -vvv \
@@ -180,7 +206,7 @@ jobs:
               --devnet-scripts-directory=./mithril-test-lab/cardano-devnet \
               --cardano-node-version ${{ matrix.cardano_node_version }} \
               --aggregate-signature-type ${{ matrix.aggregate_signature_type }} \
-              ${{ matrix.extra_args }} minimal --signed-entity-type ${{ inputs.minimal-scenario-signed-entity-types }}
+              ${{ matrix.run_args }} ${{ matrix.scenario_args }}
 
             EXIT_CODE=$?
             if [ $EXIT_CODE -eq 0 ]; then
@@ -197,84 +223,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7
         with:
-          name: mithril-e2e-tests-artifacts-run_${{ github.run_number }}-attempt_${{ github.run_attempt }}-sig_type_${{ matrix.aggregate_signature_type }}-scenario_minimal-cardano-${{ matrix.cardano_node_version }}
-          path: |
-            ./artifacts/*
-            # including node.sock makes the upload fails so exclude them:
-            !./artifacts/**/node.sock
-            # exclude cardano tools, saving ~500mb of data:
-            !./artifacts/devnet/bin/
-          if-no-files-found: error
-
-  full-e2e:
-    runs-on: ubuntu-24.04
-    needs: [prepare-env-variables, prepare-binaries, prepare-e2e-runner]
-    strategy:
-      fail-fast: false
-      matrix:
-        cardano_node_version: ${{ fromJSON(needs.prepare-env-variables.outputs.cardano_node_versions) }}
-        aggregate_signature_type: ["Concatenation"]
-        extra_args: ["--cardano-slot-length 1.0 --cardano-epoch-length 60"]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download binaries
-        uses: actions/download-artifact@v8
-        with:
-          name: mithril-binaries
-          path: ./mithril-binaries
-
-      - name: Download e2e runner
-        uses: actions/download-artifact@v8
-        with:
-          name: e2e-runner
-          path: ./mithril-binaries
-
-      - name: Prepare binaries
-        shell: bash
-        run: |
-          chmod +x ./mithril-binaries/mithril-aggregator
-          chmod +x ./mithril-binaries/mithril-client
-          chmod +x ./mithril-binaries/mithril-signer
-          chmod +x ./mithril-binaries/mithril-relay
-          chmod +x ./mithril-binaries/mithril-end-to-end
-          mkdir -p artifacts
-
-      - name: Run E2E tests
-        uses: nick-fields/retry@v4
-        with:
-          shell: bash
-          max_attempts: 3
-          retry_on_exit_code: 2
-          timeout_minutes: 120
-          warning_on_retry: true
-          command: |
-            ./mithril-binaries/mithril-end-to-end -vvv \
-              --bin-directory ./mithril-binaries/ \
-              --work-directory=./artifacts \
-              --devnet-scripts-directory=./mithril-test-lab/cardano-devnet \
-              --cardano-node-version ${{ matrix.cardano_node_version }} \
-              --aggregate-signature-type ${{ matrix.aggregate_signature_type }} \
-              ${{ matrix.extra_args }} full --signed-entity-types ${{ inputs.full-scenario-signed-entity-types }}
-
-            EXIT_CODE=$?
-            if [ $EXIT_CODE -eq 0 ]; then
-              echo "RESULT=success" >> $GITHUB_ENV
-            elif [ $EXIT_CODE -eq 3 ]; then
-              echo "RESULT=incompatible" >> $GITHUB_ENV
-              exit 0
-            else
-              echo "RESULT=failure" >> $GITHUB_ENV
-            fi
-            exit $EXIT_CODE
-
-      - name: Upload E2E Tests Artifacts
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: mithril-e2e-tests-artifacts-run_${{ github.run_number }}-attempt_${{ github.run_attempt }}-sig_type_${{ matrix.aggregate_signature_type }}-scenario_full-cardano-${{ matrix.cardano_node_version }}
+          name: mithril-e2e-tests-artifacts-run_${{ github.run_number }}-attempt_${{ github.run_attempt }}-mode_${{ matrix.mode }}-cardano-${{ matrix.cardano_node_version }}
           path: |
             ./artifacts/*
             # including node.sock makes the upload fails so exclude them:
