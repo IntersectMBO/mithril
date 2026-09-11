@@ -200,6 +200,7 @@ jobs:
           mithril_image_id: ${{ env.DOCKER_IMAGE_ID }}
           mithril_signers: ${{ toJSON(matrix.mithril_signers) }}
           mithril_genesis_verification_key_url: ${{ vars.GENESIS_VERIFICATION_KEY_URL }}
+          mithril_circuit_verification_key_registry_url: ${{ vars.CIRCUIT_VERIFICATION_KEY_REGISTRY_URL }}
           mithril_era_reader_address_url: ${{ vars.ERA_READER_ADDRESS_URL }}
           mithril_era_reader_verification_key_url: ${{ vars.ERA_READER_VERIFICATION_KEY_URL }}
           mithril_protocol_configuration_reader_address_url: ${{ vars.PROTOCOL_CONFIGURATION_READER_ADDRESS_URL }}

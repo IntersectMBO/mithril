@@ -125,6 +125,10 @@ inputs:
   mithril_genesis_verification_key_url:
     description: Mithril genesis verification key location.
     required: true
+  mithril_circuit_verification_key_registry_url:
+    description: Mithril signed circuit verification key registry location (only for SNARK aggregate signature types).
+    required: false
+    default: ""
   mithril_era_reader_adapter_type:
     description: Mithril era reader adapter type.
     required: false
@@ -311,6 +315,7 @@ runs:
           mithril_api_domain                                                           = "${{ inputs.mithril_api_domain }}"
           mithril_image_id                                                             = "${{ inputs.mithril_image_id }}"
           mithril_genesis_verification_key_url                                         = "${{ inputs.mithril_genesis_verification_key_url }}"
+          mithril_circuit_verification_key_registry_url                                = "${{ inputs.mithril_circuit_verification_key_registry_url }}"
           mithril_genesis_secret_key                                                   = "${{ inputs.mithril_genesis_secret_key }}"
           mithril_signers                                                              = ${{ fromJSON(inputs.mithril_signers) }}
           mithril_era_reader_adapter_type                                              = "${{ inputs.mithril_era_reader_adapter_type }}"
