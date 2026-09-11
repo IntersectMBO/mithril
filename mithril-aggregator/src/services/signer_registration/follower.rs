@@ -359,7 +359,9 @@ mod tests {
                 let mut signer_registration_verifier = MockSignerRegistrationVerifier::new();
                 signer_registration_verifier
                     .expect_verify()
-                    .returning(|signer, _| Ok(SignerWithStake::from_signer(signer.to_owned(), 123)))
+                    .returning(|signer, _, #[cfg(feature = "future_snark")] _| {
+                        Ok(SignerWithStake::from_signer(signer.to_owned(), 123))
+                    })
                     .times(5);
 
                 Arc::new(signer_registration_verifier)
@@ -421,7 +423,9 @@ mod tests {
                 let mut signer_registration_verifier = MockSignerRegistrationVerifier::new();
                 signer_registration_verifier
                     .expect_verify()
-                    .returning(|signer, _| Ok(SignerWithStake::from_signer(signer.to_owned(), 123)))
+                    .returning(|signer, _, #[cfg(feature = "future_snark")] _| {
+                        Ok(SignerWithStake::from_signer(signer.to_owned(), 123))
+                    })
                     .times(5);
 
                 Arc::new(signer_registration_verifier)
@@ -488,7 +492,9 @@ mod tests {
                 let mut signer_registration_verifier = MockSignerRegistrationVerifier::new();
                 signer_registration_verifier
                     .expect_verify()
-                    .returning(|signer, _| Ok(SignerWithStake::from_signer(signer.to_owned(), 123)))
+                    .returning(|signer, _, #[cfg(feature = "future_snark")] _| {
+                        Ok(SignerWithStake::from_signer(signer.to_owned(), 123))
+                    })
                     .times(5);
 
                 Arc::new(signer_registration_verifier)
