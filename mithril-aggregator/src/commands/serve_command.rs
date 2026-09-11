@@ -5,6 +5,8 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+#[cfg(feature = "future_snark")]
+use std::{thread, time::Instant};
 
 use anyhow::Context;
 use chrono::TimeDelta;
@@ -20,6 +22,11 @@ use mithril_cli_helper::{
 };
 use mithril_common::StdResult;
 use mithril_common::entities::SignedEntityTypeDiscriminants;
+#[cfg(feature = "future_snark")]
+use mithril_common::{
+    AggregateSignatureType,
+    crypto_helper::{ProtocolParameters, SnarkProverSetupWarmer},
+};
 use mithril_doc::{Documenter, DocumenterDefault, StructDoc};
 use mithril_metric::MetricsServer;
 
@@ -118,6 +125,84 @@ impl Source for ServeCommand {
 }
 
 impl ServeCommand {
+    /// Warms up the aggregate signature prover on a thread of its own, so the first signing round
+    /// does not materialize the prover setup inside its aggregation and a shutdown never waits for it.
+    ///
+    /// Best effort: on any failure the setup is materialized on first use, as it would be without
+    /// this. A concatenation aggregate signature has no setup to warm up.
+    #[cfg(feature = "future_snark")]
+    async fn warm_up_aggregate_signature_prover(
+        dependencies_builder: &mut DependenciesBuilder,
+        configuration: &ServeCommandConfiguration,
+        logger: &Logger,
+    ) {
+        let aggregate_signature_type = configuration.aggregate_signature_type;
+        if aggregate_signature_type == AggregateSignatureType::Concatenation {
+            return;
+        }
+
+        let protocol_parameters = match Self::protocol_parameters_for_aggregation(
+            dependencies_builder,
+        )
+        .await
+        {
+            Ok(protocol_parameters) => protocol_parameters,
+            Err(error) => {
+                warn!(
+                    logger,
+                    "Could not read the protocol parameters to warm up the aggregate signature prover";
+                    "error" => ?error
+                );
+                return;
+            }
+        };
+
+        info!(
+            logger,
+            "Warming up the aggregate signature prover, which takes a few minutes; the first \
+             signing round waits for it if it is not finished by then";
+            "aggregate_signature_type" => %aggregate_signature_type
+        );
+        let logger = logger.clone();
+
+        thread::spawn(move || {
+            let started_at = Instant::now();
+            match SnarkProverSetupWarmer::warm(&protocol_parameters, aggregate_signature_type) {
+                Ok(()) => info!(
+                    logger, "Aggregate signature prover warmed up";
+                    "elapsed_seconds" => started_at.elapsed().as_secs()
+                ),
+                Err(error) => warn!(
+                    logger, "Failed to warm up the aggregate signature prover";
+                    "error" => ?error
+                ),
+            }
+        });
+    }
+
+    /// Protocol parameters the current epoch aggregates with.
+    #[cfg(feature = "future_snark")]
+    async fn protocol_parameters_for_aggregation(
+        dependencies_builder: &mut DependenciesBuilder,
+    ) -> StdResult<ProtocolParameters> {
+        let epoch = dependencies_builder
+            .get_ticker_service()
+            .await?
+            .get_current_epoch()
+            .await?;
+        let network_configuration = dependencies_builder
+            .get_mithril_network_configuration_provider()
+            .await?
+            .get_network_configuration(epoch)
+            .await?;
+
+        Ok(ProtocolParameters::from(
+            network_configuration
+                .configuration_for_aggregation
+                .protocol_parameters,
+        ))
+    }
+
     pub async fn execute(
         &self,
         root_logger: Logger,
@@ -159,6 +244,10 @@ impl ServeCommand {
             &root_logger,
         )
         .await?;
+
+        #[cfg(feature = "future_snark")]
+        Self::warm_up_aggregate_signature_prover(&mut dependencies_builder, &config, &root_logger)
+            .await;
 
         // Start the aggregator runtime
         let mut runtime = dependencies_builder
