@@ -66,6 +66,15 @@ impl ReadWithFormat for Msm<RecursiveEmulation> {
         reader.read_exact(&mut num_scalars)?;
         let num_scalars = u32::from_le_bytes(num_scalars);
 
+        // `Msm::new` asserts the two counts agree, so a mismatch has to be rejected here rather
+        // than carried into the constructor.
+        if num_scalars != num_bases {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("MSM declares {num_bases} bases and {num_scalars} scalars"),
+            ));
+        }
+
         let scalars: Vec<_> = (0..num_scalars)
             .map(|_| NativeField::read_raw(reader))
             .collect::<Result<_, _>>()?;
@@ -271,7 +280,6 @@ mod tests {
         }
 
         #[test]
-        #[ignore = "mismatched counts reach an asserting constructor and panic instead of returning an error"]
         fn mismatched_point_and_scalar_counts_are_rejected(
             point_count in 0usize..=2, scalar_count in 0usize..=2,
         ) {
