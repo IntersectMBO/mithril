@@ -7,11 +7,11 @@ use slog::{Logger, info, trace, warn};
 use thiserror::Error;
 
 use mithril_common::crypto_helper::{KesPeriod, KesSigner, ProtocolInitializer};
+#[cfg(feature = "future_snark")]
+use mithril_common::entities::{Epoch, SignerWithStake, SupportedEra};
 use mithril_common::entities::{
     PartyId, ProtocolMessage, ProtocolParameters, SingleSignature, Stake,
 };
-#[cfg(feature = "future_snark")]
-use mithril_common::entities::{SignerWithStake, SupportedEra};
 use mithril_common::logging::LoggerExtensions;
 use mithril_common::protocol::{SignerBuilder, SingleSigner as ProtocolSingleSigner};
 use mithril_common::{StdError, StdResult};
@@ -28,6 +28,7 @@ impl MithrilProtocolInitializerBuilder {
         protocol_parameters: &ProtocolParameters,
         kes_signer: Option<Arc<dyn KesSigner>>,
         kes_period: Option<KesPeriod>,
+        #[cfg(feature = "future_snark")] epoch: Epoch,
     ) -> StdResult<ProtocolInitializer> {
         let mut rng = rand_core::OsRng;
         let protocol_initializer = ProtocolInitializer::setup(
@@ -35,6 +36,8 @@ impl MithrilProtocolInitializerBuilder {
             kes_signer,
             kes_period,
             stake.to_owned(),
+            #[cfg(feature = "future_snark")]
+            epoch,
             &mut rng,
         )?;
 

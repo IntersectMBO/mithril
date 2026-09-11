@@ -68,7 +68,12 @@ impl MithrilSignerRegistrationFollower {
         for signer in signers {
             let signer_with_stake = self
                 .signer_registration_verifier
-                .verify(signer, stake_distribution)
+                .verify(
+                    signer,
+                    stake_distribution,
+                    #[cfg(feature = "future_snark")]
+                    epoch,
+                )
                 .await
                 .map_err(|err| {
                     SignerRegistrationError::InvalidSignerRegistration(

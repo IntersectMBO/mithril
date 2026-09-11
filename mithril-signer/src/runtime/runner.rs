@@ -214,6 +214,8 @@ impl Runner for SignerRunner {
                 &protocol_parameters,
                 self.services.kes_signer.clone(),
                 current_kes_period,
+                #[cfg(feature = "future_snark")]
+                epoch_offset_to_recording_epoch,
             )?;
 
             let signer = Signer {
@@ -232,6 +234,9 @@ impl Runner for SignerRunner {
                 #[cfg(feature = "future_snark")]
                 verification_key_signature_for_snark: protocol_initializer
                     .verification_key_signature_for_snark(),
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: protocol_initializer
+                    .proof_of_bound_possession_for_snark(),
             };
             self.services
                 .signer_registration_publisher

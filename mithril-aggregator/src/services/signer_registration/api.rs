@@ -87,6 +87,7 @@ pub trait SignerRegistrationVerifier: Send + Sync {
         &self,
         signer: &Signer,
         stake_distribution: &StakeDistribution,
+        #[cfg(feature = "future_snark")] epoch: Epoch,
     ) -> StdResult<SignerWithStake>;
 }
 

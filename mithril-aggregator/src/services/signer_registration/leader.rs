@@ -96,7 +96,12 @@ impl SignerRegisterer for MithrilSignerRegistrationLeader {
 
         let signer_save = self
             .signer_registration_verifier
-            .verify(signer, &registration_round.stake_distribution)
+            .verify(
+                signer,
+                &registration_round.stake_distribution,
+                #[cfg(feature = "future_snark")]
+                epoch,
+            )
             .await
             .map_err(|err| {
                 SignerRegistrationError::InvalidSignerRegistration(

@@ -31,6 +31,7 @@ impl SignerRegistrationVerifier for MithrilSignerRegistrationVerifier {
         &self,
         signer: &Signer,
         stake_distribution: &StakeDistribution,
+        #[cfg(feature = "future_snark")] epoch: Epoch,
     ) -> StdResult<SignerWithStake> {
         let mut key_registration = ProtocolKeyRegistration::init(
             &stake_distribution
@@ -64,7 +65,12 @@ impl SignerRegistrationVerifier for MithrilSignerRegistrationVerifier {
                 verification_key_for_snark: signer.verification_key_for_snark,
                 #[cfg(feature = "future_snark")]
                 verification_key_signature_for_snark: signer.verification_key_signature_for_snark,
-            })
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: signer.proof_of_bound_possession_for_snark,
+            },
+            #[cfg(feature = "future_snark")] 
+            epoch,
+        )
             .with_context(|| {
                 format!(
                     "KeyRegwrapper can not register signer with party_id: '{party_id_register:?}', kes_evolutions: '{kes_evolutions:?}'"
@@ -100,7 +106,12 @@ mod tests {
         ));
 
         signer_registration_verifier
-            .verify(&signer_to_register, &fixture.stake_distribution())
+            .verify(
+                &signer_to_register,
+                &fixture.stake_distribution(),
+                #[cfg(feature = "future_snark")]
+                Epoch::default(),
+            )
             .await
             .unwrap();
     }
@@ -118,7 +129,12 @@ mod tests {
         ));
 
         signer_registration_verifier
-            .verify(&signer_to_register, &fixture.stake_distribution())
+            .verify(
+                &signer_to_register,
+                &fixture.stake_distribution(),
+                #[cfg(feature = "future_snark")]
+                Epoch::default(),
+            )
             .await
             .expect_err("Verification should fail");
     }
