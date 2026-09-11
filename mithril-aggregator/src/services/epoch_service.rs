@@ -422,6 +422,8 @@ impl EpochService for MithrilEpochService {
                 .network_configuration
                 .configuration_for_aggregation
                 .protocol_parameters,
+            #[cfg(feature = "future_snark")]
+            data.epoch.offset_to_signer_retrieval_epoch_saturating(),
         )
         .with_context(|| "Epoch service failed to build protocol multi signer")?
         .build_multi_signer();
@@ -432,6 +434,8 @@ impl EpochService for MithrilEpochService {
                 .network_configuration
                 .configuration_for_next_aggregation
                 .protocol_parameters,
+            #[cfg(feature = "future_snark")]
+            data.epoch.offset_to_next_signer_retrieval_epoch(),
         )
         .with_context(|| "Epoch service failed to build next protocol multi signer")?
         .build_multi_signer();
@@ -570,6 +574,8 @@ impl FakeEpochServiceBuilder {
         let protocol_multi_signer = SignerBuilder::new(
             &self.current_signers_with_stake,
             &self.current_epoch_settings.protocol_parameters,
+            #[cfg(feature = "future_snark")]
+            self.epoch,
         )
         .with_context(|| "Could not build protocol_multi_signer for epoch service")
         .unwrap()
@@ -577,6 +583,8 @@ impl FakeEpochServiceBuilder {
         let next_protocol_multi_signer = SignerBuilder::new(
             &self.next_signers_with_stake,
             &self.next_epoch_settings.protocol_parameters,
+            #[cfg(feature = "future_snark")]
+            self.epoch.offset_to_next_signer_retrieval_epoch(),
         )
         .with_context(|| "Could not build protocol_multi_signer for epoch service")
         .unwrap()
@@ -1287,6 +1295,8 @@ mod tests {
         let signer_builder = SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
+            #[cfg(feature = "future_snark")]
+            epoch,
         )
         .unwrap();
         service.computed_epoch_data = Some(ComputedEpochData {

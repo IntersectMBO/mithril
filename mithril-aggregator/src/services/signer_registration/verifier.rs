@@ -4,6 +4,8 @@ use anyhow::Context;
 use async_trait::async_trait;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserver;
+#[cfg(feature = "future_snark")]
+use mithril_common::entities::Epoch;
 use mithril_common::{
     StdResult,
     crypto_helper::{ProtocolKeyRegistration, SignerRegistrationParameters},
