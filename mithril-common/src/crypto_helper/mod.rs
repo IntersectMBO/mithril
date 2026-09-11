@@ -29,6 +29,8 @@ pub use mithril_merkle_tree::{
     Bytes, MKMap, MKMapKey, MKMapNode, MKMapProof, MKMapValue, MKProof, MKTree, MKTreeLeafIndexer,
     MKTreeLeafPosition, MKTreeNode, MKTreeStoreInMemory, MKTreeStorer,
 };
+#[cfg(feature = "future_snark")]
+pub use mithril_stm::SnarkProverSetupWarmer;
 pub use types::*;
 
 /// The current protocol version
