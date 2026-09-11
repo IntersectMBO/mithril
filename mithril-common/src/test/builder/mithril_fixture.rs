@@ -184,9 +184,14 @@ impl MithrilFixture {
 
     /// Compute the Aggregate Verification Key for this fixture.
     pub fn compute_aggregate_verification_key(&self) -> ProtocolAggregateVerificationKey {
-        SignerBuilder::new(&self.signers_with_stake(), &self.protocol_parameters)
-            .unwrap()
-            .compute_aggregate_verification_key()
+        SignerBuilder::new(
+            &self.signers_with_stake(),
+            &self.protocol_parameters,
+            #[cfg(feature = "future_snark")]
+            Epoch::default(),
+        )
+        .unwrap()
+        .compute_aggregate_verification_key()
     }
 
     /// Compute the Aggregate Verification Key for concatenation for this fixture.

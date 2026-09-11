@@ -120,6 +120,8 @@ impl MultiSigner {
 mod test {
     use mithril_stm::BlsSignatureError;
 
+    #[cfg(feature = "future_snark")]
+    use crate::entities::Epoch;
     use crate::{
         crypto_helper::ProtocolAggregationError,
         entities::{ProtocolMessage, ProtocolMessagePartKey, ProtocolParameters},
@@ -136,6 +138,8 @@ mod test {
         SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
+            #[cfg(feature = "future_snark")]
+            Epoch::default(),
         )
         .unwrap()
         .build_multi_signer()

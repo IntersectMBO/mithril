@@ -50,6 +50,8 @@ mod tests {
                     verification_key_for_snark: None,
                     #[cfg(feature = "future_snark")]
                     verification_key_signature_for_snark: None,
+                    #[cfg(feature = "future_snark")]
+                    proof_of_bound_possession_for_snark: None,
                 },
             ],
             hash: "hash-123".to_string(),

@@ -164,6 +164,10 @@ impl MithrilEpochService {
                 verification_key_signature_for_snark: signer
                     .verification_key_signature_for_snark
                     .to_owned(),
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: signer
+                    .proof_of_bound_possession_for_snark
+                    .to_owned(),
             });
             trace!(
                 self.logger,
@@ -516,6 +520,8 @@ mod tests {
             &fake_data::protocol_parameters(),
             None,
             None,
+            #[cfg(feature = "future_snark")]
+            Epoch::default(),
         )
         .unwrap();
         let connection = Arc::new(main_db_connection().unwrap());

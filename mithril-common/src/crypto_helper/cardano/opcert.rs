@@ -256,6 +256,13 @@ impl OpCert {
         hex::encode(hasher.finalize())
     }
 
+    // /// Compute protocol party id as bytes
+    // pub fn compute_protocol_party_id_as_bytes(&self) -> [0u8; 28] {
+    //     let mut hasher = Blake2b::<U28>::new();
+    //     hasher.update(self.cold_vk.as_bytes());
+    //     hasher.finalize().as_bytes()
+    // }
+
     /// Compute the hash of an OpCert
     pub fn compute_hash(&self) -> String {
         let mut hasher = Sha256::new();

@@ -122,6 +122,8 @@ impl MithrilSingleSigner {
         let builder = SignerBuilder::new(
             &current_signers_with_stake,
             &protocol_initializer.get_protocol_parameters().into(),
+            #[cfg(feature = "future_snark")]
+            epoch_service.epoch_of_current_data()?,
         )
         .with_context(|| "Mithril Single Signer can not build signer")
         .map_err(SingleSignerError::ProtocolSignerCreationFailure)?;

@@ -109,6 +109,8 @@ mod tests {
                 verification_key_for_snark: None,
                 #[cfg(feature = "future_snark")]
                 verification_key_signature_for_snark: None,
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: None,
             }],
             next_signers: vec![SignerMessagePart {
                 party_id: "456".to_string(),
@@ -120,6 +122,8 @@ mod tests {
                 verification_key_for_snark: None,
                 #[cfg(feature = "future_snark")]
                 verification_key_signature_for_snark: None,
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: None,
             }],
             cardano_transactions_signing_config: Some(CardanoTransactionsSigningConfig {
                 security_parameter: BlockNumberOffset(70),
@@ -147,6 +151,8 @@ mod tests {
                 verification_key_for_snark: None,
                 #[cfg(feature = "future_snark")]
                 verification_key_signature_for_snark: None,
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: None,
             }],
             next_signers: vec![SignerMessagePart {
                 party_id: "456".to_string(),
@@ -158,6 +164,8 @@ mod tests {
                 verification_key_for_snark: None,
                 #[cfg(feature = "future_snark")]
                 verification_key_signature_for_snark: None,
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: None,
             }],
             cardano_transactions_signing_config: Some(CardanoTransactionsSigningConfig {
                 security_parameter: BlockNumberOffset(70),
@@ -185,6 +193,8 @@ mod tests {
                 verification_key_for_snark: None,
                 #[cfg(feature = "future_snark")]
                 verification_key_signature_for_snark: None,
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: None,
             }],
             next_signers: vec![SignerMessagePart {
                 party_id: "456".to_string(),
@@ -196,6 +206,8 @@ mod tests {
                 verification_key_for_snark: None,
                 #[cfg(feature = "future_snark")]
                 verification_key_signature_for_snark: None,
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: None,
             }],
             cardano_transactions_signing_config: Some(CardanoTransactionsSigningConfig {
                 security_parameter: BlockNumberOffset(70),
