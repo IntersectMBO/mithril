@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use warp::Filter;
+use warp::filters::BoxedFilter;
 
 use crate::http_server::routes::middlewares;
 use crate::http_server::routes::router::RouterState;
@@ -40,12 +41,11 @@ impl CardanoBlockProofQueryParams {
     }
 }
 
-pub fn routes(
-    router_state: &RouterState,
-) -> impl Filter<Extract = (impl warp::Reply + use<>,), Error = warp::Rejection> + Clone + use<> {
+pub fn routes(router_state: &RouterState) -> BoxedFilter<(impl warp::Reply + use<>,)> {
     proof_cardano_transaction(router_state)
         .or(proof_v2_cardano_transaction(router_state))
         .or(proof_v2_cardano_block(router_state))
+        .boxed()
 }
 
 /// GET /proof/cardano-transaction

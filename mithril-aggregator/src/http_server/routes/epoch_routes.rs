@@ -1,12 +1,11 @@
 use warp::Filter;
+use warp::filters::BoxedFilter;
 
 use crate::http_server::routes::middlewares;
 use crate::http_server::routes::router::RouterState;
 
-pub fn routes(
-    router_state: &RouterState,
-) -> impl Filter<Extract = (impl warp::Reply + use<>,), Error = warp::Rejection> + Clone + use<> {
-    epoch_settings(router_state)
+pub fn routes(router_state: &RouterState) -> BoxedFilter<(impl warp::Reply + use<>,)> {
+    epoch_settings(router_state).boxed()
 }
 
 /// GET /epoch-settings
