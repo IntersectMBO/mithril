@@ -388,6 +388,8 @@ mod tests {
     }
 
     mod validate_transition {
+        use proptest::prelude::*;
+
         use crate::{
             MithrilMembershipDigest,
             circuits::halo2_ivc::types::ProtocolParametersHash,
@@ -572,6 +574,162 @@ mod tests {
                 .unwrap_err();
 
             let circuit_error = err
+                .downcast_ref::<IvcCircuitError>()
+                .expect("error chain should carry IvcCircuitError");
+            assert!(matches!(
+                circuit_error,
+                IvcCircuitError::InvalidEpochTransition {
+                    kind: EpochTransitionErrorKind::EpochOverflow,
+                    ..
+                }
+            ));
+        }
+
+        // --- Epoch relation property ---
+        // Overflow is checked first; otherwise the relation between the two epochs selects the
+        // branch, and acceptance additionally needs that branch's state guards. Each relation is
+        // constructed from the generated epoch rather than sampled, because a uniform pair of
+        // `u64` values rarely lands on any of the relations that matter.
+
+        /// The rolling state and the aggregate key do not depend on the incoming epoch, so a case
+        /// builds them once and varies only the preimage.
+        fn classify(
+            rolling_state: &IvcRollingState,
+            aggregate_verification_key: &AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
+            incoming_certificate_epoch: u64,
+        ) -> StmResult<(IvcTransitionType, MessageHash, MerkleTreeCommitment)> {
+            let preimage = build_standard_preimage(EpochNumber::new(incoming_certificate_epoch));
+            rolling_state.validate_transition(&preimage, aggregate_verification_key, &[0u8; 32])
+        }
+
+        fn assert_classified_as(
+            rolling_state: &IvcRollingState,
+            aggregate_verification_key: &AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
+            incoming_certificate_epoch: u64,
+            expected: IvcTransitionType,
+        ) -> Result<(), TestCaseError> {
+            match classify(
+                rolling_state,
+                aggregate_verification_key,
+                incoming_certificate_epoch,
+            ) {
+                Ok((transition_type, _, _)) => {
+                    prop_assert_eq!(transition_type, expected);
+                    Ok(())
+                }
+                Err(error) => Err(TestCaseError::fail(format!(
+                    "incoming epoch {incoming_certificate_epoch} should have been accepted: {error}"
+                ))),
+            }
+        }
+
+        fn assert_rejected_as_epoch_gap(
+            rolling_state: &IvcRollingState,
+            aggregate_verification_key: &AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
+            last_committed_epoch: u64,
+            incoming_certificate_epoch: u64,
+        ) -> Result<(), TestCaseError> {
+            let error = match classify(
+                rolling_state,
+                aggregate_verification_key,
+                incoming_certificate_epoch,
+            ) {
+                Ok(_) => {
+                    return Err(TestCaseError::fail(format!(
+                        "incoming epoch {incoming_certificate_epoch} should have been rejected \
+                         against last committed epoch {last_committed_epoch}"
+                    )));
+                }
+                Err(error) => error,
+            };
+            prop_assert_eq!(
+                error.downcast_ref::<IvcCircuitError>(),
+                Some(&IvcCircuitError::InvalidEpochTransition {
+                    kind: EpochTransitionErrorKind::EpochGap {
+                        incoming_certificate_epoch,
+                        last_committed_epoch,
+                    },
+                    last_committed_epoch,
+                })
+            );
+            Ok(())
+        }
+
+        prop_compose! {
+            /// Below `u64::MAX` so the overflow check does not intercept, at least 1 so a backward
+            /// epoch exists, and at most `MAX - 2` so a forward gap exists.
+            fn arb_epoch_with_gaps_on_both_sides()(
+                last_committed_epoch in 1u64..u64::MAX - 1,
+            )(
+                backward_offset in 1u64..=last_committed_epoch,
+                forward_offset in 2u64..=(u64::MAX - last_committed_epoch),
+                last_committed_epoch in Just(last_committed_epoch),
+            ) -> (u64, u64, u64) {
+                (last_committed_epoch, backward_offset, forward_offset)
+            }
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(100))]
+
+            #[test]
+            fn the_epoch_relation_selects_the_transition(
+                (last_committed_epoch, backward_offset, forward_offset)
+                    in arb_epoch_with_gaps_on_both_sides(),
+            ) {
+                let rolling_state = build_standard_rolling_state(
+                    StepCounter::new(5),
+                    EpochNumber::new(last_committed_epoch),
+                );
+                let aggregate_verification_key = avk_with_zero_root();
+
+                assert_classified_as(
+                    &rolling_state,
+                    &aggregate_verification_key,
+                    last_committed_epoch,
+                    IvcTransitionType::SameEpoch,
+                )?;
+                assert_classified_as(
+                    &rolling_state,
+                    &aggregate_verification_key,
+                    last_committed_epoch + 1,
+                    IvcTransitionType::NextEpoch,
+                )?;
+
+                // Force the nearest rejected epochs to catch off-by-one acceptance; the sampled
+                // gaps retain coverage of other distances.
+                for incoming_certificate_epoch in [
+                    last_committed_epoch - 1,
+                    last_committed_epoch + 2,
+                    last_committed_epoch - backward_offset,
+                    last_committed_epoch + forward_offset,
+                ] {
+                    assert_rejected_as_epoch_gap(
+                        &rolling_state,
+                        &aggregate_verification_key,
+                        last_committed_epoch,
+                        incoming_certificate_epoch,
+                    )?;
+                }
+            }
+        }
+
+        #[test]
+        fn a_last_committed_epoch_below_the_maximum_still_advances() {
+            let rolling_state =
+                build_standard_rolling_state(StepCounter::new(5), EpochNumber::new(u64::MAX - 1));
+            let (transition_type, _, _) = classify(&rolling_state, &avk_with_zero_root(), u64::MAX)
+                .expect("the last advanceable epoch must still be accepted");
+            assert_eq!(transition_type, IvcTransitionType::NextEpoch);
+        }
+
+        #[test]
+        fn a_maximum_last_committed_epoch_is_rejected_even_for_a_same_epoch_certificate() {
+            let rolling_state =
+                build_standard_rolling_state(StepCounter::new(5), EpochNumber::new(u64::MAX));
+            let error = classify(&rolling_state, &avk_with_zero_root(), u64::MAX)
+                .expect_err("a maximum last committed epoch cannot advance");
+            let circuit_error = error
                 .downcast_ref::<IvcCircuitError>()
                 .expect("error chain should carry IvcCircuitError");
             assert!(matches!(
