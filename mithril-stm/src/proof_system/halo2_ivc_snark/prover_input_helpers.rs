@@ -184,21 +184,6 @@ pub(crate) mod tests {
         )
     }
 
-    fn build_rolling_state_with_protocol_parameters(
-        step_counter: StepCounter,
-        current_epoch: EpochNumber,
-        current_pp: ProtocolParametersHash,
-        next_pp: ProtocolParametersHash,
-    ) -> IvcRollingState {
-        build_rolling_state(
-            step_counter,
-            current_epoch,
-            MerkleTreeCommitment::ZERO,
-            current_pp,
-            next_pp,
-        )
-    }
-
     pub(crate) fn build_preimage(
         current_epoch: EpochNumber,
         next_merkle_tree_commitment_bytes: [u8; 32],
@@ -217,14 +202,6 @@ pub(crate) mod tests {
         build_preimage(current_epoch, [0u8; 32], [0u8; 32])
     }
 
-    fn protocol_parameters_from_u64(value: u64) -> ProtocolParametersHash {
-        ProtocolParametersHash::from_field(BaseFieldElement::from(value).0)
-    }
-
-    fn merkle_tree_commitment_from_u64(value: u64) -> MerkleTreeCommitment {
-        MerkleTreeCommitment::from_field(BaseFieldElement::from(value).0)
-    }
-
     pub(crate) fn merkle_tree_commitment_from_bytes(bytes: [u8; 32]) -> MerkleTreeCommitment {
         MerkleTreeCommitment::from_field(
             BaseFieldElement::from_raw(&bytes)
@@ -233,116 +210,163 @@ pub(crate) mod tests {
         )
     }
 
-    fn message_hash_from_u64(value: u64) -> MessageHash {
-        MessageHash::from_field(BaseFieldElement::from(value).0)
-    }
-
     mod build_next_state {
+        use std::sync::OnceLock;
+
+        use proptest::prelude::*;
 
         use super::*;
+        use crate::circuits::halo2_ivc::NativeField;
 
-        #[test]
-        fn same_epoch_keeps_current_protocol_parameters() {
-            let pp_current = protocol_parameters_from_u64(1);
-            let pp_next = protocol_parameters_from_u64(2);
-            let rolling_state = build_rolling_state_with_protocol_parameters(
-                StepCounter::new(5),
-                EpochNumber::new(3),
-                pp_current,
-                pp_next,
-            );
-            let preimage = build_standard_preimage(EpochNumber::new(3));
-            let next_state = build_next_state(
-                IvcTransitionType::SameEpoch,
-                &rolling_state,
-                MessageHash::ZERO,
-                MerkleTreeCommitment::ZERO,
-                &preimage,
-            )
-            .unwrap();
-            assert_eq!(next_state.protocol_parameters, pp_current);
+        // --- Field-source property ---
+        // The helper's whole job is choosing, per output field, between the rolling state, the
+        // certificate arguments and the preimage. Each source is generated independently so that a
+        // wrong choice shows up, rather than being hidden by two sources holding the same value.
+
+        /// `build_next_state` never reads the signature, so one is minted for the whole run
+        /// rather than generating a Schnorr key per case.
+        fn cached_signature() -> StandardSchnorrSignature {
+            static SIGNATURE: OnceLock<StandardSchnorrSignature> = OnceLock::new();
+            *SIGNATURE.get_or_init(build_signature)
         }
 
-        #[test]
-        fn next_epoch_promotes_lookahead_protocol_parameters() {
-            let pp_current = protocol_parameters_from_u64(1);
-            let pp_next = protocol_parameters_from_u64(2);
-            let rolling_state = build_rolling_state_with_protocol_parameters(
-                StepCounter::new(5),
-                EpochNumber::new(3),
-                pp_current,
-                pp_next,
-            );
-            let preimage = build_standard_preimage(EpochNumber::new(4));
-            let next_state = build_next_state(
-                IvcTransitionType::NextEpoch,
-                &rolling_state,
-                MessageHash::ZERO,
-                MerkleTreeCommitment::ZERO,
-                &preimage,
-            )
-            .unwrap();
-            assert_eq!(next_state.protocol_parameters, pp_next);
+        fn reduced_field_element(bytes: &[u8; 32]) -> NativeField {
+            BaseFieldElement::from_raw(bytes)
+                .expect("from_raw applies modulus reduction and cannot fail")
+                .0
         }
 
-        #[test]
-        fn advances_step_counter_by_one() {
-            let rolling_state =
-                build_standard_rolling_state(StepCounter::new(7), EpochNumber::new(3));
-            let preimage = build_standard_preimage(EpochNumber::new(3));
-            let next_state = build_next_state(
-                IvcTransitionType::SameEpoch,
-                &rolling_state,
-                MessageHash::ZERO,
-                MerkleTreeCommitment::ZERO,
-                &preimage,
-            )
-            .unwrap();
-            assert_eq!(next_state.step_counter, StepCounter::new(8));
+        prop_compose! {
+            /// Counters the examples never reach: either side of the 32-bit boundary, where a
+            /// narrowed increment goes wrong, and the last advanceable value.
+            fn arb_advanceable_step_counter()(
+                counter in prop_oneof![
+                    0u64..=64,
+                    (1u64 << 32) - 8..=(1u64 << 32) + 8,
+                    Just(u64::MAX - 1),
+                    0u64..u64::MAX,
+                ],
+            ) -> StepCounter {
+                StepCounter::new(counter)
+            }
         }
 
-        #[test]
-        fn produces_state_with_expected_field_plumbing() {
-            let pp_current = protocol_parameters_from_u64(7);
-            let pp_next = protocol_parameters_from_u64(8);
-            let rolling_state = build_rolling_state(
-                StepCounter::new(5),
-                EpochNumber::new(3),
-                merkle_tree_commitment_from_bytes([0x33; 32]),
-                pp_current,
-                pp_next,
-            );
-
-            let cert_message = message_hash_from_u64(99);
-            let cert_merkle_tree_commitment = merkle_tree_commitment_from_u64(98);
-            let preimage_cert_epoch = EpochNumber::new(4);
-            let preimage = build_preimage(preimage_cert_epoch, [0x44; 32], [0x55; 32]);
-
-            let next_state = build_next_state(
-                IvcTransitionType::NextEpoch,
-                &rolling_state,
-                cert_message,
-                cert_merkle_tree_commitment,
-                &preimage,
+        /// Built field by field rather than through the shared fixtures, which force several
+        /// state fields to zero.
+        fn build_fully_populated_rolling_state(
+            step_counter: StepCounter,
+            current_epoch: EpochNumber,
+            message: [u8; 32],
+            merkle_tree_commitment: [u8; 32],
+            next_merkle_tree_commitment: [u8; 32],
+            protocol_parameters: [u8; 32],
+            next_protocol_parameters: [u8; 32],
+        ) -> IvcRollingState {
+            IvcRollingState::new(
+                State::new(
+                    step_counter,
+                    MessageHash::from_field(reduced_field_element(&message)),
+                    MerkleTreeCommitment::from_field(reduced_field_element(
+                        &merkle_tree_commitment,
+                    )),
+                    MerkleTreeCommitment::from_field(reduced_field_element(
+                        &next_merkle_tree_commitment,
+                    )),
+                    ProtocolParametersHash::from_field(reduced_field_element(&protocol_parameters)),
+                    ProtocolParametersHash::from_field(reduced_field_element(
+                        &next_protocol_parameters,
+                    )),
+                    current_epoch,
+                ),
+                IvcProofBytes::empty(),
+                trivial_accumulator(&[]),
+                cached_signature(),
             )
-            .unwrap();
+        }
 
-            assert_eq!(next_state.step_counter, StepCounter::new(6));
-            assert_eq!(next_state.message, cert_message);
-            assert_eq!(
-                next_state.merkle_tree_commitment,
-                cert_merkle_tree_commitment
-            );
-            assert_eq!(
-                next_state.next_merkle_tree_commitment,
-                preimage.next_merkle_tree_commitment()
-            );
-            assert_eq!(next_state.protocol_parameters, pp_next);
-            assert_eq!(
-                next_state.next_protocol_parameters,
-                preimage.next_protocol_parameters()
-            );
-            assert_eq!(next_state.current_epoch, preimage_cert_epoch);
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(100))]
+
+            #[test]
+            fn every_next_state_field_comes_from_its_declared_source(
+                previous_step_counter in arb_advanceable_step_counter(),
+                previous_epoch in any::<u64>(),
+                previous_message in any::<[u8; 32]>(),
+                previous_merkle_tree_commitment in any::<[u8; 32]>(),
+                previous_next_merkle_tree_commitment in any::<[u8; 32]>(),
+                previous_protocol_parameters in any::<[u8; 32]>(),
+                previous_next_protocol_parameters in any::<[u8; 32]>(),
+                certificate_message in any::<[u8; 32]>(),
+                certificate_merkle_tree_commitment in any::<[u8; 32]>(),
+                preimage_epoch in any::<u64>(),
+                preimage_commitment in any::<[u8; 32]>(),
+                preimage_parameters in any::<[u8; 32]>(),
+            ) {
+                let rolling_state = build_fully_populated_rolling_state(
+                    previous_step_counter,
+                    EpochNumber::new(previous_epoch),
+                    previous_message,
+                    previous_merkle_tree_commitment,
+                    previous_next_merkle_tree_commitment,
+                    previous_protocol_parameters,
+                    previous_next_protocol_parameters,
+                );
+                let preimage = build_preimage(
+                    EpochNumber::new(preimage_epoch),
+                    preimage_commitment,
+                    preimage_parameters,
+                );
+                let message = MessageHash::from_field(reduced_field_element(&certificate_message));
+                let commitment = MerkleTreeCommitment::from_field(reduced_field_element(
+                    &certificate_merkle_tree_commitment,
+                ));
+
+                let same_epoch = build_next_state(
+                    IvcTransitionType::SameEpoch,
+                    &rolling_state,
+                    message,
+                    commitment,
+                    &preimage,
+                )
+                .expect("an advanceable counter should not overflow");
+                let next_epoch = build_next_state(
+                    IvcTransitionType::NextEpoch,
+                    &rolling_state,
+                    message,
+                    commitment,
+                    &preimage,
+                )
+                .expect("an advanceable counter should not overflow");
+
+                // Expectations come from the generated bytes, not from the preimage accessors,
+                // which would only restate that the helper calls them.
+                let expected_counter = StepCounter::new(previous_step_counter.as_u64() + 1);
+                let expected_next_commitment = MerkleTreeCommitment::from_field(
+                    reduced_field_element(&preimage_commitment),
+                );
+                let expected_next_parameters = ProtocolParametersHash::from_field(
+                    reduced_field_element(&preimage_parameters),
+                );
+                let current_parameters = ProtocolParametersHash::from_field(
+                    reduced_field_element(&previous_protocol_parameters),
+                );
+                let lookahead_parameters = ProtocolParametersHash::from_field(
+                    reduced_field_element(&previous_next_protocol_parameters),
+                );
+
+                for state in [&same_epoch, &next_epoch] {
+                    prop_assert_eq!(state.step_counter, expected_counter);
+                    prop_assert_eq!(state.message, message);
+                    prop_assert_eq!(state.merkle_tree_commitment, commitment);
+                    prop_assert_eq!(state.next_merkle_tree_commitment, expected_next_commitment);
+                    prop_assert_eq!(state.next_protocol_parameters, expected_next_parameters);
+                    prop_assert_eq!(state.current_epoch, EpochNumber::new(preimage_epoch));
+                }
+
+                prop_assert_eq!(same_epoch.protocol_parameters, current_parameters);
+                prop_assert_eq!(next_epoch.protocol_parameters, lookahead_parameters);
+
+            }
         }
 
         #[test]
