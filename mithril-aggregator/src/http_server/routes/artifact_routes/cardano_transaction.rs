@@ -1,11 +1,12 @@
 use crate::http_server::routes::middlewares;
 use crate::http_server::routes::router::RouterState;
 use warp::Filter;
+use warp::filters::BoxedFilter;
 
-pub fn routes(
-    router_state: &RouterState,
-) -> impl Filter<Extract = (impl warp::Reply + use<>,), Error = warp::Rejection> + Clone + use<> {
-    artifact_cardano_transactions(router_state).or(artifact_cardano_transaction_by_id(router_state))
+pub fn routes(router_state: &RouterState) -> BoxedFilter<(impl warp::Reply + use<>,)> {
+    artifact_cardano_transactions(router_state)
+        .or(artifact_cardano_transaction_by_id(router_state))
+        .boxed()
 }
 
 /// GET /artifact/cardano-transactions

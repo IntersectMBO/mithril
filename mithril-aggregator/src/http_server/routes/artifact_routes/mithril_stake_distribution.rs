@@ -1,12 +1,12 @@
 use crate::http_server::routes::middlewares;
 use crate::http_server::routes::router::RouterState;
 use warp::Filter;
+use warp::filters::BoxedFilter;
 
-pub fn routes(
-    router_state: &RouterState,
-) -> impl Filter<Extract = (impl warp::Reply + use<>,), Error = warp::Rejection> + Clone + use<> {
+pub fn routes(router_state: &RouterState) -> BoxedFilter<(impl warp::Reply + use<>,)> {
     artifact_mithril_stake_distributions(router_state)
         .or(artifact_mithril_stake_distribution_by_id(router_state))
+        .boxed()
 }
 
 /// GET /artifact/mithril-stake-distributions

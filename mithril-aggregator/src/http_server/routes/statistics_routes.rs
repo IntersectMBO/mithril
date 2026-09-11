@@ -1,15 +1,15 @@
 use warp::Filter;
+use warp::filters::BoxedFilter;
 
 use crate::http_server::routes::router::RouterState;
 use crate::http_server::routes::{MAX_CONTENT_LENGTH, middlewares};
 
-pub fn routes(
-    router_state: &RouterState,
-) -> impl Filter<Extract = (impl warp::Reply + use<>,), Error = warp::Rejection> + Clone + use<> {
+pub fn routes(router_state: &RouterState) -> BoxedFilter<(impl warp::Reply + use<>,)> {
     post_cardano_database_immutable_files_restored(router_state)
         .or(post_cardano_database_ancillary_files_restored(router_state))
         .or(post_cardano_database_complete_restoration(router_state))
         .or(post_cardano_database_partial_restoration(router_state))
+        .boxed()
 }
 
 /// POST /statistics/cardano-database/immutable-files-restored

@@ -1,12 +1,11 @@
 use warp::Filter;
+use warp::filters::BoxedFilter;
 
 use crate::http_server::routes::router::RouterState;
 use crate::http_server::routes::{MAX_CONTENT_LENGTH, middlewares};
 
-pub fn routes(
-    router_state: &RouterState,
-) -> impl Filter<Extract = (impl warp::Reply + use<>,), Error = warp::Rejection> + Clone + use<> {
-    register_signatures(router_state)
+pub fn routes(router_state: &RouterState) -> BoxedFilter<(impl warp::Reply + use<>,)> {
+    register_signatures(router_state).boxed()
 }
 
 /// POST /register-signatures
