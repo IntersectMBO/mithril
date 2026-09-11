@@ -193,8 +193,14 @@ mod tests {
     #[tokio::test]
     async fn test_verify_single_signature() {
         let epoch = Epoch(5);
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
-        let next_fixture = MithrilFixtureBuilder::default().with_signers(4).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(5);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(epoch);
+        let fixture = fixture.build();
+        let next_fixture = MithrilFixtureBuilder::default().with_signers(4);
+        #[cfg(feature = "future_snark")]
+        let next_fixture = next_fixture.with_epoch(epoch);
+        let next_fixture = next_fixture.build();
         let multi_signer = MultiSignerImpl::new(
             AggregateSignatureType::default(),
             Arc::new(RwLock::new(
@@ -254,7 +260,10 @@ mod tests {
     #[tokio::test]
     async fn test_multi_signer_multi_signature_ok() {
         let epoch = Epoch(5);
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(5);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(epoch);
+        let fixture = fixture.build();
         let protocol_parameters = fixture.protocol_parameters();
         let multi_signer = MultiSignerImpl::new(
             AggregateSignatureType::default(),

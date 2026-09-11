@@ -40,7 +40,10 @@ impl ArtifactBuilder<Epoch, MithrilStakeDistribution> for MithrilStakeDistributi
 mod tests {
     use mithril_common::{
         crypto_helper::ProtocolParameters,
-        test::double::{Dummy, fake_data},
+        test::{
+            builder::MithrilFixtureBuilder,
+            double::{Dummy, fake_data},
+        },
     };
     use std::sync::Arc;
     use tokio::sync::RwLock;
@@ -51,7 +54,10 @@ mod tests {
 
     #[tokio::test]
     async fn should_compute_valid_artifact() {
-        let signers_with_stake = fake_data::signers_with_stakes(5);
+        let signers_with_stake_builder = MithrilFixtureBuilder::default().with_signers(5);
+        #[cfg(feature = "future_snark")]
+        let signers_with_stake_builder = signers_with_stake_builder.with_epoch(Epoch(1));
+        let signers_with_stake = signers_with_stake_builder.build().signers_with_stake();
         let certificate = fake_data::certificate("certificate-123".to_string());
         let epoch_settings = AggregatorEpochSettings {
             protocol_parameters: fake_data::protocol_parameters(),

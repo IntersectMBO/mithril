@@ -547,8 +547,22 @@ pub(crate) struct FakeEpochServiceBuilder {
 #[cfg(test)]
 impl FakeEpochServiceBuilder {
     pub fn dummy(epoch: Epoch) -> Self {
-        use mithril_common::test::double::{Dummy, fake_data};
-        let signers = fake_data::signers_with_stakes(3);
+        use mithril_common::test::double::Dummy;
+
+        #[cfg(feature = "future_snark")]
+        let signers = {
+            use mithril_common::test::builder::MithrilFixtureBuilder;
+            MithrilFixtureBuilder::default()
+                .with_signers(3)
+                .with_epoch(epoch)
+                .build()
+                .signers_with_stake()
+        };
+        #[cfg(not(feature = "future_snark"))]
+        let signers = {
+            use mithril_common::test::double::fake_data;
+            fake_data::signers_with_stakes(3)
+        };
 
         Self {
             cardano_era: "DummyEra".to_string(),
@@ -1238,13 +1252,18 @@ mod tests {
 
     #[tokio::test]
     async fn compute_data_with_data_from_inform_epoch() {
-        let current_epoch_fixture = MithrilFixtureBuilder::default().with_signers(3).build();
+        let epoch = Epoch(5);
+        let current_epoch_fixture = MithrilFixtureBuilder::default().with_signers(3);
+        #[cfg(feature = "future_snark")]
+        let current_epoch_fixture = current_epoch_fixture.with_epoch(epoch - 1);
+        let current_epoch_fixture = current_epoch_fixture.build();
         let next_epoch_fixture = MithrilFixtureBuilder::default()
             .with_protocol_parameters(ProtocolParameters::new(8, 80, 0.80))
-            .with_signers(5)
-            .build();
+            .with_signers(5);
+        #[cfg(feature = "future_snark")]
+        let next_epoch_fixture = next_epoch_fixture.with_epoch(epoch);
+        let next_epoch_fixture = next_epoch_fixture.build();
 
-        let epoch = Epoch(5);
         let mut service =
             EpochServiceBuilder {
                 stored_next_epoch_settings: AggregatorEpochSettings {
@@ -1288,9 +1307,12 @@ mod tests {
 
     #[tokio::test]
     async fn inform_epoch_reset_computed_data() {
-        let fixture = MithrilFixtureBuilder::default().with_signers(3).build();
-        let avk = fixture.compute_aggregate_verification_key();
         let epoch = Epoch(4);
+        let fixture = MithrilFixtureBuilder::default().with_signers(3);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(epoch);
+        let fixture = fixture.build();
+        let avk = fixture.compute_aggregate_verification_key();
         let mut service = EpochServiceBuilder::new(epoch, fixture.clone()).build().await;
         let signer_builder = SignerBuilder::new(
             &fixture.signers_with_stake(),
@@ -1316,10 +1338,16 @@ mod tests {
 
     #[tokio::test]
     async fn update_next_signers_with_stake_succeeds() {
-        let fixture = MithrilFixtureBuilder::default().with_signers(3).build();
-        let next_fixture = MithrilFixtureBuilder::default().with_signers(5).build();
-        let next_avk = next_fixture.compute_aggregate_verification_key();
         let epoch = Epoch(4);
+        let fixture = MithrilFixtureBuilder::default().with_signers(3);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(epoch - 1);
+        let fixture = fixture.build();
+        let next_fixture = MithrilFixtureBuilder::default().with_signers(5);
+        #[cfg(feature = "future_snark")]
+        let next_fixture = next_fixture.with_epoch(epoch);
+        let next_fixture = next_fixture.build();
+        let next_avk = next_fixture.compute_aggregate_verification_key();
         let mut service = EpochServiceBuilder {
             next_signers_with_stake: next_fixture.signers_with_stake().clone(),
             ..EpochServiceBuilder::new(epoch, fixture.clone())

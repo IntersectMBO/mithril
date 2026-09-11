@@ -800,7 +800,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_epoch_header_value_when_epoch_service_return_epoch() {
-        let fixture = MithrilFixtureBuilder::default().build();
+        let fixture = MithrilFixtureBuilder::default();
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(Epoch(84));
+        let fixture = fixture.build();
         let epoch_service = Arc::new(RwLock::new(FakeEpochService::from_fixture(
             Epoch(84),
             &fixture,

@@ -35,6 +35,8 @@ pub struct MithrilFixture {
     protocol_parameters: ProtocolParameters,
     signers: Vec<SignerFixture>,
     stake_distribution: ProtocolStakeDistribution,
+    #[cfg(feature = "future_snark")]
+    epoch: Epoch,
 }
 
 /// A signer fixture, containing a [signer entity][SignerWithStake] with its
@@ -111,11 +113,14 @@ impl MithrilFixture {
         protocol_parameters: ProtocolParameters,
         signers: Vec<SignerFixture>,
         stake_distribution: ProtocolStakeDistribution,
+        #[cfg(feature = "future_snark")] epoch: Epoch,
     ) -> Self {
         Self {
             protocol_parameters,
             signers,
             stake_distribution,
+            #[cfg(feature = "future_snark")]
+            epoch,
         }
     }
 
@@ -188,7 +193,7 @@ impl MithrilFixture {
             &self.signers_with_stake(),
             &self.protocol_parameters,
             #[cfg(feature = "future_snark")]
-            Epoch::default(),
+            self.epoch,
         )
         .unwrap()
         .compute_aggregate_verification_key()

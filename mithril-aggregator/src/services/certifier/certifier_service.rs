@@ -533,7 +533,10 @@ mod tests {
         let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
         let protocol_message = ProtocolMessage::new();
         let epoch = beacon.epoch;
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(5);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(beacon.epoch);
+        let fixture = fixture.build();
         let certifier_service = setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
         certifier_service
             .create_open_message(&signed_entity_type, &protocol_message)
@@ -549,7 +552,10 @@ mod tests {
         let beacon = CardanoDbBeacon::new(3, 1);
         let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
         let protocol_message = ProtocolMessage::new();
-        let fixture = MithrilFixtureBuilder::default().with_signers(1).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(1);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(beacon.epoch);
+        let fixture = fixture.build();
         let certifier_service = setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
         let mut open_message = certifier_service
             .open_message_repository
@@ -580,7 +586,10 @@ mod tests {
         let beacon = CardanoDbBeacon::new(3, 1);
         let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
         let protocol_message = ProtocolMessage::new();
-        let fixture = MithrilFixtureBuilder::default().with_signers(1).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(1);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(beacon.epoch);
+        let fixture = fixture.build();
         let certifier_service = setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
         let mut open_message = certifier_service
             .open_message_repository
@@ -606,7 +615,10 @@ mod tests {
         let beacon = CardanoDbBeacon::new(3, 1);
         let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
         let protocol_message = ProtocolMessage::new();
-        let fixture = MithrilFixtureBuilder::default().with_signers(1).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(1);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(beacon.epoch);
+        let fixture = fixture.build();
         let certifier_service = setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
         let mut open_message = certifier_service
             .open_message_repository
@@ -632,7 +644,10 @@ mod tests {
         let beacon = CardanoDbBeacon::new(3, 1);
         let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
         let protocol_message = ProtocolMessage::new();
-        let fixture = MithrilFixtureBuilder::default().with_signers(1).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(1);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(beacon.epoch);
+        let fixture = fixture.build();
         let certifier_service = setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
 
         certifier_service
@@ -663,7 +678,10 @@ mod tests {
         let beacon = CardanoDbBeacon::new(3, 1);
         let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
         let mut protocol_message = ProtocolMessage::new();
-        let fixture = MithrilFixtureBuilder::default().with_signers(1).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(1);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(beacon.epoch);
+        let fixture = fixture.build();
         let certifier_service = setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
 
         certifier_service
@@ -701,7 +719,10 @@ mod tests {
         let beacon = CardanoDbBeacon::new(3, 1);
         let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
         let protocol_message = ProtocolMessage::new();
-        let fixture = MithrilFixtureBuilder::default().with_signers(1).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(1);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(beacon.epoch);
+        let fixture = fixture.build();
         let certifier_service = setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
         let mut open_message = certifier_service
             .open_message_repository
@@ -732,7 +753,10 @@ mod tests {
         let beacon = CardanoDbBeacon::new(3, 1);
         let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
         let protocol_message = ProtocolMessage::new();
-        let fixture = MithrilFixtureBuilder::default().with_signers(1).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(1);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(beacon.epoch);
+        let fixture = fixture.build();
         let certifier_service = setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
         let mut open_message = certifier_service
             .open_message_repository
@@ -764,7 +788,10 @@ mod tests {
         let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
         let mut protocol_message = ProtocolMessage::new();
         protocol_message.set_message_part(ProtocolMessagePartKey::CurrentEpoch, "3".to_string());
-        let fixture = MithrilFixtureBuilder::default().with_signers(3).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(3);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(beacon.epoch);
+        let fixture = fixture.build();
         let certifier_service = setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
 
         certifier_service
@@ -828,7 +855,10 @@ mod tests {
     async fn should_not_create_certificate_for_open_message_not_created() {
         let beacon = CardanoDbBeacon::new(1, 1);
         let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(5);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(beacon.epoch);
+        let fixture = fixture.build();
         let certifier_service = setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
         certifier_service
             .create_certificate(&signed_entity_type)
@@ -842,7 +872,10 @@ mod tests {
         let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
         let protocol_message = ProtocolMessage::new();
         let epoch = beacon.epoch;
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(5);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(beacon.epoch);
+        let fixture = fixture.build();
         let certifier_service = setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
         let mut record = certifier_service
             .open_message_repository
@@ -880,7 +913,10 @@ mod tests {
         let beacon = CardanoDbBeacon::new(3, 1);
         let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
         let protocol_message = ProtocolMessage::new();
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(5);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(beacon.epoch);
+        let fixture = fixture.build();
         let mut certifier_service =
             setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
         certifier_service.multi_signer = Arc::new(mock_multi_signer);
@@ -909,7 +945,10 @@ mod tests {
         let builder = MithrilFixtureBuilder::default();
         let certificate = fake_data::genesis_certificate("whatever");
         let epoch = certificate.epoch + 2;
-        let certifier_service = setup_certifier_service(temp_dir!(), &builder.build(), epoch).await;
+        #[cfg(feature = "future_snark")]
+        let builder = builder.with_epoch(epoch);
+        let certifier_service =
+            setup_certifier_service(temp_dir!(), &builder.build(), epoch).await;
         certifier_service
             .certificate_repository
             .create_certificate(certificate.clone())
@@ -935,7 +974,10 @@ mod tests {
         let builder = MithrilFixtureBuilder::default();
         let certificate = fake_data::genesis_certificate("whatever");
         let epoch = certificate.epoch + 1;
-        let certifier_service = setup_certifier_service(temp_dir!(), &builder.build(), epoch).await;
+        #[cfg(feature = "future_snark")]
+        let builder = builder.with_epoch(epoch);
+        let certifier_service =
+            setup_certifier_service(temp_dir!(), &builder.build(), epoch).await;
         certifier_service
             .certificate_repository
             .create_certificate(certificate)

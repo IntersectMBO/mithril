@@ -589,9 +589,25 @@ pub mod tests {
     async fn build_runner_with_fixture_data(
         deps: ServeCommandDependenciesContainer,
     ) -> AggregatorRunner {
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
         let current_epoch = deps.ticker_service.get_current_epoch().await.unwrap();
-        deps.init_state_from_fixture(&fixture, current_epoch).await;
+        #[cfg(feature = "future_snark")]
+        {
+            let current_fixture = MithrilFixtureBuilder::default()
+                .with_signers(5)
+                .with_epoch(current_epoch.offset_to_signer_retrieval_epoch().unwrap())
+                .build();
+            let next_fixture = MithrilFixtureBuilder::default()
+                .with_signers(5)
+                .with_epoch(current_epoch)
+                .build();
+            deps.init_state_from_fixtures(&current_fixture, &next_fixture, current_epoch)
+                .await;
+        }
+        #[cfg(not(feature = "future_snark"))]
+        {
+            let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
+            deps.init_state_from_fixture(&fixture, current_epoch).await;
+        }
 
         AggregatorRunner::new(Arc::new(deps))
     }
@@ -871,9 +887,13 @@ pub mod tests {
         let current_epoch = deps.ticker_service.get_current_epoch().await.unwrap();
 
         deps.certifier_service = Arc::new(mock_certifier_service);
+        let fixture = MithrilFixtureBuilder::default();
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(current_epoch);
+        let fixture = fixture.build();
         deps.epoch_service = Arc::new(RwLock::new(FakeEpochService::from_fixture(
             current_epoch,
-            &MithrilFixtureBuilder::default().build(),
+            &fixture,
         )));
 
         let runner = AggregatorRunner::new(Arc::new(deps));
@@ -903,9 +923,13 @@ pub mod tests {
         let mut deps = initialize_dependencies!().await;
         let current_epoch = deps.ticker_service.get_current_epoch().await.unwrap();
 
+        let fixture = MithrilFixtureBuilder::default();
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(current_epoch);
+        let fixture = fixture.build();
         deps.epoch_service = Arc::new(RwLock::new(FakeEpochService::from_fixture(
             current_epoch,
-            &MithrilFixtureBuilder::default().build(),
+            &fixture,
         )));
 
         let runner = AggregatorRunner::new(Arc::new(deps));

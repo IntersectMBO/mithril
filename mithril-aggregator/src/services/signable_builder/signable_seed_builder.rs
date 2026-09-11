@@ -151,8 +151,14 @@ mod tests {
     #[tokio::test]
     async fn test_compute_next_aggregate_verification_key_protocol_message_value() {
         let epoch = Epoch(5);
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
-        let next_fixture = MithrilFixtureBuilder::default().with_signers(4).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(5);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(epoch);
+        let fixture = fixture.build();
+        let next_fixture = MithrilFixtureBuilder::default().with_signers(4);
+        #[cfg(feature = "future_snark")]
+        let next_fixture = next_fixture.with_epoch(epoch);
+        let next_fixture = next_fixture.build();
         let signable_seed_builder = build_signable_builder_service(epoch, &fixture, &next_fixture);
         let expected_next_aggregate_verification_key =
             next_fixture.compute_and_encode_concatenation_aggregate_verification_key();
@@ -172,8 +178,14 @@ mod tests {
     #[tokio::test]
     async fn compute_next_snark_avk_returns_none_during_pythagoras_era() {
         let epoch = Epoch(5);
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
-        let next_fixture = MithrilFixtureBuilder::default().with_signers(4).build();
+        let fixture = MithrilFixtureBuilder::default()
+            .with_epoch(epoch)
+            .with_signers(5)
+            .build();
+        let next_fixture = MithrilFixtureBuilder::default()
+            .with_epoch(epoch)
+            .with_signers(4)
+            .build();
         let signable_seed_builder = build_signable_builder_service_for_era(
             epoch,
             &fixture,
@@ -196,8 +208,14 @@ mod tests {
     #[tokio::test]
     async fn compute_next_snark_avk_returns_none_when_snark_avk_unavailable_during_lagrange_era() {
         let epoch = Epoch(5);
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
-        let next_fixture = MithrilFixtureBuilder::default().with_signers(4).build();
+        let fixture = MithrilFixtureBuilder::default()
+            .with_epoch(epoch)
+            .with_signers(5)
+            .build();
+        let next_fixture = MithrilFixtureBuilder::default()
+            .with_epoch(epoch)
+            .with_signers(4)
+            .build();
         let next_signers_without_snark =
             SignerWithStake::strip_snark_fields(next_fixture.signers_with_stake());
         let epoch_service = Arc::new(RwLock::new(
@@ -238,8 +256,14 @@ mod tests {
     #[tokio::test]
     async fn compute_next_snark_avk_returns_value_during_lagrange_era() {
         let epoch = Epoch(5);
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
-        let next_fixture = MithrilFixtureBuilder::default().with_signers(4).build();
+        let fixture = MithrilFixtureBuilder::default()
+            .with_epoch(epoch)
+            .with_signers(5)
+            .build();
+        let next_fixture = MithrilFixtureBuilder::default()
+            .with_epoch(epoch)
+            .with_signers(4)
+            .build();
         let signable_seed_builder = build_signable_builder_service_for_era(
             epoch,
             &fixture,
@@ -259,8 +283,14 @@ mod tests {
     #[tokio::test]
     async fn test_compute_next_protocol_parameters_protocol_message_value() {
         let epoch = Epoch(5);
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
-        let next_fixture = MithrilFixtureBuilder::default().with_signers(4).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(5);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(epoch);
+        let fixture = fixture.build();
+        let next_fixture = MithrilFixtureBuilder::default().with_signers(4);
+        #[cfg(feature = "future_snark")]
+        let next_fixture = next_fixture.with_epoch(epoch);
+        let next_fixture = next_fixture.build();
         let signable_seed_builder = build_signable_builder_service(epoch, &fixture, &next_fixture);
         let expected_next_protocol_parameters = next_fixture.protocol_parameters().compute_hash();
 
@@ -275,8 +305,14 @@ mod tests {
     #[tokio::test]
     async fn test_compute_current_epoch_protocol_message_value() {
         let epoch = Epoch(5);
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
-        let next_fixture = MithrilFixtureBuilder::default().with_signers(4).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(5);
+        #[cfg(feature = "future_snark")]
+        let fixture = fixture.with_epoch(epoch);
+        let fixture = fixture.build();
+        let next_fixture = MithrilFixtureBuilder::default().with_signers(4);
+        #[cfg(feature = "future_snark")]
+        let next_fixture = next_fixture.with_epoch(epoch);
+        let next_fixture = next_fixture.build();
         let signable_seed_builder = build_signable_builder_service(epoch, &fixture, &next_fixture);
         let expected_current_epoch = epoch.to_string();
 

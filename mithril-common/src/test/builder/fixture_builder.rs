@@ -2,6 +2,8 @@ use kes_summed_ed25519::{PublicKey as KesPublicKey, kes::Sum6Kes, traits::KesSk}
 use rand_chacha::ChaCha20Rng;
 use rand_core::{RngCore, SeedableRng};
 
+#[cfg(feature = "future_snark")]
+use crate::entities::Epoch;
 use crate::{
     crypto_helper::{ColdKeyGenerator, KesPeriod, OpCert, ProtocolStakeDistribution, Sum6KesBytes},
     entities::{PartyId, ProtocolParameters, Stake, StakeDistribution},
@@ -19,6 +21,8 @@ pub struct MithrilFixtureBuilder {
     number_of_signers: usize,
     stake_distribution_generation_method: StakeDistributionGenerationMethod,
     party_id_seed: [u8; 32],
+    #[cfg(feature = "future_snark")]
+    epoch: Epoch,
 }
 
 impl Default for MithrilFixtureBuilder {
@@ -33,6 +37,8 @@ impl Default for MithrilFixtureBuilder {
                     min_stake: 1,
                 },
             party_id_seed: [0u8; 32],
+            #[cfg(feature = "future_snark")]
+            epoch: Epoch::default(),
         }
     }
 }
@@ -91,18 +97,29 @@ impl MithrilFixtureBuilder {
         self
     }
 
+    /// Set the seed used to generated the party ids
+    #[cfg(feature = "future_snark")]
+    pub fn with_epoch(mut self, epoch: Epoch) -> Self {
+        self.epoch = epoch;
+        self
+    }
+
     /// Transform the specified parameters to a [MithrilFixture].
     pub fn build(self) -> MithrilFixture {
         let protocol_stake_distribution = self.generate_stake_distribution();
         let signers = crypto_helper::setup_signers_from_stake_distribution(
             &protocol_stake_distribution,
             &self.protocol_parameters.clone().into(),
+            #[cfg(feature = "future_snark")]
+            self.epoch,
         );
 
         MithrilFixture::new(
             self.protocol_parameters,
             signers,
             protocol_stake_distribution,
+            #[cfg(feature = "future_snark")]
+            self.epoch,
         )
     }
 
