@@ -19,7 +19,6 @@ pub(crate) use proof::{IvcChainStepBundle, IvcProof, IvcProver};
 pub(crate) use prover_input::IvcProverInput;
 #[cfg(all(test, feature = "future_snark"))]
 pub(crate) use prover_input_helpers::tests::build_standard_rolling_state;
-#[cfg(feature = "benchmark-internals")]
 pub(crate) use prover_setup::IvcProverSetup;
 pub(crate) use rolling_state::{IvcRollingState, IvcTransitionType};
 pub(crate) use verifier_setup::{IvcVerifierData, IvcVerifierSetup};

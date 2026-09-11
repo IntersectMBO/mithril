@@ -11,6 +11,8 @@
 //! - inline `#[cfg(test)]` blocks in `gadgets/*` and `adapters`: focused regression checks
 //! - `tests/test_helpers`: shared harness for focused gadget tests
 
+use crate::Parameters;
+
 pub mod adapters;
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod witness_assignments;
@@ -34,6 +36,13 @@ pub mod bench;
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// STM parameters the production circuit verification keys are derived from.
+pub(crate) const STM_PARAMETERS_FOR_PRODUCTION: Parameters = Parameters {
+    m: 16948,
+    k: 1944,
+    phi_f: 0.2,
+};
 
 /// Circuit verification key of the non-recursive circuit used for production.
 /// This key is generated using the Midnight's secure SRS and the following

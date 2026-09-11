@@ -16,17 +16,24 @@ use anyhow::Context;
 use midnight_curves::Bls12;
 use midnight_proofs::poly::kzg::params::ParamsKZG;
 use rand_core::{OsRng, RngCore};
+use sha2::{Digest, Sha256};
 
 use crate::codec::{TryFromBytes, TryToBytes};
-use crate::{Parameters, StmResult};
+use crate::{MERKLE_TREE_DEPTH_FOR_SNARK, Parameters, StmResult};
 
 use super::halo2::circuit::CertificateCircuit;
 use super::halo2_ivc::keys::RecursiveCircuitKeyGenerator;
 use super::key_generator::KeyGenerator;
+use super::trusted_setup::MIDNIGHT_SRS_HASH_K22;
 use super::{
-    MITHRIL_CIRCUIT_CACHE_FOLDER, halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+    MITHRIL_CIRCUIT_CACHE_FOLDER,
+    halo2::{NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, STM_PARAMETERS_FOR_PRODUCTION},
     halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
 };
+
+/// Bumped whenever the cache layout or the fingerprint inputs change, so an entry written by an
+/// earlier scheme is never reused.
+const CACHE_SCHEMA_VERSION: &[u8] = b"v1";
 
 /// Outcome of inspecting the on-disk key cache for a complete, fresh key pair.
 enum CacheState {
@@ -40,6 +47,70 @@ enum CacheState {
     },
     /// Nothing usable on disk: absent, stale, or a partial write.
     Empty,
+}
+
+/// Cache identity of a circuit configuration, which the derived keys depend on.
+///
+/// The production configuration keeps a stable directory and is validated against the embedded
+/// production verifying key. Any other configuration derives keys the embedded key would reject, so
+/// it gets a directory of its own, keyed by a fingerprint of the configuration, and the entry found
+/// there is trusted.
+enum CircuitCacheIdentity {
+    /// The configuration the embedded production verifying keys were derived from.
+    Production,
+    /// Any other configuration, identified by the hex digest of its fingerprint.
+    Fingerprinted(String),
+}
+
+impl CircuitCacheIdentity {
+    /// Identifies the configuration made of `parameters` and `merkle_tree_depth`.
+    ///
+    /// The fingerprint also folds in the cache schema version, the embedded production verifying key
+    /// and the SRS the keys are derived from, so an entry is never reused across a layout change, a
+    /// circuit change or an SRS change. The production verifying key stands for the circuit itself:
+    /// it changes with the circuit and only with it, which no configuration outside production can
+    /// check against.
+    fn for_configuration(parameters: &Parameters, merkle_tree_depth: u32) -> StmResult<Self> {
+        if parameters == &STM_PARAMETERS_FOR_PRODUCTION
+            && merkle_tree_depth == MERKLE_TREE_DEPTH_FOR_SNARK
+        {
+            return Ok(Self::Production);
+        }
+
+        let mut hasher = Sha256::new();
+        for input in [
+            CACHE_SCHEMA_VERSION,
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+            MIDNIGHT_SRS_HASH_K22.as_bytes(),
+            parameters.to_bytes()?.as_slice(),
+            &merkle_tree_depth.to_le_bytes(),
+        ] {
+            hasher.update((input.len() as u64).to_le_bytes());
+            hasher.update(input);
+        }
+
+        Ok(Self::Fingerprinted(hex::encode(hasher.finalize())))
+    }
+
+    /// Name of the directory holding the keys of `circuit_name` for this configuration.
+    fn directory_name(&self, circuit_name: &str) -> String {
+        match self {
+            Self::Production => circuit_name.to_string(),
+            Self::Fingerprinted(fingerprint) => format!("{circuit_name}-{fingerprint}"),
+        }
+    }
+
+    /// Verifying key a cached entry is validated against: the embedded production key for the
+    /// production configuration, none for the others, which their own directory already isolates.
+    fn expected_verification_key(
+        &self,
+        production_verification_key: &'static [u8],
+    ) -> &'static [u8] {
+        match self {
+            Self::Production => production_verification_key,
+            Self::Fingerprinted(_) => &[],
+        }
+    }
 }
 
 /// Provides a key generator's verifying and proving keys: an on-disk cache (with staleness detection)
@@ -233,35 +304,45 @@ impl<G: KeyGenerator> KeyProvider<G> {
 }
 
 impl KeyProvider<CertificateCircuit> {
-    /// Production certificate-circuit provider: builds the circuit from `parameters`, roots the
-    /// cache at the temporary directory, and validates against the embedded production verifying key.
+    /// Certificate-circuit provider: builds the circuit from `parameters`, roots the cache at the
+    /// temporary directory, and isolates the entry by [`CircuitCacheIdentity`], so the production
+    /// configuration is validated against the embedded production verifying key while any other
+    /// configuration caches into a directory of its own.
     pub(crate) fn for_non_recursive_circuit(
         parameters: &Parameters,
         merkle_tree_depth: u32,
     ) -> StmResult<Self> {
+        let identity = CircuitCacheIdentity::for_configuration(parameters, merkle_tree_depth)?;
         let circuit = CertificateCircuit::try_new(parameters, merkle_tree_depth)?;
+
         Ok(Self::new(
             std::env::temp_dir(),
-            "non-recursive-keys",
-            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+            &identity.directory_name("non-recursive-keys"),
+            identity
+                .expected_verification_key(NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION),
             circuit,
         ))
     }
 }
 
 impl KeyProvider<RecursiveCircuitKeyGenerator> {
-    /// Production recursive-circuit provider: wraps the non-recursive key provider the recursive
-    /// circuit is built from, roots the cache at the temporary directory, and validates against the
-    /// embedded production verifying key.
+    /// Recursive-circuit provider: wraps the non-recursive key provider the recursive circuit is
+    /// built from, roots the cache at the temporary directory, and isolates the entry by the
+    /// [`CircuitCacheIdentity`] of the configuration the wrapped provider was built for, the recursive
+    /// keys being derived from the non-recursive ones.
     pub(crate) fn for_recursive_circuit(
         non_recursive_key_provider: KeyProvider<CertificateCircuit>,
-    ) -> Self {
-        Self::new(
+        parameters: &Parameters,
+        merkle_tree_depth: u32,
+    ) -> StmResult<Self> {
+        let identity = CircuitCacheIdentity::for_configuration(parameters, merkle_tree_depth)?;
+
+        Ok(Self::new(
             std::env::temp_dir(),
-            "recursive-keys",
-            RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+            &identity.directory_name("recursive-keys"),
+            identity.expected_verification_key(RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION),
             RecursiveCircuitKeyGenerator::new(non_recursive_key_provider),
-        )
+        ))
     }
 }
 
@@ -287,10 +368,13 @@ mod tests {
     use rand_core::SeedableRng;
 
     use super::{CacheState, KeyGenerator, KeyProvider};
-    use crate::Parameters;
     use crate::StmResult;
-    use crate::circuits::halo2::circuit::CertificateCircuit;
+    use crate::circuits::halo2::{
+        NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, STM_PARAMETERS_FOR_PRODUCTION,
+        circuit::CertificateCircuit,
+    };
     use crate::codec::{TryFromBytes, TryToBytes};
+    use crate::{MERKLE_TREE_DEPTH_FOR_SNARK, Parameters};
 
     /// Key backed by raw bytes, so the provider mechanics can be tested without real keygen.
     #[derive(Clone, Debug, PartialEq)]
@@ -618,5 +702,151 @@ mod tests {
             "proving key path must be rooted under the circuit cache folder"
         );
         fs::remove_dir_all(&base_dir).ok();
+    }
+
+    fn parameters_outside_production() -> Parameters {
+        Parameters {
+            m: 9,
+            k: 5,
+            phi_f: 0.95,
+        }
+    }
+
+    fn certificate_key_provider(
+        parameters: &Parameters,
+        merkle_tree_depth: u32,
+    ) -> KeyProvider<CertificateCircuit> {
+        KeyProvider::for_non_recursive_circuit(parameters, merkle_tree_depth).unwrap()
+    }
+
+    #[test]
+    fn production_configuration_caches_under_the_stable_directory() {
+        let provider =
+            certificate_key_provider(&STM_PARAMETERS_FOR_PRODUCTION, MERKLE_TREE_DEPTH_FOR_SNARK);
+
+        assert!(
+            provider
+                .verification_key_path()
+                .ends_with("mithril-circuit/non-recursive-keys/verification-key"),
+            "the production configuration must keep the stable cache directory, got {:?}",
+            provider.verification_key_path()
+        );
+    }
+
+    #[test]
+    fn production_configuration_only_trusts_the_embedded_verification_key() {
+        let provider =
+            certificate_key_provider(&STM_PARAMETERS_FOR_PRODUCTION, MERKLE_TREE_DEPTH_FOR_SNARK);
+
+        assert!(
+            !provider.is_stale(NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION),
+            "the embedded production verifying key must be accepted"
+        );
+        assert!(
+            provider.is_stale(b"another-verification-key"),
+            "a cached key that is not the embedded production one must be recomputed"
+        );
+    }
+
+    #[test]
+    fn configuration_outside_production_caches_under_its_own_directory() {
+        let provider = certificate_key_provider(
+            &parameters_outside_production(),
+            MERKLE_TREE_DEPTH_FOR_SNARK,
+        );
+        let directory = provider.verification_key_path().parent().unwrap().to_path_buf();
+
+        assert!(
+            directory
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("non-recursive-keys-"),
+            "a configuration outside production must be fingerprinted, got {directory:?}"
+        );
+        assert!(
+            directory.parent().unwrap().ends_with("mithril-circuit"),
+            "the fingerprinted directory must stay under the circuit cache folder, got {directory:?}"
+        );
+    }
+
+    #[test]
+    fn configuration_outside_production_trusts_the_cached_verification_key() {
+        let provider = certificate_key_provider(
+            &parameters_outside_production(),
+            MERKLE_TREE_DEPTH_FOR_SNARK,
+        );
+
+        assert!(
+            !provider.is_stale(b"any-cached-verification-key"),
+            "a fingerprinted directory isolates the configuration, so its entry must be trusted"
+        );
+    }
+
+    #[test]
+    fn distinct_configurations_outside_production_do_not_share_a_directory() {
+        let provider = certificate_key_provider(
+            &parameters_outside_production(),
+            MERKLE_TREE_DEPTH_FOR_SNARK,
+        );
+        let other_parameters = certificate_key_provider(
+            &Parameters {
+                m: 10,
+                k: 5,
+                phi_f: 0.95,
+            },
+            MERKLE_TREE_DEPTH_FOR_SNARK,
+        );
+        let other_depth = certificate_key_provider(
+            &parameters_outside_production(),
+            MERKLE_TREE_DEPTH_FOR_SNARK + 1,
+        );
+
+        assert_ne!(
+            provider.verification_key_path(),
+            other_parameters.verification_key_path(),
+            "distinct protocol parameters must not share a cache directory"
+        );
+        assert_ne!(
+            provider.verification_key_path(),
+            other_depth.verification_key_path(),
+            "distinct Merkle tree depths must not share a cache directory"
+        );
+    }
+
+    #[test]
+    fn recursive_circuit_follows_the_configuration_of_its_certificate_circuit() {
+        let production = KeyProvider::for_recursive_circuit(
+            certificate_key_provider(&STM_PARAMETERS_FOR_PRODUCTION, MERKLE_TREE_DEPTH_FOR_SNARK),
+            &STM_PARAMETERS_FOR_PRODUCTION,
+            MERKLE_TREE_DEPTH_FOR_SNARK,
+        )
+        .unwrap();
+        let outside_production = KeyProvider::for_recursive_circuit(
+            certificate_key_provider(
+                &parameters_outside_production(),
+                MERKLE_TREE_DEPTH_FOR_SNARK,
+            ),
+            &parameters_outside_production(),
+            MERKLE_TREE_DEPTH_FOR_SNARK,
+        )
+        .unwrap();
+
+        assert!(
+            production
+                .verification_key_path()
+                .ends_with("mithril-circuit/recursive-keys/verification-key"),
+            "the production configuration must keep the stable cache directory, got {:?}",
+            production.verification_key_path()
+        );
+        assert_ne!(
+            production.verification_key_path(),
+            outside_production.verification_key_path(),
+            "the recursive keys of a configuration outside production must be isolated"
+        );
+        assert!(
+            !outside_production.is_stale(b"any-cached-verification-key"),
+            "a fingerprinted directory isolates the configuration, so its entry must be trusted"
+        );
     }
 }

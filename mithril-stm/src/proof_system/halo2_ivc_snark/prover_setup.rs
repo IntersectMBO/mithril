@@ -11,19 +11,14 @@ use midnight_proofs::poly::kzg::{
 };
 
 #[cfg(test)]
-use crate::{
-    Parameters,
-    circuits::{
-        halo2::{
-            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::CertificateCircuit,
-        },
-        halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
-        test_utils::file_mutex::FileMutex,
-        trusted_setup::UNSAFE_SRS_SEED,
-    },
+use crate::circuits::{
+    halo2::{NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::CertificateCircuit},
+    halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+    test_utils::file_mutex::FileMutex,
+    trusted_setup::UNSAFE_SRS_SEED,
 };
 use crate::{
-    StmResult,
+    MERKLE_TREE_DEPTH_FOR_SNARK, Parameters, StmResult,
     circuits::{
         halo2::{keys::NonRecursiveCircuitVerifyingKey, types::CircuitBase},
         halo2_ivc::{
@@ -84,6 +79,21 @@ pub(crate) struct IvcProverSetup {
 }
 
 impl IvcProverSetup {
+    /// Builds the production trusted setup provider and recursive key provider derived from
+    /// `parameters` and [`MERKLE_TREE_DEPTH_FOR_SNARK`], then delegates to [`Self::load`].
+    pub(crate) fn try_new(parameters: &Parameters) -> StmResult<Self> {
+        let trusted_setup_provider = TrustedSetupProvider::default();
+        let certificate_key_provider =
+            KeyProvider::for_non_recursive_circuit(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?;
+        let recursive_key_provider = KeyProvider::for_recursive_circuit(
+            certificate_key_provider,
+            parameters,
+            MERKLE_TREE_DEPTH_FOR_SNARK,
+        )?;
+
+        Self::load(&trusted_setup_provider, &recursive_key_provider)
+    }
+
     /// Derives the full IVC setup around a single SRS loaded once.
     ///
     /// Loads the SRS and downsizes it in place to [`RECURSIVE_CIRCUIT_DEGREE`] (stored for

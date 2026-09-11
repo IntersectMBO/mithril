@@ -5,18 +5,11 @@ use crate::{
     MERKLE_TREE_DEPTH_FOR_SNARK, Parameters, StmResult,
     circuits::{
         halo2::{
-            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::CertificateCircuit,
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, STM_PARAMETERS_FOR_PRODUCTION,
+            circuit::CertificateCircuit,
         },
         trusted_setup::TrustedSetupProvider,
     },
-};
-
-/// Constant representing the current STM parameters used for production,
-/// i.e. parameters that guarantee the security of the protocol
-const STM_PARAMETERS_FOR_PRODUCTION: Parameters = Parameters {
-    m: 16948,
-    k: 1944,
-    phi_f: 0.2,
 };
 
 /// Derive the non-recursive circuit verification key from the production SRS and the given

@@ -20,7 +20,7 @@ use {rand_chacha::ChaCha20Rng, rand_core::SeedableRng, std::fs::create_dir_all};
 ///
 /// If the degree of the SRS used were to change, this hash would need to be updated using
 /// the proper value available here: https://github.com/midnightntwrk/midnight-trusted-setup/blob/main/MIDNIGHT_SRS_CATALOG.md
-const MIDNIGHT_SRS_HASH_K22: &str =
+pub(crate) const MIDNIGHT_SRS_HASH_K22: &str =
     "e8ad5eed936d657a0fb59d2a55ba19f81a3083bb3554ef88f464f5377e9b2c2f";
 /// Constant storing URL to download the SRS of degree 22 used to create proof in production
 const MIDNIGHT_SRS_URL_K22: &str = "https://srs.midnight.network/midnight-srs-2p22";

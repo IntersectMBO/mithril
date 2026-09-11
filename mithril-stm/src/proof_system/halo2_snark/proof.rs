@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use anyhow::Context;
 use midnight_circuits::hash::poseidon::PoseidonState;
@@ -163,26 +163,23 @@ impl<D: MembershipDigest> SnarkProof<D> {
 /// Holds the pre-computed SNARK setup and exposes proof generation.
 ///
 /// The type parameter `R` selects the randomness source used during proof generation.
-/// Use `try_new_non_deterministic` for production (`OsRng`) and `try_new_deterministic` for
+/// Use `new_non_deterministic` for production (`OsRng`) and `try_new_deterministic` for
 /// reproducible tests.
 pub struct SnarkProver<R: RngCore + CryptoRng> {
-    setup: SnarkProverSetup,
+    setup: Arc<SnarkProverSetup>,
     rng: R,
 }
 
 impl SnarkProver<rand_core::OsRng> {
-    /// Create a new prover with a non-deterministic randomness source (`OsRng`).
+    /// Create a new prover with a non-deterministic randomness source (`OsRng`) over `setup`.
     ///
-    /// This is the constructor intended for production use.
-    pub fn try_new_non_deterministic(
-        parameters: &Parameters,
-        merkle_tree_depth: u32,
-    ) -> StmResult<Self> {
-        Ok(Self {
-            setup: SnarkProverSetup::try_new(parameters, merkle_tree_depth)
-                .with_context(|| "Failed to initialize SNARK setup (SRS, circuit, keys)")?,
+    /// This is the constructor intended for production use. The setup is provided by the factory,
+    /// which owns whether it is reused across aggregations.
+    pub fn new_non_deterministic(setup: Arc<SnarkProverSetup>) -> Self {
+        Self {
+            setup,
             rng: rand_core::OsRng,
-        })
+        }
     }
 }
 
@@ -191,7 +188,7 @@ impl SnarkProver<ChaCha20Rng> {
     /// Create a new prover with a deterministic randomness source seeded from `seed` (for tests only).
     pub fn try_new_deterministic(seed: [u8; 32], setup: SnarkProverSetup) -> StmResult<Self> {
         Ok(Self {
-            setup,
+            setup: Arc::new(setup),
             rng: ChaCha20Rng::from_seed(seed),
         })
     }
@@ -549,6 +546,8 @@ mod tests {
     }
 
     mod golden {
+        use std::sync::Arc;
+
         use super::*;
         use crate::{
             AggregateSignature, AggregateVerificationKey, AncillaryVerifierData, Clerk,
@@ -609,9 +608,8 @@ mod tests {
             let message = vec![1u8; 32];
             let signatures: Vec<SingleSignature> =
                 signers.into_iter().map(|s| s.sign(&message).unwrap()).collect();
-            let mut prover =
-                SnarkProver::try_new_non_deterministic(&params, MERKLE_TREE_DEPTH_FOR_SNARK)
-                    .unwrap();
+            let setup = SnarkProverSetup::try_new(&params, MERKLE_TREE_DEPTH_FOR_SNARK).unwrap();
+            let mut prover = SnarkProver::new_non_deterministic(Arc::new(setup));
 
             let proof: SnarkProof<MithrilMembershipDigest> =
                 prover.aggregate_signatures(&clerk, &signatures, &message).unwrap();
