@@ -31,7 +31,7 @@ use mithril_end_to_end::scenario::{FullScenario, MinimalScenario, RunOnlyScenari
 use mithril_end_to_end::toolkit::{ScenarioToolkit, ScenarioToolkitContext};
 use mithril_end_to_end::{
     AggregateSignatureType, Aggregator, Client, CompatibilityChecker, CompatibilityCheckerError,
-    Devnet, DevnetBootstrapArgs, DmqNodeFlavor, IpfsDevnet, IpfsDevnetBootstrapArgs,
+    Devnet, DevnetBootstrapArgs, DmqNodeFlavor, GenesisKeys, IpfsDevnet, IpfsDevnetBootstrapArgs,
     IpfsDevnetMode, MithrilInfrastructure, MithrilInfrastructureConfig, NodeVersion,
     ProtocolConfiguration, RelaySigner, RetryableDevnetError, Signer,
 };
@@ -483,19 +483,18 @@ impl App {
 
         let use_p2p_passive_relays = args.network_topology.use_p2p_passive_relays;
 
+        let aggregator_version = NodeVersion::fetch(Aggregator::BIN_NAME, &args.bin_directory)?;
+        let client_version = NodeVersion::fetch(Client::BIN_NAME, &args.bin_directory)?;
         CompatibilityChecker::default().check(BTreeMap::from([
             (
                 Aggregator::BIN_NAME,
-                NodeVersion::fetch_semver(Aggregator::BIN_NAME, &args.bin_directory)?,
+                semver::Version::from(&aggregator_version),
             ),
             (
                 Signer::BIN_NAME,
                 NodeVersion::fetch_semver(Signer::BIN_NAME, &args.bin_directory)?,
             ),
-            (
-                Client::BIN_NAME,
-                NodeVersion::fetch_semver(Client::BIN_NAME, &args.bin_directory)?,
-            ),
+            (Client::BIN_NAME, semver::Version::from(&client_version)),
             (
                 RelaySigner::BIN_NAME,
                 NodeVersion::fetch_semver(RelaySigner::BIN_NAME, &args.bin_directory)?,
@@ -505,6 +504,12 @@ impl App {
                 args.cardano_devnet.cardano_node_version.to_owned(),
             ),
         ]))?;
+        let genesis_keys = GenesisKeys::select(
+            &args.mithril.mithril_era,
+            args.mithril.mithril_next_era.as_deref(),
+            &aggregator_version,
+            &client_version,
+        );
 
         let toolkit = ScenarioToolkit::new(ScenarioToolkitContext::new_from_cardano_epoch(
             args.cardano_devnet.cardano_slot_length,
@@ -581,6 +586,7 @@ impl App {
                     startup_protocol_configuration,
                     signed_entity_types: scenario.signed_entity_types(),
                     aggregate_signature_type: args.mithril.aggregate_signature_type,
+                    genesis_keys,
                     use_dmq,
                     dmq_node_flavor: args.network_topology.dmq_node_flavor,
                     use_relays,
