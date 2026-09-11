@@ -87,11 +87,15 @@ impl<D: MembershipDigest> AggregateVerificationKeyForSnark<D> {
         }
 
         let commitment_end = bytes.len() - 8;
-        let merkle_tree_commitment = MerkleTreeCommitment::from_bytes(
+        // The legacy layout puts a raw digest here, and this decoder has already classified the
+        // input as legacy. Going back through `MerkleTreeCommitment::from_bytes` would re-run
+        // version detection on the digest and reinterpret a root that happens to look like CBOR.
+        let merkle_tree_commitment = MerkleTreeCommitment::new(
             bytes
                 .get(..commitment_end)
-                .ok_or(MerkleTreeError::SerializationError)?,
-        )?;
+                .ok_or(MerkleTreeError::SerializationError)?
+                .to_vec(),
+        );
 
         let mut u64_bytes = [0u8; 8];
         u64_bytes.copy_from_slice(
@@ -388,12 +392,9 @@ mod tests {
             }
         }
 
-        /// A legacy root that is itself a valid CBOR commitment is reinterpreted by the nested
-        /// decoder, which runs its own version detection and ignores the trailing bytes, so a
-        /// 32-byte root decodes to an empty one. Un-ignore once the nested decoder treats the root
-        /// as raw bytes when the containing key has already been classified legacy.
+        /// The legacy layout puts a raw digest in this slot, so a root that happens to be valid
+        /// CBOR must not be reinterpreted by the nested commitment decoder.
         #[test]
-        #[ignore = "fails: the nested commitment decoder reinterprets a CBOR-shaped root"]
         fn a_legacy_root_that_is_valid_cbor_survives_decoding() {
             let mut root = [0u8; 32];
             root[0..16].copy_from_slice(&[
