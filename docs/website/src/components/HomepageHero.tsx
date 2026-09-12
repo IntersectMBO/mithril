@@ -1,69 +1,48 @@
-import React, { FC } from "react";
 import Link from "@docusaurus/Link";
-import { forTablet } from "../../helpers/media-queries";
-import { motion } from "framer-motion";
-import { hero } from "../../homepage-content/hero";
 
-const HomepageHero: FC = () => {
+const HomepageHero = () => {
   return (
-    <div className="relative bg-cover bg-[url(/mobile-mithril-hero-thumbnail.jpg)] tablet:bg-[url(/desktop-mithril-hero-thumbnail.jpg)] bg-secondary z-20 -mt-(--ifm-navbar-height) pt-(--ifm-navbar-height)">
-      <video
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="auto"
-        onPlaying={(e) => {
-          (e.target as HTMLVideoElement).style.opacity = "1";
-        }}
-        aria-label="Video background"
-        className="absolute top-0 left-0 right-0 bottom-0 object-cover -z-10 w-full h-full opacity-0 transition-opacity"
-      >
-        <source
-          src={"desktop-mithril-hero-original.mp4"}
-          type="video/mp4"
-          media={forTablet}
-          data-testid="video-background-source-wide"
-        />
-        <source
-          src={"mobile-mithril-hero-original.mp4"}
-          type="video/mp4"
-          data-testid="video-background-source-narrow"
-        />
-      </video>
-      <div className="pageContainer pb-16 tablet:pb-40 pt-10 tablet:pt-[11.438rem]">
-        <div className="component-lg">
-          <div className="tablet:pb-6 pb-10 tablet:max-w-[544px] text-primary">
-            <motion.h1
-              className="hero-title tablet:pb-6 pb-10"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ ease: "easeInOut", duration: 0.75, delay: 0.4 }}
-            >
-              {hero.title}
-            </motion.h1>
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ ease: "easeInOut", duration: 0.75, delay: 1 }}
-              className="text-xl leading-8 mb-0"
-            >
-              {hero.standfirst}
-            </motion.p>
-          </div>
-          <motion.div
-            className="flex justify-center tablet:justify-start"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ ease: "easeInOut", duration: 0.75, delay: 1.2 }}
-          >
+    <div className="relative z-20 w-full h-screen -mt-(--ifm-navbar-height) pt-(--ifm-navbar-height) bg-white-ish">
+      <div className="h-full max-w-3/4 mx-auto grid grid-cols-2">
+        <div className="pt-30 flex justify-center">
+          <div className="pl-16">
+            <h1 className="hero-title pb-6 text-gray-dark">
+              Secure Cardano synchronization in{" "}
+              <span className="glitch">minutes</span>, not hours
+            </h1>
+            <p className="pb-6 text-(--ifm-color-primary-darker)">
+              Open Source &lt;/&gt; &nbsp;|&nbsp; Community Driven ∞
+              &nbsp;|&nbsp; Built for Cardano ✴
+            </p>
             <Link
-              className="inline-block px-6 py-4 font-bold text-base text-white rounded-lg border-[0.5px] border-gray-border no-underline bg-secondary hover:no-underline hover:scale-105 transition-all hover:text-white"
+              className="inline-flex items-center gap-2 px-6 py-3 font-bold text-white rounded-lg border-[0.5px] bg-gray-dark hover:no-underline hover:scale-105 transition-all hover:text-white mr-12"
               to="/manual/operate/run-signer-node"
             >
-              Run a signer node
+              Become a Signer
+              <span className="flex relative size-3">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-(--ifm-color-primary) opacity-75"></span>
+                <span className="relative inline-flex mx-auto my-auto size-2 rounded-full bg-(--ifm-color-primary) opacity-75"></span>
+              </span>
             </Link>
-          </motion.div>
+            <Link
+              className="inline-block gap-2 px-4 py-3 font-bold text-gray-dark rounded-lg border-[0.5px] bg-white hover:no-underline hover:scale-105 transition-all"
+              to="/manual/operate/run-signer-node"
+            >
+              Explore the protocol
+            </Link>
+          </div>
+        </div>
+        <div className="content-center">
+          <video
+            autoPlay
+            loop
+            muted
+            className="block m-auto w-5/8 object-contain"
+            preload="auto"
+            aria-label="Video Shield Mithril"
+          >
+            <source src={"mithril-shield.mp4"} type="video/mp4" />
+          </video>
         </div>
       </div>
     </div>

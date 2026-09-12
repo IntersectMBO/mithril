@@ -4,9 +4,8 @@ import Layout from "@theme/Layout";
 import { PageContext, PageType } from "../context/PageContext";
 import HomepageHero from "../components/HomepageHero";
 import Features from "../components/Features";
-import AnimatedText from "../components/AnimatedText";
-import UseCases from "../components/UseCases";
 import WhyMithril from "../components/WhyMithril";
+import Trusted from "../components/Trusted";
 
 export default function HomePage() {
   return (
@@ -19,9 +18,8 @@ export default function HomePage() {
           <HomepageHero />
           <main>
             <WhyMithril />
-            <AnimatedText />
             <Features />
-            <UseCases />
+            <Trusted />
           </main>
         </Layout>
       </div>
