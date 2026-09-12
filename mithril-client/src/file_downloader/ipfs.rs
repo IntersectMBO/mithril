@@ -76,8 +76,8 @@ impl IpfsFileDownloader {
             .with_context(|| format!("Could not build Kubo RPC endpoint for route '{route}'"))
     }
 
-    /// POST to a Kubo RPC `route` with the given IPFS path (`<directory-CID>/<filename>`) as its
-    /// `arg` query parameter.
+    /// POST to a Kubo RPC `route` with the given IPFS path (`ipfs://<directory-CID>/<filename>`) as
+    /// its `arg` query parameter.
     async fn post(
         &self,
         route: &str,
@@ -135,7 +135,7 @@ impl IpfsFileDownloader {
         let response = self
             .post(
                 "api/v0/files/stat",
-                &with_ipfs_namespace_prefix(ipfs_path),
+                ipfs_path,
                 Some(self.existence_check_timeout),
             )
             .await?;
@@ -163,11 +163,6 @@ impl IpfsFileDownloader {
     }
 }
 
-// files/stat does not work against directory CID without the `/ipfs/` prefix
-fn with_ipfs_namespace_prefix(cid: &str) -> String {
-    format!("/ipfs/{cid}")
-}
-
 #[async_trait]
 impl FileDownloader for IpfsFileDownloader {
     async fn download_unpack(
@@ -178,9 +173,7 @@ impl FileDownloader for IpfsFileDownloader {
         compression_algorithm: Option<CompressionAlgorithm>,
         download_event_type: DownloadEvent,
     ) -> StdResult<()> {
-        // `location` is a path in the form `<directory-CID>/<filename>` (confirmed against a live
-        // Kubo node), which is exactly the `arg` shape `cat` expect and only need to be prefixed
-        // with `/ipfs/` for `files/stat`.
+        // `location` is expected a path in the form `ipfs://<directory-CID>/<filename>`.
         let ipfs_path = location.as_str();
         let downloaded = self.open_stream(ipfs_path).await?;
 
@@ -225,12 +218,12 @@ mod tests {
         let target_dir = temp_dir_create!();
         let content = "Hello, world!";
         let size = content.len() as u64;
-        let ipfs_path = "QmDummyDirCid/00006.tar.zst";
+        let ipfs_path = "ipfs://QmDummyDirCid/00006.tar.zst";
         let server = MockServer::start();
         server.mock(|when, then| {
             when.method(POST)
                 .path("/api/v0/files/stat")
-                .query_param("arg", with_ipfs_namespace_prefix(ipfs_path));
+                .query_param("arg", ipfs_path);
             then.status(200)
                 .json_body(serde_json::json!({"Key": "bafkreidummy", "Size": size}));
         });
@@ -277,10 +270,10 @@ mod tests {
     #[tokio::test]
     async fn missing_block_reported_through_500_body_is_turned_into_a_not_found_error() {
         let target_dir = temp_dir_create!();
-        let ipfs_path = "QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/00007.tar.zst";
+        let ipfs_path = "ipfs://QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/00007.tar.zst";
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(POST).path("/api/v0/files/stat").query_param("arg", with_ipfs_namespace_prefix(ipfs_path));
+            when.method(POST).path("/api/v0/files/stat").query_param("arg", ipfs_path);
             then.status(500).json_body(serde_json::json!({
                 "Message": "no link named \"00007.tar.zst\" under QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2",
                 "Code": 0,
@@ -303,10 +296,9 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            error.to_string().contains(&format!(
-                "Location='{}' not found",
-                with_ipfs_namespace_prefix(ipfs_path)
-            )),
+            error
+                .to_string()
+                .contains(&format!("Location='{ipfs_path}' not found")),
             "unexpected error: {error:?}"
         );
     }
@@ -314,12 +306,12 @@ mod tests {
     #[tokio::test]
     async fn files_stat_timeout_raise_unreachable_file_downloader_error() {
         let target_dir = temp_dir_create!();
-        let ipfs_path = "QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/00007.tar.zst";
+        let ipfs_path = "ipfs://QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/00007.tar.zst";
         let server = MockServer::start();
         server.mock(|when, then| {
             when.method(POST)
                 .path("/api/v0/files/stat")
-                .query_param("arg", with_ipfs_namespace_prefix(ipfs_path));
+                .query_param("arg", ipfs_path);
             then.delay(Duration::from_millis(100));
         });
         let ipfs_file_downloader = downloader(&server, FeedbackSender::new(&[]))
@@ -341,7 +333,7 @@ mod tests {
         assert_eq!(
             Some(&FileDownloaderUnreachable {
                 source: "IPFS",
-                uri: with_ipfs_namespace_prefix(ipfs_path)
+                uri: ipfs_path.to_string(),
             }),
             error.downcast_ref::<FileDownloaderUnreachable>()
         );
@@ -350,13 +342,13 @@ mod tests {
     #[tokio::test]
     async fn cat_does_not_apply_timeout() {
         let target_dir = temp_dir_create!();
-        let ipfs_path = "QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/00007.tar.zst";
+        let ipfs_path = "ipfs://QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/00007.tar.zst";
 
         let server = MockServer::start();
         server.mock(|when, then| {
             when.method(POST)
                 .path("/api/v0/files/stat")
-                .query_param("arg", with_ipfs_namespace_prefix(ipfs_path));
+                .query_param("arg", ipfs_path);
             then.status(200)
                 .json_body(serde_json::json!({"Key": "bafkreidummy", "Size": 1}));
         });
@@ -384,12 +376,12 @@ mod tests {
     #[tokio::test]
     async fn context_deadline_exceeded_is_not_mistaken_for_a_missing_file() {
         let target_dir = temp_dir_create!();
-        let ipfs_path = "QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/fake-cardano-cli.sh";
+        let ipfs_path = "ipfs://QmRoiDvkuGRg4tjWabNp4Y5jxbUS8FFNFn9pDopqfbtfW2/fake-cardano-cli.sh";
         let server = MockServer::start();
         server.mock(|when, then| {
             when.method(POST)
                 .path("/api/v0/files/stat")
-                .query_param("arg", with_ipfs_namespace_prefix(ipfs_path));
+                .query_param("arg", ipfs_path);
             then.status(500).json_body(serde_json::json!({
                 "Message": "context deadline exceeded",
                 "Code": 0,
