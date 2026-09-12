@@ -1,9 +1,10 @@
 //! Ed25519 cryptographic helpers
 
 use anyhow::anyhow;
+use ed25519_dalek::rand_core::{CryptoRng, UnwrapErr};
 use ed25519_dalek::{Signer, SigningKey};
-use rand_chacha::ChaCha20Rng;
-use rand_chacha::rand_core::{CryptoRng, RngCore, SeedableRng};
+use getrandom::SysRng;
+use rand_chacha_ed25519::{ChaCha20Rng, rand_core::SeedableRng};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -35,7 +36,7 @@ impl Ed25519Signer {
     /// [Ed25519Signer] factory
     pub fn create_test_signer<R>(mut rng: R) -> Self
     where
-        R: CryptoRng + RngCore,
+        R: CryptoRng,
     {
         let secret_key = SigningKey::generate(&mut rng);
         Self::from_secret_key(secret_key.into())
@@ -49,7 +50,17 @@ impl Ed25519Signer {
 
     /// [Ed25519Signer] non deterministic
     pub fn create_non_deterministic_signer() -> Self {
-        let rng = rand_core::OsRng;
+        // `rand_core`'s `OsRng` was removed and replaced by `getrandom::SysRng`. `OsRng` was
+        // a wrapper around `getrandom` internally so the functionality does not change.
+        // `SysRng` reads from the same OS entropy sources as before (e.g. the `getrandom`
+        // syscall on Linux, `ProcessPrng` on Windows, `getentropy` on macOS) under
+        // the same documented security guarantee.
+        //
+        // `SysRng` only implements the fallible `TryRng`/`TryCryptoRng` (an OS entropy call can,
+        // in principle, fail). `UnwrapErr` makes `SysRng` Infallible to fit the `generate` bounds.
+        // It can panic on failure in the same way `OsRng` did so the chance of failure stays the
+        // same.
+        let rng = UnwrapErr(SysRng);
         Self::create_test_signer(rng)
     }
 
