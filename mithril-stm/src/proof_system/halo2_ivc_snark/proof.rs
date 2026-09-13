@@ -742,6 +742,220 @@ mod tests {
             .expect("Correct message should be accepted by verification function");
     }
 
+    // --- Input message encoding ---
+    // Exactly 32 bytes are the raw message and take precedence; any other width is decoded as hex.
+    // Both are then compared as field values, so equality is modulo the field order rather than
+    // over bytes.
+
+    mod input_message {
+        use proptest::prelude::*;
+
+        use crate::{
+            BaseFieldElement,
+            circuits::halo2_ivc::{
+                accumulator::trivial_accumulator,
+                state::State,
+                types::{MerkleTreeCommitment, ProtocolParametersHash},
+            },
+        };
+
+        use super::*;
+
+        fn message_hash(bytes: &[u8; 32]) -> MessageHash {
+            MessageHash::from_field(
+                BaseFieldElement::from_raw(bytes)
+                    .expect("from_raw applies modulus reduction and cannot fail")
+                    .0,
+            )
+        }
+
+        /// The helper reads only the stored message, so the proof around it can be empty.
+        fn proof_committing_to(message: &[u8; 32]) -> IvcProof<Blake2b256> {
+            let state = State::new(
+                StepCounter::new(5),
+                message_hash(message),
+                MerkleTreeCommitment::ZERO,
+                MerkleTreeCommitment::ZERO,
+                ProtocolParametersHash::ZERO,
+                ProtocolParametersHash::ZERO,
+                EpochNumber::new(3),
+            );
+            IvcProof::<Blake2b256>::new(IvcProofBytes::empty(), state, trivial_accumulator(&[]))
+        }
+
+        fn mixed_case_hex(message: &[u8; 32], uppercase_at: &[bool; 64]) -> String {
+            hex::encode(message)
+                .chars()
+                .zip(uppercase_at)
+                .map(|(character, upper)| {
+                    if *upper {
+                        character.to_ascii_uppercase()
+                    } else {
+                        character
+                    }
+                })
+                .collect()
+        }
+
+        /// Every encoding the helper is meant to accept for one message, each named so a failure
+        /// says which representation was at fault.
+        fn encodings_of(
+            message: &[u8; 32],
+            uppercase_at: &[bool; 64],
+        ) -> Vec<(&'static str, Vec<u8>)> {
+            vec![
+                ("raw", message.to_vec()),
+                ("lowercase hex", hex::encode(message).into_bytes()),
+                ("uppercase hex", hex::encode_upper(message).into_bytes()),
+                (
+                    "mixed-case hex",
+                    mixed_case_hex(message, uppercase_at).into_bytes(),
+                ),
+            ]
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(100))]
+
+            #[test]
+            fn a_message_is_accepted_in_every_encoding_of_itself(
+                message in any::<[u8; 32]>(),
+                uppercase_at in any::<[bool; 64]>(),
+            ) {
+                let proof = proof_committing_to(&message);
+
+                for (representation, encoding) in encodings_of(&message, &uppercase_at) {
+                    prop_assert!(
+                        proof.check_input_message_matches_state_message(&encoding).is_ok(),
+                        "{representation} of {} should have been accepted",
+                        hex::encode(message)
+                    );
+                }
+            }
+
+            #[test]
+            fn a_message_with_a_different_field_value_is_rejected_in_every_encoding(
+                message in any::<[u8; 32]>(),
+                other in any::<[u8; 32]>(),
+                uppercase_at in any::<[bool; 64]>(),
+            ) {
+                // Distinct bytes can reduce to the same element, and those are accepted by design.
+                prop_assume!(message_hash(&message) != message_hash(&other));
+                let proof = proof_committing_to(&message);
+
+                for (representation, encoding) in encodings_of(&other, &uppercase_at) {
+                    match proof.check_input_message_matches_state_message(&encoding) {
+                        Ok(()) => {
+                            return Err(TestCaseError::fail(format!(
+                                "{representation} of {} should have been rejected against {}",
+                                hex::encode(other),
+                                hex::encode(message)
+                            )));
+                        }
+                        Err(error) => prop_assert_eq!(
+                            error.downcast_ref::<IvcProofError>(),
+                            Some(&IvcProofError::InvalidMessage)
+                        ),
+                    }
+                }
+            }
+        }
+
+        /// Two hex shapes a generated message reaches only by chance: an encoding of nothing but
+        /// digits, and a letter-rich one whose mixed-case form genuinely differs from both pure
+        /// cases. A decoder refusing valid hex unless it contains a letter would pass the
+        /// properties and fail here.
+        #[test]
+        fn the_digit_only_and_letter_rich_encodings_are_accepted() {
+            let mut alternating = [false; 64];
+            for (index, upper) in alternating.iter_mut().enumerate() {
+                *upper = index % 2 == 0;
+            }
+
+            for message in [[0u8; 32], [0xabu8; 32]] {
+                let proof = proof_committing_to(&message);
+                for (representation, encoding) in encodings_of(&message, &alternating) {
+                    proof
+                        .check_input_message_matches_state_message(&encoding)
+                        .unwrap_or_else(|error| {
+                            panic!(
+                                "{representation} of {} should have been accepted: {error}",
+                                hex::encode(message)
+                            )
+                        });
+                }
+            }
+        }
+
+        /// Lengths that are neither the raw width nor a hex encoding of it, and a hex-length input
+        /// carrying a character that is not a hex digit.
+        #[test]
+        fn a_malformed_encoding_is_rejected() {
+            let message = [0xabu8; 32];
+            let proof = proof_committing_to(&message);
+            let hex_encoding = hex::encode(message);
+
+            let mut not_hex = hex_encoding.clone().into_bytes();
+            not_hex[7] = b'z';
+
+            for encoding in [
+                message[..31].to_vec(),
+                [message.as_slice(), &[0u8]].concat(),
+                hex_encoding.as_bytes()[..63].to_vec(),
+                [hex_encoding.as_bytes(), b"0"].concat(),
+                not_hex,
+                // What a 32-byte input would decode to if it were treated as hex.
+                vec![0u8; 16],
+            ] {
+                assert!(
+                    proof.check_input_message_matches_state_message(&encoding).is_err(),
+                    "malformed encoding of {} bytes should have been rejected",
+                    encoding.len()
+                );
+            }
+        }
+
+        /// A 32-byte input is the raw message even when every character is a hex digit — a whole
+        /// class of inputs a hex-first implementation would decode to the wrong width and reject.
+        #[test]
+        fn a_thirty_two_byte_input_of_hex_digits_is_read_as_raw_bytes() {
+            let raw: [u8; 32] = *b"0123456789abcdef0123456789abcdef";
+            let proof = proof_committing_to(&raw);
+
+            proof
+                .check_input_message_matches_state_message(&raw)
+                .expect("a 32-byte input is the message itself, not its hex encoding");
+
+            // Had the input been decoded as hex it would be 16 bytes, which is neither width the
+            // helper accepts — so that reading is rejected outright rather than silently allowed.
+            let decoded = hex::decode(raw).expect("the fixture is valid hex");
+            assert!(
+                proof.check_input_message_matches_state_message(&decoded).is_err(),
+                "the 16-byte hex decoding is not a width the helper accepts"
+            );
+        }
+
+        /// `from_raw` reduces modulo the field order, so a value and that value plus the modulus
+        /// are the same message. Recorded as behaviour: a successful check means the bytes name
+        /// the committed field element, not that they are the only bytes that do.
+        #[test]
+        fn a_message_offset_by_the_field_modulus_is_accepted() {
+            let message = [0u8; 32];
+            let proof = proof_committing_to(&message);
+
+            // p, little-endian.
+            let modulus: [u8; 32] = [
+                0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x5b, 0xfe, 0xff, 0x02, 0xa4,
+                0xbd, 0x53, 0x05, 0xd8, 0xa1, 0x09, 0x08, 0xd8, 0x39, 0x33, 0x48, 0x7d, 0x9d, 0x29,
+                0x53, 0xa7, 0xed, 0x73,
+            ];
+
+            proof
+                .check_input_message_matches_state_message(&modulus)
+                .expect("a representative of the same field element is accepted");
+        }
+    }
+
     #[test]
     fn ivc_proof_message_verification_rejects_wrong_message() {
         let step_output = load_embedded_next_epoch_step_output_asset()
