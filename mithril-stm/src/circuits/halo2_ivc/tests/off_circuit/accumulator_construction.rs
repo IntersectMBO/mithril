@@ -132,3 +132,76 @@ fn all_fixed_base_names_present_succeeds_for_accumulator_names() {
     check_accumulator_fixed_bases_present(&accumulator, &fixed_bases)
         .expect("every fixed base name referenced by the accumulator is present in the map");
 }
+
+// --- Structure of the trivial accumulator ---
+// The golden compares whole public-input vectors, so it already covers an unconditional change to
+// its own committed shape. What it cannot cover is the component structure across varied counts,
+// exact names, duplicates and the empty input — and the flat encoding omits the key strings, so
+// preserving the names themselves is only observable here.
+
+mod trivial_accumulator_structure {
+    use ff::Field;
+    use group::Group;
+    use proptest::prelude::*;
+
+    use crate::circuits::halo2_ivc::NativeField;
+
+    use super::*;
+
+    prop_compose! {
+        /// Drawn by index from a small pool, which makes repeated names common; randomly
+        /// generated strings essentially never collide.
+        fn arb_fixed_base_names()(
+            indices in prop::collection::vec(0usize..4, 0usize..=8),
+        ) -> Vec<String> {
+            let pool = ["", "base_one", "clé", "鍵"];
+            indices.into_iter().map(|index| pool[index].to_string()).collect()
+        }
+    }
+
+    fn assert_structure(names: &[String]) -> Result<(), TestCaseError> {
+        let accumulator = trivial_accumulator(names);
+        let expected: std::collections::BTreeSet<&String> = names.iter().collect();
+
+        let right_named = accumulator.rhs().fixed_base_scalars();
+        prop_assert_eq!(
+            right_named.keys().collect::<std::collections::BTreeSet<_>>(),
+            expected
+        );
+        for (name, scalar) in &right_named {
+            prop_assert_eq!(
+                *scalar,
+                NativeField::ZERO,
+                "{} carries a nonzero scalar",
+                name
+            );
+        }
+        prop_assert!(
+            accumulator.lhs().fixed_base_scalars().is_empty(),
+            "the left side must carry no named scalars"
+        );
+
+        for side in [accumulator.lhs(), accumulator.rhs()] {
+            prop_assert_eq!(side.bases(), vec![EmulatedCurve::identity()]);
+            prop_assert_eq!(side.scalars(), vec![NativeField::ONE]);
+        }
+        Ok(())
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn each_distinct_name_appears_once_with_a_zero_scalar(names in arb_fixed_base_names()) {
+            assert_structure(&names)?;
+        }
+    }
+
+    /// Guarantees both chosen shapes on every run.
+    #[test]
+    fn the_empty_and_all_duplicate_name_lists_keep_the_structure() {
+        assert_structure(&[]).expect("an empty name list is valid");
+        assert_structure(&["a".to_string(), "a".to_string(), "a".to_string()])
+            .expect("a repeated name is one key");
+    }
+}
