@@ -132,8 +132,10 @@ pub(crate) fn all_state_rows() -> BTreeMap<usize, &'static str> {
 #[cfg(test)]
 mod tests {
     use midnight_circuits::types::Instantiable;
+    use proptest::prelude::*;
 
     use super::*;
+    use crate::BaseFieldElement;
     use crate::circuits::halo2_ivc::{
         AssignedNativePoint, CircuitCurve, NativeField,
         state::{Global, State},
@@ -231,6 +233,105 @@ mod tests {
             "{} is not at its global row",
             GlobalField::GenesisVerificationKeyY.name()
         );
+    }
+
+    // --- State row values ---
+    // The sentinels below pin the order at 11 to 77, where the two integer fields never exceed a
+    // byte. A conversion narrowing them through `u32` maps every sentinel to itself, so only a
+    // full-width value distinguishes it.
+
+    fn reduced_field_element(bytes: &[u8; 32]) -> NativeField {
+        BaseFieldElement::from_raw(bytes)
+            .expect("from_raw applies modulus reduction and cannot fail")
+            .0
+    }
+
+    fn state_from(
+        step_counter: u64,
+        message: NativeField,
+        merkle_tree_commitment: NativeField,
+        next_merkle_tree_commitment: NativeField,
+        protocol_parameters: NativeField,
+        next_protocol_parameters: NativeField,
+        current_epoch: u64,
+    ) -> State {
+        State::new(
+            StepCounter::new(step_counter),
+            MessageHash::from_field(message),
+            MerkleTreeCommitment::from_field(merkle_tree_commitment),
+            MerkleTreeCommitment::from_field(next_merkle_tree_commitment),
+            ProtocolParametersHash::from_field(protocol_parameters),
+            ProtocolParametersHash::from_field(next_protocol_parameters),
+            EpochNumber::new(current_epoch),
+        )
+    }
+
+    /// Expectations are computed here rather than read back through the field wrappers: asking a
+    /// getter for the expected value would only restate that `as_public_input` calls it.
+    fn assert_rows_match(
+        state: &State,
+        step_counter: u64,
+        field_values: [NativeField; 5],
+        current_epoch: u64,
+    ) -> Result<(), TestCaseError> {
+        let public_input = state.as_public_input();
+        prop_assert_eq!(public_input.len(), STATE_SECTION_ROWS);
+        prop_assert_eq!(public_input[0], NativeField::from(step_counter));
+        for (offset, expected) in field_values.iter().enumerate() {
+            prop_assert_eq!(public_input[offset + 1], *expected);
+        }
+        prop_assert_eq!(public_input[6], NativeField::from(current_epoch));
+        Ok(())
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn every_state_row_carries_its_own_field_value(
+            step_counter in any::<u64>(),
+            current_epoch in any::<u64>(),
+            field_bytes in any::<[[u8; 32]; 5]>(),
+        ) {
+            let field_values = field_bytes.map(|bytes| reduced_field_element(&bytes));
+            // Distinct values, so a swap between two same-typed rows shows in every case.
+            for (index, value) in field_values.iter().enumerate() {
+                prop_assume!(!field_values[..index].contains(value));
+            }
+
+            let state = state_from(
+                step_counter,
+                field_values[0],
+                field_values[1],
+                field_values[2],
+                field_values[3],
+                field_values[4],
+                current_epoch,
+            );
+            assert_rows_match(&state, step_counter, field_values, current_epoch)?;
+        }
+    }
+
+    /// The integer extremes, forced because random sampling will not reliably reach them.
+    #[test]
+    fn the_integer_rows_carry_their_extremes() {
+        let field_values = [11u64, 22, 33, 44, 55].map(NativeField::from);
+
+        for (step_counter, current_epoch) in
+            [(0, 0), (0, u64::MAX), (u64::MAX, 0), (u64::MAX, u64::MAX)]
+        {
+            let state = state_from(
+                step_counter,
+                field_values[0],
+                field_values[1],
+                field_values[2],
+                field_values[3],
+                field_values[4],
+                current_epoch,
+            );
+            assert_rows_match(&state, step_counter, field_values, current_epoch)
+                .expect("the extreme integer rows should carry their own values");
+        }
     }
 
     #[test]
