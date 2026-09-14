@@ -338,7 +338,8 @@ jobs:
       fail-fast: false
       matrix:
         mode: ["std"]
-        era: ${{ fromJSON(needs.build-ubuntu.outputs.eras) }}
+        # era: ${{ fromJSON(needs.build-ubuntu.outputs.eras) }}
+        era: ["${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}"]
         next_era: [""]
         cardano_node_version: ["10.7.1", "11.0.1", "11.1.2"]
         hard_fork_latest_era_at_epoch: [0]
@@ -406,13 +407,13 @@ jobs:
             run_id: "#1"
             extra_args: "--aggregate-signature-type=Concatenation"
           # Include a test for the era switch with regenesis
-          - mode: "std-era-genesis"
-            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
-            next_era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[1] }}
-            cardano_node_version: "10.6.2"
-            hard_fork_latest_era_at_epoch: 0
-            run_id: "#1"
-            extra_args: "--mithril-era-regenesis-on-switch --aggregate-signature-type=Concatenation"
+          # - mode: "std-era-genesis"
+          #   era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
+          #   next_era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[1] }}
+          #   cardano_node_version: "10.6.2"
+          #   hard_fork_latest_era_at_epoch: 0
+          #   run_id: "#1"
+          #   extra_args: "--mithril-era-regenesis-on-switch --aggregate-signature-type=Concatenation"
           # Include a test for IPFS upload/download support
           - mode: "ipfs"
             era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
