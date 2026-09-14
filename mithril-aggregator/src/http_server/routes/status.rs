@@ -1,4 +1,5 @@
 use warp::Filter;
+use warp::filters::BoxedFilter;
 
 use mithril_common::{StdResult, messages::AggregatorStatusMessage};
 
@@ -7,10 +8,8 @@ use crate::{
     http_server::routes::{middlewares, router::RouterState},
 };
 
-pub fn routes(
-    router_state: &RouterState,
-) -> impl Filter<Extract = (impl warp::Reply + use<>,), Error = warp::Rejection> + Clone + use<> {
-    status(router_state)
+pub fn routes(router_state: &RouterState) -> BoxedFilter<(impl warp::Reply + use<>,)> {
+    status(router_state).boxed()
 }
 
 /// GET /status

@@ -1,5 +1,6 @@
 use slog::warn;
 use warp::Filter;
+use warp::filters::BoxedFilter;
 
 use mithril_common::MITHRIL_SIGNER_VERSION_HEADER;
 
@@ -7,12 +8,11 @@ use crate::dependency_injection::EpochServiceWrapper;
 use crate::http_server::routes::router::RouterState;
 use crate::http_server::routes::{MAX_CONTENT_LENGTH, middlewares};
 
-pub fn routes(
-    router_state: &RouterState,
-) -> impl Filter<Extract = (impl warp::Reply + use<>,), Error = warp::Rejection> + Clone + use<> {
+pub fn routes(router_state: &RouterState) -> BoxedFilter<(impl warp::Reply + use<>,)> {
     register_signer(router_state)
         .or(registered_signers(router_state))
         .or(signers_tickers(router_state))
+        .boxed()
 }
 
 /// POST /register-signer
