@@ -28,16 +28,14 @@ test-node = []
 future_snark = ["mithril-client/future_snark"]
 
 [dependencies]
-anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 mithril-client = { path = "../mithril-client", default-features = false, features = ["unstable"] }
 serde = { workspace = true }
 serde-wasm-bindgen = "0.6.5"
-serde_json = { workspace = true }
 wasm-bindgen = "0.2.126"
 wasm-bindgen-futures = "0.4.76"
-web-sys = { version = "0.3.103", features = ["BroadcastChannel", "console", "Storage", "Window"] }
+web-sys = { version = "0.3.103", features = ["BroadcastChannel"] }
 
 [target.'cfg(all(target_family = "wasm"))'.dependencies]
 # This getrandom version is required without the future_snark feature, and it can be removed once the future_snark feature is enabled.

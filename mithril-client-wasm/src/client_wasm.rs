@@ -15,7 +15,6 @@ use mithril_client::{
 };
 
 use crate::WasmResult;
-use crate::certificate_verification_cache::LocalStorageCertificateVerifierCache;
 
 const CLIENT_TYPE_WASM: &str = "WASM";
 
@@ -141,28 +140,10 @@ impl MithrilClient {
     }
 
     fn build_certifier_cache(
-        aggregator_endpoint: &str,
-        expiration_delay: TimeDelta,
+        _aggregator_endpoint: &str,
+        _expiration_delay: TimeDelta,
     ) -> Option<Arc<dyn CertificateVerifierCache>> {
-        if web_sys::window().is_none() {
-            web_sys::console::warn_1(
-                &"Can't enable certificate chain verification cache: window object is not available\
-                    (are you running in a browser environment?)"
-                    .into(),
-            );
-            return None;
-        }
-
-        web_sys::console::warn_1(
-            &"Danger: the certificate chain verification cache is enabled.\n\
-            This feature is highly experimental and insecure, and it must not be used in production."
-                .into(),
-        );
-
-        Some(Arc::new(LocalStorageCertificateVerifierCache::new(
-            aggregator_endpoint,
-            expiration_delay,
-        )))
+        None
     }
 
     /// Call the client to get a cardano database snapshot from a hash
