@@ -24,16 +24,18 @@ rug-backend = ["mithril-common/rug-backend"]
 # Enables `num-integer-backend` features for `mithril-common` dependency
 num-integer-backend = ["mithril-common/num-integer-backend"]
 
-# Enables the TLS features for the `mithril-common` dependency
+# Enables the TLS features for the registry download and the `mithril-common` dependency
 # Exactly one of these must be enabled
-native-tls = ["mithril-common/native-tls"]
-rustls = ["mithril-common/rustls"]
+native-tls = ["mithril-common/native-tls", "reqwest/native-tls"]
+rustls = ["mithril-common/rustls", "reqwest/rustls"]
 
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+futures = "0.3.32"
 mithril-common = { path = "../../mithril-common", version = "0.7.22", default-features = false }
+reqwest = { workspace = true, features = ["stream"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -41,6 +43,7 @@ tokio = { workspace = true }
 
 [dev-dependencies]
 hex = { workspace = true }
+httpmock = "0.8.3"
 mockall = { workspace = true }
 rand_chacha = { workspace = true }
 rand_core = { workspace = true }
