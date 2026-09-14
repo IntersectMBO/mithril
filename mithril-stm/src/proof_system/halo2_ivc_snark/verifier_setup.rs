@@ -219,18 +219,28 @@ impl IvcVerifierData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::circuits::{
-        halo2_ivc::tests::common::asset_readers::load_embedded_verification_context_asset,
-        trusted_setup::TrustedSetupProvider,
+    use crate::{
+        BaseFieldElement,
+        circuits::{
+            halo2_ivc::tests::common::asset_readers::load_embedded_verification_context_asset,
+            trusted_setup::TrustedSetupProvider,
+        },
     };
 
     #[test]
     fn ivc_verifier_data_round_trips_byte_for_byte() {
         let context = load_embedded_verification_context_asset()
             .expect("verification context asset should load");
+        // Nonzero: under `MessageHash::ZERO` a genesis message dropped on decode and defaulted
+        // back to zero re-encodes to the same bytes, so byte equality alone would not see it.
+        let genesis_message = MessageHash::from_field(
+            BaseFieldElement::from_raw(&[0x5a; 32])
+                .expect("from_raw applies modulus reduction and cannot fail")
+                .0,
+        );
 
         let verifier_data = IvcVerifierData::new(
-            MessageHash::ZERO,
+            genesis_message,
             context.certificate_verifying_key,
             context.recursive_verifying_key,
         );
@@ -244,6 +254,44 @@ mod tests {
             bytes, reencoded,
             "IvcVerifierData must round-trip byte-for-byte so the aggregator and client compute the same certificate hash"
         );
+        assert_eq!(
+            restored.genesis_message(),
+            genesis_message,
+            "the genesis message must survive the round trip, not be restored as zero"
+        );
+    }
+
+    #[test]
+    fn input_without_the_cbor_version_prefix_is_rejected() {
+        let context = load_embedded_verification_context_asset()
+            .expect("verification context asset should load");
+        let encoded = IvcVerifierData::new(
+            MessageHash::ZERO,
+            context.certificate_verifying_key,
+            context.recursive_verifying_key,
+        )
+        .to_bytes()
+        .expect("serialization should not fail");
+
+        let mut under_another_version = encoded.clone();
+        under_another_version[0] = under_another_version[0].wrapping_add(1);
+
+        for (description, candidate) in [
+            ("empty input", Vec::new()),
+            (
+                "the CBOR body with its version prefix stripped",
+                encoded[1..].to_vec(),
+            ),
+            (
+                "a body under a different version byte",
+                under_another_version,
+            ),
+        ] {
+            assert!(
+                IvcVerifierData::from_bytes(&candidate).is_err(),
+                "{description} must be rejected"
+            );
+        }
     }
 
     #[test]
