@@ -14,6 +14,9 @@ resource "null_resource" "mithril_bootstrap" {
     cardano_image_registry           = var.cardano_image_registry,
     dmq_image_id                     = var.dmq_image_id,
     dmq_image_registry               = var.dmq_image_registry,
+    ipfs_image_id                    = var.ipfs_image_id,
+    ipfs_image_registry              = var.ipfs_image_registry,
+    mithril_ipfs_enabled             = var.mithril_ipfs_enabled,
     mithril_aggregator_auth_username = var.mithril_aggregator_auth_username,
     mithril_aggregator_auth_password = var.mithril_aggregator_auth_password,
   }

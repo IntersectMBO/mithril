@@ -94,6 +94,22 @@ inputs:
     description: Mithril P2P network signer relay signature registration mode ('p2p' or 'passthrough') (experimental, for test only).
     required: false
     default: "p2p"
+  mithril_ipfs_enabled:
+    description: Deploy an IPFS node and upload the Cardano database immutable archives to it (experimental).
+    required: false
+    default: "false"
+  mithril_ipfs_storage_max:
+    description: Maximum disk space used by the IPFS node datastore (experimental).
+    required: false
+    default: "50GB"
+  ipfs_node_version:
+    description: IPFS node version (experimental).
+    required: false
+    default: "v0.38.1"
+  ipfs_node_docker_registry:
+    description: IPFS node Docker image registry (experimental).
+    required: false
+    default: "ipfs/kubo"
   mithril_api_domain:
     description: Mithril network api domain root.
     required: true
@@ -270,6 +286,8 @@ runs:
           cardano_image_registry                                                       = "${{ inputs.cardano_node_docker_registry }}"
           dmq_image_id                                                                 = "${{ inputs.dmq_node_version }}"
           dmq_image_registry                                                           = "${{ inputs.dmq_node_docker_registry }}"
+          ipfs_image_id                                                                = "${{ inputs.ipfs_node_version }}"
+          ipfs_image_registry                                                          = "${{ inputs.ipfs_node_docker_registry }}"
           google_region                                                                = "${{ inputs.google_region }}"
           google_zone                                                                  = "${{ inputs.google_zone }}"
           google_machine_type                                                          = "${{ inputs.google_machine_type }}"
@@ -288,6 +306,8 @@ runs:
           mithril_p2p_network_bootstrap_peer                                           = "${{ inputs.mithril_p2p_network_bootstrap_peer }}"
           mithril_p2p_signer_relay_signer_registration_mode                            = "${{ inputs.mithril_p2p_signer_relay_signer_registration_mode }}"
           mithril_p2p_signer_relay_signature_registration_mode                         = "${{ inputs.mithril_p2p_signer_relay_signature_registration_mode }}"
+          mithril_ipfs_enabled                                                         = "${{ inputs.mithril_ipfs_enabled }}"
+          mithril_ipfs_storage_max                                                     = "${{ inputs.mithril_ipfs_storage_max }}"
           mithril_api_domain                                                           = "${{ inputs.mithril_api_domain }}"
           mithril_image_id                                                             = "${{ inputs.mithril_image_id }}"
           mithril_genesis_verification_key_url                                         = "${{ inputs.mithril_genesis_verification_key_url }}"

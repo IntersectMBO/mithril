@@ -1,6 +1,8 @@
 locals {
   mithril_aggregator_relay_mithril_listen_port            = 6060
   mithril_aggregator_dmq_port                             = 6161
+  mithril_aggregator_ipfs_swarm_port                      = 4001
+  mithril_aggregator_ipfs_rpc_api_url                     = "http://ipfs-node-aggregator:5001/"
   mithril_aggregator_ancillary_signer_gcp_kms_credentials = base64decode(var.mithril_aggregator_ancillary_signer_gcp_kms_credentials)
 }
 
@@ -29,6 +31,10 @@ resource "null_resource" "mithril_aggregator" {
     mithril_aggregator_cardano_transactions_database_connection_pool_size        = var.mithril_aggregator_cardano_transactions_database_connection_pool_size,
     mithril_aggregator_blockfrost_parameters                                     = var.mithril_aggregator_blockfrost_parameters,
     mithril_p2p_dmq_dense_topology                                               = var.mithril_p2p_dmq_dense_topology,
+    mithril_ipfs_enabled                                                         = var.mithril_ipfs_enabled,
+    mithril_ipfs_storage_max                                                     = var.mithril_ipfs_storage_max,
+    ipfs_image_id                                                                = var.ipfs_image_id,
+    ipfs_image_registry                                                          = var.ipfs_image_registry,
   }
 
   connection {
@@ -46,6 +52,7 @@ resource "null_resource" "mithril_aggregator" {
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-aggregator/cardano/ipc",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-aggregator/mithril/stores",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-aggregator/mithril/snapshots",
+      "mkdir -p /home/curry/data/${var.cardano_network}/mithril-aggregator/ipfs",
       <<-EOT
 set -e
 # Setup cardano node configuration
@@ -142,6 +149,8 @@ EOT
       "export MITHRIL_IMAGE_ID=${var.mithril_image_id}",
       "export DMQ_IMAGE_ID='${var.dmq_image_id}'",
       "export DMQ_IMAGE_REGISTRY=${var.dmq_image_registry}",
+      "export IPFS_IMAGE_ID=${var.ipfs_image_id}",
+      "export IPFS_IMAGE_REGISTRY=${var.ipfs_image_registry}",
       "export AGGREGATOR_HOST=${local.mithril_aggregator_host}",
       "export GOOGLE_APPLICATION_CREDENTIALS_JSON='${local.google_cloud_storage_credentials_json}'",
       "export SIGNED_ENTITY_TYPES='${var.mithril_aggregator_signed_entity_types}'",
@@ -178,6 +187,12 @@ if [ "$ANCILLARY_FILES_SIGNER_TYPE" = "gcp-kms" ]; then
 fi
 EOT
       ,
+      <<-EOT
+if [ "${var.mithril_ipfs_enabled}" = "true" ]; then
+  export IPFS_RPC_SERVER_CONFIG=$(jq -nc --arg url '${local.mithril_aggregator_ipfs_rpc_api_url}' '{"url": $url}')
+fi
+EOT
+      ,
       "export BLOCKFROST_PARAMETERS='${var.mithril_aggregator_blockfrost_parameters}'",
       "export ALLOW_UNPARSABLE_BLOCK=${var.mithril_aggregator_allow_unparsable_block}",
       "export CARDANO_BLOCKS_TRANSACTIONS_PROVER_CACHE_POOL_SIZE=${var.mithril_aggregator_cardano_blocks_transactions_prover_cache_pool_size}",
@@ -199,6 +214,9 @@ EOT
       "export AGGREGATOR_RELAY_LISTEN_PORT='${local.mithril_aggregator_relay_mithril_listen_port}'",
       "export AGGREGATOR_DMQ_ADDR='0.0.0.0'",
       "export AGGREGATOR_DMQ_PORT='${local.mithril_aggregator_dmq_port}'",
+      "export AGGREGATOR_IPFS_SWARM_PORT='${local.mithril_aggregator_ipfs_swarm_port}'",
+      "export AGGREGATOR_IPFS_PUBLIC_ADDRESS='${google_compute_address.mithril-external-address.address}'",
+      "export AGGREGATOR_IPFS_STORAGE_MAX='${var.mithril_ipfs_storage_max}'",
       "export P2P_BOOTSTRAP_PEER='${var.mithril_p2p_network_bootstrap_peer}'",
       "export ENABLE_METRICS_SERVER=true",
       "export METRICS_SERVER_IP=0.0.0.0",
@@ -225,6 +243,12 @@ if [ "${var.mithril_use_p2p_network}" = "true" ] && [ "${var.mithril_p2p_use_rea
     DOCKER_COMPOSE_FILES="$DOCKER_COMPOSE_FILES -f $DOCKER_DIRECTORY/docker-compose-aggregator-p2p-bootstrap-override.yaml"
   fi
 fi
+# Support for aggregator upload to IPFS
+if [ "${var.mithril_ipfs_enabled}" = "true" ]; then
+  DOCKER_COMPOSE_FILES="$DOCKER_COMPOSE_FILES -f $DOCKER_DIRECTORY/docker-compose-aggregator-ipfs-override.yaml"
+else
+  docker compose -f $DOCKER_DIRECTORY/docker-compose-aggregator-base.yaml -f $DOCKER_DIRECTORY/docker-compose-aggregator-ipfs-override.yaml --profile all rm -sf ipfs-node
+fi
 # Support for aggregator follower
 if [ "${local.mithril_aggregator_is_follower}" = "true" ]; then
   DOCKER_COMPOSE_FILES="$DOCKER_COMPOSE_FILES -f $DOCKER_DIRECTORY/docker-compose-aggregator-follower-override.yaml"
@@ -240,6 +264,11 @@ fi
 EOT
       ,
       "docker compose $DOCKER_COMPOSE_FILES --profile all up -d",
+      <<-EOT
+if [ "${var.mithril_ipfs_enabled}" = "true" ]; then
+  docker compose $DOCKER_COMPOSE_FILES --profile all up -d --wait --wait-timeout 120 ipfs-node
+fi
+EOT
     ]
   }
 }
