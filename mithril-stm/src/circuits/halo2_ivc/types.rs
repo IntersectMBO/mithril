@@ -295,8 +295,6 @@ mod protocol_message_preimage_tests {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
-
         #[test]
         fn each_accessor_decodes_only_its_own_range(bytes in any::<[u8; PREIMAGE_SIZE]>()) {
             let preimage = ProtocolMessagePreimage::new(bytes);

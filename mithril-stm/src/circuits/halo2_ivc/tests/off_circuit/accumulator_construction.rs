@@ -133,7 +133,6 @@ fn all_fixed_base_names_present_succeeds_for_accumulator_names() {
         .expect("every fixed base name referenced by the accumulator is present in the map");
 }
 
-// --- Structure of the trivial accumulator ---
 // The golden compares whole public-input vectors, so it already covers an unconditional change to
 // its own committed shape. What it cannot cover is the component structure across varied counts,
 // exact names, duplicates and the empty input — and the flat encoding omits the key strings, so
@@ -189,8 +188,6 @@ mod trivial_accumulator_structure {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
-
         #[test]
         fn each_distinct_name_appears_once_with_a_zero_scalar(names in arb_fixed_base_names()) {
             assert_structure(&names)?;
@@ -206,7 +203,6 @@ mod trivial_accumulator_structure {
     }
 }
 
-// --- Fixed-base availability guards ---
 // Both guards run ahead of library calls that panic rather than returning. The existing examples
 // build their accumulators through `trivial_accumulator`, whose left-hand named map is always
 // empty. The dual-MSM example uses a wrong prefix, which moves the fixed and permutation names
@@ -275,8 +271,6 @@ mod fixed_base_guards {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
-
         /// Success is exactly that the names both sides reference are available. Extra available
         /// names are allowed, and the points are irrelevant to a names-only guard.
         #[test]

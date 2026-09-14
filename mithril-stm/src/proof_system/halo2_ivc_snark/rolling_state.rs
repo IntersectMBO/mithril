@@ -427,8 +427,6 @@ mod tests {
         }
 
         proptest! {
-            #![proptest_config(ProptestConfig::with_cases(100))]
-
             #[test]
             fn only_a_next_epoch_step_past_genesis_with_diverged_parameters_is_rejected(
                 (protocol_parameters, next_protocol_parameters) in arb_parameter_pair(),
@@ -688,14 +686,13 @@ mod tests {
             ));
         }
 
-        // --- Epoch relation property ---
         // Overflow is checked first; otherwise the relation between the two epochs selects the
         // branch, and acceptance additionally needs that branch's state guards. Each relation is
         // constructed from the generated epoch rather than sampled, because a uniform pair of
         // `u64` values rarely lands on any of the relations that matter.
 
-        /// The rolling state and the aggregate key do not depend on the incoming epoch, so a case
-        /// builds them once and varies only the preimage.
+        // The rolling state and the aggregate key do not depend on the incoming epoch, so a case
+        // builds them once and varies only the preimage.
         fn classify(
             rolling_state: &IvcRollingState,
             aggregate_verification_key: &AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
@@ -773,8 +770,6 @@ mod tests {
         }
 
         proptest! {
-            #![proptest_config(ProptestConfig::with_cases(100))]
-
             #[test]
             fn the_epoch_relation_selects_the_transition(
                 (last_committed_epoch, backward_offset, forward_offset)
@@ -885,8 +880,9 @@ mod tests {
         use super::*;
 
         /// Three signatures rather than one, so a decoder restoring a constant signature is
-        /// observable. Minted once for the whole run: a Schnorr key generation per case would
-        /// dominate the property's cost, and nothing under test reads the signature.
+        /// observable. The codec carries the signature as opaque data and never verifies it, so
+        /// these are fixtures: initialized once per test process and reused across the property's
+        /// cases. This is bounded variation, not coverage of arbitrary signatures.
         fn signature_pool() -> &'static [StandardSchnorrSignature; 3] {
             static SIGNATURES: OnceLock<[StandardSchnorrSignature; 3]> = OnceLock::new();
             SIGNATURES.get_or_init(|| {
@@ -1018,8 +1014,6 @@ mod tests {
         }
 
         proptest! {
-            #![proptest_config(ProptestConfig::with_cases(100))]
-
             /// The committed round-trip compares reserialized bytes of a genesis fixture, which
             /// can agree despite value loss and leaves every non-genesis value unvisited. This
             /// compares the restored components against the originals saved before encoding.

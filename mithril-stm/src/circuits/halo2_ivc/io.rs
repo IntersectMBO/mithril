@@ -291,8 +291,6 @@ mod tests {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
-
         #[test]
         fn msm_round_trip_preserves_every_component(original in arb_msm()) {
             let encoded = encode_to_bytes(&original);

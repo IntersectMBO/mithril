@@ -742,7 +742,6 @@ mod tests {
             .expect("Correct message should be accepted by verification function");
     }
 
-    // --- Input message encoding ---
     // Exactly 32 bytes are the raw message and take precedence; any other width is decoded as hex.
     // Both are then compared as field values, so equality is modulo the field order rather than
     // over bytes.
@@ -815,8 +814,6 @@ mod tests {
         }
 
         proptest! {
-            #![proptest_config(ProptestConfig::with_cases(100))]
-
             #[test]
             fn a_message_is_accepted_in_every_encoding_of_itself(
                 message in any::<[u8; 32]>(),

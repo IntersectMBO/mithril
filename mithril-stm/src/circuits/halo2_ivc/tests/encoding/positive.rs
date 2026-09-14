@@ -227,7 +227,6 @@ fn vk_serialization_round_trip() {
     );
 }
 
-// --- Rigid preimage layout pinning tests ---
 // The generated layout property below covers every offset. This example is kept because its
 // 64-character hex value is the shape production sends, guaranteed on every run rather than
 // sampled.
@@ -246,7 +245,6 @@ fn rigid_preimage_dynamic_hash_is_at_offset_6() {
     assert_eq!(&preimage[6..38], &expected);
 }
 
-// --- Rigid preimage properties ---
 // The builder positions every slot by cursor arithmetic over label lengths, while the accessors
 // decode three of them through absolute range constants; the circuit hashes the whole preimage.
 // Generated values drive writer and reader against the same array, where the example fixtures
@@ -353,8 +351,6 @@ fn preimage_range_constants_match_their_literal_ranges() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(100))]
-
     #[test]
     fn a_rigid_preimage_carries_every_value_at_its_literal_offset(
         snapshot_digest in arb_snapshot_digest(),

@@ -321,8 +321,6 @@ mod tests {
         }
 
         proptest! {
-            #![proptest_config(ProptestConfig::with_cases(100))]
-
             #[test]
             fn an_unambiguous_legacy_key_survives_the_cbor_round_trip(
                 root in arb_unambiguous_root(),

@@ -235,9 +235,8 @@ mod tests {
         );
     }
 
-    // --- State row values ---
-    // The sentinels below pin the order at 11 to 77, where the two integer fields never exceed a
-    // byte. A conversion narrowing them through `u32` maps every sentinel to itself, so only a
+    // The existing sentinels pin the order at 11 to 77, where the two integer fields never exceed
+    // a byte. A conversion narrowing them through `u32` maps every sentinel to itself, so only a
     // full-width value distinguishes it.
 
     fn reduced_field_element(bytes: &[u8; 32]) -> NativeField {
@@ -285,8 +284,6 @@ mod tests {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
-
         #[test]
         fn every_state_row_carries_its_own_field_value(
             step_counter in any::<u64>(),

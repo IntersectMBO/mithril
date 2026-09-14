@@ -142,8 +142,9 @@ pub(crate) mod tests {
 
     use super::*;
 
-    /// Deterministic, and none of the helpers under test read it, so one signature is minted for
-    /// the whole run rather than a Schnorr key generated per fixture.
+    /// Deterministic, and none of the helpers under test read it. `nextest` gives each test its
+    /// own process, so nothing is cached across tests: the signature is initialized once per test
+    /// process and reused across that property's cases, which each call this.
     fn build_signature() -> StandardSchnorrSignature {
         static SIGNATURE: OnceLock<StandardSchnorrSignature> = OnceLock::new();
         *SIGNATURE.get_or_init(|| {
@@ -223,7 +224,6 @@ pub(crate) mod tests {
         use super::*;
         use crate::circuits::halo2_ivc::NativeField;
 
-        // --- Field-source property ---
         // The helper's whole job is choosing, per output field, between the rolling state, the
         // certificate arguments and the preimage. Each source is generated independently so that a
         // wrong choice shows up, rather than being hidden by two sources holding the same value.
@@ -283,8 +283,6 @@ pub(crate) mod tests {
         }
 
         proptest! {
-            #![proptest_config(ProptestConfig::with_cases(100))]
-
             #[test]
             fn every_next_state_field_comes_from_its_declared_source(
                 previous_step_counter in arb_advanceable_step_counter(),
