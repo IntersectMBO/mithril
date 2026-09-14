@@ -745,7 +745,6 @@ mod tests {
     // Exactly 32 bytes are the raw message and take precedence; any other width is decoded as hex.
     // Both are then compared as field values, so equality is modulo the field order rather than
     // over bytes.
-
     mod input_message {
         use proptest::prelude::*;
 

@@ -238,7 +238,6 @@ mod tests {
     // The existing sentinels pin the order at 11 to 77, where the two integer fields never exceed
     // a byte. A conversion narrowing them through `u32` maps every sentinel to itself, so only a
     // full-width value distinguishes it.
-
     fn reduced_field_element(bytes: &[u8; 32]) -> NativeField {
         BaseFieldElement::from_raw(bytes)
             .expect("from_raw applies modulus reduction and cannot fail")

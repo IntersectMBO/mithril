@@ -230,7 +230,6 @@ fn vk_serialization_round_trip() {
 // The generated layout property below covers every offset. This example is kept because its
 // 64-character hex value is the shape production sends, guaranteed on every run rather than
 // sampled.
-
 #[test]
 fn rigid_preimage_dynamic_hash_is_at_offset_6() {
     let message = build_test_message();
@@ -249,7 +248,6 @@ fn rigid_preimage_dynamic_hash_is_at_offset_6() {
 // decode three of them through absolute range constants; the circuit hashes the whole preimage.
 // Generated values drive writer and reader against the same array, where the example fixtures
 // hold stake 1 and epoch 42 and so cannot show a slot losing its high bytes.
-
 prop_compose! {
     /// Four shapes the builder has to keep apart: an absent entry hashes nothing while an empty
     /// value hashes the key spelling, a 64-character hex string is the shape production sends,

@@ -227,7 +227,6 @@ pub(crate) mod tests {
         // The helper's whole job is choosing, per output field, between the rolling state, the
         // certificate arguments and the preimage. Each source is generated independently so that a
         // wrong choice shows up, rather than being hidden by two sources holding the same value.
-
         fn reduced_field_element(bytes: &[u8; 32]) -> NativeField {
             BaseFieldElement::from_raw(bytes)
                 .expect("from_raw applies modulus reduction and cannot fail")

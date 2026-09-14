@@ -137,7 +137,6 @@ fn all_fixed_base_names_present_succeeds_for_accumulator_names() {
 // its own committed shape. What it cannot cover is the component structure across varied counts,
 // exact names, duplicates and the empty input — and the flat encoding omits the key strings, so
 // preserving the names themselves is only observable here.
-
 mod trivial_accumulator_structure {
     use ff::Field;
     use group::Group;
@@ -208,7 +207,6 @@ mod trivial_accumulator_structure {
 // empty. The dual-MSM example uses a wrong prefix, which moves the fixed and permutation names
 // together while `-G` stays unprefixed and inline labels are skipped, so a correct name carrying
 // the wrong point is never reached.
-
 mod fixed_base_guards {
     use ff::Field;
     use group::Group;

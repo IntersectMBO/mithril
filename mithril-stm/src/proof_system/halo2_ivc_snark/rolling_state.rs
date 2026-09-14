@@ -694,11 +694,6 @@ mod tests {
             ));
         }
 
-        // Overflow is checked first; otherwise the relation between the two epochs selects the
-        // branch, and acceptance additionally needs that branch's state guards. Each relation is
-        // constructed from the generated epoch rather than sampled, because a uniform pair of
-        // `u64` values rarely lands on any of the relations that matter.
-
         // The rolling state and the aggregate key do not depend on the incoming epoch, so a case
         // builds them once and varies only the preimage.
         fn classify(
@@ -778,6 +773,10 @@ mod tests {
         }
 
         proptest! {
+            /// Overflow is checked first; otherwise the relation between the two epochs selects
+            /// the branch, and acceptance additionally needs that branch's state guards. Each
+            /// relation is constructed from the generated epoch rather than sampled, because a
+            /// uniform pair of `u64` values rarely lands on any of the relations that matter.
             #[test]
             fn the_epoch_relation_selects_the_transition(
                 (last_committed_epoch, backward_offset, forward_offset)
