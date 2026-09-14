@@ -17,6 +17,11 @@ all-features = true
 # Enables the registry, which requires the future SNARK implementation of the `mithril-common` dependency
 future_snark = ["mithril-common/future_snark"]
 
+# TLS backend of the registry download
+# Exactly one of these must be enabled
+native-tls = ["reqwest/native-tls"]
+rustls = ["reqwest/rustls"]
+
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -31,6 +36,7 @@ tokio = { workspace = true }
 
 [dev-dependencies]
 hex = { workspace = true }
+httpmock = "0.8.3"
 mockall = { workspace = true }
 rand_chacha = { workspace = true }
 rand_core = { workspace = true }

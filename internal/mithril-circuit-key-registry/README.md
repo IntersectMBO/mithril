@@ -9,7 +9,7 @@ It holds:
   epoch range or revoked, and its genesis signature,
 - the certifiers checking the circuit verification key digests of a certificate against the
   registry, with a cache refreshing the registry periodically,
-- the retriever of the signed registry from a local file.
+- the retrievers of the signed registry from a local file or over HTTP.
 
 The nodes enforce the registry through the `CircuitVerificationKeyCertifier` trait of
 `mithril-common`.

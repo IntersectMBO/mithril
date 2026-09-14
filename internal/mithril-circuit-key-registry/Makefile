@@ -5,10 +5,10 @@ CARGO = cargo
 all: test build
 
 build:
-	${CARGO} build --release --features future_snark
+	${CARGO} build --release --features rustls,future_snark
 
 test:
-	${CARGO} test --features future_snark
+	${CARGO} test --features rustls,future_snark
 
 check:
 	${CARGO} check --release --all-features --all-targets
@@ -16,4 +16,4 @@ check:
 	${CARGO} fmt --check
 
 doc:
-	${CARGO} doc --no-deps --open --features future_snark
+	${CARGO} doc --no-deps --open --features rustls,future_snark

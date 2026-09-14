@@ -4417,6 +4417,7 @@ dependencies = [
  "chrono",
  "futures",
  "hex",
+ "httpmock",
  "mithril-common",
  "mockall",
  "rand_chacha 0.3.1",
