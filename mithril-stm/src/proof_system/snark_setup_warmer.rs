@@ -14,8 +14,9 @@ pub struct SnarkProverSetupWarmer;
 
 impl SnarkProverSetupWarmer {
     /// Materializes the setups `aggregate_signature_type` needs for `parameters` into the cache the
-    /// provers read, deriving and storing their keys on a miss. Nothing to materialize for a
-    /// concatenation aggregate signature.
+    /// provers read, deriving and storing their keys on a miss. An IVC aggregation proves the
+    /// certificate before folding it, so both setups are materialized for it. Nothing to
+    /// materialize for a concatenation aggregate signature.
     ///
     /// The setups are kept resident, since the process calling this is the one that will aggregate.
     pub fn warm(
@@ -29,6 +30,8 @@ impl SnarkProverSetupWarmer {
                     .certificate_setup(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?;
             }
             AggregateSignatureType::IvcSnark => {
+                SnarkProverSetupReuse::Enabled
+                    .certificate_setup(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?;
                 SnarkProverSetupReuse::Enabled.ivc_setup(parameters)?;
             }
         }
