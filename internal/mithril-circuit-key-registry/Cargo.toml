@@ -31,6 +31,7 @@ mithril-common = { path = "../../mithril-common", version = "0.7.23" }
 reqwest = { workspace = true, features = ["stream"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+slog = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 
@@ -40,4 +41,6 @@ httpmock = "0.8.3"
 mockall = { workspace = true }
 rand_chacha = { workspace = true }
 rand_core = { workspace = true }
+slog-async = { workspace = true }
+slog-term = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
