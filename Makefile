@@ -4,6 +4,7 @@ COMPONENTS = demo/protocol-demo \
 			 internal/mithril-aggregator-client \
 			 internal/mithril-aggregator-discovery \
 			 internal/mithril-build-script \
+			 internal/mithril-circuit-key-registry \
 			 internal/mithril-cli-helper \
 			 internal/mithril-dmq \
 			 internal/mithril-doc \

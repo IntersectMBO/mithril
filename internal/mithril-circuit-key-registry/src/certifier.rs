@@ -1,4 +1,4 @@
-//! Certifier of circuit verification key digests against the genesis-signed registry.
+//! Certifiers of circuit verification key digests against the genesis-signed registry.
 
 use std::sync::Arc;
 
@@ -8,13 +8,12 @@ use chrono::{DateTime, Utc};
 use thiserror::Error;
 use tokio::sync::RwLock;
 
-use mithril_stm::CircuitVerificationKeyDigest;
+use mithril_common::certificate_chain::CircuitVerificationKeyCertifier;
+use mithril_common::crypto_helper::{CircuitVerificationKeyDigest, GenesisVerifier};
+use mithril_common::entities::Epoch;
+use mithril_common::{StdError, StdResult};
 
-use crate::crypto_helper::GenesisVerifier;
-use crate::entities::Epoch;
-use crate::{StdError, StdResult};
-
-use super::{CircuitVerificationKeyRegistry, CircuitVerificationKeyRegistryRetriever};
+use crate::{CircuitVerificationKeyRegistry, CircuitVerificationKeyRegistryRetriever};
 
 /// Minimum accepted registry version.
 ///
@@ -67,24 +66,6 @@ pub enum CircuitVerificationKeyCertifierError {
     },
 }
 
-/// Certifies circuit verification key digests against the genesis-signed registry.
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-pub trait CircuitVerificationKeyCertifier: Sync + Send {
-    /// Obtain the verified registry the digests are checked against.
-    async fn get_verified_registry(&self) -> StdResult<CircuitVerificationKeyRegistry>;
-
-    /// Check that every digest is whitelisted and not revoked for the given epoch.
-    async fn check(&self, digests: &[CircuitVerificationKeyDigest], epoch: Epoch) -> StdResult<()> {
-        let registry = self.get_verified_registry().await?;
-
-        registry
-            .check(digests, epoch)
-            .map_err(|e| anyhow!(e))
-            .with_context(|| "Circuit verification key certification failed")
-    }
-}
-
 /// A [CircuitVerificationKeyCertifier] retrieving and verifying the registry (genesis signature
 /// and minimum version) at every use.
 ///
@@ -107,12 +88,9 @@ impl MithrilCircuitVerificationKeyCertifier {
             genesis_verifier,
         }
     }
-}
 
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl CircuitVerificationKeyCertifier for MithrilCircuitVerificationKeyCertifier {
-    async fn get_verified_registry(&self) -> StdResult<CircuitVerificationKeyRegistry> {
+    /// Retrieve the registry and verify its genesis signature.
+    pub async fn get_verified_registry(&self) -> StdResult<CircuitVerificationKeyRegistry> {
         let signed_registry = self
             .registry_retriever
             .retrieve_signed_registry()
@@ -134,6 +112,28 @@ impl CircuitVerificationKeyCertifier for MithrilCircuitVerificationKeyCertifier 
 
         Ok(registry)
     }
+
+    /// Check that every digest is allowed by the verified registry for the given epoch.
+    fn certify(
+        registry: &CircuitVerificationKeyRegistry,
+        digests: &[CircuitVerificationKeyDigest],
+        epoch: Epoch,
+    ) -> StdResult<()> {
+        registry
+            .check(digests, epoch)
+            .map_err(|e| anyhow!(e))
+            .with_context(|| "Circuit verification key certification failed")
+    }
+}
+
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+impl CircuitVerificationKeyCertifier for MithrilCircuitVerificationKeyCertifier {
+    async fn check(&self, digests: &[CircuitVerificationKeyDigest], epoch: Epoch) -> StdResult<()> {
+        let registry = self.get_verified_registry().await?;
+
+        Self::certify(&registry, digests, epoch)
+    }
 }
 
 /// A verified registry together with the time it was last obtained.
@@ -145,21 +145,21 @@ struct VerifiedRegistryCache {
     refreshed_at: DateTime<Utc>,
 }
 
-/// A [CircuitVerificationKeyCertifier] decorator caching the verified registry for
-/// [REGISTRY_CACHE_TIME_TO_LIVE_IN_SECONDS].
+/// A [CircuitVerificationKeyCertifier] decorating a [MithrilCircuitVerificationKeyCertifier] with
+/// a cache of the verified registry for [REGISTRY_CACHE_TIME_TO_LIVE_IN_SECONDS].
 ///
 /// Once elapsed, the registry is obtained again from the decorated certifier, so a registry
 /// updated while the node runs (e.g. a revocation) is picked up without a restart. Fail-closed:
 /// a failed refresh fails the check, and a refresh cannot lower the registry version.
 pub struct CachedCircuitVerificationKeyCertifier {
-    certifier: Arc<dyn CircuitVerificationKeyCertifier>,
+    certifier: MithrilCircuitVerificationKeyCertifier,
     cache_time_to_live_in_seconds: i64,
     verified_registry_cache: RwLock<Option<VerifiedRegistryCache>>,
 }
 
 impl CachedCircuitVerificationKeyCertifier {
     /// Build a caching decorator over the given certifier.
-    pub fn new(certifier: Arc<dyn CircuitVerificationKeyCertifier>) -> Self {
+    pub fn new(certifier: MithrilCircuitVerificationKeyCertifier) -> Self {
         Self {
             certifier,
             cache_time_to_live_in_seconds: REGISTRY_CACHE_TIME_TO_LIVE_IN_SECONDS,
@@ -182,11 +182,9 @@ impl CachedCircuitVerificationKeyCertifier {
 
         (0..self.cache_time_to_live_in_seconds).contains(&age_in_seconds)
     }
-}
 
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl CircuitVerificationKeyCertifier for CachedCircuitVerificationKeyCertifier {
+    /// Obtain the verified registry from the cache, refreshing it through the decorated
+    /// certifier once the time to live elapsed.
     async fn get_verified_registry(&self) -> StdResult<CircuitVerificationKeyRegistry> {
         {
             let cache = self.verified_registry_cache.read().await;
@@ -225,19 +223,31 @@ impl CircuitVerificationKeyCertifier for CachedCircuitVerificationKeyCertifier {
     }
 }
 
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+impl CircuitVerificationKeyCertifier for CachedCircuitVerificationKeyCertifier {
+    async fn check(&self, digests: &[CircuitVerificationKeyDigest], epoch: Epoch) -> StdResult<()> {
+        let registry = self.get_verified_registry().await?;
+
+        MithrilCircuitVerificationKeyCertifier::certify(&registry, digests, epoch)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
 
-    use crate::crypto_helper::circuit_key_registry::retriever::MockCircuitVerificationKeyRegistryRetriever;
-    use crate::crypto_helper::{
+    use mithril_common::crypto_helper::{GenesisEd25519Signer, GenesisSigner};
+
+    use crate::retriever::MockCircuitVerificationKeyRegistryRetriever;
+    use crate::test::double::FakeCircuitVerificationKeyRegistryRetriever;
+    use crate::{
         CircuitVerificationKeyEntry, CircuitVerificationKeyRegistryError,
         CircuitVerificationKeyRegistryRetrieverError, CircuitVerificationKeyRejection,
-        CircuitVerificationKeyRejectionReason, CircuitVerificationKeyStatus, GenesisEd25519Signer,
-        GenesisSigner, SignedCircuitVerificationKeyRegistry,
+        CircuitVerificationKeyRejectionReason, CircuitVerificationKeyStatus,
+        SignedCircuitVerificationKeyRegistry,
     };
-    use crate::test::double::FakeCircuitVerificationKeyRegistryRetriever;
 
     use super::*;
 
@@ -418,11 +428,9 @@ mod tests {
             registry_retriever: MockCircuitVerificationKeyRegistryRetriever,
             genesis_signer: &GenesisSigner,
         ) -> CachedCircuitVerificationKeyCertifier {
-            CachedCircuitVerificationKeyCertifier::new(Arc::new(
-                MithrilCircuitVerificationKeyCertifier::new(
-                    Arc::new(registry_retriever),
-                    Arc::new(genesis_signer.create_verifier()),
-                ),
+            CachedCircuitVerificationKeyCertifier::new(MithrilCircuitVerificationKeyCertifier::new(
+                Arc::new(registry_retriever),
+                Arc::new(genesis_signer.create_verifier()),
             ))
         }
 
@@ -448,12 +456,12 @@ mod tests {
         #[test]
         fn a_cache_refreshed_in_the_future_is_stale() {
             let genesis_signer = genesis_signer();
-            let certifier = CachedCircuitVerificationKeyCertifier::new(Arc::new(
+            let certifier = CachedCircuitVerificationKeyCertifier::new(
                 MithrilCircuitVerificationKeyCertifier::new(
                     Arc::new(FakeCircuitVerificationKeyRegistryRetriever::that_fails()),
                     Arc::new(genesis_signer.create_verifier()),
                 ),
-            ));
+            );
             let cache = VerifiedRegistryCache {
                 registry: registry_allowing(&[digest(1)]),
                 refreshed_at: Utc::now() + chrono::Duration::hours(2),

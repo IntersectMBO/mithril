@@ -5,11 +5,20 @@
 //! the repository per network, retrieved at runtime and verified against the Ed25519 half of
 //! the genesis verification key before use.
 
-mod certifier;
-mod registry;
-mod retriever;
+#![warn(missing_docs)]
 
+#[cfg(feature = "future_snark")]
+mod certifier;
+#[cfg(feature = "future_snark")]
+mod registry;
+#[cfg(feature = "future_snark")]
+mod retriever;
+#[cfg(feature = "future_snark")]
+pub mod test;
+
+#[cfg(feature = "future_snark")]
 pub use certifier::*;
-pub use mithril_stm::{CIRCUIT_VERIFICATION_KEY_DIGEST_SIZE, CircuitVerificationKeyDigest};
+#[cfg(feature = "future_snark")]
 pub use registry::*;
+#[cfg(feature = "future_snark")]
 pub use retriever::*;
