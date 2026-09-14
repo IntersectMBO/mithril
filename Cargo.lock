@@ -4495,7 +4495,6 @@ dependencies = [
 name = "mithril-client-wasm"
 version = "0.10.8"
 dependencies = [
- "anyhow",
  "async-trait",
  "chrono",
  "getrandom 0.2.17",
@@ -4504,7 +4503,6 @@ dependencies = [
  "mithril-client",
  "serde",
  "serde-wasm-bindgen",
- "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
