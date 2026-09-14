@@ -15,12 +15,6 @@ use mithril_common::{StdError, StdResult};
 
 use crate::{CircuitVerificationKeyRegistry, CircuitVerificationKeyRegistryRetriever};
 
-/// Minimum accepted registry version.
-///
-/// Bumped at release time whenever a revocation ships, it bounds rollback attacks replaying an
-/// older, genuinely signed registry that would resurrect a revoked key.
-pub const MINIMUM_REGISTRY_VERSION: u64 = 1;
-
 /// Time to live in seconds of the registry cached by
 /// [CachedCircuitVerificationKeyCertifier].
 ///
@@ -43,17 +37,6 @@ pub enum CircuitVerificationKeyCertifierError {
     #[error("circuit verification key registry has an invalid genesis signature")]
     InvalidRegistrySignature(#[source] StdError),
 
-    /// The retrieved registry version is below the compiled minimum.
-    #[error(
-        "circuit verification key registry version {version} is below the minimum accepted version {minimum_version}"
-    )]
-    RegistryVersionBelowMinimum {
-        /// Version declared by the retrieved registry.
-        version: u64,
-        /// Minimum version accepted by this build.
-        minimum_version: u64,
-    },
-
     /// The refreshed registry version is below the previously verified one.
     #[error(
         "circuit verification key registry version {version} is below the previously verified version {cached_version}"
@@ -66,8 +49,8 @@ pub enum CircuitVerificationKeyCertifierError {
     },
 }
 
-/// A [CircuitVerificationKeyCertifier] retrieving and verifying the registry (genesis signature
-/// and minimum version) at every use.
+/// A [CircuitVerificationKeyCertifier] retrieving the registry and verifying its genesis
+/// signature at every use.
 ///
 /// Wrap it in a [CachedCircuitVerificationKeyCertifier] to avoid retrieving the registry at
 /// every check. Fail-closed: any retrieval or verification failure fails the check.
@@ -97,20 +80,9 @@ impl MithrilCircuitVerificationKeyCertifier {
             .await
             .map_err(|e| CircuitVerificationKeyCertifierError::RegistryRetrieval(e.into()))?;
 
-        let registry = signed_registry
+        signed_registry
             .verify(&self.genesis_verifier)
-            .map_err(CircuitVerificationKeyCertifierError::InvalidRegistrySignature)?;
-        if registry.version < MINIMUM_REGISTRY_VERSION {
-            return Err(
-                CircuitVerificationKeyCertifierError::RegistryVersionBelowMinimum {
-                    version: registry.version,
-                    minimum_version: MINIMUM_REGISTRY_VERSION,
-                }
-                .into(),
-            );
-        }
-
-        Ok(registry)
+            .map_err(|e| CircuitVerificationKeyCertifierError::InvalidRegistrySignature(e).into())
     }
 
     /// Check that every digest is allowed by the verified registry for the given epoch.
@@ -263,7 +235,7 @@ mod tests {
         digests: &[CircuitVerificationKeyDigest],
     ) -> CircuitVerificationKeyRegistry {
         CircuitVerificationKeyRegistry {
-            version: MINIMUM_REGISTRY_VERSION,
+            version: 1,
             entries: digests
                 .iter()
                 .map(|digest| CircuitVerificationKeyEntry {
@@ -376,29 +348,6 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn check_rejects_a_registry_version_below_the_minimum() {
-            let genesis_signer = genesis_signer();
-            let mut registry = registry_allowing(&[digest(1)]);
-            registry.version = MINIMUM_REGISTRY_VERSION - 1;
-            let certifier = certifier_over(registry, &genesis_signer);
-
-            let error = certifier.check(&[digest(1)], Epoch(10)).await.unwrap_err();
-
-            assert!(
-                matches!(
-                    error.downcast_ref::<CircuitVerificationKeyCertifierError>(),
-                    Some(
-                        CircuitVerificationKeyCertifierError::RegistryVersionBelowMinimum {
-                            version: 0,
-                            minimum_version: MINIMUM_REGISTRY_VERSION,
-                        }
-                    )
-                ),
-                "a registry version below the minimum must be rejected, got: {error}"
-            );
-        }
-
-        #[tokio::test]
         async fn check_retrieves_and_verifies_the_registry_at_every_use() {
             let genesis_signer = genesis_signer();
             let signed_registry = SignedCircuitVerificationKeyRegistry::try_new(
@@ -497,7 +446,7 @@ mod tests {
         async fn check_rejects_a_refreshed_registry_with_a_lower_version() {
             let genesis_signer = genesis_signer();
             let mut newer_registry = registry_allowing(&[digest(1)]);
-            newer_registry.version = MINIMUM_REGISTRY_VERSION + 1;
+            newer_registry.version = 2;
             let newer_signed_registry =
                 SignedCircuitVerificationKeyRegistry::try_new(newer_registry, &genesis_signer)
                     .unwrap();
