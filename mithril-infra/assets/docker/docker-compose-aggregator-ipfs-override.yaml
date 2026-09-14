@@ -22,6 +22,7 @@ services:
     ports:
       - "${AGGREGATOR_IPFS_SWARM_PORT}:${AGGREGATOR_IPFS_SWARM_PORT}"
       - "${AGGREGATOR_IPFS_SWARM_PORT}:${AGGREGATOR_IPFS_SWARM_PORT}/udp"
+    pids_limit: 2048
     healthcheck:
       test: ["CMD", "ipfs", "--api=/ip4/127.0.0.1/tcp/5001", "id"]
       interval: 30s
