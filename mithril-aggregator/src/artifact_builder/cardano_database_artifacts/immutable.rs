@@ -112,7 +112,7 @@ impl ImmutableFilesUploader for IpfsUploader {
 
         Ok(ImmutablesLocation::Ipfs {
             uri: MultiFilesUri::Template(TemplateUri(format!(
-                "{directory_cid}/{{immutable_file_number}}.tar.zst"
+                "ipfs://{directory_cid}/{{immutable_file_number}}.tar.zst"
             ))),
             compression_algorithm,
         })
@@ -299,6 +299,7 @@ mod tests {
     use mithril_cardano_node_internal_database::test::DummyCardanoDbBuilder;
     use mithril_common::{
         entities::TemplateUri,
+        temp_dir_create,
         test::{TempDir, assert_equivalent, equivalent_to},
     };
     use mithril_file_archiver::FileArchiver;
@@ -887,6 +888,8 @@ mod tests {
     }
 
     mod batch_upload {
+        use std::collections::HashMap;
+
         use mithril_common::test::TempDir;
 
         use crate::file_uploaders::FileUploadRetryPolicy;
@@ -970,6 +973,35 @@ mod tests {
             ImmutableFilesUploader::batch_upload(&uploader, &[archive], None)
                 .await
                 .expect_err("Should return an error when not template found");
+        }
+
+        #[tokio::test]
+        async fn ipfs_batch_upload_yield_ipfs_urls() {
+            let test_dir = temp_dir_create!();
+            let uploader = IpfsUploader::new_for_test("dir", move |mock| {
+                mock.expect_create_dir().returning(|_| Ok(()));
+                mock.expect_list_directory_files()
+                    .returning(move |_| Ok(HashMap::new()));
+                mock.expect_file_exists().never();
+                mock.expect_upload_file().returning(|_, _| Ok("file-cid".to_string()));
+                mock.expect_get_dir_cid()
+                    .returning(|_| Ok("directory-cid".to_string()));
+            });
+
+            let archive_1 = create_fake_archive(&test_dir, "00001.tar.zst");
+
+            let location = IpfsUploader::batch_upload(&uploader, &[archive_1], None)
+                .await
+                .unwrap();
+            assert_eq!(
+                ImmutablesLocation::Ipfs {
+                    uri: MultiFilesUri::Template(TemplateUri(
+                        "ipfs://directory-cid/{immutable_file_number}.tar.zst".to_string()
+                    )),
+                    compression_algorithm: None
+                },
+                location
+            );
         }
     }
 

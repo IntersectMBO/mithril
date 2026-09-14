@@ -117,7 +117,7 @@ configure_node_peers() {
     fi
 
     peer_id="${peer_ids[$((peer_node_id - 1))]}"
-    swarm_port=$((4000 + peer_node_id))
+    swarm_port=$((5200 + peer_node_id))
 
     peers_json="${peers_json}${separator}{\"ID\":\"${peer_id}\",\"Addrs\":[\"/ip4/127.0.0.1/tcp/${swarm_port}\"]}"
     separator=","
