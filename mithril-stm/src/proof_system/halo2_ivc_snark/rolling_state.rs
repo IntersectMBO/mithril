@@ -869,4 +869,212 @@ mod tests {
             ));
         }
     }
+
+    mod ancillary_prover_data_round_trip {
+        use group::Group;
+        use midnight_circuits::verifier::Msm;
+        use midnight_curves::G1Projective;
+        use proptest::prelude::*;
+        use std::{collections::BTreeMap, sync::OnceLock};
+
+        use crate::{
+            circuits::halo2_ivc::{NativeField, types::ProtocolParametersHash},
+            protocol::AncillaryProverData,
+        };
+
+        use super::*;
+
+        /// Three signatures rather than one, so a decoder restoring a constant signature is
+        /// observable. Minted once for the whole run: a Schnorr key generation per case would
+        /// dominate the property's cost, and nothing under test reads the signature.
+        fn signature_pool() -> &'static [StandardSchnorrSignature; 3] {
+            static SIGNATURES: OnceLock<[StandardSchnorrSignature; 3]> = OnceLock::new();
+            SIGNATURES.get_or_init(|| {
+                std::array::from_fn(|index| {
+                    let seed = u8::try_from(index).expect("the pool holds three signatures");
+                    let mut rng = ChaCha20Rng::from_seed([seed; 32]);
+                    let signing_key = SchnorrSigningKey::generate(&mut rng);
+                    signing_key
+                        .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
+                        .expect("standard schnorr signing should succeed for a synthetic message")
+                })
+            })
+        }
+
+        fn reduced_field_element(bytes: &[u8; 32]) -> NativeField {
+            BaseFieldElement::from_raw(bytes)
+                .expect("from_raw applies modulus reduction and cannot fail")
+                .0
+        }
+
+        /// Four distinct non-identity points, so a base substituted or reordered by the
+        /// accumulator codec is observable.
+        fn distinct_non_identity_points() -> [G1Projective; 4] {
+            let generator = G1Projective::generator();
+            let doubled = generator.double();
+            [generator, doubled, doubled + generator, doubled.double()]
+        }
+
+        prop_compose! {
+            fn arb_msm_with_pair_count(pair_count: usize)(
+                point_indices in prop::collection::vec(0usize..4, pair_count),
+                scalar_bytes in prop::collection::vec(any::<[u8; 32]>(), pair_count),
+                named_entries in prop::collection::vec(
+                    (
+                        prop_oneof![
+                            Just(String::new()),
+                            "[a-z_]{1,12}",
+                            Just("鍵".to_owned()),
+                        ],
+                        any::<[u8; 32]>(),
+                    ),
+                    0usize..=4,
+                ),
+            ) -> Msm<BlstrsEmulation> {
+                let points = distinct_non_identity_points();
+                let bases: Vec<G1Projective> =
+                    point_indices.iter().map(|index| points[*index]).collect();
+                let scalars: Vec<NativeField> = scalar_bytes
+                    .iter()
+                    .map(reduced_field_element)
+                    .collect();
+                let fixed_base_scalars: BTreeMap<String, NativeField> = named_entries
+                    .iter()
+                    .map(|(key, bytes)| (key.clone(), reduced_field_element(bytes)))
+                    .collect();
+                Msm::new(&bases, &scalars, &fixed_base_scalars)
+            }
+        }
+
+        prop_compose! {
+            /// The two sides always differ in pair count, so a swapped `lhs`/`rhs` is observable.
+            fn arb_accumulator()(lhs_pair_count in 0usize..=3, offset in 1usize..=3)(
+                lhs in arb_msm_with_pair_count(lhs_pair_count),
+                rhs in arb_msm_with_pair_count((lhs_pair_count + offset) % 4),
+            ) -> Accumulator<BlstrsEmulation> {
+                Accumulator::new(lhs, rhs)
+            }
+        }
+
+        prop_compose! {
+            /// CBOR carries a byte string's length inside the head byte up to 23 and in a
+            /// following byte from 24. Both sides of that boundary, and both endpoints of the
+            /// range, are weighted branches rather than a uniform draw — `prop_oneof!` samples
+            /// one branch per case, so this makes them likely, not guaranteed.
+            fn arb_ivc_proof_bytes()(
+                length in prop_oneof![
+                    Just(0usize),
+                    Just(22usize),
+                    Just(23usize),
+                    Just(24usize),
+                    Just(25usize),
+                    Just(64usize),
+                    0usize..=64,
+                ],
+            )(
+                bytes in prop::collection::vec(any::<u8>(), length),
+            ) -> IvcProofBytes {
+                IvcProofBytes::new(bytes)
+            }
+        }
+
+        prop_compose! {
+            /// CBOR encodes an unsigned integer inline up to 23 and then in one, two, four or
+            /// eight following bytes. Each width boundary is its own weighted branch, so the
+            /// state's two integer fields are unlikely to be drawn from the widest encoding
+            /// alone — `prop_oneof!` samples one branch per case rather than visiting all.
+            fn arb_cbor_width_boundary_u64()(
+                value in prop_oneof![
+                    Just(23u64),
+                    Just(24u64),
+                    Just(u64::from(u8::MAX)),
+                    Just(u64::from(u8::MAX) + 1),
+                    Just(u64::from(u16::MAX)),
+                    Just(u64::from(u16::MAX) + 1),
+                    Just(u64::from(u32::MAX)),
+                    Just(u64::from(u32::MAX) + 1),
+                    Just(u64::MAX),
+                    any::<u64>(),
+                ],
+            ) -> u64 {
+                value
+            }
+        }
+
+        /// `anyhow::Error` does not implement `std::error::Error`, so proptest's blanket
+        /// conversion does not reach it.
+        fn as_test_case_error(error: anyhow::Error) -> TestCaseError {
+            TestCaseError::fail(error.to_string())
+        }
+
+        fn assert_msm_components_match(
+            restored: &Msm<BlstrsEmulation>,
+            original: &Msm<BlstrsEmulation>,
+        ) -> Result<(), TestCaseError> {
+            prop_assert_eq!(restored.bases(), original.bases());
+            prop_assert_eq!(restored.scalars(), original.scalars());
+            prop_assert_eq!(restored.fixed_base_scalars(), original.fixed_base_scalars());
+            Ok(())
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(100))]
+
+            /// The committed round-trip compares reserialized bytes of a genesis fixture, which
+            /// can agree despite value loss and leaves every non-genesis value unvisited. This
+            /// compares the restored components against the originals saved before encoding.
+            #[test]
+            fn every_rolling_state_component_survives_the_round_trip(
+                step_counter in arb_cbor_width_boundary_u64().prop_map(|value| value.max(1)),
+                current_epoch in arb_cbor_width_boundary_u64(),
+                message in any::<[u8; 32]>(),
+                merkle_tree_commitment in any::<[u8; 32]>(),
+                next_merkle_tree_commitment in any::<[u8; 32]>(),
+                protocol_parameters in any::<[u8; 32]>(),
+                next_protocol_parameters in any::<[u8; 32]>(),
+                ivc_proof in arb_ivc_proof_bytes(),
+                accumulator in arb_accumulator(),
+                signature_index in 0usize..3,
+            ) {
+                let state = State::new(
+                    StepCounter::new(step_counter),
+                    MessageHash::from_field(reduced_field_element(&message)),
+                    MerkleTreeCommitment::from_field(reduced_field_element(
+                        &merkle_tree_commitment,
+                    )),
+                    MerkleTreeCommitment::from_field(reduced_field_element(
+                        &next_merkle_tree_commitment,
+                    )),
+                    ProtocolParametersHash::from_field(reduced_field_element(
+                        &protocol_parameters,
+                    )),
+                    ProtocolParametersHash::from_field(reduced_field_element(
+                        &next_protocol_parameters,
+                    )),
+                    EpochNumber::new(current_epoch),
+                );
+                let genesis_signature = signature_pool()[signature_index];
+                let rolling_state = IvcRollingState::new(
+                    state.clone(),
+                    ivc_proof.clone(),
+                    accumulator.clone(),
+                    genesis_signature,
+                );
+
+                let encoded = AncillaryProverData::IvcSnark(rolling_state)
+                    .to_bytes()
+                    .map_err(as_test_case_error)?;
+                let restored = AncillaryProverData::from_bytes(&encoded)
+                    .map_err(as_test_case_error)?
+                    .into_ivc_rolling_state()
+                    .expect("the decoded ancillary prover data must carry the IVC variant");
+
+                prop_assert_eq!(restored.state(), &state);
+                prop_assert_eq!(restored.ivc_proof(), &ivc_proof);
+                assert_msm_components_match(&restored.accumulator().lhs(), &accumulator.lhs())?;
+                assert_msm_components_match(&restored.accumulator().rhs(), &accumulator.rhs())?;
+                prop_assert_eq!(restored.genesis_signature(), genesis_signature);
+            }
+        }
+    }
 }
