@@ -32,4 +32,5 @@ ipfs config --json Swarm.ResourceMgr.MaxMemory '"1GB"'
 ipfs config --json Swarm.ResourceMgr.MaxFileDescriptors 1024
 
 ipfs config Datastore.StorageMax "${IPFS_STORAGE_MAX}"
+ipfs config --json Experimental.FilestoreEnabled true
 ipfs config Plugins.Plugins.telemetry.Config.Mode off
