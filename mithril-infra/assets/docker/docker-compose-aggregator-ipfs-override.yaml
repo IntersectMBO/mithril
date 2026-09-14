@@ -1,0 +1,41 @@
+services:
+  mithril-aggregator:
+    environment:
+      - IPFS_RPC_SERVER_CONFIG=${IPFS_RPC_SERVER_CONFIG}
+
+  ipfs-node:
+    image: ${IPFS_IMAGE_REGISTRY}:${IPFS_IMAGE_ID}
+    container_name: ipfs-node-aggregator
+    restart: always
+    user: ${CURRENT_UID}
+    profiles:
+      - ipfs
+      - all
+    environment:
+      - IPFS_PROFILE=server
+      - IPFS_SWARM_PORT=${AGGREGATOR_IPFS_SWARM_PORT}
+      - IPFS_PUBLIC_ADDRESS=${AGGREGATOR_IPFS_PUBLIC_ADDRESS}
+      - IPFS_STORAGE_MAX=${AGGREGATOR_IPFS_STORAGE_MAX}
+    volumes:
+      - ../data/${NETWORK}/mithril-aggregator/ipfs:/data/ipfs
+      - ./ipfs/container-init.d:/container-init.d:ro
+    ports:
+      - "${AGGREGATOR_IPFS_SWARM_PORT}:${AGGREGATOR_IPFS_SWARM_PORT}"
+      - "${AGGREGATOR_IPFS_SWARM_PORT}:${AGGREGATOR_IPFS_SWARM_PORT}/udp"
+    healthcheck:
+      test: ["CMD", "ipfs", "--api=/ip4/127.0.0.1/tcp/5001", "id"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "${LOGGING_DRIVER}"
+      options:
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
+        max-size: "${LOGGING_MAX_SIZE}"
+        max-file: "${LOGGING_MAX_FILE}"
+
+networks:
+  default:
+    name: mithril_network
+    external: true
