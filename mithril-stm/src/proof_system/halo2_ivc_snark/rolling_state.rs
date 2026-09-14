@@ -251,24 +251,32 @@ pub(crate) mod midnight_accumulator_serde {
 
     use crate::circuits::halo2_ivc::io::{ReadWithFormat, WriteWithFormat};
 
-    /// Serialization function based on the write function of Midnight's Accumulator
+    /// Serialization function based on the write function of Midnight's Accumulator.
+    ///
+    /// Both raw formats emit the same bytes — `write` only distinguishes `Processed` — so this
+    /// names the same format as the reader rather than leaving the pair looking mismatched.
     pub fn serialize<S: Serializer>(
         accumulator: &Accumulator<BlstrsEmulation>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         let mut buf = Vec::new();
         accumulator
-            .write(&mut buf, SerdeFormat::RawBytesUnchecked)
+            .write(&mut buf, SerdeFormat::RawBytes)
             .map_err(serde::ser::Error::custom)?;
         serializer.serialize_bytes(&buf)
     }
 
-    /// Deserialization function based on the read function of Midnight's Accumulator
+    /// Deserialization function based on the read function of Midnight's Accumulator.
+    ///
+    /// These bytes arrive inside a certificate, before anything has been verified, so the format
+    /// is the checked one: `RawBytesUnchecked` resolves to a reader that `expect`s its decode and
+    /// panics on any payload that is not a curve point. `RawBytes` reads the same bytes, returns
+    /// `InvalidData` instead, and additionally rejects points outside the prime-order subgroup.
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Accumulator<BlstrsEmulation>, D::Error> {
         let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
-        Accumulator::<BlstrsEmulation>::read(&mut bytes.as_slice(), SerdeFormat::RawBytesUnchecked)
+        Accumulator::<BlstrsEmulation>::read(&mut bytes.as_slice(), SerdeFormat::RawBytes)
             .map_err(serde::de::Error::custom)
     }
 }
@@ -869,6 +877,7 @@ mod tests {
         use group::Group;
         use midnight_circuits::verifier::Msm;
         use midnight_curves::G1Projective;
+        use midnight_proofs::utils::{SerdeFormat, helpers::ProcessedSerdeObject};
         use proptest::prelude::*;
         use std::{collections::BTreeMap, sync::OnceLock};
 
@@ -1011,6 +1020,49 @@ mod tests {
             prop_assert_eq!(restored.scalars(), original.scalars());
             prop_assert_eq!(restored.fixed_base_scalars(), original.fixed_base_scalars());
             Ok(())
+        }
+
+        /// The accumulator travels inside a certificate, so its bytes are untrusted before any
+        /// verification has run. A base that is not a curve point must be reported, not panicked
+        /// on: the reader reached through `RawBytesUnchecked` `expect`s its decode.
+        #[test]
+        fn a_certificate_carrying_a_malformed_accumulator_base_is_rejected() {
+            let base = G1Projective::generator();
+            let mut base_bytes = Vec::new();
+            base.write(&mut base_bytes, SerdeFormat::RawBytes)
+                .expect("writing to a vector cannot fail");
+
+            let rolling_state = IvcRollingState::new(
+                State::genesis(),
+                IvcProofBytes::empty(),
+                Accumulator::new(
+                    Msm::new(
+                        &[base],
+                        &[reduced_field_element(&[0u8; 32])],
+                        &BTreeMap::new(),
+                    ),
+                    Msm::new(&[], &[], &BTreeMap::new()),
+                ),
+                signature_pool()[0],
+            );
+            let mut encoded = AncillaryProverData::IvcSnark(rolling_state)
+                .to_bytes()
+                .expect("serialization should not fail");
+
+            AncillaryProverData::from_bytes(&encoded).expect(
+                "the unmodified encoding must decode, or the corruption below proves nothing",
+            );
+
+            let offset = encoded
+                .windows(base_bytes.len())
+                .position(|window| window == base_bytes)
+                .expect("the encoding carries the base it was built with");
+            encoded[offset..offset + base_bytes.len()].fill(0);
+
+            assert!(
+                AncillaryProverData::from_bytes(&encoded).is_err(),
+                "a base that is not a curve point must be reported as an error"
+            );
         }
 
         proptest! {

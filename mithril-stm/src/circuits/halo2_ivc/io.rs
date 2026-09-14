@@ -61,9 +61,11 @@ impl ReadWithFormat for Msm<RecursiveEmulation> {
         reader.read_exact(&mut num_bases)?;
         let num_bases = u32::from_le_bytes(num_bases);
 
-        // The unchecked point reader panics rather than erroring on a short payload, so each
-        // point is gathered before it is decoded. The width comes from the same format the
-        // caller passed, and one buffer is reused across the loop.
+        // Under `RawBytesUnchecked` the point reader panics on a short payload, so each point is
+        // gathered before it is decoded. That removes the truncation panic only: the same reader
+        // still `expect`s its decode, so a full-length payload that is not a curve point panics
+        // too. Callers decoding untrusted bytes must pass `RawBytes`, whose reader returns an
+        // error. The width comes from the format the caller passed, and one buffer is reused.
         let mut point_bytes = vec![0u8; byte_length::<EmulatedCurve>(format)];
         let bases: Vec<_> = (0..num_bases)
             .map(|_| {
