@@ -8,11 +8,11 @@ use anyhow::Context;
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::StdError;
+use mithril_common::StdError;
 #[cfg(not(target_family = "wasm"))]
-use crate::StdResult;
+use mithril_common::StdResult;
 
-use super::SignedCircuitVerificationKeyRegistry;
+use crate::SignedCircuitVerificationKeyRegistry;
 
 /// [CircuitVerificationKeyRegistryRetriever] related errors.
 #[derive(Debug, Error)]
@@ -82,10 +82,10 @@ impl CircuitVerificationKeyRegistryRetriever for FileCircuitVerificationKeyRegis
 
 #[cfg(test)]
 mod tests {
-    use crate::crypto_helper::{
-        CircuitVerificationKeyRegistry, GenesisEd25519Signer, GenesisSigner,
-    };
-    use crate::temp_dir_create;
+    use mithril_common::crypto_helper::{GenesisEd25519Signer, GenesisSigner};
+    use mithril_common::temp_dir_create;
+
+    use crate::CircuitVerificationKeyRegistry;
 
     use super::*;
 

@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use thiserror::Error;
 
-use mithril_stm::CircuitVerificationKeyDigest;
-
-use crate::StdResult;
-use crate::crypto_helper::{GenesisEd25519Signature, GenesisSigner, GenesisVerifier};
-use crate::entities::Epoch;
+use mithril_common::StdResult;
+use mithril_common::crypto_helper::{
+    CircuitVerificationKeyDigest, GenesisEd25519Signature, GenesisSigner, GenesisVerifier,
+};
+use mithril_common::entities::Epoch;
 
 /// Errors raised when checking circuit verification key digests against a
 /// [CircuitVerificationKeyRegistry].
@@ -273,7 +273,7 @@ mod tests {
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
 
-    use crate::crypto_helper::GenesisEd25519Signer;
+    use mithril_common::crypto_helper::GenesisEd25519Signer;
 
     use super::*;
 

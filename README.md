@@ -90,6 +90,8 @@ This repository consists of the following parts:
 
   - [**Mithril cardano-node-internal-database**](./internal/cardano-node/mithril-cardano-node-internal-database): mechanisms to read the files of a **Cardano node** internal database and compute digests from them, used by **Mithril network** nodes and client library.
 
+  - [**Mithril circuit key registry**](./internal/mithril-circuit-key-registry): the **registry** of the circuit verification keys trusted for **SNARK certificates**, used by **Mithril network** nodes and client library.
+
   - [**Mithril cli helper**](./internal/mithril-cli-helper): **CLI** tools for **Mithril** binaries.
 
   - [**Mithril DMQ node**](./internal/mithril-dmq): mechanisms to publish and consume messages of a **Decentralized Message Queue network** through a DMQ node, used by Mithril network nodes.

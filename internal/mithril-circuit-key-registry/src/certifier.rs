@@ -1,4 +1,4 @@
-//! Certifier of circuit verification key digests against the genesis-signed registry.
+//! Certifiers of circuit verification key digests against the genesis-signed registry.
 
 use std::sync::Arc;
 
@@ -8,13 +8,12 @@ use chrono::{DateTime, Utc};
 use thiserror::Error;
 use tokio::sync::RwLock;
 
-use mithril_stm::CircuitVerificationKeyDigest;
+use mithril_common::certificate_chain::CircuitVerificationKeyCertifier;
+use mithril_common::crypto_helper::{CircuitVerificationKeyDigest, GenesisVerifier};
+use mithril_common::entities::Epoch;
+use mithril_common::{StdError, StdResult};
 
-use crate::crypto_helper::GenesisVerifier;
-use crate::entities::Epoch;
-use crate::{StdError, StdResult};
-
-use super::{CircuitVerificationKeyRegistry, CircuitVerificationKeyRegistryRetriever};
+use crate::{CircuitVerificationKeyRegistry, CircuitVerificationKeyRegistryRetriever};
 
 /// Minimum accepted registry version.
 ///
@@ -67,22 +66,15 @@ pub enum CircuitVerificationKeyCertifierError {
     },
 }
 
-/// Certifies circuit verification key digests against the genesis-signed registry.
+/// Provides the verified circuit verification key registry the digests are checked against.
+///
+/// Implemented by the certifiers of this crate, so a certifier can decorate another one, e.g. to
+/// cache the verified registry.
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-pub trait CircuitVerificationKeyCertifier: Sync + Send {
-    /// Obtain the verified registry the digests are checked against.
+pub trait CircuitVerificationKeyRegistryProvider: Sync + Send {
+    /// Obtain the verified registry.
     async fn get_verified_registry(&self) -> StdResult<CircuitVerificationKeyRegistry>;
-
-    /// Check that every digest is whitelisted and not revoked for the given epoch.
-    async fn check(&self, digests: &[CircuitVerificationKeyDigest], epoch: Epoch) -> StdResult<()> {
-        let registry = self.get_verified_registry().await?;
-
-        registry
-            .check(digests, epoch)
-            .map_err(|e| anyhow!(e))
-            .with_context(|| "Circuit verification key certification failed")
-    }
 }
 
 /// A [CircuitVerificationKeyCertifier] retrieving and verifying the registry (genesis signature
@@ -107,11 +99,23 @@ impl MithrilCircuitVerificationKeyCertifier {
             genesis_verifier,
         }
     }
+
+    /// Check that every digest is allowed by the verified registry for the given epoch.
+    fn certify(
+        registry: &CircuitVerificationKeyRegistry,
+        digests: &[CircuitVerificationKeyDigest],
+        epoch: Epoch,
+    ) -> StdResult<()> {
+        registry
+            .check(digests, epoch)
+            .map_err(|e| anyhow!(e))
+            .with_context(|| "Circuit verification key certification failed")
+    }
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl CircuitVerificationKeyCertifier for MithrilCircuitVerificationKeyCertifier {
+impl CircuitVerificationKeyRegistryProvider for MithrilCircuitVerificationKeyCertifier {
     async fn get_verified_registry(&self) -> StdResult<CircuitVerificationKeyRegistry> {
         let signed_registry = self
             .registry_retriever
@@ -136,6 +140,16 @@ impl CircuitVerificationKeyCertifier for MithrilCircuitVerificationKeyCertifier 
     }
 }
 
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+impl CircuitVerificationKeyCertifier for MithrilCircuitVerificationKeyCertifier {
+    async fn check(&self, digests: &[CircuitVerificationKeyDigest], epoch: Epoch) -> StdResult<()> {
+        let registry = self.get_verified_registry().await?;
+
+        Self::certify(&registry, digests, epoch)
+    }
+}
+
 /// A verified registry together with the time it was last obtained.
 struct VerifiedRegistryCache {
     /// The verified registry.
@@ -145,23 +159,24 @@ struct VerifiedRegistryCache {
     refreshed_at: DateTime<Utc>,
 }
 
-/// A [CircuitVerificationKeyCertifier] decorator caching the verified registry for
-/// [REGISTRY_CACHE_TIME_TO_LIVE_IN_SECONDS].
+/// A [CircuitVerificationKeyCertifier] decorating a [CircuitVerificationKeyRegistryProvider] with
+/// a cache of the verified registry for [REGISTRY_CACHE_TIME_TO_LIVE_IN_SECONDS].
 ///
-/// Once elapsed, the registry is obtained again from the decorated certifier, so a registry
+/// Once elapsed, the registry is obtained again from the decorated provider, so a registry
 /// updated while the node runs (e.g. a revocation) is picked up without a restart. Fail-closed:
 /// a failed refresh fails the check, and a refresh cannot lower the registry version.
 pub struct CachedCircuitVerificationKeyCertifier {
-    certifier: Arc<dyn CircuitVerificationKeyCertifier>,
+    /// Provider of the verified registry.
+    provider: Arc<dyn CircuitVerificationKeyRegistryProvider>,
     cache_time_to_live_in_seconds: i64,
     verified_registry_cache: RwLock<Option<VerifiedRegistryCache>>,
 }
 
 impl CachedCircuitVerificationKeyCertifier {
-    /// Build a caching decorator over the given certifier.
-    pub fn new(certifier: Arc<dyn CircuitVerificationKeyCertifier>) -> Self {
+    /// Build a caching decorator over the given provider.
+    pub fn new(provider: Arc<dyn CircuitVerificationKeyRegistryProvider>) -> Self {
         Self {
-            certifier,
+            provider,
             cache_time_to_live_in_seconds: REGISTRY_CACHE_TIME_TO_LIVE_IN_SECONDS,
             verified_registry_cache: RwLock::new(None),
         }
@@ -186,7 +201,7 @@ impl CachedCircuitVerificationKeyCertifier {
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl CircuitVerificationKeyCertifier for CachedCircuitVerificationKeyCertifier {
+impl CircuitVerificationKeyRegistryProvider for CachedCircuitVerificationKeyCertifier {
     async fn get_verified_registry(&self) -> StdResult<CircuitVerificationKeyRegistry> {
         {
             let cache = self.verified_registry_cache.read().await;
@@ -204,7 +219,7 @@ impl CircuitVerificationKeyCertifier for CachedCircuitVerificationKeyCertifier {
             return Ok(cache.registry.clone());
         }
 
-        let registry = self.certifier.get_verified_registry().await?;
+        let registry = self.provider.get_verified_registry().await?;
         if let Some(previous_cache) = cache.as_ref()
             && registry.version < previous_cache.registry.version
         {
@@ -225,19 +240,31 @@ impl CircuitVerificationKeyCertifier for CachedCircuitVerificationKeyCertifier {
     }
 }
 
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+impl CircuitVerificationKeyCertifier for CachedCircuitVerificationKeyCertifier {
+    async fn check(&self, digests: &[CircuitVerificationKeyDigest], epoch: Epoch) -> StdResult<()> {
+        let registry = self.get_verified_registry().await?;
+
+        MithrilCircuitVerificationKeyCertifier::certify(&registry, digests, epoch)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
 
-    use crate::crypto_helper::circuit_key_registry::retriever::MockCircuitVerificationKeyRegistryRetriever;
-    use crate::crypto_helper::{
+    use mithril_common::crypto_helper::{GenesisEd25519Signer, GenesisSigner};
+
+    use crate::retriever::MockCircuitVerificationKeyRegistryRetriever;
+    use crate::test::double::FakeCircuitVerificationKeyRegistryRetriever;
+    use crate::{
         CircuitVerificationKeyEntry, CircuitVerificationKeyRegistryError,
         CircuitVerificationKeyRegistryRetrieverError, CircuitVerificationKeyRejection,
-        CircuitVerificationKeyRejectionReason, CircuitVerificationKeyStatus, GenesisEd25519Signer,
-        GenesisSigner, SignedCircuitVerificationKeyRegistry,
+        CircuitVerificationKeyRejectionReason, CircuitVerificationKeyStatus,
+        SignedCircuitVerificationKeyRegistry,
     };
-    use crate::test::double::FakeCircuitVerificationKeyRegistryRetriever;
 
     use super::*;
 

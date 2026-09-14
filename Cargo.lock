@@ -4409,6 +4409,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "mithril-circuit-key-registry"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "futures",
+ "hex",
+ "mithril-common",
+ "mockall",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.4",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "mithril-cli-helper"
 version = "0.0.9"
 dependencies = [
