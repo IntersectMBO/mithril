@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.19 (09-15-2026)
+
+### Added
+
+- Added `SnarkProverSetupWarmer`, which materializes the SNARK prover setups of an aggregate signature type into the process-wide cache the provers read, so a node pays for them ahead of its first aggregation instead of inside it. An IVC aggregation proves the certificate before folding it, so both setups are materialized for it.
+
 ## 0.12.18 (09-15-2026)
 
 ### Added

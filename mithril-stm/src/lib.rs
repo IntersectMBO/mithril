@@ -75,7 +75,8 @@ pub use circuits::{CIRCUIT_VERIFICATION_KEY_DIGEST_SIZE, CircuitVerificationKeyD
 
 #[cfg(feature = "future_snark")]
 pub use proof_system::{
-    AggregateVerificationKeyForSnark, MERKLE_TREE_DEPTH_FOR_SNARK, SnarkProof, SnarkVerifierData,
+    AggregateVerificationKeyForSnark, MERKLE_TREE_DEPTH_FOR_SNARK, SnarkProof,
+    SnarkProverSetupWarmer, SnarkVerifierData,
 };
 
 #[cfg(feature = "future_snark")]
