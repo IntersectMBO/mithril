@@ -4,7 +4,7 @@ use rand_core::{RngCore, SeedableRng};
 
 use crate::{
     crypto_helper::{ColdKeyGenerator, KesPeriod, OpCert, ProtocolStakeDistribution, Sum6KesBytes},
-    entities::{PartyId, ProtocolParameters, Stake, StakeDistribution},
+    entities::{Epoch, PartyId, ProtocolParameters, Stake, StakeDistribution},
     test::{
         builder::MithrilFixture,
         crypto_helper::{self, SerDeShelleyFileFormatTestExtension},
@@ -91,19 +91,32 @@ impl MithrilFixtureBuilder {
         self
     }
 
-    /// Transform the specified parameters to a [MithrilFixture].
-    pub fn build(self) -> MithrilFixture {
+    /// Transform the specified parameters to a [MithrilFixture], creating each signer's Proof of
+    /// Bound Possession (when applicable) for the given epoch.
+    pub fn build_at_epoch(&self, epoch: Epoch) -> MithrilFixture {
         let protocol_stake_distribution = self.generate_stake_distribution();
         let signers = crypto_helper::setup_signers_from_stake_distribution(
             &protocol_stake_distribution,
             &self.protocol_parameters.clone().into(),
+            #[cfg(feature = "future_snark")]
+            epoch,
         );
+        #[cfg(not(feature = "future_snark"))]
+        let _epoch = epoch;
 
         MithrilFixture::new(
-            self.protocol_parameters,
+            self.protocol_parameters.clone(),
             signers,
             protocol_stake_distribution,
+            #[cfg(feature = "future_snark")]
+            epoch,
         )
+    }
+
+    /// Transform the specified parameters to a [MithrilFixture], creating each signer's Proof of
+    /// Bound Possession (when applicable) for the Epoch 0.
+    pub fn build(&self) -> MithrilFixture {
+        Self::build_at_epoch(self, Epoch(0))
     }
 
     fn generate_stake_distribution(&self) -> ProtocolStakeDistribution {
