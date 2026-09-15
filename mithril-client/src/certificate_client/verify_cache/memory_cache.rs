@@ -4,31 +4,31 @@ use std::collections::HashMap;
 use std::ops::Add;
 use tokio::sync::RwLock;
 
-use crate::MithrilResult;
+use mithril_common::entities::ProtocolParameters;
+use mithril_common::messages::{CertificateMetadataMessagePart, SignedEntityTypeMessage};
+
 use crate::certificate_client::CertificateVerifierCache;
+use crate::{MithrilCertificate, MithrilResult};
 
 pub type CertificateHash = str;
 pub type PreviousCertificateHash = str;
 
-/// A in-memory cache for the certificate verifier.
+/// An in-memory cache for the certificate verifier.
 pub struct MemoryCertificateVerifierCache {
     expiration_delay: TimeDelta,
     cache: RwLock<HashMap<String, CachedCertificate>>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 struct CachedCertificate {
-    previous_hash: String,
+    certificate: MithrilCertificate,
     expire_at: DateTime<Utc>,
 }
 
 impl CachedCertificate {
-    fn new<TPreviousHash: Into<String>>(
-        previous_hash: TPreviousHash,
-        expire_at: DateTime<Utc>,
-    ) -> Self {
+    fn new(certificate: MithrilCertificate, expire_at: DateTime<Utc>) -> Self {
         CachedCertificate {
-            previous_hash: previous_hash.into(),
+            certificate,
             expire_at,
         }
     }
@@ -62,12 +62,36 @@ impl CertificateVerifierCache for MemoryCertificateVerifierCache {
         certificate_hash: &CertificateHash,
         previous_certificate_hash: &PreviousCertificateHash,
     ) -> MithrilResult<()> {
-        // todo: should we raise an error if an empty string is given for previous_certificate_hash ? (or any other kind of validation)
+        // todo: use real certificate data when the new API is available
         let mut cache = self.cache.write().await;
         cache.insert(
             certificate_hash.to_string(),
             CachedCertificate::new(
-                previous_certificate_hash,
+                MithrilCertificate {
+                    hash: certificate_hash.to_string(),
+                    previous_hash: previous_certificate_hash.to_string(),
+                    epoch: Default::default(),
+                    signed_entity_type: SignedEntityTypeMessage::Unknown,
+                    metadata: CertificateMetadataMessagePart {
+                        network: "".to_string(),
+                        protocol_version: "".to_string(),
+                        protocol_parameters: ProtocolParameters {
+                            k: 0,
+                            m: 0,
+                            phi_f: 0.0,
+                        },
+                        initiated_at: Default::default(),
+                        sealed_at: Default::default(),
+                        signers: vec![],
+                    },
+                    protocol_message: Default::default(),
+                    signed_message: "".to_string(),
+                    aggregate_verification_key: "".to_string(),
+                    ancillary_prover_data: None,
+                    ancillary_verifier_data: None,
+                    multi_signature: "".to_string(),
+                    genesis_signature: "".to_string(),
+                },
                 Utc::now().add(self.expiration_delay),
             ),
         );
@@ -82,7 +106,7 @@ impl CertificateVerifierCache for MemoryCertificateVerifierCache {
         Ok(cache
             .get(certificate_hash)
             .filter(|cached| cached.expire_at >= Utc::now())
-            .map(|cached| cached.previous_hash.clone()))
+            .map(|cached| cached.certificate.previous_hash.clone()))
     }
 
     async fn reset(&self) -> MithrilResult<()> {
@@ -99,40 +123,41 @@ pub(crate) mod test_tools {
     use super::*;
 
     impl MemoryCertificateVerifierCache {
-        /// `Test only` Populate the cache with the given hash and previous hash
-        pub(crate) fn with_items<'a, T>(mut self, key_values: T) -> Self
+        /// `Test only` Populate the cache with the given certificates
+        pub(crate) fn with_items<T>(mut self, chain: T) -> Self
         where
-            T: IntoIterator<Item = (&'a CertificateHash, &'a PreviousCertificateHash)>,
+            T: IntoIterator<Item = MithrilCertificate>,
         {
             let expire_at = Utc::now() + self.expiration_delay;
             self.cache = RwLock::new(
-                key_values
+                chain
                     .into_iter()
-                    .map(|(k, v)| (k.to_string(), CachedCertificate::new(v, expire_at)))
+                    .map(|cert| {
+                        (
+                            cert.hash.clone(),
+                            CachedCertificate::new(cert.clone(), expire_at),
+                        )
+                    })
                     .collect(),
             );
             self
         }
 
-        /// `Test only` Populate the cache with the given hash and previous hash from given certificates
+        /// `Test only` Populate the cache with the given certificates
         pub(crate) fn with_items_from_chain<'a, T>(self, chain: T) -> Self
         where
             T: IntoIterator<Item = &'a Certificate>,
         {
-            self.with_items(
-                chain
-                    .into_iter()
-                    .map(|cert| (cert.hash.as_str(), cert.previous_hash.as_str())),
-            )
+            self.with_items(chain.into_iter().map(|cert| cert.clone().try_into().unwrap()))
         }
 
         /// `Test only` Return the content of the cache (without the expiration date)
-        pub(crate) async fn content(&self) -> HashMap<String, String> {
+        pub(crate) async fn content(&self) -> Vec<MithrilCertificate> {
             self.cache
                 .read()
                 .await
                 .iter()
-                .map(|(hash, cached)| (hash.clone(), cached.previous_hash.clone()))
+                .map(|(_hash, cached)| cached.certificate.clone())
                 .collect()
         }
 
@@ -160,47 +185,28 @@ pub(crate) mod test_tools {
 
 #[cfg(test)]
 mod tests {
-    use mithril_common::entities::Certificate;
-    use mithril_common::test::double::fake_data;
+    use mithril_common::test::double::Dummy;
 
     use super::*;
 
-    #[tokio::test]
-    async fn from_str_iterator() {
-        let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
-            .with_items([("first", "one"), ("second", "two")]);
-
-        assert_eq!(
-            HashMap::from_iter([
-                ("first".to_string(), "one".to_string()),
-                ("second".to_string(), "two".to_string())
-            ]),
-            cache.content().await
-        );
+    fn dummy_certificate(hash: &str, previous_hash: &str) -> MithrilCertificate {
+        MithrilCertificate {
+            hash: hash.to_string(),
+            previous_hash: previous_hash.to_string(),
+            ..Dummy::dummy()
+        }
     }
 
     #[tokio::test]
     async fn from_certificate_iterator() {
         let chain = vec![
-            Certificate {
-                previous_hash: "first_parent".to_string(),
-                ..fake_data::certificate("first")
-            },
-            Certificate {
-                previous_hash: "second_parent".to_string(),
-                ..fake_data::certificate("second")
-            },
+            dummy_certificate("first", "first_parent"),
+            dummy_certificate("second", "second_parent"),
         ];
         let cache =
-            MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items_from_chain(&chain);
+            MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items(chain.clone());
 
-        assert_eq!(
-            HashMap::from_iter([
-                ("first".to_string(), "first_parent".to_string()),
-                ("second".to_string(), "second_parent".to_string())
-            ]),
-            cache.content().await
-        );
+        assert_eq!(chain, cache.content().await);
     }
 
     mod store_validated_certificate {
@@ -219,15 +225,15 @@ mod tests {
                 .expect("Cache should have been populated");
 
             assert_eq!(1, cache.len().await);
-            assert_eq!("parent", cached.previous_hash);
+            assert_eq!("hash", cached.certificate.hash);
             assert!(cached.expire_at - start_time >= expiration_delay);
         }
 
         #[tokio::test]
         async fn store_new_hash_push_new_key_at_end_and_dont_alter_existing_values() {
             let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items([
-                ("existing_hash", "existing_parent"),
-                ("another_hash", "another_parent"),
+                dummy_certificate("existing_hash", "existing_parent"),
+                dummy_certificate("another_hash", "another_parent"),
             ]);
             cache
                 .store_validated_certificate("new_hash", "new_parent")
@@ -235,21 +241,23 @@ mod tests {
                 .unwrap();
 
             assert_eq!(
-                HashMap::from_iter([
-                    ("existing_hash".to_string(), "existing_parent".to_string()),
-                    ("another_hash".to_string(), "another_parent".to_string()),
-                    ("new_hash".to_string(), "new_parent".to_string()),
-                ]),
+                vec![
+                    dummy_certificate("existing_hash", "existing_parent"),
+                    dummy_certificate("another_hash", "another_parent"),
+                    dummy_certificate("new_hash", "new_parent"),
+                ],
                 cache.content().await
             );
         }
 
         #[tokio::test]
-        async fn storing_same_hash_update_parent_hash_and_expiration_time() {
+        async fn storing_same_hash_update_data_and_expiration_time() {
             let expiration_delay = TimeDelta::days(2);
             let start_time = Utc::now();
-            let cache = MemoryCertificateVerifierCache::new(expiration_delay)
-                .with_items([("hash", "first_parent"), ("another_hash", "another_parent")]);
+            let cache = MemoryCertificateVerifierCache::new(expiration_delay).with_items([
+                dummy_certificate("hash", "first_parent"),
+                dummy_certificate("another_hash", "another_parent"),
+            ]);
 
             let initial_value = cache.get_cached_value("hash").await.unwrap();
 
@@ -267,7 +275,7 @@ mod tests {
                 "Existing but not updated value should not have been altered"
             );
             assert_ne!(initial_value, updated_value);
-            assert_eq!("updated_parent", updated_value.previous_hash);
+            assert_eq!("updated_parent", updated_value.certificate.previous_hash);
             assert!(updated_value.expire_at - start_time >= expiration_delay);
         }
     }
@@ -277,8 +285,10 @@ mod tests {
 
         #[tokio::test]
         async fn get_previous_hash_when_key_exists() {
-            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
-                .with_items([("hash", "parent"), ("another_hash", "another_parent")]);
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items([
+                dummy_certificate("hash", "parent"),
+                dummy_certificate("another_hash", "another_parent"),
+            ]);
 
             assert_eq!(
                 Some("parent".to_string()),
@@ -288,8 +298,10 @@ mod tests {
 
         #[tokio::test]
         async fn get_previous_hash_return_none_if_not_found() {
-            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
-                .with_items([("hash", "parent"), ("another_hash", "another_parent")]);
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items([
+                dummy_certificate("hash", "parent"),
+                dummy_certificate("another_hash", "another_parent"),
+            ]);
 
             assert_eq!(None, cache.get_previous_hash("not_found").await.unwrap());
         }
@@ -297,7 +309,7 @@ mod tests {
         #[tokio::test]
         async fn get_expired_previous_hash_return_none() {
             let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
-                .with_items([("hash", "parent")]);
+                .with_items([dummy_certificate("hash", "parent")]);
             cache
                 .overwrite_expiration_date("hash", Utc::now() - TimeDelta::days(5))
                 .await;
@@ -315,17 +327,19 @@ mod tests {
 
             cache.reset().await.unwrap();
 
-            assert_eq!(HashMap::new(), cache.content().await);
+            assert_eq!(Vec::<MithrilCertificate>::new(), cache.content().await);
         }
 
         #[tokio::test]
         async fn reset_not_empty_cache() {
-            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
-                .with_items([("hash", "parent"), ("another_hash", "another_parent")]);
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items([
+                dummy_certificate("hash", "parent"),
+                dummy_certificate("another_hash", "another_parent"),
+            ]);
 
             cache.reset().await.unwrap();
 
-            assert_eq!(HashMap::new(), cache.content().await);
+            assert_eq!(Vec::<MithrilCertificate>::new(), cache.content().await);
         }
     }
 }
