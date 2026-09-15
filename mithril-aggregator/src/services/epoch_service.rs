@@ -823,6 +823,8 @@ mod tests {
         BlockNumber, BlockNumberOffset, CardanoBlocksTransactionsSigningConfig,
         CardanoTransactionsSigningConfig, Stake, StakeDistribution, SupportedEra,
     };
+    #[cfg(feature = "future_snark")]
+    use mithril_common::test::crypto_helper::create_signers_with_stake_sharing_snark_key;
     use mithril_common::test::{
         builder::{MithrilFixture, MithrilFixtureBuilder, StakeDistributionGenerationMethod},
         double::{Dummy, fake_data},
@@ -1546,5 +1548,51 @@ mod tests {
                 _ => panic!("Expected an NotYetComputed error for epoch 4, got: {error:?}"),
             }
         }
+    }
+
+    #[cfg(feature = "future_snark")]
+    #[test]
+    fn precompute_epoch_data_excludes_the_higher_stake_signer_from_snark_registration_when_two_signers_share_a_snark_key()
+     {
+        let epoch = Epoch(10);
+        let [lower_stake_signer, higher_stake_signer] = create_signers_with_stake_sharing_snark_key(
+            [100, 200],
+            epoch,
+            "precompute_epoch_data_excludes_the_higher_stake_signer_when_two_signers_share_a_snark_key",
+        )
+        .unwrap();
+
+        let service_with_collision = FakeEpochServiceBuilder {
+            current_signers_with_stake: vec![
+                lower_stake_signer.clone(),
+                higher_stake_signer.clone(),
+            ],
+            next_signers_with_stake: vec![lower_stake_signer.clone()],
+            ..FakeEpochServiceBuilder::dummy(epoch)
+        }
+        .build();
+
+        let higher_stake_signer_without_snark_key = SignerWithStake {
+            verification_key_for_snark: None,
+            verification_key_signature_for_snark: None,
+            proof_of_bound_possession_for_snark: None,
+            ..higher_stake_signer
+        };
+        let service_with_snark_key_never_submitted = FakeEpochServiceBuilder {
+            current_signers_with_stake: vec![
+                lower_stake_signer.clone(),
+                higher_stake_signer_without_snark_key,
+            ],
+            next_signers_with_stake: vec![lower_stake_signer],
+            ..FakeEpochServiceBuilder::dummy(epoch)
+        }
+        .build();
+
+        assert_eq!(
+            service_with_snark_key_never_submitted
+                .current_aggregate_verification_key()
+                .unwrap(),
+            service_with_collision.current_aggregate_verification_key().unwrap(),
+        );
     }
 }
