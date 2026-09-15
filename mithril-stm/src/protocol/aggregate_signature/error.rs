@@ -1,4 +1,4 @@
-use crate::SignerIndex;
+use crate::{LotteryIndex, SignerIndex};
 
 use super::AggregateSignatureType;
 
@@ -22,7 +22,11 @@ pub enum AggregationError {
 
     /// A signature selected for witness assembly is missing its SNARK component.
     #[error("Missing SNARK signature for lottery index {0}.")]
-    MissingSnarkSignature(SignerIndex),
+    MissingSnarkSignature(LotteryIndex),
+
+    /// A signature selected for witness assembly is missing its SNARK index mapping.
+    #[error("Missing SNARK index mapping for signer index {0}.")]
+    MissingSnarkIndexMapping(SignerIndex),
 
     /// Missing the genesis verification key in the ancillary verifier data
     #[error("Missing the genesis verification key in the ancillary verifier data.")]
