@@ -1,0 +1,53 @@
+[package]
+name = "mithril-circuit-key-registry"
+description = "Genesis-signed registry of the circuit verification keys trusted for Mithril SNARK certificates."
+version = "0.1.0"
+authors.workspace = true
+documentation.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+include = ["**/*.rs", "Cargo.toml", "README.md", ".gitignore"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = ["num-integer-backend"]
+
+# Enables the registry, which requires the future SNARK implementation of the `mithril-common` dependency
+future_snark = ["mithril-common/future_snark"]
+
+# Enables `rug-backend` features for `mithril-common` dependency
+rug-backend = ["mithril-common/rug-backend"]
+# Enables `num-integer-backend` features for `mithril-common` dependency
+num-integer-backend = ["mithril-common/num-integer-backend"]
+
+# Enables the TLS features for the registry download and the `mithril-common` dependency
+# Exactly one of these must be enabled
+native-tls = ["mithril-common/native-tls", "reqwest/native-tls"]
+rustls = ["mithril-common/rustls", "reqwest/rustls"]
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+futures = "0.3.32"
+mithril-common = { path = "../../mithril-common", version = "0.7.22", default-features = false }
+reqwest = { workspace = true, features = ["stream"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+slog = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+hex = { workspace = true }
+httpmock = "0.8.3"
+mockall = { workspace = true }
+rand_chacha = { workspace = true }
+rand_core = { workspace = true }
+slog-async = { workspace = true }
+slog-term = { workspace = true }
+tokio = { workspace = true, features = ["macros"] }

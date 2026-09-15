@@ -1,4 +1,6 @@
 mod certificates_hash_migrator;
+#[cfg(feature = "future_snark")]
+mod circuit_key_registry;
 mod era;
 mod genesis;
 pub mod kubo_rpc_client;
@@ -9,6 +11,8 @@ pub mod url_sanitizer;
 mod vacuum_tracker;
 
 pub use certificates_hash_migrator::CertificatesHashMigrator;
+#[cfg(feature = "future_snark")]
+pub use circuit_key_registry::CircuitKeyRegistryTools;
 pub use era::EraTools;
 #[cfg(feature = "future_snark")]
 pub use genesis::GenesisSignedPayload;
