@@ -389,6 +389,14 @@ jobs:
             hard_fork_latest_era_at_epoch: 0
             run_id: "#1"
             extra_args: "--number-of-aggregators=2 --use-relays --relay-signer-registration-mode=passthrough --relay-signature-registration-mode=p2p --aggregate-signature-type=Concatenation"
+          # Include a test for chained follower aggregators synchronizing their certificate chain from the previous follower
+          - mode: "leader-follower-chained-relay"
+            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
+            next_era: ""
+            cardano_node_version: "10.6.2"
+            hard_fork_latest_era_at_epoch: 0
+            run_id: "#1"
+            extra_args: "--number-of-aggregators=3 --chain-follower-aggregators --use-relays --relay-signer-registration-mode=passthrough --relay-signature-registration-mode=p2p --aggregate-signature-type=Concatenation"
           # Include a test for full dedentralization P2P signer registration and P2P signature registration
           - mode: "decentralized"
             era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
@@ -764,6 +772,7 @@ jobs:
             mithril_signers: |
               {}
             mithril_leader_aggregator_endpoint: https://aggregator.testing-preview.api.mithril.network/aggregator
+            mithril_certificate_chain_aggregator_endpoint: ""
             terraform_backend_bucket: hydra-terraform-admin
             google_region: europe-west1
             google_zone: europe-west1-b
@@ -834,6 +843,7 @@ jobs:
           mithril_aggregator_cardano_transactions_prover_cache_pool_size: ${{ vars.AGGREGATOR_CARDANO_TRANSACTIONS_PROVER_CACHE_POOL_SIZE }}
           mithril_aggregator_cardano_transactions_database_connection_pool_size: ${{ vars.AGGREGATOR_CARDANO_TRANSACTIONS_DATABASE_CONNECTION_POOL_SIZE }}
           mithril_aggregator_leader_aggregator_endpoint: ${{ matrix.mithril_leader_aggregator_endpoint }}
+          mithril_aggregator_certificate_chain_aggregator_endpoint: ${{ matrix.mithril_certificate_chain_aggregator_endpoint }}
           mithril_aggregator_ancillary_signer_type: ${{ vars.AGGREGATOR_ANCILLARY_SIGNER_TYPE }}
           mithril_aggregator_ancillary_signer_secret_key: ${{ secrets.AGGREGATOR_ANCILLARY_SIGNER_SECRET_KEY }}
           mithril_aggregator_ancillary_signer_gcp_kms_resource_name: ${{ secrets.AGGREGATOR_ANCILLARY_SIGNER_GCP_KMS_RESOURCE_NAME }}

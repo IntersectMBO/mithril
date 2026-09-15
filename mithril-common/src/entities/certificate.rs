@@ -201,6 +201,15 @@ impl Certificate {
         }
     }
 
+    /// Tell if a certificate created with the given aggregate signature type can be chained to
+    /// this certificate.
+    pub fn has_compatible_aggregate_signature(
+        &self,
+        aggregate_signature_type: AggregateSignatureType,
+    ) -> bool {
+        aggregate_signature_type.can_chain_to(self.signature.aggregate_signature_type())
+    }
+
     /// Return true if the certificate is chaining into itself (meaning that its hash and previous
     /// hash are equal).
     pub fn is_chaining_to_itself(&self) -> bool {
@@ -304,7 +313,7 @@ mod tests {
             ProtocolMessagePartKey, ProtocolParameters,
             certificate_metadata::StakeDistributionParty,
         },
-        test::double::fake_keys,
+        test::double::{fake_data, fake_keys},
     };
 
     use super::*;
@@ -746,5 +755,50 @@ mod tests {
             multi.signed_entity_type(),
             SignedEntityType::genesis(multi.epoch)
         );
+    }
+
+    mod has_compatible_aggregate_signature {
+        use super::*;
+
+        #[test]
+        fn any_certificate_is_compatible_with_concatenation() {
+            let genesis = fake_data::genesis_certificate("genesis");
+            let certificate = fake_data::certificate("certificate");
+
+            assert!(
+                genesis.has_compatible_aggregate_signature(AggregateSignatureType::Concatenation)
+            );
+            assert!(
+                certificate
+                    .has_compatible_aggregate_signature(AggregateSignatureType::Concatenation)
+            );
+        }
+
+        #[cfg(feature = "future_snark")]
+        #[test]
+        fn only_a_genesis_certificate_is_compatible_with_ivc_snark_among_concatenation_certificates()
+         {
+            let ed_signature: GenesisEd25519Signature =
+                fake_keys::genesis_signature()[0].try_into().unwrap();
+            let mut rng = ChaCha20Rng::from_seed([3u8; 32]);
+            let schnorr_signer = GenesisSchnorrSigner::generate(&mut rng);
+            let schnorr_signature = schnorr_signer.sign(&[0u8; 32], &mut rng).unwrap();
+            let legacy_genesis = fake_data::genesis_certificate("genesis");
+            let dual_genesis = build_genesis_certificate_for_test(
+                CertificateSignature::GenesisDualSignature(ed_signature, schnorr_signature),
+            );
+            let concatenation_certificate = fake_data::certificate("certificate");
+
+            assert!(
+                legacy_genesis.has_compatible_aggregate_signature(AggregateSignatureType::IvcSnark)
+            );
+            assert!(
+                dual_genesis.has_compatible_aggregate_signature(AggregateSignatureType::IvcSnark)
+            );
+            assert!(
+                !concatenation_certificate
+                    .has_compatible_aggregate_signature(AggregateSignatureType::IvcSnark)
+            );
+        }
     }
 }

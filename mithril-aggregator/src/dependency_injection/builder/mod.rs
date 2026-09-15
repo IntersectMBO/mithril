@@ -297,6 +297,9 @@ pub struct DependenciesBuilder {
     /// Leader aggregator client
     pub leader_aggregator_client: Option<Arc<AggregatorHttpClient>>,
 
+    /// Certificate chain aggregator client
+    pub certificate_chain_aggregator_client: Option<Arc<AggregatorHttpClient>>,
+
     /// Protocol parameters retriever
     pub protocol_parameters_retriever: Option<Arc<dyn ProtocolParametersRetriever>>,
 
@@ -366,6 +369,7 @@ impl DependenciesBuilder {
             single_signature_authenticator: None,
             metrics_service: None,
             leader_aggregator_client: None,
+            certificate_chain_aggregator_client: None,
             protocol_parameters_retriever: None,
             stop_signal_channel: None,
             chain_data_repository: None,
@@ -476,6 +480,15 @@ impl DependenciesBuilder {
                 allow_http_serve_directory: self.configuration.allow_http_serve_directory(),
                 origin_tag_white_list: self.configuration.compute_origin_tag_white_list(),
                 aggregate_signature_type: self.configuration.aggregate_signature_type(),
+                leader_aggregator_endpoint: self.configuration.leader_aggregator_endpoint(),
+                certificate_chain_aggregator_endpoint: self
+                    .configuration
+                    .leader_aggregator_endpoint()
+                    .map(|leader_aggregator_endpoint| {
+                        self.configuration
+                            .certificate_chain_aggregator_endpoint()
+                            .unwrap_or(leader_aggregator_endpoint)
+                    }),
             },
         );
 

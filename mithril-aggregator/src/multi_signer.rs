@@ -37,6 +37,9 @@ pub trait MultiSigner: Sync + Send {
         open_message: &OpenMessage,
         ancillary_input: AncillaryProofInput,
     ) -> StdResult<Option<MultiSignatureWithAncillaryData>>;
+
+    /// Aggregate signature type of the multi signatures created
+    fn aggregate_signature_type(&self) -> AggregateSignatureType;
 }
 
 /// MultiSignerImpl is an implementation of the MultiSigner
@@ -85,6 +88,10 @@ impl MultiSignerImpl {
 
 #[async_trait]
 impl MultiSigner for MultiSignerImpl {
+    fn aggregate_signature_type(&self) -> AggregateSignatureType {
+        self.aggregate_signature_type
+    }
+
     /// Verify a single signature
     async fn verify_single_signature(
         &self,
