@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::StmResult;
 use crate::circuits::halo2_ivc::{KZGCommitmentScheme, NativeField, PairingEngine, VerifyingKey};
 use crate::circuits::key_generator::KeyGenerator;
+use crate::circuits::key_serialization::midnight_verifying_key_serde;
 use crate::codec::{TryFromBytes, TryToBytes};
 
 use super::circuit::CertificateCircuit;
@@ -48,30 +49,6 @@ impl AsRef<VerifyingKey<NativeField, KZGCommitmentScheme<PairingEngine>>>
 {
     fn as_ref(&self) -> &VerifyingKey<NativeField, KZGCommitmentScheme<PairingEngine>> {
         self.0.vk()
-    }
-}
-
-/// Serde for the wrapped Midnight verifying key: delegates to the key's [`TryToBytes`] /
-/// [`TryFromBytes`] impl so the raw-bytes encoding is defined in one place.
-mod midnight_verifying_key_serde {
-    use midnight_zk_stdlib::MidnightVK;
-    use serde::{Deserializer, Serializer};
-
-    use crate::codec::{TryFromBytes, TryToBytes};
-
-    pub(super) fn serialize<S: Serializer>(
-        verifying_key: &MidnightVK,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        let bytes = verifying_key.to_bytes_vec().map_err(serde::ser::Error::custom)?;
-        serializer.serialize_bytes(&bytes)
-    }
-
-    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<MidnightVK, D::Error> {
-        let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
-        MidnightVK::try_from_bytes(&bytes).map_err(serde::de::Error::custom)
     }
 }
 

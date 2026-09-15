@@ -1,36 +1,14 @@
-//! [`TryToBytes`] / [`TryFromBytes`] impls for the certificate circuit's keys — the self-describing
-//! Midnight `MidnightVK` / `MidnightPK` wrappers. Production keys use [`SerdeFormat::RawBytes`].
+//! [`TryToBytes`] / [`TryFromBytes`] impls for the certificate circuit's proving key. Its verifying
+//! key is a `MidnightVK`, whose shared encoding lives in [`crate::circuits::key_serialization`].
 
 use anyhow::Context;
-use midnight_proofs::utils::SerdeFormat;
-use midnight_zk_stdlib::{MidnightPK, MidnightVK};
+use midnight_zk_stdlib::MidnightPK;
 
 use crate::StmResult;
+use crate::circuits::key_serialization::KEY_SERDE_FORMAT;
 use crate::codec::{TryFromBytes, TryToBytes};
 
 use super::circuit::CertificateCircuit;
-
-/// Serde format used for the on-disk / in-cache production keys.
-const KEY_SERDE_FORMAT: SerdeFormat = SerdeFormat::RawBytes;
-
-// Certificate circuit verifying key. `MidnightVK` is self-describing, so reading needs only the
-// serde format (no circuit type), unlike the recursive raw PLONK keys.
-impl TryToBytes for MidnightVK {
-    fn to_bytes_vec(&self) -> StmResult<Vec<u8>> {
-        let mut bytes = Vec::new();
-        self.write(&mut bytes, KEY_SERDE_FORMAT)
-            .with_context(|| "Failed to serialize the certificate verifying key")?;
-        Ok(bytes)
-    }
-}
-
-impl TryFromBytes for MidnightVK {
-    fn try_from_bytes(bytes: &[u8]) -> StmResult<Self> {
-        let mut reader = bytes;
-        MidnightVK::read(&mut reader, KEY_SERDE_FORMAT)
-            .with_context(|| "Failed to deserialize the certificate verifying key")
-    }
-}
 
 // Certificate circuit proving key.
 impl TryToBytes for MidnightPK<CertificateCircuit> {
@@ -53,7 +31,7 @@ impl TryFromBytes for MidnightPK<CertificateCircuit> {
 #[cfg(test)]
 mod tests {
     use midnight_proofs::poly::kzg::params::ParamsKZG;
-    use midnight_zk_stdlib::{self as zk, MidnightCircuit};
+    use midnight_zk_stdlib::{self as zk, MidnightCircuit, MidnightVK};
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
 

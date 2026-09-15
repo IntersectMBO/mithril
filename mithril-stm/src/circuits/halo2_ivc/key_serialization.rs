@@ -1,25 +1,21 @@
 //! [`TryToBytes`] / [`TryFromBytes`] impls for the recursive circuit's raw PLONK keys.
 //!
 //! The raw PLONK `read` is generic over the circuit type and takes its `Params`, so these impls
-//! pin [`IvcCircuitData`] and its `()` params. Production keys use [`SerdeFormat::RawBytes`].
+//! pin [`IvcCircuitData`] and its `()` params.
 //!
 //! Note: only the IVC circuit's keys are ever deserialized raw here (the certificate keys
 //! round-trip as the high-level `MidnightVK` / `MidnightPK`), so pinning `IvcCircuitData` is
 //! correct.
 
-use anyhow::Context;
-use midnight_proofs::utils::SerdeFormat;
-
 use crate::StmResult;
+use crate::circuits::key_serialization::KEY_SERDE_FORMAT;
 use crate::codec::{TryFromBytes, TryToBytes};
+use anyhow::Context;
 
 use super::{
     KZGCommitmentScheme, NativeField, PairingEngine, ProvingKey, VerifyingKey,
     circuit::IvcCircuitData,
 };
-
-/// Serde format used for the on-disk / in-cache production keys.
-const KEY_SERDE_FORMAT: SerdeFormat = SerdeFormat::RawBytes;
 
 // Recursive (IVC) circuit verifying key. The raw PLONK `read` is generic over the circuit and
 // takes its `Params`, so it is pinned to `IvcCircuitData` with its `()` params below.
