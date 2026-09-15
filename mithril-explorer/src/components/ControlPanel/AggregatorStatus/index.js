@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, Row, Col, Collapse, Container, Stack } from "react-bootstrap";
 import { useSelector } from "react-redux";
 import LinkButton from "#/LinkButton";
@@ -164,21 +165,21 @@ export default function AggregatorStatus({ showContent = true }) {
                 <div>
                   <em>Signer registrations:</em>
                   <div className="ps-1 text-break">
-                    <a href={aggregatorExplorerUrl(aggregatorStatus.leader_aggregator_endpoint)}>
+                    <Link href={aggregatorExplorerUrl(aggregatorStatus.leader_aggregator_endpoint)}>
                       {aggregatorStatus.leader_aggregator_endpoint}
-                    </a>
+                    </Link>
                   </div>
                 </div>
                 <hr className="my-2" />
                 <div>
                   <em>Certificate chain:</em>
                   <div className="ps-1 text-break">
-                    <a
+                    <Link
                       href={aggregatorExplorerUrl(
                         aggregatorStatus.certificate_chain_aggregator_endpoint,
                       )}>
                       {aggregatorStatus.certificate_chain_aggregator_endpoint}
-                    </a>
+                    </Link>
                   </div>
                 </div>
               </InfoGroupCard>
