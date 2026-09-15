@@ -7,6 +7,8 @@ use mithril_common::crypto_helper::GenesisVerifier;
 use crate::database::repository::{BufferedSingleSignatureRepository, SingleSignatureRepository};
 use crate::dependency_injection::{DependenciesBuilder, DependenciesBuilderError, Result};
 use crate::get_dependency;
+#[cfg(feature = "future_snark")]
+use crate::services::{AggregateSignatureProverWarmer, SnarkAggregateSignatureProverWarmer};
 use crate::services::{
     BufferedCertifierService, CertificateChainSynchronizer, CertifierService,
     MithrilCertificateChainSynchronizer, MithrilCertificateChainSynchronizerNoop,
@@ -86,6 +88,21 @@ impl DependenciesBuilder {
     /// Get a configured multi signer
     pub async fn get_multi_signer(&mut self) -> Result<Arc<dyn MultiSigner>> {
         get_dependency!(self.multi_signer)
+    }
+
+    /// Builds an [AggregateSignatureProverWarmer]
+    #[cfg(feature = "future_snark")]
+    pub async fn create_aggregate_signature_prover_warmer(
+        &mut self,
+    ) -> Result<Arc<dyn AggregateSignatureProverWarmer>> {
+        let warmer = SnarkAggregateSignatureProverWarmer::new(
+            self.configuration.aggregate_signature_type(),
+            self.get_ticker_service().await?,
+            self.get_mithril_network_configuration_provider().await?,
+            self.root_logger(),
+        );
+
+        Ok(Arc::new(warmer))
     }
 
     async fn build_certificate_chain_synchronizer(

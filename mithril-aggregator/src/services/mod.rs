@@ -9,6 +9,8 @@
 //!
 //! Each service is defined by a public API (a trait) that is used in the controllers (runtimes).
 
+#[cfg(feature = "future_snark")]
+mod aggregate_signature_prover_warmer;
 mod aggregator_client;
 mod certificate_chain_synchronizer;
 mod certifier;
@@ -27,6 +29,8 @@ mod stake_distribution;
 mod upkeep;
 mod usage_reporter;
 
+#[cfg(feature = "future_snark")]
+pub use aggregate_signature_prover_warmer::*;
 pub use certificate_chain_synchronizer::*;
 pub use certifier::*;
 pub use chain_data_importer::*;
