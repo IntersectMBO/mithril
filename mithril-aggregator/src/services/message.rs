@@ -589,7 +589,9 @@ mod tests {
 
         #[tokio::test]
         async fn get_epoch_settings_message() {
-            let fixture = MithrilFixtureBuilder::default().with_signers(3).build();
+            let fixture = MithrilFixtureBuilder::default()
+                .with_signers(3)
+                .build_at_epoch(Epoch(4));
             let epoch_service = FakeEpochService::from_fixture(Epoch(4), &fixture);
             let message_service = MessageServiceBuilder::new()
                 .with_epoch_service(epoch_service)
@@ -619,7 +621,9 @@ mod tests {
 
         #[tokio::test]
         async fn get_epoch_settings_message_with_cardano_transactions_enabled() {
-            let fixture = MithrilFixtureBuilder::default().with_signers(3).build();
+            let fixture = MithrilFixtureBuilder::default()
+                .with_signers(3)
+                .build_at_epoch(Epoch(4));
             let epoch_service = FakeEpochService::from_fixture(Epoch(4), &fixture);
             let message_service = MessageServiceBuilder::new()
                 .with_epoch_service(epoch_service)
@@ -638,7 +642,9 @@ mod tests {
 
         #[tokio::test]
         async fn get_epoch_settings_message_with_cardano_transactions_not_enabled() {
-            let fixture = MithrilFixtureBuilder::default().with_signers(3).build();
+            let fixture = MithrilFixtureBuilder::default()
+                .with_signers(3)
+                .build_at_epoch(Epoch(4));
             let epoch_service = FakeEpochService::from_fixture(Epoch(4), &fixture);
             let message_service = MessageServiceBuilder::new()
                 .with_epoch_service(epoch_service)
@@ -671,8 +677,8 @@ mod tests {
                 current_epoch_settings,
                 next_epoch_settings: next_epoch_settings.clone(),
                 signer_registration_epoch_settings: signer_registration_epoch_settings.clone(),
-                current_signers_with_stake: fake_data::signers_with_stakes(5),
-                next_signers_with_stake: fake_data::signers_with_stakes(3),
+                current_signers_with_stake: fake_data::signers_with_stakes_at_epoch(5, Epoch(1)),
+                next_signers_with_stake: fake_data::signers_with_stakes_at_epoch(3, Epoch(1)),
                 ..FakeEpochServiceBuilder::dummy(Epoch(1))
             }
             .build();
@@ -732,8 +738,11 @@ mod tests {
             async fn snark_fields_are_stripped_in_pythagoras_era() {
                 let epoch_service = FakeEpochServiceBuilder {
                     mithril_era: SupportedEra::Pythagoras,
-                    current_signers_with_stake: fake_data::signers_with_stakes(2),
-                    next_signers_with_stake: fake_data::signers_with_stakes(2),
+                    current_signers_with_stake: fake_data::signers_with_stakes_at_epoch(
+                        2,
+                        Epoch(1),
+                    ),
+                    next_signers_with_stake: fake_data::signers_with_stakes_at_epoch(2, Epoch(1)),
                     ..FakeEpochServiceBuilder::dummy(Epoch(1))
                 }
                 .build();
@@ -775,8 +784,11 @@ mod tests {
             async fn snark_fields_are_preserved_in_lagrange_era() {
                 let epoch_service = FakeEpochServiceBuilder {
                     mithril_era: SupportedEra::Lagrange,
-                    current_signers_with_stake: fake_data::signers_with_stakes(2),
-                    next_signers_with_stake: fake_data::signers_with_stakes(2),
+                    current_signers_with_stake: fake_data::signers_with_stakes_at_epoch(
+                        2,
+                        Epoch(1),
+                    ),
+                    next_signers_with_stake: fake_data::signers_with_stakes_at_epoch(2, Epoch(1)),
                     ..FakeEpochServiceBuilder::dummy(Epoch(1))
                 }
                 .build();

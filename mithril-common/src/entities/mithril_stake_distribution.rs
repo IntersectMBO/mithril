@@ -63,7 +63,7 @@ mod tests {
     #[cfg(not(feature = "future_snark"))]
     const EXPECTED_HASH: &str = "c5c1ff02e37c751329e3db7625c77fa2a24e86b2a75422c54f1b9f9232374d6f";
     #[cfg(feature = "future_snark")]
-    const EXPECTED_HASH: &str = "aafc009f81c97622f4a4695acf218447585648c8ff56ec16837b842e9557b1aa";
+    const EXPECTED_HASH: &str = "c83e8a8ac777d29209e353e6aaf79e02d7defe71f650725ae7715f819c9e4e86";
 
     #[test]
     fn test_compute_hash() {

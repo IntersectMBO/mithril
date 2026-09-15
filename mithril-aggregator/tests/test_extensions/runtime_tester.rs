@@ -278,6 +278,27 @@ impl RuntimeTester {
 
         // Init the stores needed for a genesis certificate
         let time_point = self.observer.current_time_point().await;
+        #[cfg(feature = "future_snark")]
+        {
+            let signers_count = fixture.signers_with_stake().len();
+            let protocol_parameters = fixture.protocol_parameters();
+            let current_retrieval_epoch =
+                time_point.epoch.offset_to_signer_retrieval_epoch().unwrap();
+            let fixture_with_signers_and_parameters = MithrilFixtureBuilder::default()
+                .with_signers(signers_count)
+                .with_protocol_parameters(protocol_parameters);
+            let current_fixture =
+                fixture_with_signers_and_parameters.build_at_epoch(current_retrieval_epoch);
+            let next_fixture = fixture_with_signers_and_parameters.build_at_epoch(time_point.epoch);
+            self.dependencies
+                .init_state_from_fixtures_for_genesis(
+                    &current_fixture,
+                    &next_fixture,
+                    time_point.epoch,
+                )
+                .await;
+        }
+        #[cfg(not(feature = "future_snark"))]
         self.dependencies
             .init_state_from_fixture_for_genesis(fixture, time_point.epoch)
             .await;

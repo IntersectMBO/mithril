@@ -469,7 +469,7 @@ mod tests {
             "9a832baccd04aabfc419f57319e3831a1655a95bf3bf5ed96a1167d1e81b5085";
         #[cfg(feature = "future_snark")]
         const EXPECTED_HASH: &str =
-            "6158c4f514b1e15dc745845dac9014e710ee6b2f0c5b2b1023d5207cf6b75db9";
+            "34670ec451509748aa82966ed4a09261a7e01ba8c14d0e299453844cab477af2";
         let signers = MithrilFixtureBuilder::default()
             .with_signers(2)
             .build()

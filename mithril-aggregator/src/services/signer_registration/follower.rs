@@ -68,7 +68,7 @@ impl MithrilSignerRegistrationFollower {
         for signer in signers {
             let signer_with_stake = self
                 .signer_registration_verifier
-                .verify(signer, stake_distribution)
+                .verify(signer, stake_distribution, epoch)
                 .await
                 .map_err(|err| {
                     SignerRegistrationError::InvalidSignerRegistration(
@@ -354,7 +354,9 @@ mod tests {
                 let mut signer_registration_verifier = MockSignerRegistrationVerifier::new();
                 signer_registration_verifier
                     .expect_verify()
-                    .returning(|signer, _| Ok(SignerWithStake::from_signer(signer.to_owned(), 123)))
+                    .returning(|signer, _, _| {
+                        Ok(SignerWithStake::from_signer(signer.to_owned(), 123))
+                    })
                     .times(5);
 
                 Arc::new(signer_registration_verifier)
@@ -416,7 +418,9 @@ mod tests {
                 let mut signer_registration_verifier = MockSignerRegistrationVerifier::new();
                 signer_registration_verifier
                     .expect_verify()
-                    .returning(|signer, _| Ok(SignerWithStake::from_signer(signer.to_owned(), 123)))
+                    .returning(|signer, _, _| {
+                        Ok(SignerWithStake::from_signer(signer.to_owned(), 123))
+                    })
                     .times(5);
 
                 Arc::new(signer_registration_verifier)
@@ -483,7 +487,9 @@ mod tests {
                 let mut signer_registration_verifier = MockSignerRegistrationVerifier::new();
                 signer_registration_verifier
                     .expect_verify()
-                    .returning(|signer, _| Ok(SignerWithStake::from_signer(signer.to_owned(), 123)))
+                    .returning(|signer, _, _| {
+                        Ok(SignerWithStake::from_signer(signer.to_owned(), 123))
+                    })
                     .times(5);
 
                 Arc::new(signer_registration_verifier)

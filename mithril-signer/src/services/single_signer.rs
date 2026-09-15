@@ -7,11 +7,11 @@ use slog::{Logger, info, trace, warn};
 use thiserror::Error;
 
 use mithril_common::crypto_helper::{KesPeriod, KesSigner, ProtocolInitializer};
+#[cfg(feature = "future_snark")]
+use mithril_common::entities::{Epoch, SignerWithStake, SupportedEra};
 use mithril_common::entities::{
     PartyId, ProtocolMessage, ProtocolParameters, SingleSignature, Stake,
 };
-#[cfg(feature = "future_snark")]
-use mithril_common::entities::{SignerWithStake, SupportedEra};
 use mithril_common::logging::LoggerExtensions;
 use mithril_common::protocol::{SignerBuilder, SingleSigner as ProtocolSingleSigner};
 use mithril_common::{StdError, StdResult};
@@ -28,6 +28,7 @@ impl MithrilProtocolInitializerBuilder {
         protocol_parameters: &ProtocolParameters,
         kes_signer: Option<Arc<dyn KesSigner>>,
         kes_period: Option<KesPeriod>,
+        #[cfg(feature = "future_snark")] epoch: Epoch,
     ) -> StdResult<ProtocolInitializer> {
         let mut rng = rand_core::OsRng;
         let protocol_initializer = ProtocolInitializer::setup(
@@ -35,6 +36,8 @@ impl MithrilProtocolInitializerBuilder {
             kes_signer,
             kes_period,
             stake.to_owned(),
+            #[cfg(feature = "future_snark")]
+            epoch,
             &mut rng,
         )?;
 
@@ -119,6 +122,10 @@ impl MithrilSingleSigner {
         let builder = SignerBuilder::new(
             &current_signers_with_stake,
             &protocol_initializer.get_protocol_parameters().into(),
+            #[cfg(feature = "future_snark")]
+            epoch_service
+                .epoch_of_current_data()?
+                .offset_to_signer_retrieval_epoch_saturating(),
         )
         .with_context(|| "Mithril Single Signer can not build signer")
         .map_err(SingleSignerError::ProtocolSignerCreationFailure)?;
@@ -209,7 +216,9 @@ mod tests {
         MithrilSingleSigner,
         mithril_common::test::builder::MithrilFixture,
     ) {
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
+        let fixture = MithrilFixtureBuilder::default()
+            .with_signers(5)
+            .build_at_epoch(Epoch(10).offset_to_signer_retrieval_epoch().unwrap());
         let current_signer = &fixture.signers_fixture()[0];
         let logger = TestLogger::stdout();
         let connection = Arc::new(main_db_connection().unwrap());
@@ -286,7 +295,9 @@ mod tests {
 
     #[tokio::test]
     async fn compute_single_signature_success() {
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
+        let fixture = MithrilFixtureBuilder::default()
+            .with_signers(5)
+            .build_at_epoch(Epoch(10).offset_to_signer_retrieval_epoch().unwrap());
         let signers = fixture.signers();
         let (single_signer, fixture) =
             build_single_signer_for_era(SupportedEra::Pythagoras, signers).await;
@@ -299,7 +310,9 @@ mod tests {
 
         #[tokio::test]
         async fn signing_succeeds_in_lagrange_era_with_snark_keys() {
-            let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
+            let fixture = MithrilFixtureBuilder::default()
+                .with_signers(5)
+                .build_at_epoch(Epoch(10).offset_to_signer_retrieval_epoch().unwrap());
             let signers = fixture.signers();
             let (single_signer, fixture) =
                 build_single_signer_for_era(SupportedEra::Lagrange, signers).await;
@@ -309,7 +322,9 @@ mod tests {
 
         #[tokio::test]
         async fn signing_succeeds_in_pythagoras_era_with_snark_keys() {
-            let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
+            let fixture = MithrilFixtureBuilder::default()
+                .with_signers(5)
+                .build_at_epoch(Epoch(10).offset_to_signer_retrieval_epoch().unwrap());
             let signers = fixture.signers();
             let (single_signer, fixture) =
                 build_single_signer_for_era(SupportedEra::Pythagoras, signers).await;
@@ -319,7 +334,9 @@ mod tests {
 
         #[tokio::test]
         async fn signing_succeeds_in_pythagoras_era_when_signers_already_lack_snark_keys() {
-            let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
+            let fixture = MithrilFixtureBuilder::default()
+                .with_signers(5)
+                .build_at_epoch(Epoch(10).offset_to_signer_retrieval_epoch().unwrap());
             let signers_without_snark_keys: Vec<_> = fixture
                 .signers()
                 .into_iter()
