@@ -412,6 +412,8 @@ mod tests {
         assert_eq!(proof_input.message_preimage(), message_preimage.as_slice());
     }
 
+    /// The genesis accumulator's bases are the identity, so this is also what pins that the
+    /// checked point reader behind `AncillaryProverData::from_bytes` keeps accepting them.
     #[cfg(feature = "future_snark")]
     #[test]
     fn ancillary_prover_data_to_from_bytes_round_trip() {

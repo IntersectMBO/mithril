@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.18 (09-15-2026)
+
+### Added
+
+- Added 21 property-based tests for the IVC proof system's pure helpers and codecs, where `proptest` was already established for the non-recursive one, each covering its helper's whole domain instead of the single value the examples held.
+- Added independently computed digest vectors for `MessageHash::try_from`, so that regenerating a stored asset cannot move the conversion.
+
+### Changed
+
+- Retired twelve examples that a property now covers over a value space, and the four helpers they left without callers.
+- Read the accumulator of a certificate with the checked point reader. The wire bytes are unchanged and valid points still decode, but a point outside the prime-order subgroup is now rejected.
+
+### Fixed
+
+- Rejected malformed accumulator and MSM encodings instead of panicking or trusting their length prefixes: disagreeing base and scalar counts, a short point payload, a fixed-base key length beyond the input, and a full-length payload that is not a curve point.
+- Stopped the legacy aggregate verification key decoder re-detecting a format it had already classified, which let a 32-byte root beginning with the CBOR version prefix decode to an empty commitment.
+
 ## 0.12.17 (09-11-2026)
 
 ### Changed

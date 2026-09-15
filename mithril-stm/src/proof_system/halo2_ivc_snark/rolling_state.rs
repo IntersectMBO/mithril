@@ -251,24 +251,32 @@ pub(crate) mod midnight_accumulator_serde {
 
     use crate::circuits::halo2_ivc::io::{ReadWithFormat, WriteWithFormat};
 
-    /// Serialization function based on the write function of Midnight's Accumulator
+    /// Serialization function based on the write function of Midnight's Accumulator.
+    ///
+    /// Both raw formats emit the same bytes — `write` only distinguishes `Processed` — so this
+    /// names the same format as the reader rather than leaving the pair looking mismatched.
     pub fn serialize<S: Serializer>(
         accumulator: &Accumulator<BlstrsEmulation>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         let mut buf = Vec::new();
         accumulator
-            .write(&mut buf, SerdeFormat::RawBytesUnchecked)
+            .write(&mut buf, SerdeFormat::RawBytes)
             .map_err(serde::ser::Error::custom)?;
         serializer.serialize_bytes(&buf)
     }
 
-    /// Deserialization function based on the read function of Midnight's Accumulator
+    /// Deserialization function based on the read function of Midnight's Accumulator.
+    ///
+    /// These bytes arrive inside a certificate, before anything has been verified, so the format
+    /// is the checked one: `RawBytesUnchecked` resolves to a reader that `expect`s its decode and
+    /// panics on any payload that is not a curve point. `RawBytes` reads the same bytes, returns
+    /// `InvalidData` instead, and additionally rejects points outside the prime-order subgroup.
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Accumulator<BlstrsEmulation>, D::Error> {
         let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
-        Accumulator::<BlstrsEmulation>::read(&mut bytes.as_slice(), SerdeFormat::RawBytesUnchecked)
+        Accumulator::<BlstrsEmulation>::read(&mut bytes.as_slice(), SerdeFormat::RawBytes)
             .map_err(serde::de::Error::custom)
     }
 }
@@ -387,7 +395,110 @@ mod tests {
             .expect("a non-genesis rolling state must be accepted");
     }
 
+    mod assert_protocol_parameters_unchanged {
+        use proptest::prelude::*;
+
+        use crate::{
+            circuits::halo2_ivc::{NativeField, types::ProtocolParametersHash},
+            proof_system::halo2_ivc_snark::prover_input_helpers::tests::build_rolling_state,
+            signature_scheme::BaseFieldElement,
+        };
+
+        use super::*;
+
+        fn reduced_field_element(bytes: &[u8; 32]) -> NativeField {
+            BaseFieldElement::from_raw(bytes)
+                .expect("from_raw applies modulus reduction and cannot fail")
+                .0
+        }
+
+        prop_compose! {
+            /// The middle branch keeps both values below `2^254 < p`, so neither is reduced: they
+            /// stay canonical, unequal, and share every byte but the last. Changing only the top
+            /// raw byte would not survive reduction — `0` and `2^255` reduce to values whose low
+            /// limbs differ — and a comparison narrowed to the low 64 bits is what this shape is
+            /// for. Two independent arrays reach it with negligible probability.
+            fn arb_parameter_pair()(
+                pair in prop_oneof![
+                    any::<[u8; 32]>().prop_map(|bytes| (bytes, bytes)),
+                    (any::<[u8; 32]>(), 1u8..=0x3f).prop_map(|(mut bytes, delta)| {
+                        bytes[31] &= 0x3f;
+                        let mut differing = bytes;
+                        differing[31] ^= delta;
+                        (bytes, differing)
+                    }),
+                    (any::<[u8; 32]>(), any::<[u8; 32]>()),
+                ],
+            ) -> ([u8; 32], [u8; 32]) {
+                pair
+            }
+        }
+
+        proptest! {
+            #[test]
+            fn only_a_next_epoch_step_past_genesis_with_diverged_parameters_is_rejected(
+                (protocol_parameters, next_protocol_parameters) in arb_parameter_pair(),
+                higher_step_counter in 2u64..=u64::MAX,
+            ) {
+                let current_parameters =
+                    ProtocolParametersHash::from_field(reduced_field_element(&protocol_parameters));
+                let lookahead_parameters = ProtocolParametersHash::from_field(
+                    reduced_field_element(&next_protocol_parameters),
+                );
+                // Compared on the reduced values the wrapper holds: distinct bytes can reduce equal.
+                let parameters_diverge = current_parameters != lookahead_parameters;
+
+                // Counter 1 is forced: the neighbouring `is_not_first_step` means *greater than*
+                // one, so a guard reaching for it by mistake would exempt the first step past
+                // genesis, which a uniform counter almost never visits.
+                for step_counter in [
+                    StepCounter::ZERO,
+                    StepCounter::new(1),
+                    StepCounter::new(higher_step_counter),
+                ] {
+                    let rolling_state = build_rolling_state(
+                        step_counter,
+                        EpochNumber::new(3),
+                        MerkleTreeCommitment::ZERO,
+                        current_parameters,
+                        lookahead_parameters,
+                    );
+
+                    for transition_type in
+                        [IvcTransitionType::SameEpoch, IvcTransitionType::NextEpoch]
+                    {
+                        let should_reject = step_counter != StepCounter::ZERO
+                            && matches!(transition_type, IvcTransitionType::NextEpoch)
+                            && parameters_diverge;
+
+                        match rolling_state.assert_protocol_parameters_unchanged(transition_type) {
+                            Ok(()) if should_reject => {
+                                return Err(TestCaseError::fail(format!(
+                                    "{transition_type:?} at counter {step_counter:?} with diverged \
+                                     parameters should have been rejected"
+                                )));
+                            }
+                            Err(error) if !should_reject => {
+                                return Err(TestCaseError::fail(format!(
+                                    "{transition_type:?} at counter {step_counter:?} with \
+                                     diverge={parameters_diverge} should have been accepted: {error}"
+                                )));
+                            }
+                            Err(error) => prop_assert_eq!(
+                                error.downcast_ref::<IvcProofError>(),
+                                Some(&IvcProofError::ProtocolParametersChanged)
+                            ),
+                            Ok(()) => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     mod validate_transition {
+        use proptest::prelude::*;
+
         use crate::{
             MithrilMembershipDigest,
             circuits::halo2_ivc::types::ProtocolParametersHash,
@@ -583,6 +694,158 @@ mod tests {
             ));
         }
 
+        // The rolling state and the aggregate key do not depend on the incoming epoch, so a case
+        // builds them once and varies only the preimage.
+        fn classify(
+            rolling_state: &IvcRollingState,
+            aggregate_verification_key: &AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
+            incoming_certificate_epoch: u64,
+        ) -> StmResult<(IvcTransitionType, MessageHash, MerkleTreeCommitment)> {
+            let preimage = build_standard_preimage(EpochNumber::new(incoming_certificate_epoch));
+            rolling_state.validate_transition(&preimage, aggregate_verification_key, &[0u8; 32])
+        }
+
+        fn assert_classified_as(
+            rolling_state: &IvcRollingState,
+            aggregate_verification_key: &AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
+            incoming_certificate_epoch: u64,
+            expected: IvcTransitionType,
+        ) -> Result<(), TestCaseError> {
+            match classify(
+                rolling_state,
+                aggregate_verification_key,
+                incoming_certificate_epoch,
+            ) {
+                Ok((transition_type, _, _)) => {
+                    prop_assert_eq!(transition_type, expected);
+                    Ok(())
+                }
+                Err(error) => Err(TestCaseError::fail(format!(
+                    "incoming epoch {incoming_certificate_epoch} should have been accepted: {error}"
+                ))),
+            }
+        }
+
+        fn assert_rejected_as_epoch_gap(
+            rolling_state: &IvcRollingState,
+            aggregate_verification_key: &AggregateVerificationKeyForSnark<MithrilMembershipDigest>,
+            last_committed_epoch: u64,
+            incoming_certificate_epoch: u64,
+        ) -> Result<(), TestCaseError> {
+            let error = match classify(
+                rolling_state,
+                aggregate_verification_key,
+                incoming_certificate_epoch,
+            ) {
+                Ok(_) => {
+                    return Err(TestCaseError::fail(format!(
+                        "incoming epoch {incoming_certificate_epoch} should have been rejected \
+                         against last committed epoch {last_committed_epoch}"
+                    )));
+                }
+                Err(error) => error,
+            };
+            prop_assert_eq!(
+                error.downcast_ref::<IvcCircuitError>(),
+                Some(&IvcCircuitError::InvalidEpochTransition {
+                    kind: EpochTransitionErrorKind::EpochGap {
+                        incoming_certificate_epoch,
+                        last_committed_epoch,
+                    },
+                    last_committed_epoch,
+                })
+            );
+            Ok(())
+        }
+
+        prop_compose! {
+            /// Below `u64::MAX` so the overflow check does not intercept, at least 1 so a backward
+            /// epoch exists, and at most `MAX - 2` so a forward gap exists.
+            fn arb_epoch_with_gaps_on_both_sides()(
+                last_committed_epoch in 1u64..u64::MAX - 1,
+            )(
+                backward_offset in 1u64..=last_committed_epoch,
+                forward_offset in 2u64..=(u64::MAX - last_committed_epoch),
+                last_committed_epoch in Just(last_committed_epoch),
+            ) -> (u64, u64, u64) {
+                (last_committed_epoch, backward_offset, forward_offset)
+            }
+        }
+
+        proptest! {
+            /// Overflow is checked first; otherwise the relation between the two epochs selects
+            /// the branch, and acceptance additionally needs that branch's state guards. Each
+            /// relation is constructed from the generated epoch rather than sampled, because a
+            /// uniform pair of `u64` values rarely lands on any of the relations that matter.
+            #[test]
+            fn the_epoch_relation_selects_the_transition(
+                (last_committed_epoch, backward_offset, forward_offset)
+                    in arb_epoch_with_gaps_on_both_sides(),
+            ) {
+                let rolling_state = build_standard_rolling_state(
+                    StepCounter::new(5),
+                    EpochNumber::new(last_committed_epoch),
+                );
+                let aggregate_verification_key = avk_with_zero_root();
+
+                assert_classified_as(
+                    &rolling_state,
+                    &aggregate_verification_key,
+                    last_committed_epoch,
+                    IvcTransitionType::SameEpoch,
+                )?;
+                assert_classified_as(
+                    &rolling_state,
+                    &aggregate_verification_key,
+                    last_committed_epoch + 1,
+                    IvcTransitionType::NextEpoch,
+                )?;
+
+                // Force the nearest rejected epochs to catch off-by-one acceptance; the sampled
+                // gaps retain coverage of other distances.
+                for incoming_certificate_epoch in [
+                    last_committed_epoch - 1,
+                    last_committed_epoch + 2,
+                    last_committed_epoch - backward_offset,
+                    last_committed_epoch + forward_offset,
+                ] {
+                    assert_rejected_as_epoch_gap(
+                        &rolling_state,
+                        &aggregate_verification_key,
+                        last_committed_epoch,
+                        incoming_certificate_epoch,
+                    )?;
+                }
+            }
+        }
+
+        #[test]
+        fn a_last_committed_epoch_below_the_maximum_still_advances() {
+            let rolling_state =
+                build_standard_rolling_state(StepCounter::new(5), EpochNumber::new(u64::MAX - 1));
+            let (transition_type, _, _) = classify(&rolling_state, &avk_with_zero_root(), u64::MAX)
+                .expect("the last advanceable epoch must still be accepted");
+            assert_eq!(transition_type, IvcTransitionType::NextEpoch);
+        }
+
+        #[test]
+        fn a_maximum_last_committed_epoch_is_rejected_even_for_a_same_epoch_certificate() {
+            let rolling_state =
+                build_standard_rolling_state(StepCounter::new(5), EpochNumber::new(u64::MAX));
+            let error = classify(&rolling_state, &avk_with_zero_root(), u64::MAX)
+                .expect_err("a maximum last committed epoch cannot advance");
+            let circuit_error = error
+                .downcast_ref::<IvcCircuitError>()
+                .expect("error chain should carry IvcCircuitError");
+            assert!(matches!(
+                circuit_error,
+                IvcCircuitError::InvalidEpochTransition {
+                    kind: EpochTransitionErrorKind::EpochOverflow,
+                    ..
+                }
+            ));
+        }
+
         #[test]
         fn rejects_out_of_range_cert_epoch() {
             let rolling_state =
@@ -606,6 +869,257 @@ mod tests {
                     ..
                 }
             ));
+        }
+    }
+
+    mod ancillary_prover_data_round_trip {
+        use group::Group;
+        use midnight_circuits::verifier::Msm;
+        use midnight_curves::G1Projective;
+        use midnight_proofs::utils::{SerdeFormat, helpers::ProcessedSerdeObject};
+        use proptest::prelude::*;
+        use std::{collections::BTreeMap, sync::OnceLock};
+
+        use crate::{
+            circuits::halo2_ivc::{NativeField, types::ProtocolParametersHash},
+            protocol::AncillaryProverData,
+        };
+
+        use super::*;
+
+        /// Three signatures rather than one, so a decoder restoring a constant signature is
+        /// observable. The codec carries the signature as opaque data and never verifies it, so
+        /// these are fixtures: initialized once per test process and reused across the property's
+        /// cases. This is bounded variation, not coverage of arbitrary signatures.
+        fn signature_pool() -> &'static [StandardSchnorrSignature; 3] {
+            static SIGNATURES: OnceLock<[StandardSchnorrSignature; 3]> = OnceLock::new();
+            SIGNATURES.get_or_init(|| {
+                std::array::from_fn(|index| {
+                    let seed = u8::try_from(index).expect("the pool holds three signatures");
+                    let mut rng = ChaCha20Rng::from_seed([seed; 32]);
+                    let signing_key = SchnorrSigningKey::generate(&mut rng);
+                    signing_key
+                        .sign_standard(&[BaseFieldElement::from(1u64)], &mut rng)
+                        .expect("standard schnorr signing should succeed for a synthetic message")
+                })
+            })
+        }
+
+        fn reduced_field_element(bytes: &[u8; 32]) -> NativeField {
+            BaseFieldElement::from_raw(bytes)
+                .expect("from_raw applies modulus reduction and cannot fail")
+                .0
+        }
+
+        /// Four distinct non-identity points, so a base substituted or reordered by the
+        /// accumulator codec is observable.
+        fn distinct_non_identity_points() -> [G1Projective; 4] {
+            let generator = G1Projective::generator();
+            let doubled = generator.double();
+            [generator, doubled, doubled + generator, doubled.double()]
+        }
+
+        prop_compose! {
+            fn arb_msm_with_pair_count(pair_count: usize)(
+                point_indices in prop::collection::vec(0usize..4, pair_count),
+                scalar_bytes in prop::collection::vec(any::<[u8; 32]>(), pair_count),
+                named_entries in prop::collection::vec(
+                    (
+                        prop_oneof![
+                            Just(String::new()),
+                            "[a-z_]{1,12}",
+                            Just("鍵".to_owned()),
+                        ],
+                        any::<[u8; 32]>(),
+                    ),
+                    0usize..=4,
+                ),
+            ) -> Msm<BlstrsEmulation> {
+                let points = distinct_non_identity_points();
+                let bases: Vec<G1Projective> =
+                    point_indices.iter().map(|index| points[*index]).collect();
+                let scalars: Vec<NativeField> = scalar_bytes
+                    .iter()
+                    .map(reduced_field_element)
+                    .collect();
+                let fixed_base_scalars: BTreeMap<String, NativeField> = named_entries
+                    .iter()
+                    .map(|(key, bytes)| (key.clone(), reduced_field_element(bytes)))
+                    .collect();
+                Msm::new(&bases, &scalars, &fixed_base_scalars)
+            }
+        }
+
+        prop_compose! {
+            /// The two sides always differ in pair count, so a swapped `lhs`/`rhs` is observable.
+            fn arb_accumulator()(lhs_pair_count in 0usize..=3, offset in 1usize..=3)(
+                lhs in arb_msm_with_pair_count(lhs_pair_count),
+                rhs in arb_msm_with_pair_count((lhs_pair_count + offset) % 4),
+            ) -> Accumulator<BlstrsEmulation> {
+                Accumulator::new(lhs, rhs)
+            }
+        }
+
+        prop_compose! {
+            /// CBOR carries a byte string's length inside the head byte up to 23 and in a
+            /// following byte from 24. Both sides of that boundary, and both endpoints of the
+            /// range, are weighted branches rather than a uniform draw — `prop_oneof!` samples
+            /// one branch per case, so this makes them likely, not guaranteed.
+            fn arb_ivc_proof_bytes()(
+                length in prop_oneof![
+                    Just(0usize),
+                    Just(22usize),
+                    Just(23usize),
+                    Just(24usize),
+                    Just(25usize),
+                    Just(64usize),
+                    0usize..=64,
+                ],
+            )(
+                bytes in prop::collection::vec(any::<u8>(), length),
+            ) -> IvcProofBytes {
+                IvcProofBytes::new(bytes)
+            }
+        }
+
+        prop_compose! {
+            /// CBOR encodes an unsigned integer inline up to 23 and then in one, two, four or
+            /// eight following bytes. Each width boundary is its own weighted branch, so the
+            /// state's two integer fields are unlikely to be drawn from the widest encoding
+            /// alone — `prop_oneof!` samples one branch per case rather than visiting all.
+            fn arb_cbor_width_boundary_u64()(
+                value in prop_oneof![
+                    Just(23u64),
+                    Just(24u64),
+                    Just(u64::from(u8::MAX)),
+                    Just(u64::from(u8::MAX) + 1),
+                    Just(u64::from(u16::MAX)),
+                    Just(u64::from(u16::MAX) + 1),
+                    Just(u64::from(u32::MAX)),
+                    Just(u64::from(u32::MAX) + 1),
+                    Just(u64::MAX),
+                    any::<u64>(),
+                ],
+            ) -> u64 {
+                value
+            }
+        }
+
+        /// `anyhow::Error` does not implement `std::error::Error`, so proptest's blanket
+        /// conversion does not reach it.
+        fn as_test_case_error(error: anyhow::Error) -> TestCaseError {
+            TestCaseError::fail(error.to_string())
+        }
+
+        fn assert_msm_components_match(
+            restored: &Msm<BlstrsEmulation>,
+            original: &Msm<BlstrsEmulation>,
+        ) -> Result<(), TestCaseError> {
+            prop_assert_eq!(restored.bases(), original.bases());
+            prop_assert_eq!(restored.scalars(), original.scalars());
+            prop_assert_eq!(restored.fixed_base_scalars(), original.fixed_base_scalars());
+            Ok(())
+        }
+
+        /// The accumulator travels inside a certificate, so its bytes are untrusted before any
+        /// verification has run. A base that is not a curve point must be reported, not panicked
+        /// on: the reader reached through `RawBytesUnchecked` `expect`s its decode.
+        #[test]
+        fn a_certificate_carrying_a_malformed_accumulator_base_is_rejected() {
+            let base = G1Projective::generator();
+            let mut base_bytes = Vec::new();
+            base.write(&mut base_bytes, SerdeFormat::RawBytes)
+                .expect("writing to a vector cannot fail");
+
+            let rolling_state = IvcRollingState::new(
+                State::genesis(),
+                IvcProofBytes::empty(),
+                Accumulator::new(
+                    Msm::new(
+                        &[base],
+                        &[reduced_field_element(&[0u8; 32])],
+                        &BTreeMap::new(),
+                    ),
+                    Msm::new(&[], &[], &BTreeMap::new()),
+                ),
+                signature_pool()[0],
+            );
+            let mut encoded = AncillaryProverData::IvcSnark(rolling_state)
+                .to_bytes()
+                .expect("serialization should not fail");
+
+            AncillaryProverData::from_bytes(&encoded).expect(
+                "the unmodified encoding must decode, or the corruption below proves nothing",
+            );
+
+            let offset = encoded
+                .windows(base_bytes.len())
+                .position(|window| window == base_bytes)
+                .expect("the encoding carries the base it was built with");
+            encoded[offset..offset + base_bytes.len()].fill(0);
+
+            assert!(
+                AncillaryProverData::from_bytes(&encoded).is_err(),
+                "a base that is not a curve point must be reported as an error"
+            );
+        }
+
+        proptest! {
+            /// The committed round-trip compares reserialized bytes of a genesis fixture, which
+            /// can agree despite value loss and leaves every non-genesis value unvisited. This
+            /// compares the restored components against the originals saved before encoding.
+            #[test]
+            fn every_rolling_state_component_survives_the_round_trip(
+                step_counter in arb_cbor_width_boundary_u64().prop_map(|value| value.max(1)),
+                current_epoch in arb_cbor_width_boundary_u64(),
+                message in any::<[u8; 32]>(),
+                merkle_tree_commitment in any::<[u8; 32]>(),
+                next_merkle_tree_commitment in any::<[u8; 32]>(),
+                protocol_parameters in any::<[u8; 32]>(),
+                next_protocol_parameters in any::<[u8; 32]>(),
+                ivc_proof in arb_ivc_proof_bytes(),
+                accumulator in arb_accumulator(),
+                signature_index in 0usize..3,
+            ) {
+                let state = State::new(
+                    StepCounter::new(step_counter),
+                    MessageHash::from_field(reduced_field_element(&message)),
+                    MerkleTreeCommitment::from_field(reduced_field_element(
+                        &merkle_tree_commitment,
+                    )),
+                    MerkleTreeCommitment::from_field(reduced_field_element(
+                        &next_merkle_tree_commitment,
+                    )),
+                    ProtocolParametersHash::from_field(reduced_field_element(
+                        &protocol_parameters,
+                    )),
+                    ProtocolParametersHash::from_field(reduced_field_element(
+                        &next_protocol_parameters,
+                    )),
+                    EpochNumber::new(current_epoch),
+                );
+                let genesis_signature = signature_pool()[signature_index];
+                let rolling_state = IvcRollingState::new(
+                    state.clone(),
+                    ivc_proof.clone(),
+                    accumulator.clone(),
+                    genesis_signature,
+                );
+
+                let encoded = AncillaryProverData::IvcSnark(rolling_state)
+                    .to_bytes()
+                    .map_err(as_test_case_error)?;
+                let restored = AncillaryProverData::from_bytes(&encoded)
+                    .map_err(as_test_case_error)?
+                    .into_ivc_rolling_state()
+                    .expect("the decoded ancillary prover data must carry the IVC variant");
+
+                prop_assert_eq!(restored.state(), &state);
+                prop_assert_eq!(restored.ivc_proof(), &ivc_proof);
+                assert_msm_components_match(&restored.accumulator().lhs(), &accumulator.lhs())?;
+                assert_msm_components_match(&restored.accumulator().rhs(), &accumulator.rhs())?;
+                prop_assert_eq!(restored.genesis_signature(), genesis_signature);
+            }
         }
     }
 }

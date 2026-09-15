@@ -184,6 +184,8 @@ impl StepCounter {
 
 #[cfg(test)]
 mod protocol_message_preimage_tests {
+    use proptest::prelude::*;
+
     use super::*;
 
     #[test]
@@ -236,6 +238,141 @@ mod protocol_message_preimage_tests {
         let expected =
             MerkleTreeCommitment::from_field(BaseFieldElement::from_raw(&[0xFF; 32]).unwrap().0);
         assert_eq!(preimage.next_merkle_tree_commitment(), expected);
+    }
+
+    /// SHA-256 digests of three fixed 190-byte preimages, computed outside this crate, each
+    /// paired with the little-endian bytes of its reduction modulo the field. The ramp's digest
+    /// already lies below the modulus, so it pins the byte order with no reduction in the way;
+    /// the other two lie above it and pin the reduction itself.
+    #[test]
+    fn fixed_preimages_hash_to_independently_computed_field_elements() {
+        let byte_index_ramp: [u8; PREIMAGE_SIZE] = std::array::from_fn(|index| {
+            u8::try_from(index).expect("the preimage is shorter than 256 bytes")
+        });
+
+        for (description, bytes, expected_little_endian) in [
+            (
+                "a zero preimage",
+                [0u8; PREIMAGE_SIZE],
+                "06ec9bf951252d025578d97866e870ed6d1bccb2377fbbeceb531b31b41afd3c",
+            ),
+            (
+                "an all-ones preimage",
+                [0xFFu8; PREIMAGE_SIZE],
+                "4381e74c315d159a15a890cc0099498cf4f146f92a3650873a15a517c88b3150",
+            ),
+            (
+                "a byte-index ramp",
+                byte_index_ramp,
+                "b454dbe07fb100ea743cd193ea1953a9e6d62a07fde0f3325c362e4f3d7b694f",
+            ),
+        ] {
+            let message_hash = MessageHash::try_from(&ProtocolMessagePreimage::new(bytes))
+                .expect("a preimage of the declared size always converts");
+
+            assert_eq!(
+                hex::encode(message_hash.as_field().to_bytes_le()),
+                expected_little_endian,
+                "{description} must hash to its independently computed field element"
+            );
+        }
+    }
+
+    /// Bytes of `preimage` outside `range`, each flipped by a nonzero mask so the
+    /// mutation is guaranteed rather than sampled.
+    fn flip_bytes_outside_range(
+        preimage: &[u8; PREIMAGE_SIZE],
+        range: std::ops::Range<usize>,
+        mask: u8,
+    ) -> [u8; PREIMAGE_SIZE] {
+        let mut mutated = *preimage;
+        for (offset, byte) in mutated.iter_mut().enumerate() {
+            if !range.contains(&offset) {
+                *byte ^= mask;
+            }
+        }
+        mutated
+    }
+
+    proptest! {
+        #[test]
+        fn each_accessor_decodes_only_its_own_range(bytes in any::<[u8; PREIMAGE_SIZE]>()) {
+            let preimage = ProtocolMessagePreimage::new(bytes);
+
+            let epoch_bytes: [u8; 8] = bytes[PREIMAGE_CURRENT_EPOCH_BYTES].try_into().unwrap();
+            prop_assert_eq!(
+                preimage.current_epoch(),
+                EpochNumber::new(u64::from_le_bytes(epoch_bytes)),
+            );
+
+            let commitment_bytes: [u8; 32] =
+                bytes[PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES].try_into().unwrap();
+            prop_assert_eq!(
+                preimage.next_merkle_tree_commitment(),
+                MerkleTreeCommitment::from_field(
+                    BaseFieldElement::from_raw(&commitment_bytes).unwrap().0,
+                ),
+            );
+
+            let parameters_bytes: [u8; 32] =
+                bytes[PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES].try_into().unwrap();
+            prop_assert_eq!(
+                preimage.next_protocol_parameters(),
+                ProtocolParametersHash::from_field(
+                    BaseFieldElement::from_raw(&parameters_bytes).unwrap().0,
+                ),
+            );
+        }
+
+        #[test]
+        fn flipping_every_byte_outside_a_range_leaves_that_accessor_unchanged(
+            bytes in any::<[u8; PREIMAGE_SIZE]>(),
+            mask in 1u8..=u8::MAX,
+        ) {
+            let preimage = ProtocolMessagePreimage::new(bytes);
+
+            let flipped_outside_epoch = ProtocolMessagePreimage::new(
+                flip_bytes_outside_range(&bytes, PREIMAGE_CURRENT_EPOCH_BYTES, mask),
+            );
+            prop_assert_eq!(flipped_outside_epoch.current_epoch(), preimage.current_epoch());
+
+            let flipped_outside_commitment = ProtocolMessagePreimage::new(
+                flip_bytes_outside_range(&bytes, PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES, mask),
+            );
+            prop_assert_eq!(
+                flipped_outside_commitment.next_merkle_tree_commitment(),
+                preimage.next_merkle_tree_commitment(),
+            );
+
+            let flipped_outside_parameters = ProtocolMessagePreimage::new(
+                flip_bytes_outside_range(&bytes, PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, mask),
+            );
+            prop_assert_eq!(
+                flipped_outside_parameters.next_protocol_parameters(),
+                preimage.next_protocol_parameters(),
+            );
+        }
+
+        /// The result is the little-endian field reduction of SHA-256 over the complete
+        /// original preimage. Arbitrary inputs reach shapes the fixed vectors cannot: all three
+        /// of those are sorted, so a conversion that reordered the bytes before hashing would
+        /// leave every one of them unchanged.
+        #[test]
+        fn a_message_hash_is_the_field_reduction_of_sha256_over_the_whole_preimage(
+            bytes in any::<[u8; PREIMAGE_SIZE]>(),
+        ) {
+            let digest: [u8; 32] = Sha256::digest(bytes).into();
+
+            prop_assert_eq!(
+                MessageHash::try_from(&ProtocolMessagePreimage::new(bytes))
+                    .expect("a preimage of the declared size always converts"),
+                MessageHash::from_field(
+                    BaseFieldElement::from_raw(&digest)
+                        .expect("from_raw applies modulus reduction and cannot fail")
+                        .0,
+                ),
+            );
+        }
     }
 }
 
