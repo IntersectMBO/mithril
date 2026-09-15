@@ -61,11 +61,15 @@ impl MessageBuilder {
             MithrilSigner::try_into_signers(mithril_stake_distribution.signers_with_stake.clone())
                 .with_context(|| "Could not compute message: conversion failure")?;
 
-        let signer_builder =
-            SignerBuilder::new(&signers, &mithril_stake_distribution.protocol_parameters)
-                .with_context(
-                    || "Could not compute message: aggregate verification key computation failed",
-                )?;
+        let signer_builder = SignerBuilder::new(
+            &signers,
+            &mithril_stake_distribution.protocol_parameters,
+            #[cfg(feature = "future_snark")]
+            mithril_stake_distribution.epoch,
+        )
+        .with_context(
+            || "Could not compute message: aggregate verification key computation failed",
+        )?;
 
         let aggregate_verification_key = signer_builder.compute_aggregate_verification_key();
 

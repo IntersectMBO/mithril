@@ -96,7 +96,7 @@ impl SignerRegisterer for MithrilSignerRegistrationLeader {
 
         let signer_save = self
             .signer_registration_verifier
-            .verify(signer, &registration_round.stake_distribution)
+            .verify(signer, &registration_round.stake_distribution, epoch)
             .await
             .map_err(|err| {
                 SignerRegistrationError::InvalidSignerRegistration(
@@ -248,7 +248,9 @@ mod tests {
                 let mut signer_registration_verifier = MockSignerRegistrationVerifier::new();
                 signer_registration_verifier
                     .expect_verify()
-                    .returning(|signer, _| Ok(SignerWithStake::from_signer(signer.to_owned(), 123)))
+                    .returning(|signer, _, _| {
+                        Ok(SignerWithStake::from_signer(signer.to_owned(), 123))
+                    })
                     .once();
 
                 Arc::new(signer_registration_verifier)
@@ -303,7 +305,9 @@ mod tests {
                 let mut signer_registration_verifier = MockSignerRegistrationVerifier::new();
                 signer_registration_verifier
                     .expect_verify()
-                    .returning(|signer, _| Ok(SignerWithStake::from_signer(signer.to_owned(), 123)))
+                    .returning(|signer, _, _| {
+                        Ok(SignerWithStake::from_signer(signer.to_owned(), 123))
+                    })
                     .once();
 
                 Arc::new(signer_registration_verifier)

@@ -11,7 +11,7 @@ use mithril_common::{
         SignedEntityTypeDiscriminants, SlotNumber, StakeDistribution, StakeDistributionParty,
         TimePoint,
     },
-    test::builder::MithrilFixtureBuilder,
+    test::builder::{MithrilFixtureBuilder, StakeDistributionGenerationMethod},
 };
 use mithril_protocol_config::model::{
     ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch,
@@ -59,7 +59,7 @@ async fn cardano_stake_distribution_verify_stakes() {
     let fixture = MithrilFixtureBuilder::default()
         .with_signers(5)
         .with_protocol_parameters(protocol_parameters.clone())
-        .build();
+        .build_at_epoch(Epoch(3));
     let signers = &fixture.signers_fixture();
 
     tester.init_state_from_fixture(&fixture).await.unwrap();
@@ -91,6 +91,11 @@ async fn cardano_stake_distribution_verify_stakes() {
             )
         })
         .collect::<Vec<_>>();
+    let updated_stake_distribution_epoch_4: StakeDistribution =
+        signers_with_updated_stake_distribution
+            .iter()
+            .map(|s| (s.party_id.clone(), s.stake))
+            .collect();
     tester
         .chain_observer
         .set_signers(signers_with_updated_stake_distribution)
@@ -98,7 +103,17 @@ async fn cardano_stake_distribution_verify_stakes() {
     cycle!(tester, "idle");
     cycle!(tester, "ready");
     cycle!(tester, "signing");
-    tester.register_signers(signers).await.unwrap();
+    let fixture_at_epoch_4 = MithrilFixtureBuilder::default()
+        .with_signers(5)
+        .with_protocol_parameters(protocol_parameters.clone())
+        .with_stake_distribution(StakeDistributionGenerationMethod::Custom(
+            updated_stake_distribution_epoch_4,
+        ))
+        .build_at_epoch(Epoch(4));
+    tester
+        .register_signers(&fixture_at_epoch_4.signers_fixture())
+        .await
+        .unwrap();
     tester
         .send_single_signatures(
             SignedEntityTypeDiscriminants::MithrilStakeDistribution,
