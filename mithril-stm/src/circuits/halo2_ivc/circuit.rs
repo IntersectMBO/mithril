@@ -18,15 +18,68 @@ use super::{
     witness_assignments,
 };
 
+/// The IVC (Incrementally Verifiable Computation) circuit itself, holding the metadata that fixes
+/// its constraint system: the verifier metadata of the certificate circuit it verifies in-circuit,
+/// and its own.
+///
+/// Mirrors `CertificateCircuit`, which likewise carries only what fixes its constraint system and
+/// none of a single execution's values.
+#[derive(Clone, Debug)]
+pub struct IvcCircuit {
+    // Domain and ConstraintSystem associated with certificate circuit VerifyingKey
+    certificate_circuit_domain_and_constraint_system:
+        (EvaluationDomain<NativeField>, ConstraintSystem<NativeField>),
+    // Domain and ConstraintSystem associated with IVC circuit VerifyingKey
+    ivc_circuit_domain_and_constraint_system:
+        (EvaluationDomain<NativeField>, ConstraintSystem<NativeField>),
+}
+
+impl IvcCircuit {
+    /// Takes both circuits' verifier metadata from their verifying keys.
+    fn from_verification_keys(
+        certificate_verification_key: &NonRecursiveCircuitVerifyingKey,
+        ivc_verification_key: &RecursiveCircuitVerifyingKey,
+    ) -> Self {
+        IvcCircuit {
+            certificate_circuit_domain_and_constraint_system: (
+                certificate_verification_key.as_ref().get_domain().clone(),
+                certificate_verification_key.as_ref().cs().clone(),
+            ),
+            ivc_circuit_domain_and_constraint_system: (
+                ivc_verification_key.as_ref().get_domain().clone(),
+                ivc_verification_key.as_ref().cs().clone(),
+            ),
+        }
+    }
+
+    /// Derives its own verifier metadata from the circuit's configuration, for the key generation
+    /// that has no IVC verifying key to read it from yet.
+    fn for_key_generation(certificate_verification_key: &NonRecursiveCircuitVerifyingKey) -> Self {
+        let mut ivc_circuit_constraint_system = ConstraintSystem::default();
+        configure_ivc_circuit(&mut ivc_circuit_constraint_system);
+        let ivc_circuit_domain = EvaluationDomain::new(
+            ivc_circuit_constraint_system.degree() as u32,
+            RECURSIVE_CIRCUIT_DEGREE,
+        );
+
+        IvcCircuit {
+            certificate_circuit_domain_and_constraint_system: (
+                certificate_verification_key.as_ref().get_domain().clone(),
+                certificate_verification_key.as_ref().cs().clone(),
+            ),
+            ivc_circuit_domain_and_constraint_system: (
+                ivc_circuit_domain,
+                ivc_circuit_constraint_system,
+            ),
+        }
+    }
+}
+
 /// Data required to run one step of the IVC (Incrementally Verifiable Computation) circuit.
 ///
 /// Holds the global root-of-trust, the current state, the next certificate witness,
-/// the associated SNARK proofs, the latest accumulator, and the verification-key metadata
-/// for both the certificate circuit and the IVC circuit itself.
-///
-/// Named for its contents rather than the circuit: unlike `CertificateCircuit`, which carries the
-/// parameters fixing its constraint system, this bundles a concrete step's values with the
-/// verifier metadata required during synthesis.
+/// the associated SNARK proofs and the latest accumulator, alongside the circuit those values are
+/// run against.
 #[derive(Clone, Debug)]
 pub struct IvcCircuitData {
     // Persistent values throughout an ivc stream. This is the root of trust for an ivc stream.
@@ -41,12 +94,8 @@ pub struct IvcCircuitData {
     ivc_proof: CircuitValue<Vec<u8>>,
     // Latest Accumulator
     accumulator: CircuitValue<Accumulator<RecursiveEmulation>>,
-    // Domain and ConstraintSystem associated with certificate circuit VerifyingKey
-    certificate_circuit_domain_and_constraint_system:
-        (EvaluationDomain<NativeField>, ConstraintSystem<NativeField>),
-    // Domain and ConstraintSystem associated with IVC circuit VerifyingKey
-    ivc_circuit_domain_and_constraint_system:
-        (EvaluationDomain<NativeField>, ConstraintSystem<NativeField>),
+    // Circuit these values are run against
+    circuit: IvcCircuit,
 }
 
 impl IvcCircuitData {
@@ -126,13 +175,9 @@ impl IvcCircuitData {
             certificate_proof: CircuitValue::known(certificate_proof.into_vec()),
             ivc_proof: CircuitValue::known(ivc_proof.into_vec()),
             accumulator: CircuitValue::known(accumulator),
-            certificate_circuit_domain_and_constraint_system: (
-                certificate_verification_key.as_ref().get_domain().clone(),
-                certificate_verification_key.as_ref().cs().clone(),
-            ),
-            ivc_circuit_domain_and_constraint_system: (
-                ivc_verification_key.as_ref().get_domain().clone(),
-                ivc_verification_key.as_ref().cs().clone(),
+            circuit: IvcCircuit::from_verification_keys(
+                certificate_verification_key,
+                ivc_verification_key,
             ),
         })
     }
@@ -142,12 +187,6 @@ impl IvcCircuitData {
         certificate_verification_key: &NonRecursiveCircuitVerifyingKey,
     ) -> StmResult<Self> {
         Self::validate_column_counts()?;
-        let mut ivc_circuit_constraint_system = ConstraintSystem::default();
-        configure_ivc_circuit(&mut ivc_circuit_constraint_system);
-        let ivc_circuit_domain = EvaluationDomain::new(
-            ivc_circuit_constraint_system.degree() as u32,
-            RECURSIVE_CIRCUIT_DEGREE,
-        );
 
         Ok(IvcCircuitData {
             global: CircuitValue::unknown(),
@@ -156,14 +195,7 @@ impl IvcCircuitData {
             certificate_proof: CircuitValue::unknown(),
             ivc_proof: CircuitValue::unknown(),
             accumulator: CircuitValue::unknown(),
-            certificate_circuit_domain_and_constraint_system: (
-                certificate_verification_key.as_ref().get_domain().clone(),
-                certificate_verification_key.as_ref().cs().clone(),
-            ),
-            ivc_circuit_domain_and_constraint_system: (
-                ivc_circuit_domain,
-                ivc_circuit_constraint_system,
-            ),
+            circuit: IvcCircuit::for_key_generation(certificate_verification_key),
         })
     }
 }
@@ -181,12 +213,7 @@ impl Circuit<NativeField> for IvcCircuitData {
             certificate_proof: CircuitValue::unknown(),
             ivc_proof: CircuitValue::unknown(),
             accumulator: CircuitValue::unknown(),
-            certificate_circuit_domain_and_constraint_system: self
-                .certificate_circuit_domain_and_constraint_system
-                .clone(),
-            ivc_circuit_domain_and_constraint_system: self
-                .ivc_circuit_domain_and_constraint_system
-                .clone(),
+            circuit: self.circuit.clone(),
         }
     }
 
@@ -206,8 +233,8 @@ impl Circuit<NativeField> for IvcCircuitData {
             &builder,
             &mut layouter,
             &self.global,
-            &self.certificate_circuit_domain_and_constraint_system,
-            &self.ivc_circuit_domain_and_constraint_system,
+            &self.circuit.certificate_circuit_domain_and_constraint_system,
+            &self.circuit.ivc_circuit_domain_and_constraint_system,
         )?;
         // Assign previous state
         let state = witness_assignments::assign_state(&builder, &mut layouter, &self.state)?;
