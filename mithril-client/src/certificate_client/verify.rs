@@ -1,5 +1,7 @@
 use anyhow::Context;
 use async_trait::async_trait;
+#[cfg(feature = "unstable")]
+use slog::warn;
 use slog::{Logger, trace};
 use std::sync::Arc;
 
@@ -85,16 +87,23 @@ impl MithrilCertificateVerifier {
     }
 
     #[cfg(feature = "unstable")]
-    async fn fetch_cached_previous_hash(&self, hash: &str) -> MithrilResult<Option<String>> {
+    async fn fetch_cached_certificate(&self, hash: &str) -> MithrilResult<Option<Certificate>> {
         if let Some(cache) = self.verifier_cache.as_ref() {
-            Ok(cache.get_previous_hash(hash).await?)
+            cache
+                .get_certificate_by_hash(hash)
+                .await?
+                .map(TryInto::try_into)
+                .transpose()
+                .with_context(|| {
+                    format!("Failed to convert cached certificate message with hash '{hash}'")
+                })
         } else {
             Ok(None)
         }
     }
 
     #[cfg(not(feature = "unstable"))]
-    async fn fetch_cached_previous_hash(&self, _hash: &str) -> MithrilResult<Option<String>> {
+    async fn fetch_cached_certificate(&self, _hash: &str) -> MithrilResult<Option<Certificate>> {
         Ok(None)
     }
 
@@ -104,17 +113,17 @@ impl MithrilCertificateVerifier {
         certificate: CertificateToVerify,
     ) -> MithrilResult<Option<CertificateToVerify>> {
         trace!(self.logger, "Validating certificate"; "hash" => certificate.hash(), "previous_hash" => certificate.hash());
-        if let Some(previous_hash) = self.fetch_cached_previous_hash(certificate.hash()).await? {
-            trace!(self.logger, "Certificate fetched from cache"; "hash" => certificate.hash(), "previous_hash" => &previous_hash);
+        if let Some(cached_certificate) = self.fetch_cached_certificate(certificate.hash()).await? {
+            trace!(self.logger, "Certificate fetched from cache"; "hash" => certificate.hash());
             self.feedback_sender
                 .send_event(MithrilEvent::CertificateFetchedFromCache {
-                    certificate_hash: certificate.hash().to_owned(),
+                    certificate_hash: cached_certificate.hash.to_owned(),
                     certificate_chain_validation_id: certificate_chain_validation_id.to_string(),
                 })
                 .await;
 
             Ok(Some(CertificateToVerify::ToDownload {
-                hash: previous_hash,
+                hash: cached_certificate.previous_hash,
             }))
         } else {
             let certificate = match certificate {
@@ -136,21 +145,32 @@ impl MithrilCertificateVerifier {
         certificate_chain_validation_id: &str,
         certificate: Certificate,
     ) -> MithrilResult<Option<Certificate>> {
+        let certificate_hash = certificate.hash.clone();
         let previous_certificate = self.internal_verifier.verify_certificate(&certificate).await?;
 
         #[cfg(feature = "unstable")]
         if let Some(cache) = self.verifier_cache.as_ref()
             && !certificate.is_genesis()
         {
-            cache
-                .store_validated_certificate(&certificate.hash, &certificate.previous_hash)
-                .await?;
+            match certificate.try_into() {
+                Ok(message) => {
+                    cache
+                        .stage_certificate(certificate_chain_validation_id, message)
+                        .await?;
+                }
+                Err(err) => {
+                    warn!(
+                        self.logger, "Failed to convert certificate to message before caching";
+                        "hash" => &certificate_hash, "error" => ?err
+                    );
+                }
+            }
         }
 
-        trace!(self.logger, "Certificate validated"; "hash" => &certificate.hash, "previous_hash" => &certificate.previous_hash);
+        trace!(self.logger, "Certificate validated"; "hash" => &certificate_hash);
         self.feedback_sender
             .send_event(MithrilEvent::CertificateValidated {
-                certificate_hash: certificate.hash,
+                certificate_hash,
                 certificate_chain_validation_id: certificate_chain_validation_id.to_string(),
             })
             .await;
@@ -502,7 +522,10 @@ mod tests {
                 .unwrap();
 
             assert_eq!(
-                cache.get_previous_hash(&genesis_certificate.hash).await.unwrap(),
+                cache
+                    .get_certificate_by_hash(&genesis_certificate.hash)
+                    .await
+                    .unwrap(),
                 None
             );
         }
@@ -535,8 +558,8 @@ mod tests {
                 .unwrap();
 
             assert_eq!(
-                cache.get_previous_hash(&certificate.hash).await.unwrap(),
-                Some(certificate.previous_hash.clone())
+                cache.get_certificate_by_hash(&certificate.hash).await.unwrap(),
+                Some(certificate.clone().try_into().unwrap())
             );
         }
 
@@ -601,16 +624,15 @@ mod tests {
                 let mut mock = MockCertificateVerifierCache::new();
 
                 for certificate in certificates_which_parents_can_be_fetched_from_cache {
-                    let previous_hash = certificate.previous_hash.clone();
-                    mock.expect_get_previous_hash()
+                    mock.expect_get_certificate_by_hash()
                         .with(eq(certificate.hash.clone()))
-                        .return_once(|_| Ok(Some(previous_hash)))
+                        .return_once(|_| Ok(Some(certificate.try_into().unwrap())))
                         .once();
                 }
-                mock.expect_get_previous_hash()
+                mock.expect_get_certificate_by_hash()
                     .with(eq(genesis_certificate.hash.clone()))
                     .returning(|_| Ok(None));
-                mock.expect_store_validated_certificate().returning(|_, _| Ok(()));
+                mock.expect_stage_certificate().returning(|_, _| Ok(()));
 
                 Arc::new(mock)
             };

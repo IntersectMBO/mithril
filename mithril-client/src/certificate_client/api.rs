@@ -79,15 +79,18 @@ pub trait CertificateVerifier: Sync + Send {
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 pub trait CertificateVerifierCache: Sync + Send {
-    /// Store a validated certificate hash and its parent hash in the cache.
-    async fn store_validated_certificate(
+    /// Stage a certificate to the cache, unavailable until it is committed.
+    async fn stage_certificate(
         &self,
-        certificate_hash: &str,
-        previous_certificate_hash: &str,
+        certificate_chain_validation_id: &str,
+        certificate: MithrilCertificate,
     ) -> MithrilResult<()>;
 
-    /// Get the previous hash of the certificate with the given hash if available in the cache.
-    async fn get_previous_hash(&self, certificate_hash: &str) -> MithrilResult<Option<String>>;
+    /// Get the certificate with the given hash if present in the cache.
+    async fn get_certificate_by_hash(
+        &self,
+        certificate_hash: &str,
+    ) -> MithrilResult<Option<MithrilCertificate>>;
 
     /// Reset the stored values
     async fn reset(&self) -> MithrilResult<()>;
