@@ -77,7 +77,7 @@ async fn create_certificate() {
     let fixture = MithrilFixtureBuilder::default()
         .with_signers(10)
         .with_protocol_parameters(protocol_parameters.clone())
-        .build();
+        .build_at_epoch(Epoch(2));
 
     tester.init_state_from_fixture(&fixture).await.unwrap();
 
@@ -102,7 +102,14 @@ async fn create_certificate() {
     cycle!(tester, "ready");
     cycle!(tester, "signing");
 
-    tester.register_signers(&fixture.signers_fixture()).await.unwrap();
+    let fixture_at_epoch_3 = MithrilFixtureBuilder::default()
+        .with_signers(10)
+        .with_protocol_parameters(protocol_parameters.clone())
+        .build_at_epoch(Epoch(3));
+    tester
+        .register_signers(&fixture_at_epoch_3.signers_fixture())
+        .await
+        .unwrap();
 
     comment!("signers send their single signature");
     tester

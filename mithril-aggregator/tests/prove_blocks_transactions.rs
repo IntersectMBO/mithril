@@ -78,7 +78,7 @@ async fn prove_blocks_transactions() {
     let fixture = MithrilFixtureBuilder::default()
         .with_signers(10)
         .with_protocol_parameters(protocol_parameters.clone())
-        .build();
+        .build_at_epoch(Epoch(2));
     let signers = &fixture.signers_fixture();
 
     tester.init_state_from_fixture(&fixture).await.unwrap();
