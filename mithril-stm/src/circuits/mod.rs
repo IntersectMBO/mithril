@@ -10,6 +10,7 @@ pub mod halo2;
 pub mod halo2_ivc;
 pub(crate) mod key_generator;
 pub(crate) mod key_provider;
+pub(crate) mod key_serialization;
 pub mod trusted_setup;
 mod verification_key_digest;
 
