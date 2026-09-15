@@ -16,7 +16,7 @@ use mithril_stm::{
     RegisterError, Signer, Stake, VerificationKeyProofOfPossessionForConcatenation,
 };
 #[cfg(feature = "future_snark")]
-use mithril_stm::{StandardSchnorrSignature, VerificationKeyForSnark};
+use mithril_stm::{SchnorrSigningKey, StandardSchnorrSignature, VerificationKeyForSnark};
 
 use crate::{
     StdError, StdResult,
@@ -144,6 +144,38 @@ impl StmInitializerWrapper {
         rng: &mut R,
     ) -> StdResult<Self> {
         let stm_initializer = Initializer::new(params, stake, rng);
+        Self::setup_from_initializer(
+            stm_initializer,
+            kes_signer,
+            current_kes_period,
+            stake,
+            #[cfg(feature = "future_snark")]
+            epoch,
+            rng,
+        )
+    }
+
+    /// Same as [`Self::setup`], but builds from an already-constructed `Initializer` instead of
+    /// generating a fresh one internally.
+    ///
+    /// `pub(crate)` rather than test-only-gated: it's also used by
+    /// `crate::test::crypto_helper::ProtocolInitializerTestExtension` (a different module within
+    /// this crate) to build signers that share a Schnorr key across multiple `Initializer`s, for
+    /// testing SNARK-vk deduplication.
+    pub(crate) fn setup_from_initializer<R: RngCore + CryptoRng>(
+        stm_initializer: Initializer,
+        kes_signer: Option<Arc<dyn KesSigner>>,
+        current_kes_period: Option<KesPeriod>,
+        stake: Stake,
+        #[cfg(feature = "future_snark")] epoch: Epoch,
+        rng: &mut R,
+    ) -> StdResult<Self> {
+        // `stake` and `rng` are only used to build the PoBP prefix and signature below, both
+        // future_snark-only; unlike `setup()`, this function no longer calls `Initializer::new`
+        // (its only other use of either) since it takes an already-built `Initializer`.
+        #[cfg(not(feature = "future_snark"))]
+        let _ = (stake, rng);
+
         let kes_signature;
         #[cfg(feature = "future_snark")]
         let kes_signature_for_snark;
@@ -494,6 +526,32 @@ mod test_extensions {
         fn override_protocol_parameters(&mut self, protocol_parameters: &ProtocolParameters) {
             self.stm_initializer.parameters = protocol_parameters.to_owned();
         }
+
+        #[cfg(feature = "future_snark")]
+        fn setup_with_shared_schnorr_key<R: RngCore + CryptoRng>(
+            params: Parameters,
+            kes_signer: Option<Arc<dyn KesSigner>>,
+            current_kes_period: Option<KesPeriod>,
+            stake: Stake,
+            epoch: Epoch,
+            shared_schnorr_signing_key: SchnorrSigningKey,
+            rng: &mut R,
+        ) -> StdResult<Self> {
+            let mut stm_initializer = Initializer::new(params, stake, rng);
+            stm_initializer.schnorr_verification_key = Some(
+                VerificationKeyForSnark::new_from_signing_key(shared_schnorr_signing_key.clone()),
+            );
+            stm_initializer.schnorr_signing_key = Some(shared_schnorr_signing_key);
+
+            Self::setup_from_initializer(
+                stm_initializer,
+                kes_signer,
+                current_kes_period,
+                stake,
+                epoch,
+                rng,
+            )
+        }
     }
 }
 
@@ -628,6 +686,138 @@ mod test {
             Epoch::default(),
         );
         assert!(key_registration_2.is_ok())
+    }
+
+    #[cfg(feature = "future_snark")]
+    #[test]
+    fn register_fails_when_proof_of_bound_possession_for_snark_is_missing() {
+        let params = Parameters {
+            m: 5,
+            k: 5,
+            phi_f: 1.0,
+        };
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let KesCryptographicMaterialForTest {
+            party_id,
+            operational_certificate_file,
+            kes_secret_key_file,
+        } = create_kes_cryptographic_material(
+            1 as KesPartyIndexForTest,
+            KesPeriod(0),
+            "register_fails_when_proof_of_bound_possession_for_snark_is_missing",
+        );
+
+        let mut key_reg = KeyRegWrapper::init(&vec![(party_id, 10)]);
+
+        let initializer = StmInitializerWrapper::setup(
+            params,
+            Some(Arc::new(KesSignerStandard::new(
+                kes_secret_key_file,
+                operational_certificate_file.clone(),
+            ))),
+            Some(KesPeriod(0)),
+            10,
+            Epoch::default(),
+            &mut rng,
+        )
+        .unwrap();
+
+        let opcert = OpCert::from_file(operational_certificate_file)
+            .expect("opcert deserialization should not fail")
+            .into();
+
+        let result = key_reg.register(
+            SignerRegistrationParameters {
+                party_id: None,
+                operational_certificate: Some(opcert),
+                verification_key_signature_for_concatenation: initializer
+                    .verification_key_signature_for_concatenation(),
+                kes_evolutions: Some(KesEvolutions(0)),
+                verification_key_for_concatenation: initializer
+                    .stm_initializer
+                    .get_verification_key_proof_of_possession_for_concatenation()
+                    .into(),
+                verification_key_for_snark: initializer
+                    .verification_key_for_snark()
+                    .map(Into::into),
+                verification_key_signature_for_snark: initializer
+                    .verification_key_signature_for_snark(),
+                // Deliberately omitted, even though a SNARK verification key is present.
+                proof_of_bound_possession_for_snark: None,
+            },
+            Epoch::default(),
+        );
+
+        assert!(matches!(
+            result.unwrap_err().downcast_ref::<ProtocolRegistrationErrorWrapper>(),
+            Some(ProtocolRegistrationErrorWrapper::ProofOfBoundPossessionForSnarkMissing)
+        ));
+    }
+
+    #[cfg(feature = "future_snark")]
+    #[test]
+    fn register_fails_when_proof_of_bound_possession_for_snark_was_signed_for_a_different_epoch() {
+        let params = Parameters {
+            m: 5,
+            k: 5,
+            phi_f: 1.0,
+        };
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let KesCryptographicMaterialForTest {
+            party_id,
+            operational_certificate_file,
+            kes_secret_key_file,
+        } = create_kes_cryptographic_material(
+            1 as KesPartyIndexForTest,
+            KesPeriod(0),
+            "register_fails_when_proof_of_bound_possession_for_snark_was_signed_for_a_different_epoch",
+        );
+
+        let mut key_reg = KeyRegWrapper::init(&vec![(party_id, 10)]);
+
+        let correct_epoch = Epoch(5);
+        let wrong_epoch = Epoch(6);
+
+        let initializer = StmInitializerWrapper::setup(
+            params,
+            Some(Arc::new(KesSignerStandard::new(
+                kes_secret_key_file,
+                operational_certificate_file.clone(),
+            ))),
+            Some(KesPeriod(0)),
+            10,
+            correct_epoch,
+            &mut rng,
+        )
+        .unwrap();
+
+        let opcert = OpCert::from_file(operational_certificate_file)
+            .expect("opcert deserialization should not fail")
+            .into();
+
+        let result = key_reg.register(
+            SignerRegistrationParameters {
+                party_id: None,
+                operational_certificate: Some(opcert),
+                verification_key_signature_for_concatenation: initializer
+                    .verification_key_signature_for_concatenation(),
+                kes_evolutions: Some(KesEvolutions(0)),
+                verification_key_for_concatenation: initializer
+                    .stm_initializer
+                    .get_verification_key_proof_of_possession_for_concatenation()
+                    .into(),
+                verification_key_for_snark: initializer
+                    .verification_key_for_snark()
+                    .map(Into::into),
+                verification_key_signature_for_snark: initializer
+                    .verification_key_signature_for_snark(),
+                proof_of_bound_possession_for_snark: initializer
+                    .proof_of_bound_possession_for_snark(),
+            },
+            wrong_epoch,
+        );
+
+        assert!(result.unwrap_err().to_string().contains("Proof of Bound Possession"));
     }
 
     const GOLDEN_STM_INITIALIZER_WRAPPER_JSON: &str = r#"
