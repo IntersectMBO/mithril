@@ -63,6 +63,8 @@ pub struct Aggregator {
     process: RwLock<Option<Child>>,
     chain_observer: Arc<dyn ChainObserver>,
     full_node: FullNode,
+    aggregate_signature_type: AggregateSignatureType,
+    startup_protocol_parameters: ProtocolParameters,
 }
 
 impl Aggregator {
@@ -107,6 +109,10 @@ impl Aggregator {
         let public_server_url = format!("http://localhost:{server_port_parameter}/aggregator");
         let cardano_node_version = aggregator_config.cardano_node_version.to_string();
         let aggregate_signature_type = aggregator_config.aggregate_signature_type.to_string();
+        let circuit_verification_key_registry_url = format!(
+            "file://{}",
+            Self::circuit_verification_key_registry_path().display()
+        );
         let mut env = EnvVars::from([
             ("NETWORK", "devnet"),
             ("NETWORK_MAGIC", &magic_id),
@@ -141,6 +147,10 @@ impl Aggregator {
             (
                 "GENESIS_SECRET_KEY",
                 aggregator_config.genesis_keys.secret_key,
+            ),
+            (
+                "CIRCUIT_VERIFICATION_KEY_REGISTRY_URL",
+                &circuit_verification_key_registry_url,
             ),
             (
                 "ERA_READER_ADAPTER_TYPE",
@@ -239,11 +249,42 @@ impl Aggregator {
             process: RwLock::new(None),
             chain_observer,
             full_node: aggregator_config.full_node.clone(),
+            aggregate_signature_type: aggregator_config.aggregate_signature_type,
+            startup_protocol_parameters: aggregator_config.startup_protocol_parameters.clone(),
         })
     }
 
     pub fn name_suffix(index: usize) -> String {
         format!("{}", index + 1)
+    }
+
+    pub fn circuit_verification_key_registry_path() -> PathBuf {
+        std::env::temp_dir().join("circuit-verification-key-registry.json")
+    }
+
+    /// Protocol parameters the scenarios switch to after the startup ones, per aggregate signature
+    /// type.
+    pub fn updated_protocol_parameters(
+        aggregate_signature_type: AggregateSignatureType,
+    ) -> ProtocolParameters {
+        match aggregate_signature_type {
+            AggregateSignatureType::Concatenation => ProtocolParameters {
+                k: 283,
+                m: 433,
+                phi_f: 0.77,
+            },
+            AggregateSignatureType::Snark => ProtocolParameters {
+                k: 7,
+                m: 10,
+                phi_f: 0.95,
+            },
+            // The IVC parameters must not change as this means a new genesis certificate must be created.
+            AggregateSignatureType::IvcSnark => ProtocolParameters {
+                k: 5,
+                m: 9,
+                phi_f: 0.95,
+            },
+        }
     }
 
     pub fn copy_configuration(other: &Aggregator) -> Self {
@@ -258,6 +299,8 @@ impl Aggregator {
             process: RwLock::new(None),
             chain_observer: other.chain_observer.clone(),
             full_node: other.full_node.clone(),
+            aggregate_signature_type: other.aggregate_signature_type,
+            startup_protocol_parameters: other.startup_protocol_parameters.clone(),
         }
     }
 
@@ -329,6 +372,13 @@ impl Aggregator {
             .with_context(|| "`mithril-aggregator genesis bootstrap` crashed")?;
 
         if exit_status.success() {
+            drop(command);
+            if matches!(
+                self.aggregate_signature_type,
+                AggregateSignatureType::Snark | AggregateSignatureType::IvcSnark
+            ) {
+                self.bootstrap_circuit_key_registry().await?;
+            }
             Ok(())
         } else {
             command.tail_logs(Some(command_name), 40).await?;
@@ -340,6 +390,48 @@ impl Aggregator {
                 None => {
                     anyhow!("`mithril-aggregator genesis bootstrap` was terminated with a signal")
                 }
+            })
+            .map_err(|e| anyhow!(RetryableDevnetError(e.to_string())))
+        }
+    }
+
+    async fn bootstrap_circuit_key_registry(&self) -> StdResult<()> {
+        let mut command = self.command.write().await;
+        let command_name = &format!(
+            "mithril-aggregator-circuit-key-registry-bootstrap-{}",
+            self.name_suffix,
+        );
+        command.set_log_name(command_name);
+
+        let mut args = vec!["circuit-key-registry".to_string(), "bootstrap".to_string()];
+        for protocol_parameters in [
+            self.startup_protocol_parameters.clone(),
+            Self::updated_protocol_parameters(self.aggregate_signature_type),
+        ] {
+            args.push("--protocol-parameters".to_string());
+            args.push(serde_json::to_string(&protocol_parameters)?);
+        }
+        args.push("--target-registry-path".to_string());
+        args.push(Self::circuit_verification_key_registry_path().display().to_string());
+
+        let exit_status = command
+            .start(&args)?
+            .wait()
+            .await
+            .with_context(|| "`mithril-aggregator circuit-key-registry bootstrap` crashed")?;
+
+        if exit_status.success() {
+            Ok(())
+        } else {
+            command.tail_logs(Some(command_name), 40).await?;
+
+            Err(match exit_status.code() {
+                Some(c) => anyhow!(
+                    "`mithril-aggregator circuit-key-registry bootstrap` exited with code: {c}"
+                ),
+                None => anyhow!(
+                    "`mithril-aggregator circuit-key-registry bootstrap` was terminated with a signal"
+                ),
             })
             .map_err(|e| anyhow!(RetryableDevnetError(e.to_string())))
         }

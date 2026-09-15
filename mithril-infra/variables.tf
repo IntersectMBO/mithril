@@ -516,6 +516,12 @@ variable "mithril_genesis_verification_key_url" {
   type        = string
   description = "The url of the Mithril genesis verification key used by to verify a genesis certificate"
 }
+
+variable "mithril_circuit_verification_key_registry_url" {
+  type        = string
+  description = "The url of the signed circuit verification key registry downloaded by the aggregator and enforced on the SNARK certificates (empty when the aggregate signature type does not require it)"
+  default     = ""
+}
 variable "mithril_genesis_secret_key" {
   type        = string
   description = "The Mithril genesis secret key used by the aggregator to bootstrap a genesis certificate (test only)"

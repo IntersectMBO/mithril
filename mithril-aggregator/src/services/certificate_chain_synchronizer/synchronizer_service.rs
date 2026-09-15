@@ -267,6 +267,8 @@ mod tests {
     use mithril_common::certificate_chain::MithrilCertificateVerifier;
     use mithril_common::crypto_helper::GenesisVerifier;
     use mithril_common::entities::Epoch;
+    #[cfg(feature = "future_snark")]
+    use mithril_common::test::double::FakeCircuitVerificationKeyCertifier;
     use mithril_common::test::{
         builder::{CertificateChainBuilder, CertificateChainFixture},
         double::{Dummy, FakeCertificaterRetriever, fake_data},
@@ -368,6 +370,8 @@ mod tests {
                 remote_certificate_chain,
             )),
             genesis_verifier,
+            #[cfg(feature = "future_snark")]
+            Arc::new(FakeCircuitVerificationKeyCertifier::that_fails()),
         );
         Arc::new(verifier)
     }

@@ -15,6 +15,14 @@ The era controls which key material the subcommand expects:
 
 The signing-key file (`genesis.sk`) and the verification-key file (`genesis.vk`) layouts are auto-detected.
 
+## Circuit verification key registry
+
+For the `Snark` and `IvcSnark` aggregate signature types, the certificates following the genesis
+certificate are rejected unless the circuit verification key registry of the Mithril network allows
+their circuit verification keys from the genesis epoch: whitelist the digests of the deployed
+circuit keys and publish the registry before the genesis, following the
+[circuit-key-registry](../circuit-key-registry/README.md) runbook.
+
 ## Configure environment variables
 
 Export the environment variables:

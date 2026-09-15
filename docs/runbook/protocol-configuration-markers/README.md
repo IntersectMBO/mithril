@@ -131,6 +131,12 @@ Manually edit previously exported JSON file written at `$ASSETS_PATH/protocol-co
 > [!IMPORTANT]
 > :fire: Make sure to keep, if it exists, at least the three last epoch's configuration without any modification.
 
+> [!IMPORTANT]
+> For the `Snark` and `IvcSnark` aggregate signature types, changing `k` or `m` changes the
+> certificate circuit verification key digest: whitelist the new digest in the circuit verification
+> key registry and publish it before the first epoch certified with the new parameters, following
+> the [circuit-key-registry](../circuit-key-registry/README.md) runbook.
+
 #### Generate Tx Datum payload file
 
 Generate Tx Datum payload file by using previously edited JSON file
