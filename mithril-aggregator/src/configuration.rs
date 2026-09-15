@@ -320,7 +320,7 @@ pub trait ConfigurationSource {
     ///
     /// This is the endpoint of the aggregator that will be used to synchronize the certificate
     /// chain when the aggregator is running in a follower mode.
-    /// If this is not set, the leader aggregator endpoint is used.
+    /// If this is not set or empty, the leader aggregator endpoint is used.
     fn certificate_chain_aggregator_endpoint(&self) -> Option<String> {
         panic!("certificate_chain_aggregator_endpoint is not implemented.");
     }
@@ -661,7 +661,7 @@ pub struct ServeCommandConfiguration {
     ///
     /// This is the endpoint of the aggregator that will be used to synchronize the certificate
     /// chain when the aggregator is running in a follower mode.
-    /// If this is not set, the leader aggregator endpoint is used.
+    /// If this is not set or empty, the leader aggregator endpoint is used.
     #[example = "`https://aggregator.pre-release-preview.api.mithril.network/aggregator`"]
     pub certificate_chain_aggregator_endpoint: Option<String>,
 
@@ -1055,7 +1055,9 @@ impl ConfigurationSource for ServeCommandConfiguration {
     }
 
     fn certificate_chain_aggregator_endpoint(&self) -> Option<String> {
-        self.certificate_chain_aggregator_endpoint.clone()
+        self.certificate_chain_aggregator_endpoint
+            .clone()
+            .filter(|endpoint| !endpoint.is_empty())
     }
 
     fn custom_origin_tag_white_list(&self) -> Option<String> {
@@ -1446,6 +1448,29 @@ mod test {
         };
 
         assert!(!config.is_follower_aggregator());
+    }
+
+    #[test]
+    fn certificate_chain_aggregator_endpoint_returns_the_configured_value() {
+        let config = ServeCommandConfiguration {
+            certificate_chain_aggregator_endpoint: Some("https://chain.aggregator".to_string()),
+            ..ServeCommandConfiguration::new_sample(temp_dir!())
+        };
+
+        assert_eq!(
+            Some("https://chain.aggregator".to_string()),
+            config.certificate_chain_aggregator_endpoint()
+        );
+    }
+
+    #[test]
+    fn certificate_chain_aggregator_endpoint_treats_an_empty_value_as_not_set() {
+        let config = ServeCommandConfiguration {
+            certificate_chain_aggregator_endpoint: Some(String::new()),
+            ..ServeCommandConfiguration::new_sample(temp_dir!())
+        };
+
+        assert_eq!(None, config.certificate_chain_aggregator_endpoint());
     }
 
     #[test]
