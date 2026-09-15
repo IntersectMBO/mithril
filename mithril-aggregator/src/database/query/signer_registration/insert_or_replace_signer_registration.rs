@@ -12,7 +12,7 @@ pub struct InsertOrReplaceSignerRegistrationRecordQuery {
 impl InsertOrReplaceSignerRegistrationRecordQuery {
     pub fn one(signer_registration_record: SignerRegistrationRecord) -> Self {
         let condition = WhereCondition::new(
-            "(signer_id, epoch_setting_id, verification_key, verification_key_signature, operational_certificate, kes_period, stake, verification_key_for_snark, verification_key_signature_for_snark, created_at) values (?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*)",
+            "(signer_id, epoch_setting_id, verification_key, verification_key_signature, operational_certificate, kes_period, stake, verification_key_for_snark, verification_key_signature_for_snark, created_at, proof_of_bound_possession_for_snark) values (?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*)",
             vec![
                 Value::String(signer_registration_record.signer_id),
                 Value::Integer(signer_registration_record.epoch_settings_id.try_into().unwrap()),
@@ -48,6 +48,13 @@ impl InsertOrReplaceSignerRegistrationRecordQuery {
                 #[cfg(not(feature = "future_snark"))]
                 Value::Null,
                 Value::String(signer_registration_record.created_at.to_rfc3339()),
+                #[cfg(feature = "future_snark")]
+                signer_registration_record
+                    .proof_of_bound_possession_for_snark
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+                #[cfg(not(feature = "future_snark"))]
+                Value::Null,
             ],
         );
 

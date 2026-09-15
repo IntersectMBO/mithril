@@ -10,7 +10,7 @@ use mithril_common::{
         TimePoint,
     },
     temp_dir,
-    test::builder::MithrilFixtureBuilder,
+    test::builder::{MithrilFixtureBuilder, StakeDistributionGenerationMethod},
 };
 use mithril_protocol_config::model::{
     ConfigurationResolverFromMarkers, ProtocolConfigurationForEpoch,
@@ -58,7 +58,7 @@ async fn certificate_chain() {
     let initial_fixture = MithrilFixtureBuilder::default()
         .with_signers(5)
         .with_protocol_parameters(protocol_parameters.clone())
-        .build();
+        .build_at_epoch(Epoch(2));
     let signers = initial_fixture.signers_fixture();
     tester.init_state_from_fixture(&initial_fixture).await.unwrap();
     let mut current_epoch = observer.current_epoch().await;
@@ -83,7 +83,14 @@ async fn certificate_chain() {
     cycle!(tester, "idle");
     cycle!(tester, "ready");
     cycle!(tester, "signing");
-    tester.register_signers(&signers).await.unwrap();
+    let fixture_at_epoch_3 = MithrilFixtureBuilder::default()
+        .with_signers(5)
+        .with_protocol_parameters(protocol_parameters.clone())
+        .build_at_epoch(Epoch(3));
+    tester
+        .register_signers(&fixture_at_epoch_3.signers_fixture())
+        .await
+        .unwrap();
     cycle_err!(tester, "signing");
     tester
         .send_single_signatures(
@@ -149,20 +156,17 @@ async fn certificate_chain() {
     );
 
     comment!("Change stake distribution");
-    let next_fixture = {
-        let updated_stake_distribution = StakeDistribution::from_iter(
-            initial_fixture
-                .signers_with_stake()
-                .into_iter()
-                .enumerate()
-                .map(|(i, s)| (s.party_id, s.stake + (i as u64) * 1000)),
-        );
-
-        tester
-            .update_stake_distribution(updated_stake_distribution)
-            .await
-            .unwrap()
-    };
+    let updated_stake_distribution = StakeDistribution::from_iter(
+        initial_fixture
+            .signers_with_stake()
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| (s.party_id, s.stake + (i as u64) * 1000)),
+    );
+    let next_fixture = tester
+        .update_stake_distribution(updated_stake_distribution.clone())
+        .await
+        .unwrap();
     let next_signers = next_fixture.signers_fixture();
 
     comment!(
@@ -192,7 +196,17 @@ async fn certificate_chain() {
     comment!(
         "Signers register & send signatures, the new certificate should be link to the first of the previous epoch"
     );
-    tester.register_signers(&next_signers).await.unwrap();
+    let next_fixture_for_registration = MithrilFixtureBuilder::default()
+        .with_signers(updated_stake_distribution.len())
+        .with_protocol_parameters(protocol_parameters.clone())
+        .with_stake_distribution(StakeDistributionGenerationMethod::Custom(
+            updated_stake_distribution.clone(),
+        ))
+        .build_at_epoch(Epoch(4));
+    tester
+        .register_signers(&next_fixture_for_registration.signers_fixture())
+        .await
+        .unwrap();
     tester
         .send_single_signatures(
             SignedEntityTypeDiscriminants::MithrilStakeDistribution,
@@ -221,7 +235,17 @@ async fn certificate_chain() {
     tester.increase_immutable_number().await.unwrap();
     cycle!(tester, "idle");
     cycle!(tester, "ready");
-    tester.register_signers(&signers).await.unwrap();
+    let fixture_at_epoch_5 = MithrilFixtureBuilder::default()
+        .with_signers(updated_stake_distribution.len())
+        .with_protocol_parameters(protocol_parameters.clone())
+        .with_stake_distribution(StakeDistributionGenerationMethod::Custom(
+            updated_stake_distribution.clone(),
+        ))
+        .build_at_epoch(Epoch(5));
+    tester
+        .register_signers(&fixture_at_epoch_5.signers_fixture())
+        .await
+        .unwrap();
     cycle!(tester, "signing");
 
     tester
@@ -252,7 +276,17 @@ async fn certificate_chain() {
     tester.increase_immutable_number().await.unwrap();
     cycle!(tester, "idle");
     cycle!(tester, "ready");
-    tester.register_signers(&signers).await.unwrap();
+    let fixture_at_epoch_6 = MithrilFixtureBuilder::default()
+        .with_signers(updated_stake_distribution.len())
+        .with_protocol_parameters(protocol_parameters.clone())
+        .with_stake_distribution(StakeDistributionGenerationMethod::Custom(
+            updated_stake_distribution,
+        ))
+        .build_at_epoch(Epoch(6));
+    tester
+        .register_signers(&fixture_at_epoch_6.signers_fixture())
+        .await
+        .unwrap();
     cycle!(tester, "signing");
 
     tester

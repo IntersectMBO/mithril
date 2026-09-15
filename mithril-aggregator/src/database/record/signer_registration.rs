@@ -2,9 +2,10 @@ use chrono::{DateTime, Utc};
 
 use mithril_common::crypto_helper::KesEvolutions;
 use mithril_common::entities::{
-    Epoch, HexEncodedOpCert, HexEncodedVerificationKeyForConcatenation,
-    HexEncodedVerificationKeyForSnark, HexEncodedVerificationKeySignatureForConcatenation,
-    HexEncodedVerificationKeySignatureForSnark, Signer, SignerWithStake, Stake,
+    Epoch, HexEncodedOpCert, HexEncodedProofOfBoundPossessionForSnark,
+    HexEncodedVerificationKeyForConcatenation, HexEncodedVerificationKeyForSnark,
+    HexEncodedVerificationKeySignatureForConcatenation, HexEncodedVerificationKeySignatureForSnark,
+    Signer, SignerWithStake, Stake,
 };
 use mithril_persistence::sqlite::{HydrationError, Projection, SqLiteEntity};
 
@@ -41,6 +42,9 @@ pub struct SignerRegistrationRecord {
 
     /// Date and time when the signer_registration was created
     pub created_at: DateTime<Utc>,
+
+    /// The Proof of Bound Possession of the Schnorr signing key for the SNARK proof system.
+    pub proof_of_bound_possession_for_snark: Option<HexEncodedProofOfBoundPossessionForSnark>,
 }
 
 impl SignerRegistrationRecord {
@@ -72,6 +76,12 @@ impl SignerRegistrationRecord {
                 .map(|s| s.to_json_hex().unwrap()),
             #[cfg(not(feature = "future_snark"))]
             verification_key_signature_for_snark: None,
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: other
+                .proof_of_bound_possession_for_snark
+                .map(|p| p.to_bytes_hex().unwrap()),
+            #[cfg(not(feature = "future_snark"))]
+            proof_of_bound_possession_for_snark: None,
             created_at: Utc::now(),
         }
     }
@@ -98,6 +108,10 @@ impl From<SignerRegistrationRecord> for Signer {
             verification_key_signature_for_snark: other
                 .verification_key_signature_for_snark
                 .map(|s| s.try_into().unwrap()),
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: other
+                .proof_of_bound_possession_for_snark
+                .map(|p| p.try_into().unwrap()),
         }
     }
 }
@@ -124,6 +138,10 @@ impl From<SignerRegistrationRecord> for SignerWithStake {
             verification_key_signature_for_snark: other
                 .verification_key_signature_for_snark
                 .map(|s| s.try_into().unwrap()),
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: other
+                .proof_of_bound_possession_for_snark
+                .map(|p| p.try_into().unwrap()),
         }
     }
 }
@@ -145,6 +163,8 @@ impl SqLiteEntity for SignerRegistrationRecord {
         let verification_key_signature_for_snark =
             row.read::<Option<&str>, _>(8).map(|s| s.to_owned());
         let created_at = row.read::<&str, _>(9);
+        let proof_of_bound_possession_for_snark =
+            row.read::<Option<&str>, _>(10).map(|p| p.to_owned());
 
         let signer_registration_record = Self {
             signer_id,
@@ -181,6 +201,7 @@ impl SqLiteEntity for SignerRegistrationRecord {
                     ))
                 })?
                 .with_timezone(&Utc),
+            proof_of_bound_possession_for_snark,
         };
 
         Ok(signer_registration_record)
@@ -227,6 +248,11 @@ impl SqLiteEntity for SignerRegistrationRecord {
             "text",
         );
         projection.add_field("created_at", "{:signer_registration:}.created_at", "text");
+        projection.add_field(
+            "proof_of_bound_possession_for_snark",
+            "{:signer_registration:}.proof_of_bound_possession_for_snark",
+            "text",
+        );
 
         projection
     }

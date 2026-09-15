@@ -43,21 +43,39 @@ impl KeyRegistration {
     /// obtained without that verification (e.g. via deserialization), so external registration
     /// must go through [`KeyRegistration::register`] instead, which always constructs the entry
     /// itself via `RegistrationEntry::new`.
+    ///
     /// # Error
-    /// The function fails when the entry is already registered.
+    /// The function fails when the concatenation verification key is already registered.
+    ///
+    /// A SNARK verification key shared with an already-registered entry does not error: the two
+    /// entries are compared via `RegistrationEntry`'s `Ord` (stake, then concatenation vk as a
+    /// deterministic tie-break) and only the lesser one is kept, silently dropping the other.
+    /// This stops two identities that happen to share a SNARK key from both counting toward the
+    /// registered stake.
     pub(crate) fn register_by_entry(&mut self, entry: &RegistrationEntry) -> StmResult<()> {
         let vk_concatenation = entry.get_verification_key_for_concatenation();
-        let is_already_registered =
-            self.registered_keys_for_concatenation.contains(&vk_concatenation);
+        if self.registered_keys_for_concatenation.contains(&vk_concatenation) {
+            return Err(RegisterError::EntryAlreadyRegistered.into());
+        }
 
         #[cfg(feature = "future_snark")]
-        let is_already_registered = is_already_registered
-            || entry
-                .get_verification_key_for_snark()
-                .is_some_and(|vk_snark| self.registered_keys_for_snark.contains(&vk_snark));
+        if let Some(vk_snark) = entry.get_verification_key_for_snark()
+            && self.registered_keys_for_snark.contains(&vk_snark)
+        {
+            let existing = *self
+                .registration_entries
+                .iter()
+                .find(|e| e.get_verification_key_for_snark() == Some(vk_snark))
+                .expect("registered_keys_for_snark and registration_entries are kept in sync");
 
-        if is_already_registered {
-            return Err(RegisterError::EntryAlreadyRegistered.into());
+            // first compares the stake then the BLS key value as bytes
+            if *entry < existing {
+                self.registered_keys_for_concatenation
+                    .remove(&existing.get_verification_key_for_concatenation());
+                self.registration_entries.remove(&existing);
+            } else {
+                return Ok(());
+            }
         }
 
         self.registered_keys_for_concatenation.insert(vk_concatenation);
@@ -391,7 +409,7 @@ mod tests {
 
     #[cfg(feature = "future_snark")]
     #[test]
-    fn register_by_entry_rejects_same_snark_key_with_different_concatenation_key() {
+    fn register_by_entry_keeps_lowest_stake_on_snark_key_collision() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let mut kr = KeyRegistration::initialize();
         let schnorr_vk =
@@ -408,12 +426,95 @@ mod tests {
             &BlsSigningKey::generate(&mut rng),
         );
         let second_entry = RegistrationEntry::new(second_vk_pop, 200, Some(schnorr_vk)).unwrap();
-        let result = kr.register_by_entry(&second_entry);
 
-        assert!(matches!(
-            result.unwrap_err().downcast_ref::<RegisterError>(),
-            Some(RegisterError::EntryAlreadyRegistered)
-        ));
+        kr.register_by_entry(&second_entry)
+            .expect("a snark key collision is silently resolved, not an error");
+
+        assert_eq!(kr.registration_entries, BTreeSet::from([first_entry]));
+    }
+
+    #[cfg(feature = "future_snark")]
+    #[test]
+    fn register_by_entry_evicts_higher_stake_holder_when_a_lower_stake_entry_arrives_later() {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let mut kr = KeyRegistration::initialize();
+        let schnorr_vk =
+            SchnorrVerificationKey::new_from_signing_key(SchnorrSigningKey::generate(&mut rng));
+
+        let first_vk_pop = VerificationKeyProofOfPossessionForConcatenation::from(
+            &BlsSigningKey::generate(&mut rng),
+        );
+        let first_entry = RegistrationEntry::new(first_vk_pop, 200, Some(schnorr_vk)).unwrap();
+        kr.register_by_entry(&first_entry)
+            .expect("registering a new verification key pair should succeed");
+
+        let second_vk_pop = VerificationKeyProofOfPossessionForConcatenation::from(
+            &BlsSigningKey::generate(&mut rng),
+        );
+        let second_entry = RegistrationEntry::new(second_vk_pop, 100, Some(schnorr_vk)).unwrap();
+
+        kr.register_by_entry(&second_entry)
+            .expect("a lower-stake newcomer evicts the higher-stake holder");
+
+        assert_eq!(kr.registration_entries, BTreeSet::from([second_entry]));
+    }
+
+    #[cfg(feature = "future_snark")]
+    #[test]
+    fn register_by_entry_breaks_snark_key_collision_tie_by_concatenation_key() {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let mut kr = KeyRegistration::initialize();
+        let schnorr_vk =
+            SchnorrVerificationKey::new_from_signing_key(SchnorrSigningKey::generate(&mut rng));
+
+        let first_vk_pop = VerificationKeyProofOfPossessionForConcatenation::from(
+            &BlsSigningKey::generate(&mut rng),
+        );
+        let second_vk_pop = VerificationKeyProofOfPossessionForConcatenation::from(
+            &BlsSigningKey::generate(&mut rng),
+        );
+        let first_entry = RegistrationEntry::new(first_vk_pop, 100, Some(schnorr_vk)).unwrap();
+        let second_entry = RegistrationEntry::new(second_vk_pop, 100, Some(schnorr_vk)).unwrap();
+        let expected_survivor = std::cmp::min(first_entry, second_entry);
+
+        kr.register_by_entry(&first_entry)
+            .expect("registering a new verification key pair should succeed");
+        kr.register_by_entry(&second_entry)
+            .expect("a snark key collision is silently resolved, not an error");
+
+        assert_eq!(kr.registration_entries, BTreeSet::from([expected_survivor]));
+    }
+
+    #[cfg(feature = "future_snark")]
+    #[test]
+    fn register_by_entry_keeps_global_minimum_stake_across_a_three_way_snark_key_collision() {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let mut kr = KeyRegistration::initialize();
+        let schnorr_vk =
+            SchnorrVerificationKey::new_from_signing_key(SchnorrSigningKey::generate(&mut rng));
+
+        // Registered out of stake order (50, 30, 40) to confirm the pairwise-replacement
+        // approach converges to the true minimum regardless of arrival order.
+        let entries: Vec<RegistrationEntry> = [50, 30, 40]
+            .into_iter()
+            .map(|stake| {
+                let vk_pop = VerificationKeyProofOfPossessionForConcatenation::from(
+                    &BlsSigningKey::generate(&mut rng),
+                );
+                RegistrationEntry::new(vk_pop, stake, Some(schnorr_vk)).unwrap()
+            })
+            .collect();
+
+        for entry in &entries {
+            kr.register_by_entry(entry)
+                .expect("a snark key collision is silently resolved, not an error");
+        }
+
+        let lowest_stake_entry = *entries.iter().min().unwrap();
+        assert_eq!(
+            kr.registration_entries,
+            BTreeSet::from([lowest_stake_entry])
+        );
     }
 
     proptest! {

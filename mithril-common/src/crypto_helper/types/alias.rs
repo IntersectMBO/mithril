@@ -17,6 +17,9 @@ pub type ProtocolMembershipDigest = MithrilMembershipDigest;
 /// The id of a mithril party.
 pub type ProtocolPartyId = String;
 
+/// The raw hash of a mithril party id.
+pub type ProtocolPartyIdHash = [u8; 28];
+
 /// Alias of [MithrilStm:Stake](type@mithril_stm::Stake).
 pub type ProtocolStake = Stake;
 

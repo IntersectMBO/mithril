@@ -4,6 +4,8 @@ use std::{fs, path::PathBuf, sync::Arc};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
+#[cfg(feature = "future_snark")]
+use crate::entities::Epoch;
 use crate::{
     crypto_helper::{
         KesEvolutions, KesPeriod, KesSigner, KesSignerStandard, OpCert, ProtocolInitializer,
@@ -61,6 +63,7 @@ fn setup_protocol_initializer(
     operational_certificate_path: Option<PathBuf>,
     stake: Stake,
     protocol_parameters: &ProtocolParameters,
+    #[cfg(feature = "future_snark")] epoch: Epoch,
 ) -> ProtocolInitializer {
     let protocol_initializer_seed: [u8; 32] =
         format!("{party_id:<032}").as_bytes()[..32].try_into().unwrap();
@@ -79,6 +82,8 @@ fn setup_protocol_initializer(
         kes_signer,
         kes_period,
         stake,
+        #[cfg(feature = "future_snark")]
+        epoch,
         &mut protocol_initializer_rng,
     )
     .expect("protocol initializer setup should not fail");
@@ -112,6 +117,9 @@ fn setup_signer_with_stake(
         #[cfg(feature = "future_snark")]
         verification_key_signature_for_snark: protocol_initializer
             .verification_key_signature_for_snark(),
+        #[cfg(feature = "future_snark")]
+        proof_of_bound_possession_for_snark: protocol_initializer
+            .proof_of_bound_possession_for_snark(),
     }
 }
 
@@ -127,6 +135,7 @@ fn decode_op_cert_in_dir(dir: Option<PathBuf>) -> Option<ProtocolOpCert> {
 pub fn setup_signers_from_stake_distribution(
     stake_distribution: &ProtocolStakeDistribution,
     protocol_parameters: &ProtocolParameters,
+    #[cfg(feature = "future_snark")] epoch: Epoch,
 ) -> Vec<SignerFixture> {
     let mut key_registration = ProtocolKeyRegistration::init(stake_distribution);
     let mut signers: Vec<(
@@ -147,6 +156,8 @@ pub fn setup_signers_from_stake_distribution(
             operational_certificate_path.clone(),
             *stake,
             protocol_parameters,
+            #[cfg(feature = "future_snark")]
+            epoch,
         );
         let operational_certificate = decode_op_cert_in_dir(temp_dir);
         let signer_with_stake = setup_signer_with_stake(
@@ -158,23 +169,30 @@ pub fn setup_signers_from_stake_distribution(
         );
 
         key_registration
-            .register(SignerRegistrationParameters {
-                party_id: Some(signer_with_stake.party_id.to_owned()),
-                operational_certificate,
-                verification_key_signature_for_concatenation: protocol_initializer
-                    .verification_key_signature_for_concatenation(),
-                kes_evolutions: Some(kes_evolutions),
-                verification_key_for_concatenation: protocol_initializer
-                    .verification_key_for_concatenation()
-                    .into(),
+            .register(
+                SignerRegistrationParameters {
+                    party_id: Some(signer_with_stake.party_id.to_owned()),
+                    operational_certificate,
+                    verification_key_signature_for_concatenation: protocol_initializer
+                        .verification_key_signature_for_concatenation(),
+                    kes_evolutions: Some(kes_evolutions),
+                    verification_key_for_concatenation: protocol_initializer
+                        .verification_key_for_concatenation()
+                        .into(),
+                    #[cfg(feature = "future_snark")]
+                    verification_key_for_snark: protocol_initializer
+                        .verification_key_for_snark()
+                        .map(Into::into),
+                    #[cfg(feature = "future_snark")]
+                    verification_key_signature_for_snark: protocol_initializer
+                        .verification_key_signature_for_snark(),
+                    #[cfg(feature = "future_snark")]
+                    proof_of_bound_possession_for_snark: protocol_initializer
+                        .proof_of_bound_possession_for_snark(),
+                },
                 #[cfg(feature = "future_snark")]
-                verification_key_for_snark: protocol_initializer
-                    .verification_key_for_snark()
-                    .map(Into::into),
-                #[cfg(feature = "future_snark")]
-                verification_key_signature_for_snark: protocol_initializer
-                    .verification_key_signature_for_snark(),
-            })
+                epoch,
+            )
             .expect("key registration should have succeeded");
 
         signers.push((
