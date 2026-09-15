@@ -27,7 +27,7 @@ For more information about the **Mithril protocol**, see the [About Mithril](../
 On a Mithril network, there exist two types of aggregator nodes:
 
 - **Leader aggregator node**: this node is managed by the entity that generates genesis certificates of the Mithril network (Input Output for all networks specified in the [Network configurations](../getting-started/network-configurations.md). It is responsible for collecting signer registrations (which is still a centralized process) and broadcasting them to other nodes of the network. It provides also a bootstrap point for other aggregator nodes to synchronize the certificate chain.
-- **Follower aggregator node**: this node is managed by any entity willing to contribute to the Mithril network reliability or to provide additional availability guarantees to an infrastructure (eg, for a bridge powered by Mithril). This document explains how to set up and run such a follower Mithril aggregator node.
+- **Follower aggregator node**: this node is managed by any entity willing to contribute to the Mithril network reliability or to provide additional availability guarantees to an infrastructure (eg, for a bridge powered by Mithril). This document explains how to set up and run such a follower Mithril aggregator node. A follower aggregator synchronizes its certificate chain from the leader aggregator by default, or from any other aggregator producing certificates with a compatible aggregate signature type (eg, another follower aggregator).
 
 :::info
 
@@ -259,6 +259,7 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
 - `SERVER_PORT`: Listening server port (default: `8080`)
 - `PUBLIC_SERVER_URL`: Public URL of your aggregator (eg, `https://aggregator.example.com/aggregator`)
 - `LEADER_AGGREGATOR_ENDPOINT`: Endpoint of the leader aggregator to synchronize with (required for follower aggregators, can be found in the [Network configurations](../getting-started/network-configurations.md))
+- `CERTIFICATE_CHAIN_AGGREGATOR_ENDPOINT`: Endpoint of the aggregator to synchronize the certificate chain from (optional, defaults to the leader aggregator endpoint)
 - `RUN_INTERVAL`: Interval between two runtime cycles in milliseconds (eg, `60000` for 60 seconds)
 - `AGGREGATE_SIGNATURE_TYPE`: Type of aggregate signature to use (default: `Concatenation`)
 - `STORE_RETENTION_LIMIT`: Maximum number of records to keep in internal stores. If not set, no limit is applied. A value of `5` is recommended to limit disk usage
@@ -1264,7 +1265,7 @@ EOF'
 After installing and starting your Mithril aggregator node, you should verify that it is operating correctly. The verification process includes checking that your aggregator is:
 
 1. Synchronizing signer registrations with the leader aggregator
-2. Synchronizing the certificate chain with the leader aggregator
+2. Synchronizing the certificate chain with the followed aggregator (the leader aggregator by default)
 3. Producing new certificates.
 
 :::info
@@ -1272,7 +1273,7 @@ After installing and starting your Mithril aggregator node, you should verify th
 As a follower aggregator, your node will:
 
 - Fetch and store signer registrations from the leader aggregator
-- Synchronize the certificate chain from the leader aggregator
+- Synchronize the certificate chain from the leader aggregator, or from the aggregator set in `CERTIFICATE_CHAIN_AGGREGATOR_ENDPOINT`
 - Produce its own certificates using signatures collected via the DMQ protocol (once DMQ is stable and widely deployed).
 
 :::
