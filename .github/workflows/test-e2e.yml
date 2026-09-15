@@ -29,7 +29,12 @@ on:
         type: string
         default: "unstable"
       additional-nodes-build-args:
-        description: "Additional arguments to pass to the build command of the Mithril nodes and of the end-to-end runner"
+        description: "Additional arguments to pass to the Mithril nodes build command"
+        required: false
+        type: string
+        default: "--features future_snark"
+      additional-e2e-runner-build-args:
+        description: "Additional arguments to pass to the end-to-end runner build command"
         required: false
         type: string
         default: "--features future_snark"
@@ -51,7 +56,12 @@ on:
         type: string
         default: "unstable"
       additional-nodes-build-args:
-        description: "Additional arguments to pass to the build command of the Mithril nodes and of the end-to-end runner"
+        description: "Additional arguments to pass to the Mithril nodes build command"
+        required: false
+        type: string
+        default: "--features future_snark"
+      additional-e2e-runner-build-args:
+        description: "Additional arguments to pass to the end-to-end runner build command"
         required: false
         type: string
         default: "--features future_snark"
@@ -121,7 +131,7 @@ jobs:
       - name: Build E2E runner
         shell: bash
         run: |
-          cargo build --release --bin mithril-end-to-end ${{ inputs.additional-nodes-build-args }}
+          cargo build --release --bin mithril-end-to-end ${{ inputs.additional-e2e-runner-build-args }}
 
       - name: Upload E2E runner
         uses: actions/upload-artifact@v7

@@ -483,18 +483,16 @@ impl App {
 
         let use_p2p_passive_relays = args.network_topology.use_p2p_passive_relays;
 
-        let aggregator_version = NodeVersion::fetch(Aggregator::BIN_NAME, &args.bin_directory)?;
-        let client_version = NodeVersion::fetch(Client::BIN_NAME, &args.bin_directory)?;
+        let aggregator_version =
+            NodeVersion::fetch_semver(Aggregator::BIN_NAME, &args.bin_directory)?;
+        let client_version = NodeVersion::fetch_semver(Client::BIN_NAME, &args.bin_directory)?;
         CompatibilityChecker::default().check(BTreeMap::from([
-            (
-                Aggregator::BIN_NAME,
-                semver::Version::from(&aggregator_version),
-            ),
+            (Aggregator::BIN_NAME, aggregator_version.clone()),
             (
                 Signer::BIN_NAME,
                 NodeVersion::fetch_semver(Signer::BIN_NAME, &args.bin_directory)?,
             ),
-            (Client::BIN_NAME, semver::Version::from(&client_version)),
+            (Client::BIN_NAME, client_version.clone()),
             (
                 RelaySigner::BIN_NAME,
                 NodeVersion::fetch_semver(RelaySigner::BIN_NAME, &args.bin_directory)?,
@@ -507,8 +505,8 @@ impl App {
         let genesis_keys = GenesisKeys::select(
             &args.mithril.mithril_era,
             args.mithril.mithril_next_era.as_deref(),
-            &aggregator_version,
-            &client_version,
+            &NodeVersion::new(aggregator_version),
+            &NodeVersion::new(client_version),
         );
 
         let toolkit = ScenarioToolkit::new(ScenarioToolkitContext::new_from_cardano_epoch(

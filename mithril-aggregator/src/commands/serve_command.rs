@@ -160,22 +160,6 @@ impl ServeCommand {
         )
         .await?;
 
-        #[cfg(feature = "future_snark")]
-        if let Err(error) = dependencies_builder
-            .create_aggregate_signature_prover_warmer()
-            .await
-            .with_context(
-                || "Dependencies Builder can not create aggregate signature prover warmer",
-            )?
-            .warm_up()
-            .await
-        {
-            warn!(
-                root_logger, "Failed to warm up the aggregate signature prover";
-                "error" => ?error
-            );
-        }
-
         // Start the aggregator runtime
         let mut runtime = dependencies_builder
             .create_aggregator_runner()
@@ -226,6 +210,22 @@ impl ServeCommand {
 
             Ok(())
         });
+
+        #[cfg(feature = "future_snark")]
+        if let Err(error) = dependencies_builder
+            .create_aggregate_signature_prover_warmer()
+            .await
+            .with_context(
+                || "Dependencies Builder can not create aggregate signature prover warmer",
+            )?
+            .warm_up()
+            .await
+        {
+            warn!(
+                root_logger, "Failed to warm up the aggregate signature prover";
+                "error" => ?error
+            );
+        }
 
         // Create a SignersImporter only if the blockfrost parameters are provided in the config.
         if let Some(blockfrost_params) = config.blockfrost_parameters {

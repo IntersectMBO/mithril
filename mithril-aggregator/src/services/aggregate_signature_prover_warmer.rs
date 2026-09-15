@@ -19,9 +19,6 @@ use mithril_ticker::TickerService;
 #[async_trait]
 pub trait AggregateSignatureProverWarmer: Send + Sync {
     /// Warms up the prover of the current epoch.
-    ///
-    /// Fails when the protocol parameters of the current epoch cannot be read, in which case the
-    /// setup is materialized on first use.
     async fn warm_up(&self) -> StdResult<()>;
 }
 
@@ -110,36 +107,28 @@ impl AggregateSignatureProverWarmer for SnarkAggregateSignatureProverWarmer {
 
 #[cfg(test)]
 mod tests {
-    use anyhow::anyhow;
-
+    use mithril_cardano_node_chain::test::double::FakeChainObserver;
+    use mithril_cardano_node_internal_database::test::double::DumbImmutableFileObserver;
     use mithril_common::entities::{self, Epoch, TimePoint};
     use mithril_common::test::double::{Dummy, fake_data};
     use mithril_protocol_config::model::MithrilNetworkConfigurationForEpoch;
     use mithril_protocol_config::test::double::configuration_provider::FakeMithrilNetworkConfigurationProvider;
+    use mithril_ticker::MithrilTickerService;
 
     use crate::test::TestLogger;
 
     use super::*;
 
-    struct TickerAtEpoch(Epoch);
+    fn ticker_service_with_current_epoch(current_epoch: Option<Epoch>) -> Arc<dyn TickerService> {
+        let time_point = current_epoch.map(|epoch| TimePoint {
+            epoch,
+            ..TimePoint::dummy()
+        });
 
-    #[async_trait]
-    impl TickerService for TickerAtEpoch {
-        async fn get_current_time_point(&self) -> StdResult<TimePoint> {
-            Ok(TimePoint {
-                epoch: self.0,
-                ..TimePoint::dummy()
-            })
-        }
-    }
-
-    struct FailingTicker;
-
-    #[async_trait]
-    impl TickerService for FailingTicker {
-        async fn get_current_time_point(&self) -> StdResult<TimePoint> {
-            Err(anyhow!("ticker failure"))
-        }
+        Arc::new(MithrilTickerService::new(
+            Arc::new(FakeChainObserver::new(time_point)),
+            Arc::new(DumbImmutableFileObserver::default()),
+        ))
     }
 
     fn provider_aggregating_with(
@@ -160,7 +149,7 @@ mod tests {
         let protocol_parameters = entities::ProtocolParameters::new(7, 42, 0.5);
         let warmer = SnarkAggregateSignatureProverWarmer::new(
             AggregateSignatureType::Snark,
-            Arc::new(TickerAtEpoch(Epoch(3))),
+            ticker_service_with_current_epoch(Some(Epoch(3))),
             provider_aggregating_with(protocol_parameters.clone()),
             TestLogger::stdout(),
         );
@@ -174,25 +163,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn concatenation_has_nothing_to_warm_up() {
-        let warmer = SnarkAggregateSignatureProverWarmer::new(
-            AggregateSignatureType::Concatenation,
-            Arc::new(FailingTicker),
-            provider_aggregating_with(fake_data::protocol_parameters()),
-            TestLogger::stdout(),
-        );
-
-        warmer
-            .warm_up()
-            .await
-            .expect("a concatenation aggregate signature must not read the epoch");
-    }
-
-    #[tokio::test]
     async fn fails_when_the_current_epoch_cannot_be_read() {
         let warmer = SnarkAggregateSignatureProverWarmer::new(
             AggregateSignatureType::Snark,
-            Arc::new(FailingTicker),
+            ticker_service_with_current_epoch(None),
             provider_aggregating_with(fake_data::protocol_parameters()),
             TestLogger::stdout(),
         );

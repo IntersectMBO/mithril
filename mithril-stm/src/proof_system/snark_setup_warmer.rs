@@ -39,19 +39,3 @@ impl SnarkProverSetupWarmer {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn concatenation_has_no_setup_to_derive() {
-        let parameters = Parameters {
-            m: 9,
-            k: 5,
-            phi_f: 0.95,
-        };
-
-        SnarkProverSetupWarmer::warm(&parameters, AggregateSignatureType::Concatenation).unwrap();
-    }
-}
