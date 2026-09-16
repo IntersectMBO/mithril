@@ -31,7 +31,7 @@ pub(crate) use midnight_circuits::{
 
 pub(crate) use midnight_proofs::{
     circuit::{Layouter, Value},
-    plonk::{ConstraintSystem, Error, ProvingKey, VerifyingKey},
+    plonk::{ConstraintSystem, Error, VerifyingKey},
     poly::{EvaluationDomain, kzg::KZGCommitmentScheme},
 };
 
@@ -47,8 +47,6 @@ pub(crate) mod embedded_assets;
 pub(crate) mod errors;
 pub(crate) mod gadgets;
 pub(crate) mod io;
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) mod key_serialization;
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod keys;
 #[cfg(test)]

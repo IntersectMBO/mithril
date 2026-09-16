@@ -46,7 +46,7 @@ where
         MidnightCircuit<IvcCircuit>,
     >(
         commitment_parameters,
-        proving_key.proving_key(),
+        proving_key.midnight_pk().pk(),
         std::slice::from_ref(&MidnightCircuit::new(
             ivc_circuit,
             Value::known(public_inputs.to_vec()),
