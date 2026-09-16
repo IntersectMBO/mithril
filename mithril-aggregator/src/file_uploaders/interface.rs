@@ -72,7 +72,7 @@ where
             Ok(result) => return Ok(result),
             Err(e) if nb_attempts >= retry_policy.attempts => {
                 return Err(e.context(format!(
-                    "Upload failed after {nb_attempts} attempts.{additional_err_context}"
+                    "Operation failed after {nb_attempts} attempts.{additional_err_context}"
                 )));
             }
             _ => tokio::time::sleep(retry_policy.delay_between_attempts).await,
@@ -179,6 +179,25 @@ mod tests {
             .upload(&PathBuf::from("file_to_upload"))
             .await
             .expect_err("An error should be returned when all retries are done");
+    }
+
+    #[tokio::test]
+    async fn exhausted_retries_error_mentions_attempts_and_context() {
+        let error = retry(
+            || async { Err::<(), _>(anyhow!("inner failure")) },
+            FileUploadRetryPolicy {
+                attempts: 2,
+                delay_between_attempts: Duration::ZERO,
+            },
+            " Directory CID retrieval: /dir/".to_string(),
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            "Operation failed after 2 attempts. Directory CID retrieval: /dir/",
+            error.to_string()
+        );
     }
 
     #[tokio::test]
