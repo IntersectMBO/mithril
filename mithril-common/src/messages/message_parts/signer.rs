@@ -510,9 +510,29 @@ mod tests {
     use super::*;
 
     mod golden_protocol_key_encodings {
+        #[cfg(feature = "future_snark")]
+        use crate::{
+            entities::Epoch, test::crypto_helper::create_signers_with_stake_sharing_snark_key,
+        };
+
         use super::*;
 
+        #[cfg(feature = "future_snark")]
+        fn golden_signer_with_stake_for_snark_fields() -> SignerWithStake {
+            let [signer_with_stake, _] = create_signers_with_stake_sharing_snark_key(
+                [123, 456],
+                Epoch(10),
+                "golden_protocol_key_encodings",
+            )
+            .unwrap();
+
+            signer_with_stake
+        }
+
         fn golden_signer_message_part_with_json_hex_encoding() -> SignerMessagePart {
+            #[cfg(feature = "future_snark")]
+            let golden_signer_with_stake = golden_signer_with_stake_for_snark_fields();
+
             SignerMessagePart {
                     party_id: "pool1m8crhnqj5k2kyszf5j2scshupystyxc887zdfrpzh6ty6eun4fx"
                         .to_string(),
@@ -525,15 +545,24 @@ mod tests {
                     ),
                     kes_evolutions: Some(KesEvolutions(6)),
                     #[cfg(feature = "future_snark")]
-                    verification_key_for_snark: None,
+                    verification_key_for_snark: golden_signer_with_stake
+                        .verification_key_for_snark
+                        .map(|k| k.to_json_hex().unwrap()),
                     #[cfg(feature = "future_snark")]
-                    verification_key_signature_for_snark: None,
+                    verification_key_signature_for_snark: golden_signer_with_stake
+                        .verification_key_signature_for_snark
+                        .map(|s| s.to_json_hex().unwrap()),
                     #[cfg(feature = "future_snark")]
-                    proof_of_bound_possession_for_snark: None
+                    proof_of_bound_possession_for_snark: golden_signer_with_stake
+                        .proof_of_bound_possession_for_snark
+                        .map(|p| p.to_json_hex().unwrap())
                 }
         }
 
         fn golden_signer_message_part_with_bytes_hex_encoding() -> SignerMessagePart {
+            #[cfg(feature = "future_snark")]
+            let golden_signer_with_stake = golden_signer_with_stake_for_snark_fields();
+
             SignerMessagePart {
                     party_id: "pool1m8crhnqj5k2kyszf5j2scshupystyxc887zdfrpzh6ty6eun4fx"
                         .to_string(),
@@ -546,11 +575,17 @@ mod tests {
                     ),
                     kes_evolutions: Some(KesEvolutions(6)),
                     #[cfg(feature = "future_snark")]
-                    verification_key_for_snark: None,
+                    verification_key_for_snark: golden_signer_with_stake
+                        .verification_key_for_snark
+                        .map(|k| k.to_bytes_hex().unwrap()),
                     #[cfg(feature = "future_snark")]
-                    verification_key_signature_for_snark: None,
+                    verification_key_signature_for_snark: golden_signer_with_stake
+                        .verification_key_signature_for_snark
+                        .map(|s| s.to_bytes_hex().unwrap()),
                     #[cfg(feature = "future_snark")]
-                    proof_of_bound_possession_for_snark: None
+                    proof_of_bound_possession_for_snark: golden_signer_with_stake
+                        .proof_of_bound_possession_for_snark
+                        .map(|p| p.to_bytes_hex().unwrap())
                 }
         }
 
@@ -559,7 +594,6 @@ mod tests {
             use super::*;
 
             // TODO: Change the name of the struct with the current version
-            ///
             #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
             struct SignerWithStakeMessagePartUntilFutureSnark {
                 pub party_id: PartyId,
