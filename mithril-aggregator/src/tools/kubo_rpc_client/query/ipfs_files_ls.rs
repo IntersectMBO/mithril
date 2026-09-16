@@ -2,7 +2,6 @@ use anyhow::Context;
 use reqwest::{RequestBuilder, Response};
 use serde::Deserialize;
 use std::collections::HashSet;
-use std::time::Duration;
 
 use mithril_common::StdResult;
 
@@ -57,10 +56,6 @@ impl KuboRpcQuery for IpfsFilesLsQuery {
             .query(&[("arg", &self.dir)])
             // disable sorting (handled rust-side)
             .query(&[("U", "true")]))
-    }
-
-    fn timeout(&self) -> Duration {
-        Duration::from_secs(10)
     }
 
     async fn handle_success(&self, response: Response) -> StdResult<Self::Response> {

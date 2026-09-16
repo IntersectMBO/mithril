@@ -30,9 +30,9 @@ pub trait KuboRpcQuery: Sync {
         Ok(request_builder)
     }
 
-    /// Timeout for the RPC request.
+    /// Timeout for the RPC request, defaults to 10 seconds.
     fn timeout(&self) -> Duration {
-        Duration::from_secs(1)
+        Duration::from_secs(10)
     }
 
     /// Handles a successful RPC response and converts it to the expected response type.
