@@ -515,9 +515,9 @@ Cardano database snapshot '188f65fc7d3bbf30a59ab05ce4ec6649cec96a1b51b909ca0d170
     docker run -v cardano-node-ipc:/ipc -v cardano-node-data:/data --mount type=bind,source="/home/mithril/data/testnet/a1b5e6f43521fd9c5f55e3d6bf27dc4a62f43980681cb67e28cc40582a0d1974/db",target=/data/db/ -e NETWORK=preview ghcr.io/intersectmbo/cardano-node:11.1.2
 
 
-Upgrade and replace the restored ledger state snapshot to 'LMDB' flavor by running the command:
+Upgrade and replace the restored ledger state snapshot to 'LSM' flavor by running the command:
 
-    mithril-client tools utxo-hd snapshot-converter --db-directory db --cardano-node-version 11.1.2 --utxo-hd-flavor LMDB --commit
+    mithril-client tools utxo-hd snapshot-converter --db-directory db --cardano-node-version 11.1.2 --utxo-hd-flavor LSM --commit
 ```
 
 ### Step 5 (optional): Convert the ledger state snapshot to another flavor
