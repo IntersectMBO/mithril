@@ -83,6 +83,40 @@ cargo test -p mithril-stm --features future_snark,rustls --release generate_recu
 These commands intentionally use `--release` because asset generation is a
 manual workflow dominated by real proof generation.
 
+## Source Constants To Update
+
+Regenerating the binaries is only half the work. Four constants are pinned in source and are not
+written by any generator.
+
+| Constant | File | Test that computes it | Computed value appears |
+|---|---|---|---|
+| production recursive key digest | `circuits/verification_key_digest.rs` | `golden_digests_of_production_circuit_keys` | right |
+| verification-context recursive key digest | `circuits/verification_key_digest.rs` | `golden_digests_of_embedded_verification_context_keys` | right |
+| `GOLDEN_R` combiner challenge | `proof_system/halo2_ivc_snark/proof.rs` | `golden_combiner_r_for_stored_recursive_step_output` | left |
+| `EXPECTED_IVC_ANCILLARY_DIGEST` | `protocol/aggregate_signature/ancillary_data.rs` | `ivc_ancillary_encoding_is_byte_stable` | left |
+
+The assertions are not written the same way round, so check the last column before copying a value:
+taking the wrong side copies the old expected value back, leaving the test failing.
+
+Each constant binds something different, which is what decides whether it moves:
+
+- The two key digests bind the raw verifying key's **transcript representation**.
+- `GOLDEN_R` binds the **proof verification transcript and accumulator**.
+- `EXPECTED_IVC_ANCILLARY_DIGEST` binds the **complete encoded CBOR**, embedded keys included.
+
+These four checks compute golden values; they do not establish validity. Confirm the regenerated keys
+and proofs pass their integrity and verification checks before updating any constant — the
+`GOLDEN_R` test in particular prepares the transcript without performing the final pairing check —
+then rerun the golden checks.
+
+So the rule is not to predict which will move. Rerun all four checks after regenerating, and update
+only those whose inputs you deliberately changed. Some cases are counter-intuitive: a constraint
+system change can alter a transcript representation without altering the serialized commitments; a
+key encoding change moves only the ancillary digest, since the other three never see the envelope;
+and regenerating a randomized proof can move `GOLDEN_R` even when the circuit identity is untouched.
+
+If a value changes and you cannot say which input caused it, stop and find out before updating it.
+
 ## When Regeneration Is Needed
 
 Regenerate the assets when one of these changes:
