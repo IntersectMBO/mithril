@@ -888,7 +888,7 @@ mod tests {
     }
 
     mod batch_upload {
-        use std::collections::HashMap;
+        use std::collections::HashSet;
 
         use mithril_common::test::TempDir;
 
@@ -981,7 +981,7 @@ mod tests {
             let uploader = IpfsUploader::new_for_test("dir", move |mock| {
                 mock.expect_create_dir().returning(|_| Ok(()));
                 mock.expect_list_directory_files()
-                    .returning(move |_| Ok(HashMap::new()));
+                    .returning(move |_| Ok(HashSet::new()));
                 mock.expect_file_exists().never();
                 mock.expect_upload_file().returning(|_, _| Ok("file-cid".to_string()));
                 mock.expect_get_dir_cid()

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -71,7 +71,7 @@ impl IpfsUploader {
                         )
                     })?;
 
-            if existing_entries.contains_key(filename) {
+            if existing_entries.contains(filename) {
                 continue;
             }
 
@@ -161,11 +161,8 @@ pub trait IpfsBackendUploader: Sync + Send {
     /// Create a directory in IPFS
     async fn create_dir(&self, dir_path: &IpfsMfsDirPath) -> StdResult<()>;
 
-    /// List all paths in an MFS directory
-    async fn list_directory_files(
-        &self,
-        dir_path: &IpfsMfsDirPath,
-    ) -> StdResult<HashMap<String, IpfsCid>>;
+    /// List the names of all entries in an MFS directory
+    async fn list_directory_files(&self, dir_path: &IpfsMfsDirPath) -> StdResult<HashSet<String>>;
 
     /// Get the CID of a directory
     async fn get_dir_cid(&self, dir_path: &IpfsMfsDirPath) -> StdResult<IpfsCid>;
@@ -187,10 +184,7 @@ impl IpfsBackendUploader for KuboRpcClient {
         self.send(IpfsFilesMkdirQuery::create_mfs_directory(dir_path)).await
     }
 
-    async fn list_directory_files(
-        &self,
-        dir_path: &IpfsMfsDirPath,
-    ) -> StdResult<HashMap<String, IpfsCid>> {
+    async fn list_directory_files(&self, dir_path: &IpfsMfsDirPath) -> StdResult<HashSet<String>> {
         let response = self.send(IpfsFilesLsQuery::new(dir_path)).await?;
         Ok(response.unwrap_or_default())
     }
@@ -306,10 +300,7 @@ mod tests {
 
         #[tokio::test]
         async fn uploads_only_missing_files_and_returns_directory_cid() {
-            let existing_files = HashMap::from([(
-                "already-uploaded.txt".to_string(),
-                "existing-cid".to_string(),
-            )]);
+            let existing_files = HashSet::from(["already-uploaded.txt".to_string()]);
 
             let uploader = IpfsUploader::new_for_test(MFS_DIR, move |mock| {
                 mock.expect_create_dir()
@@ -362,7 +353,7 @@ mod tests {
                     .once();
                 mock.expect_list_directory_files()
                     .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
-                    .return_once(move |_| Ok(HashMap::new()))
+                    .return_once(move |_| Ok(HashSet::new()))
                     .once();
                 mock.expect_upload_file()
                     .with(
@@ -405,7 +396,7 @@ mod tests {
                     .once();
                 mock.expect_list_directory_files()
                     .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
-                    .return_once(|_| Ok(HashMap::new()))
+                    .return_once(|_| Ok(HashSet::new()))
                     .once();
                 mock.expect_file_exists().never();
                 mock.expect_upload_file().never();
@@ -425,7 +416,7 @@ mod tests {
             let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
                 mock.expect_create_dir().return_once(|_| Ok(())).once();
                 mock.expect_list_directory_files()
-                    .return_once(|_| Ok(HashMap::new()))
+                    .return_once(|_| Ok(HashSet::new()))
                     .once();
                 mock.expect_file_exists().never();
                 mock.expect_upload_file().never();
@@ -479,7 +470,7 @@ mod tests {
             let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
                 mock.expect_create_dir().return_once(|_| Ok(())).once();
                 mock.expect_list_directory_files()
-                    .return_once(|_| Ok(HashMap::new()))
+                    .return_once(|_| Ok(HashSet::new()))
                     .once();
                 mock.expect_file_exists().never();
                 mock.expect_upload_file()
@@ -503,7 +494,7 @@ mod tests {
             let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
                 mock.expect_create_dir().return_once(|_| Ok(())).once();
                 mock.expect_list_directory_files()
-                    .return_once(|_| Ok(HashMap::new()))
+                    .return_once(|_| Ok(HashSet::new()))
                     .once();
                 mock.expect_upload_file().never();
                 mock.expect_get_dir_cid()
