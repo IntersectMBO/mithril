@@ -89,7 +89,12 @@ impl IpfsUploader {
 
     /// Get the current directory CID, reflecting the latest state of the directory
     pub async fn get_current_directory_cid(&self) -> StdResult<IpfsCid> {
-        self.rpc_client.get_dir_cid(&self.ipfs_dir_path).await
+        retry(
+            || async { self.rpc_client.get_dir_cid(&self.ipfs_dir_path).await },
+            self.retry_policy(),
+            format!(" Directory: {}", self.ipfs_dir_path),
+        )
+        .await
     }
 
     async fn ensure_directory_exists(&self) -> StdResult<()> {
@@ -383,6 +388,33 @@ mod tests {
                 .batch_upload_to_dir(&[PathBuf::from("/local/new-file.txt")])
                 .await
                 .unwrap();
+
+            assert_eq!("directory-cid", directory_cid);
+        }
+
+        #[tokio::test]
+        async fn retries_directory_cid_retrieval() {
+            let mut uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
+                mock.expect_create_dir().return_once(|_| Ok(())).once();
+                mock.expect_list_directory_files()
+                    .return_once(|_| Ok(HashSet::new()))
+                    .once();
+                mock.expect_upload_file().never();
+                mock.expect_get_dir_cid()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(|_| Err(anyhow!("first get directory CID failed")))
+                    .once();
+                mock.expect_get_dir_cid()
+                    .with(eq(IpfsMfsDirPath::from(MFS_DIR)))
+                    .return_once(|_| Ok("directory-cid".to_string()))
+                    .once();
+            });
+            uploader.retry_policy = FileUploadRetryPolicy {
+                attempts: 2,
+                delay_between_attempts: Duration::from_millis(5),
+            };
+
+            let directory_cid = uploader.batch_upload_to_dir(&[]).await.unwrap();
 
             assert_eq!("directory-cid", directory_cid);
         }
