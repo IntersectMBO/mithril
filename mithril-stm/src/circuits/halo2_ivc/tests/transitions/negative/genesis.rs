@@ -124,6 +124,7 @@ mod slow {
         }
 
         assert_recursive_mock_prover_rejects_public_input_rows(
+            &mock_prover_setup.ivc_circuit(),
             ivc_circuit_data,
             public_inputs,
             &expected_rows,

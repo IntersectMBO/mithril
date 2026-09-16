@@ -71,6 +71,32 @@ impl CircuitCacheIdentity {
     /// it changes with the circuit and only with it, which no configuration outside production can
     /// check against.
     fn for_configuration(parameters: &Parameters, merkle_tree_depth: u32) -> StmResult<Self> {
+        Self::fingerprint(parameters, merkle_tree_depth, None)
+    }
+
+    /// Identifies a configuration of the recursive circuit, additionally bound to that circuit's own
+    /// identity.
+    ///
+    /// The certificate production key alone does not stand for the recursive circuit: the recursive
+    /// circuit can change while the certificate circuit does not. A non-production entry is trusted
+    /// without comparison, so without this an entry cached for an earlier recursive circuit would be
+    /// selected and its fixed and permutation polynomials loaded against the new constraint system.
+    fn for_recursive_configuration(
+        parameters: &Parameters,
+        merkle_tree_depth: u32,
+    ) -> StmResult<Self> {
+        Self::fingerprint(
+            parameters,
+            merkle_tree_depth,
+            Some(RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION),
+        )
+    }
+
+    fn fingerprint(
+        parameters: &Parameters,
+        merkle_tree_depth: u32,
+        recursive_circuit_identity: Option<&[u8]>,
+    ) -> StmResult<Self> {
         if parameters == &STM_PARAMETERS_FOR_PRODUCTION
             && merkle_tree_depth == MERKLE_TREE_DEPTH_FOR_SNARK
         {
@@ -87,6 +113,11 @@ impl CircuitCacheIdentity {
         ] {
             hasher.update((input.len() as u64).to_le_bytes());
             hasher.update(input);
+        }
+        // Appended only for the recursive circuit, so certificate entries keep their identity.
+        if let Some(identity) = recursive_circuit_identity {
+            hasher.update((identity.len() as u64).to_le_bytes());
+            hasher.update(identity);
         }
 
         Ok(Self::Fingerprinted(hex::encode(hasher.finalize())))
@@ -335,7 +366,8 @@ impl KeyProvider<RecursiveCircuitKeyGenerator> {
         parameters: &Parameters,
         merkle_tree_depth: u32,
     ) -> StmResult<Self> {
-        let identity = CircuitCacheIdentity::for_configuration(parameters, merkle_tree_depth)?;
+        let identity =
+            CircuitCacheIdentity::for_recursive_configuration(parameters, merkle_tree_depth)?;
 
         Ok(Self::new(
             std::env::temp_dir(),
@@ -367,7 +399,7 @@ mod tests {
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
 
-    use super::{CacheState, KeyGenerator, KeyProvider};
+    use super::{CacheState, CircuitCacheIdentity, KeyGenerator, KeyProvider};
     use crate::StmResult;
     use crate::circuits::halo2::{
         NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, STM_PARAMETERS_FOR_PRODUCTION,
@@ -375,6 +407,51 @@ mod tests {
     };
     use crate::codec::{TryFromBytes, TryToBytes};
     use crate::{MERKLE_TREE_DEPTH_FOR_SNARK, Parameters};
+
+    // The recursive and certificate circuits change independently, and a non-production entry is
+    // trusted without comparison, so the two must not share a cache directory.
+    #[test]
+    fn recursive_cache_identity_differs_from_the_certificate_one() {
+        let parameters = Parameters {
+            k: 3,
+            m: 10,
+            phi_f: 0.2,
+        };
+        let merkle_tree_depth = 4;
+
+        let certificate = CircuitCacheIdentity::for_configuration(&parameters, merkle_tree_depth)
+            .expect("certificate identity should build");
+        let recursive =
+            CircuitCacheIdentity::for_recursive_configuration(&parameters, merkle_tree_depth)
+                .expect("recursive identity should build");
+
+        assert_ne!(
+            certificate.directory_name("recursive-keys"),
+            recursive.directory_name("recursive-keys"),
+            "the recursive cache must not reuse an entry keyed only by the certificate circuit"
+        );
+    }
+
+    // Binding the recursive circuit into its own fingerprint must leave certificate entries where
+    // they were, so a recursive circuit change does not force certificate key generation.
+    #[test]
+    fn certificate_cache_identity_is_unchanged_by_the_recursive_binding() {
+        let parameters = Parameters {
+            k: 3,
+            m: 10,
+            phi_f: 0.2,
+        };
+        let merkle_tree_depth = 4;
+
+        let certificate = CircuitCacheIdentity::for_configuration(&parameters, merkle_tree_depth)
+            .expect("certificate identity should build");
+
+        assert_eq!(
+            certificate.directory_name("non-recursive-keys"),
+            "non-recursive-keys-ac5086eedf8c9015ea3b5f1b39f123e04d6105b89e17f45e731b3d80a2f91c27",
+            "certificate cache identity must not move"
+        );
+    }
 
     /// Key backed by raw bytes, so the provider mechanics can be tested without real keygen.
     #[derive(Clone, Debug, PartialEq)]

@@ -1,3 +1,4 @@
+use midnight_zk_stdlib::MidnightCircuit;
 use std::{
     collections::BTreeMap,
     io::Write,
@@ -25,7 +26,7 @@ use crate::circuits::halo2_ivc::keys::{RecursiveCircuitProvingKey, RecursiveCirc
 use crate::circuits::halo2_ivc::types::MessageHash;
 use crate::circuits::halo2_ivc::{
     CERTIFICATE_FIXED_BASES_PREFIX, EmulatedCurve, IVC_FIXED_BASES_PREFIX, NativeField,
-    PairingEngine, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::IvcCircuitData,
+    PairingEngine, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::IvcCircuit,
     state::Global,
 };
 use crate::circuits::test_utils::file_mutex::FileMutex;
@@ -216,12 +217,11 @@ fn derive_recursive_verifying_key(
     recursive_commitment_parameters: &ParamsKZG<Bls12>,
     certificate_verifying_key: &NonRecursiveCircuitVerifyingKey,
 ) -> RecursiveCircuitVerifyingKey {
-    let default_ivc_circuit =
-        IvcCircuitData::unknown(certificate_verifying_key).expect("valid IvcCircuitData unknown");
+    let default_ivc_circuit = IvcCircuit::for_key_generation(certificate_verifying_key);
     RecursiveCircuitVerifyingKey::new(
         keygen_vk_with_k(
             recursive_commitment_parameters,
-            &default_ivc_circuit,
+            &MidnightCircuit::from_relation(&default_ivc_circuit, Some(RECURSIVE_CIRCUIT_DEGREE)),
             RECURSIVE_CIRCUIT_DEGREE,
         )
         .expect("recursive verifying key generation should not fail"),
@@ -421,12 +421,11 @@ fn build_shared_recursive_context_with(
 pub(crate) fn build_recursive_proving_key(
     context: &SharedRecursiveContext,
 ) -> RecursiveCircuitProvingKey {
-    let default_ivc_circuit = IvcCircuitData::unknown(&context.certificate_verifying_key)
-        .expect("valid IvcCircuitData unknown");
+    let default_ivc_circuit = IvcCircuit::for_key_generation(&context.certificate_verifying_key);
     RecursiveCircuitProvingKey::new(
         keygen_pk(
             context.recursive_verifying_key.verifying_key().clone(),
-            &default_ivc_circuit,
+            &MidnightCircuit::from_relation(&default_ivc_circuit, Some(RECURSIVE_CIRCUIT_DEGREE)),
         )
         .expect("recursive proving key generation should not fail"),
     )

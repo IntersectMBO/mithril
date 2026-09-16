@@ -1,3 +1,7 @@
+use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_DEGREE;
+use crate::circuits::halo2_ivc::circuit::IvcCircuit;
+use midnight_proofs::circuit::Value;
+use midnight_zk_stdlib::MidnightCircuit;
 use std::hash::Hash;
 
 use ff::FromUniformBytes;
@@ -23,6 +27,7 @@ use crate::circuits::halo2_ivc::{
 fn prove_ivc_with_transcript<H: TranscriptHash>(
     commitment_parameters: &ParamsKZG<Bls12>,
     proving_key: &RecursiveCircuitProvingKey,
+    ivc_circuit: &IvcCircuit,
     ivc_circuit_data: &IvcCircuitData,
     public_inputs: &[NativeField],
     random_generator: &mut (impl RngCore + CryptoRng),
@@ -38,11 +43,16 @@ where
         NativeField,
         KZGCommitmentScheme<PairingEngine>,
         CircuitTranscript<H>,
-        IvcCircuitData,
+        MidnightCircuit<IvcCircuit>,
     >(
         commitment_parameters,
         proving_key.proving_key(),
-        std::slice::from_ref(ivc_circuit_data),
+        std::slice::from_ref(&MidnightCircuit::new(
+            ivc_circuit,
+            Value::known(public_inputs.to_vec()),
+            Value::known(ivc_circuit_data.clone()),
+            Some(RECURSIVE_CIRCUIT_DEGREE),
+        )),
         1,
         &[&[&[], public_inputs]],
         &mut transcript,
@@ -82,6 +92,7 @@ where
 pub(crate) fn prove_poseidon_ivc(
     commitment_parameters: &ParamsKZG<Bls12>,
     proving_key: &RecursiveCircuitProvingKey,
+    ivc_circuit: &IvcCircuit,
     ivc_circuit_data: &IvcCircuitData,
     public_inputs: &[NativeField],
     random_generator: &mut (impl RngCore + CryptoRng),
@@ -89,6 +100,7 @@ pub(crate) fn prove_poseidon_ivc(
     prove_ivc_with_transcript::<PoseidonState<NativeField>>(
         commitment_parameters,
         proving_key,
+        ivc_circuit,
         ivc_circuit_data,
         public_inputs,
         random_generator,
@@ -115,6 +127,7 @@ pub(crate) fn verify_prepare_poseidon_ivc(
 pub(crate) fn prove_blake2b_ivc(
     commitment_parameters: &ParamsKZG<Bls12>,
     proving_key: &RecursiveCircuitProvingKey,
+    ivc_circuit: &IvcCircuit,
     ivc_circuit_data: &IvcCircuitData,
     public_inputs: &[NativeField],
     random_generator: &mut (impl RngCore + CryptoRng),
@@ -122,6 +135,7 @@ pub(crate) fn prove_blake2b_ivc(
     prove_ivc_with_transcript::<Blake2b256>(
         commitment_parameters,
         proving_key,
+        ivc_circuit,
         ivc_circuit_data,
         public_inputs,
         random_generator,

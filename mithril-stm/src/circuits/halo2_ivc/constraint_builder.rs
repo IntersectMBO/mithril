@@ -1,23 +1,21 @@
 //! In-circuit constraint builder for one recursive IVC step.
 //!
-//! `IvcConstraintBuilder` owns the chips the recursive circuit needs and exposes the constraint
-//! logic driven by `IvcCircuitData::synthesize`: genesis-signature gating, the state transition, and
-//! accumulator/proof verification. Reusable sub-gadgets live in the `gadgets` module.
+//! `IvcConstraintBuilder` borrows the chips the recursive circuit needs from the standard library
+//! and exposes the constraint logic driven by `IvcCircuit::circuit`: genesis-signature gating, the
+//! state transition, and accumulator/proof verification. Reusable sub-gadgets live in the `gadgets`
+//! module.
 
 use ff::Field;
 use group::Group;
-use midnight_circuits::hash::sha256::Sha256Chip;
 
 use super::{
     Accumulator, ArithInstructions, AssertionInstructions, AssignedAccumulator, AssignedBit,
     AssignedForeignPoint, AssignedNative, AssignmentInstructions, BinaryInstructions, CircuitCurve,
-    CircuitValue, ComposableChip, ControlFlowInstructions, EccChip, EccInstructions, EmulatedCurve,
-    EqualityInstructions, Error, ForeignWeierstrassEccChip, HashInstructions, IvcNativeGadget,
-    Layouter, NativeChip, NativeField, NativeGadget, P2RDecompositionChip,
+    CircuitValue, ControlFlowInstructions, EccChip, EccInstructions, EmulatedCurve,
+    EqualityInstructions, Error, ForeignWeierstrassEccChip, IvcNativeGadget, Layouter, NativeField,
     PREIMAGE_CURRENT_EPOCH_BYTES, PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
-    PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, PoseidonChip, PublicInputInstructions,
-    RECURSIVE_CIRCUIT_DEGREE, RecursiveEmulation, VerifierGadget, ZeroInstructions,
-    config::IvcConfig,
+    PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, PublicInputInstructions, RecursiveEmulation,
+    VerifierGadget, ZeroInstructions, ZkStdLib,
     gadgets::{GenesisSchnorrSignatureInputs, combine_bytes, verify_genesis_signature},
     state::{AssignedGlobal, AssignedState, AssignedWitness},
 };
@@ -30,56 +28,38 @@ type DecodedProtocolMessageFields = (
     AssignedNative<NativeField>,
 );
 
-/// Owns the chips for the recursive IVC circuit and builds its in-circuit constraints.
+/// Borrows the standard library's chips and builds the recursive IVC circuit's constraints.
 ///
-/// Constructed once per synthesis from an [`IvcConfig`]; its methods emit the constraints for a
-/// single IVC step.
-#[derive(Debug, Clone)]
-pub struct IvcConstraintBuilder {
-    pub(crate) core_decomp_chip: P2RDecompositionChip<NativeField>,
-    pub(crate) native_gadget: IvcNativeGadget,
-    pub(crate) jubjub_chip: EccChip<CircuitCurve>,
-    pub(crate) poseidon_chip: PoseidonChip<NativeField>,
-    pub(crate) sha2_256_chip: Sha256Chip<NativeField>,
-    pub(crate) bls12_381_chip: ForeignWeierstrassEccChip<
+/// Constructed once per synthesis from the [`ZkStdLib`] the relation is handed; its methods emit
+/// the constraints for a single IVC step.
+#[derive(Clone)]
+pub struct IvcConstraintBuilder<'a> {
+    pub(crate) std_lib: &'a ZkStdLib,
+    pub(crate) native_gadget: &'a IvcNativeGadget,
+    pub(crate) jubjub_chip: &'a EccChip<CircuitCurve>,
+    pub(crate) bls12_381_chip: &'a ForeignWeierstrassEccChip<
         NativeField,
         EmulatedCurve,
         EmulatedCurve,
         IvcNativeGadget,
         IvcNativeGadget,
     >,
-    pub(crate) verifier_gadget: VerifierGadget<RecursiveEmulation>,
+    pub(crate) verifier_gadget: &'a VerifierGadget<RecursiveEmulation>,
 }
 
-impl IvcConstraintBuilder {
-    /// Builds the circuit's chips from the circuit configuration.
-    pub fn new(config: &IvcConfig) -> Self {
-        let native_chip = <NativeChip<NativeField> as ComposableChip<NativeField>>::new(
-            &config.native_config,
-            &(),
-        );
-        let core_decomp_chip = P2RDecompositionChip::new(
-            &config.core_decomp_config,
-            &(RECURSIVE_CIRCUIT_DEGREE as usize - 1),
-        );
-        let native_gadget = NativeGadget::new(core_decomp_chip.clone(), native_chip.clone());
-        let jubjub_chip = EccChip::<CircuitCurve>::new(&config.jubjub_config, &native_gadget);
-        let bls12_381_chip: ForeignWeierstrassEccChip<_, EmulatedCurve, EmulatedCurve, _, _> = {
-            ForeignWeierstrassEccChip::new(&config.bls12_381_config, &native_gadget, &native_gadget)
-        };
-        let poseidon_chip = PoseidonChip::new(&config.poseidon_config, &native_chip);
-        let sha2_256_chip = Sha256Chip::new(&config.sha256_config, &native_gadget);
-        let verifier_gadget: VerifierGadget<RecursiveEmulation> =
-            VerifierGadget::new(&bls12_381_chip, &native_gadget, &poseidon_chip);
-
+impl<'a> IvcConstraintBuilder<'a> {
+    /// Borrows the chips the recursive circuit needs from the standard library.
+    ///
+    /// The native gadget is reached through the BLS chip rather than built here: it is the standard
+    /// library's own instance, and a separately constructed one would not share its public input
+    /// counter.
+    pub fn new(std_lib: &'a ZkStdLib) -> Self {
         IvcConstraintBuilder {
-            core_decomp_chip,
-            native_gadget,
-            jubjub_chip,
-            poseidon_chip,
-            sha2_256_chip,
-            bls12_381_chip,
-            verifier_gadget,
+            std_lib,
+            native_gadget: std_lib.bls12_381().scalar_field_chip(),
+            jubjub_chip: std_lib.jubjub(),
+            bls12_381_chip: std_lib.bls12_381(),
+            verifier_gadget: std_lib.verifier(),
         }
     }
 
@@ -100,9 +80,7 @@ impl IvcConstraintBuilder {
         witness: &AssignedWitness,
     ) -> Result<AssignedBit<NativeField>, Error> {
         verify_genesis_signature(
-            &self.jubjub_chip,
-            &self.native_gadget,
-            &self.poseidon_chip,
+            self.std_lib,
             layouter,
             GenesisSchnorrSignatureInputs {
                 verification_key: &global.genesis_verification_key,
@@ -260,9 +238,9 @@ impl IvcConstraintBuilder {
         witness: &AssignedWitness,
         bases: &[NativeField],
     ) -> Result<(), Error> {
-        let hash = self.sha2_256_chip.hash(layouter, &witness.message_preimage)?;
+        let hash = self.std_lib.sha2_256(layouter, &witness.message_preimage)?;
         // Compare message and hash
-        let hash_native = combine_bytes(&self.native_gadget, layouter, &hash, bases)?;
+        let hash_native = combine_bytes(self.native_gadget, layouter, &hash, bases)?;
         self.native_gadget.assert_equal(layouter, message, &hash_native)
     }
 
@@ -285,19 +263,19 @@ impl IvcConstraintBuilder {
 
         // Get the field elements by linearly combining the bytes
         let next_merkle_tree_commitment = combine_bytes(
-            &self.native_gadget,
+            self.native_gadget,
             layouter,
             next_merkle_tree_commitment_bytes,
             bases,
         )?;
         let next_protocol_parameters = combine_bytes(
-            &self.native_gadget,
+            self.native_gadget,
             layouter,
             next_protocol_parameters_bytes,
             bases,
         )?;
         let current_epoch =
-            combine_bytes(&self.native_gadget, layouter, current_epoch_bytes, bases)?;
+            combine_bytes(self.native_gadget, layouter, current_epoch_bytes, bases)?;
         Ok((
             next_merkle_tree_commitment,
             next_protocol_parameters,
@@ -478,20 +456,20 @@ impl IvcConstraintBuilder {
         // invalid) accumulator by a default accumulator that satisfies the invariant.
         AssignedAccumulator::scale_by_bit(
             layouter,
-            &self.native_gadget,
+            self.native_gadget,
             is_not_genesis,
             &mut certificate_proof_accumulator,
         )?;
         certificate_proof_accumulator.collapse(
             layouter,
-            &self.bls12_381_chip,
-            &self.native_gadget,
+            self.bls12_381_chip,
+            self.native_gadget,
         )?;
 
         let acc = AssignedAccumulator::assign(
             layouter,
-            &self.bls12_381_chip,
-            &self.native_gadget,
+            self.bls12_381_chip,
+            self.native_gadget,
             1,
             1,
             &[],
@@ -522,21 +500,18 @@ impl IvcConstraintBuilder {
         // invalid) accumulator by a default accumulator that satisfies the invariant.
         AssignedAccumulator::scale_by_bit(
             layouter,
-            &self.native_gadget,
+            self.native_gadget,
             is_not_genesis,
             &mut ivc_proof_accumulator,
         )?;
-        ivc_proof_accumulator.collapse(layouter, &self.bls12_381_chip, &self.native_gadget)?;
+        ivc_proof_accumulator.collapse(layouter, self.bls12_381_chip, self.native_gadget)?;
 
         // Accumulate the certificate and IVC proof accumulators.
-        let mut next_acc = AssignedAccumulator::<RecursiveEmulation>::accumulate(
+        let mut next_acc = self.verifier_gadget.accumulate(
             layouter,
-            &self.verifier_gadget,
-            &self.native_gadget,
-            &self.poseidon_chip,
             &[acc, certificate_proof_accumulator, ivc_proof_accumulator],
         )?;
-        next_acc.collapse(layouter, &self.bls12_381_chip, &self.native_gadget)?;
+        next_acc.collapse(layouter, self.bls12_381_chip, self.native_gadget)?;
 
         Ok(next_acc)
     }

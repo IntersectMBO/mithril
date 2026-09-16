@@ -19,15 +19,15 @@ use midnight_proofs::{
     poly::kzg::params::ParamsVerifierKZG,
     utils::{SerdeFormat, helpers::ProcessedSerdeObject},
 };
-use midnight_zk_stdlib::MidnightVK;
+use midnight_zk_stdlib::{MidnightCircuit, MidnightVK};
 
 use crate::StmResult;
 use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 use crate::circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey;
 use crate::circuits::halo2_ivc::{
     Accumulator, EmulatedCurve, KZGCommitmentScheme, NativeField, PREIMAGE_SIZE, PairingEngine,
-    RecursiveEmulation, VerifyingKey,
-    circuit::IvcCircuitData,
+    RECURSIVE_CIRCUIT_DEGREE, RecursiveEmulation, VerifyingKey,
+    circuit::{IvcCircuit, recursive_circuit_architecture},
     io::ReadWithFormat,
     state::State,
     types::{
@@ -352,10 +352,16 @@ fn load_verification_context_asset_from_reader<R: Read>(
         .map(|_| read_field_element(reader))
         .collect::<Result<Vec<_>, _>>()?;
     let recursive_verifying_key =
-        VerifyingKey::<NativeField, KZGCommitmentScheme<PairingEngine>>::read::<_, IvcCircuitData>(
+        VerifyingKey::<NativeField, KZGCommitmentScheme<PairingEngine>>::read::<
+            _,
+            MidnightCircuit<IvcCircuit>,
+        >(
             reader,
             SerdeFormat::RawBytesUnchecked,
-            (),
+            (
+                recursive_circuit_architecture(),
+                (RECURSIVE_CIRCUIT_DEGREE - 1) as u8,
+            ),
         )?;
     let combined_fixed_bases = read_named_fixed_bases(reader)?;
 

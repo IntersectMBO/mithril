@@ -39,18 +39,16 @@ mod slow {
             AssignedAccumulator::as_public_input(&mock_prover_setup.trivial_accumulator),
         ]
         .concat();
-        let ivc_circuit_data = IvcCircuitData::try_new(
+        let ivc_circuit_data = IvcCircuitData::new(
             mock_prover_setup.global.clone(),
             State::genesis(),
             build_genesis_base_case_witness(&setup),
             CertificateProofBytes::garbage(vec![0u8; 64]),
             IvcProofBytes::empty(),
             mock_prover_setup.trivial_accumulator.clone(),
-            &mock_prover_setup.certificate_verifying_key,
-            &mock_prover_setup.recursive_verifying_key,
-        )
-        .expect("valid IvcCircuitData construction");
+        );
         assert_recursive_mock_prover_accepts_with_label(
+            &mock_prover_setup.ivc_circuit(),
             ivc_circuit_data,
             public_inputs,
             "garbage certificate proof bytes (64 × 0x00)",
@@ -70,18 +68,16 @@ mod slow {
             AssignedAccumulator::as_public_input(&mock_prover_setup.trivial_accumulator),
         ]
         .concat();
-        let ivc_circuit_data = IvcCircuitData::try_new(
+        let ivc_circuit_data = IvcCircuitData::new(
             mock_prover_setup.global.clone(),
             State::genesis(),
             build_genesis_base_case_witness(&setup),
             CertificateProofBytes::empty(),
             IvcProofBytes::new(vec![0u8; 64]),
             mock_prover_setup.trivial_accumulator.clone(),
-            &mock_prover_setup.certificate_verifying_key,
-            &mock_prover_setup.recursive_verifying_key,
-        )
-        .expect("valid IvcCircuitData construction");
+        );
         assert_recursive_mock_prover_accepts_with_label(
+            &mock_prover_setup.ivc_circuit(),
             ivc_circuit_data,
             public_inputs,
             "garbage IVC proof bytes (64 × 0x00)",

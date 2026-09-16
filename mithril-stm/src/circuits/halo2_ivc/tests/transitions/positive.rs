@@ -100,6 +100,7 @@ mod slow {
         let fixture = build_asset_backed_same_epoch_fixture(&mock_prover_setup);
 
         assert_recursive_mock_prover_accepts_with_label(
+            &mock_prover_setup.ivc_circuit(),
             fixture.ivc_circuit_data,
             fixture.public_inputs,
             "same-epoch step from committed assets",
@@ -114,6 +115,7 @@ mod slow {
         let fixture = build_asset_backed_next_epoch_fixture(&mock_prover_setup);
 
         assert_recursive_mock_prover_accepts_with_label(
+            &mock_prover_setup.ivc_circuit(),
             fixture.ivc_circuit_data,
             fixture.public_inputs,
             "next-epoch step from committed assets",

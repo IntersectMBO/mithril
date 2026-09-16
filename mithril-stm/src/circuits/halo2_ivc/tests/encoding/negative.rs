@@ -236,6 +236,7 @@ mod slow {
         );
 
         assert_recursive_mock_prover_rejects_public_input_rows(
+            &mock_prover_setup.ivc_circuit(),
             ivc_circuit_data,
             public_inputs,
             &BTreeMap::from([
@@ -299,6 +300,7 @@ mod slow {
         );
 
         assert_recursive_mock_prover_rejects_public_input_rows(
+            &mock_prover_setup.ivc_circuit(),
             ivc_circuit_data,
             public_inputs,
             &BTreeMap::from([(StateField::Message.row(), StateField::Message.name())]),

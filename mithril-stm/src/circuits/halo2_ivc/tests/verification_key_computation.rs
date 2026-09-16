@@ -4,7 +4,7 @@ use midnight_proofs::{
     poly::kzg::KZGCommitmentScheme,
     utils::SerdeFormat,
 };
-use midnight_zk_stdlib::MidnightVK;
+use midnight_zk_stdlib::{MidnightCircuit, MidnightVK};
 
 use crate::{
     StmResult,
@@ -15,7 +15,7 @@ use crate::{
         },
         halo2_ivc::{
             NativeField, PairingEngine, RECURSIVE_CIRCUIT_DEGREE,
-            RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::IvcCircuitData,
+            RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::IvcCircuit,
         },
         trusted_setup::TrustedSetupProvider,
     },
@@ -37,12 +37,11 @@ fn compute_recursive_circuit_verification_key() -> StmResult<Vec<u8>> {
             .with_context(|| "Failed to deserialize the circuit verification key.")?,
     );
 
-    let default_ivc_circuit =
-        IvcCircuitData::unknown(&certificate_verifying_key).expect("valid IvcCircuitData unknown");
+    let default_ivc_circuit = IvcCircuit::for_key_generation(&certificate_verifying_key);
     let recursive_verification_key: VerifyingKey<NativeField, KZGCommitmentScheme<PairingEngine>> =
         keygen_vk_with_k(
             &recursive_commitment_parameters,
-            &default_ivc_circuit,
+            &MidnightCircuit::from_relation(&default_ivc_circuit, Some(RECURSIVE_CIRCUIT_DEGREE)),
             shared_srs_degree,
         )?;
 

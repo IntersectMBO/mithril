@@ -22,18 +22,6 @@ pub enum IvcCircuitError {
     #[error("Byte-to-field conversion received {bytes} bytes but only {bases} base weights")]
     ByteCountExceedsBaseCount { bytes: usize, bases: usize },
 
-    /// Not enough advice columns were allocated to satisfy chip requirements.
-    #[error(
-        "Too few advice columns allocated for the IVC circuit: need {needed}, only {available} allocated"
-    )]
-    InsufficientAdviceColumns { needed: usize, available: usize },
-
-    /// Not enough fixed columns were allocated to satisfy chip requirements.
-    #[error(
-        "Too few fixed columns allocated for the IVC circuit: need {needed}, only {available} allocated"
-    )]
-    InsufficientFixedColumns { needed: usize, available: usize },
-
     /// Off-circuit step transition: the incoming certificate's epoch does not advance the
     /// chain correctly. The `kind` field carries an `EpochTransitionErrorKind` with the
     /// specific violation.
