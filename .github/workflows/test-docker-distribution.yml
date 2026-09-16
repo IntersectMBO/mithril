@@ -25,7 +25,7 @@ on:
         description: The url of the archive of the Cardano binaries
         required: true
         type: string
-        default: https://github.com/IntersectMBO/cardano-node/releases/download/11.0.1/cardano-node-11.0.1-linux.tar.gz
+        default: https://github.com/IntersectMBO/cardano-node/releases/download/11.1.2/cardano-node-11.1.2-linux.tar.gz
       dry_run:
         description: Dry run will not push the Docker images to the registry
         required: true

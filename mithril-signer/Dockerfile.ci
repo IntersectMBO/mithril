@@ -17,7 +17,7 @@ RUN adduser --no-create-home --disabled-password appuser
 RUN mkdir -p /app/bin
 
 # Install cardano-cli
-ARG CARDANO_NODE_VERSION=11.0.1
+ARG CARDANO_NODE_VERSION=11.1.2
 ARG CARDANO_BIN_URL=https://github.com/IntersectMBO/cardano-node/releases/download/$CARDANO_NODE_VERSION/cardano-node-$CARDANO_NODE_VERSION-linux.tar.gz
 ARG EMBED-CARDANO-CLI=0
 # Install cardano-cli

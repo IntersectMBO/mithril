@@ -7,7 +7,7 @@ on:
         description: "Cardano node version used in e2e (comma separated list of versions)"
         required: true
         type: string
-        default: "11.0.1"
+        default: "11.1.2"
       full-scenario-signed-entity-types:
         description: "Signed entity types parameters for full scenarios (discriminants names in an ordered comma separated list)"
         required: true
@@ -42,7 +42,7 @@ on:
     inputs:
       cardano-node-versions:
         type: string
-        default: "11.0.1"
+        default: "11.1.2"
       full-scenario-signed-entity-types:
         type: string
         default: "CardanoTransactions,CardanoStakeDistribution,CardanoDatabase"
