@@ -1,24 +1,28 @@
 //! [`TryToBytes`] / [`TryFromBytes`] impls for the recursive circuit's raw PLONK keys.
 //!
-//! The raw PLONK `read` is generic over the circuit type and takes its `Params`, so these impls
-//! pin [`IvcCircuitData`] and its `()` params.
+//! The raw PLONK `read` is generic over the circuit type and takes its `Params`, so these impls pin
+//! the standard library's wrapper around [`IvcCircuit`] and its architecture and range parameters,
+//! rebuilding the constraint system key generation used.
 //!
-//! Note: only the IVC circuit's keys are ever deserialized raw here (the certificate keys
-//! round-trip as the high-level `MidnightVK` / `MidnightPK`), so pinning `IvcCircuitData` is
-//! correct.
+//! Note: only the IVC circuit's keys are ever deserialized raw here; the certificate keys round-trip
+//! as the high-level `MidnightVK` / `MidnightPK`.
 
 use crate::StmResult;
 use crate::circuits::key_serialization::KEY_SERDE_FORMAT;
 use crate::codec::{TryFromBytes, TryToBytes};
 use anyhow::Context;
 
+use midnight_zk_stdlib::MidnightCircuit;
+
 use super::{
-    KZGCommitmentScheme, NativeField, PairingEngine, ProvingKey, VerifyingKey,
-    circuit::IvcCircuitData,
+    KZGCommitmentScheme, NativeField, PairingEngine, ProvingKey, RECURSIVE_CIRCUIT_DEGREE,
+    VerifyingKey,
+    circuit::{IvcCircuit, recursive_circuit_architecture},
 };
 
 // Recursive (IVC) circuit verifying key. The raw PLONK `read` is generic over the circuit and
-// takes its `Params`, so it is pinned to `IvcCircuitData` with its `()` params below.
+// takes its `Params`, so it is pinned below to the standard library's wrapper around `IvcCircuit`,
+// with the architecture and range parameters that rebuild the same constraint system.
 impl TryToBytes for VerifyingKey<NativeField, KZGCommitmentScheme<PairingEngine>> {
     fn to_bytes_vec(&self) -> StmResult<Vec<u8>> {
         let mut bytes = Vec::new();
@@ -31,10 +35,16 @@ impl TryToBytes for VerifyingKey<NativeField, KZGCommitmentScheme<PairingEngine>
 impl TryFromBytes for VerifyingKey<NativeField, KZGCommitmentScheme<PairingEngine>> {
     fn try_from_bytes(bytes: &[u8]) -> StmResult<Self> {
         let mut reader = bytes;
-        VerifyingKey::<NativeField, KZGCommitmentScheme<PairingEngine>>::read::<_, IvcCircuitData>(
+        VerifyingKey::<NativeField, KZGCommitmentScheme<PairingEngine>>::read::<
+            _,
+            MidnightCircuit<IvcCircuit>,
+        >(
             &mut reader,
             KEY_SERDE_FORMAT,
-            (),
+            (
+                recursive_circuit_architecture(),
+                (RECURSIVE_CIRCUIT_DEGREE - 1) as u8,
+            ),
         )
         .with_context(|| "Failed to deserialize the recursive PLONK verifying key")
     }
@@ -53,10 +63,16 @@ impl TryToBytes for ProvingKey<NativeField, KZGCommitmentScheme<PairingEngine>> 
 impl TryFromBytes for ProvingKey<NativeField, KZGCommitmentScheme<PairingEngine>> {
     fn try_from_bytes(bytes: &[u8]) -> StmResult<Self> {
         let mut reader = bytes;
-        ProvingKey::<NativeField, KZGCommitmentScheme<PairingEngine>>::read::<_, IvcCircuitData>(
+        ProvingKey::<NativeField, KZGCommitmentScheme<PairingEngine>>::read::<
+            _,
+            MidnightCircuit<IvcCircuit>,
+        >(
             &mut reader,
             KEY_SERDE_FORMAT,
-            (),
+            (
+                recursive_circuit_architecture(),
+                (RECURSIVE_CIRCUIT_DEGREE - 1) as u8,
+            ),
         )
         .with_context(|| "Failed to deserialize the recursive PLONK proving key")
     }

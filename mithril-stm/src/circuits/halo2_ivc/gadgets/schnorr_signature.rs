@@ -4,9 +4,8 @@ use group::Group;
 
 use crate::circuits::halo2_ivc::{
     AssignedBit, AssignedNative, AssignedNativePoint, AssignedScalarOfNativeCurve,
-    AssignmentInstructions, CircuitCurve, CircuitCurveTrait, ConversionInstructions, EccChip,
-    EccInstructions, EqualityInstructions, Error, HashInstructions, IvcNativeGadget, Layouter,
-    NativeField, PoseidonChip,
+    AssignmentInstructions, CircuitCurve, CircuitCurveTrait, ConversionInstructions,
+    EccInstructions, EqualityInstructions, Error, Layouter, NativeField, ZkStdLib,
 };
 use crate::signature_scheme::DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE;
 
@@ -29,12 +28,12 @@ pub(crate) struct GenesisSchnorrSignatureInputs<'a> {
 /// equality against the committed challenge scalar. Returns an `AssignedBit` that
 /// is `true` when the signature is valid.
 pub(crate) fn verify_genesis_signature(
-    jubjub_chip: &EccChip<CircuitCurve>,
-    native_gadget: &IvcNativeGadget,
-    poseidon_chip: &PoseidonChip<NativeField>,
+    std_lib: &ZkStdLib,
     layouter: &mut impl Layouter<NativeField>,
     inputs: GenesisSchnorrSignatureInputs<'_>,
 ) -> Result<AssignedBit<NativeField>, Error> {
+    let jubjub_chip = std_lib.jubjub();
+    let native_gadget = std_lib.bls12_381().scalar_field_chip();
     let response = inputs.response.clone();
     let challenge_as_scalar: AssignedScalarOfNativeCurve<_> =
         jubjub_chip.convert(layouter, inputs.challenge)?;
@@ -57,7 +56,7 @@ pub(crate) fn verify_genesis_signature(
     let cap_r_x = jubjub_chip.x_coordinate(&cap_r);
     let cap_r_y = jubjub_chip.y_coordinate(&cap_r);
 
-    let recomputed_challenge = poseidon_chip.hash(
+    let recomputed_challenge = std_lib.poseidon(
         layouter,
         &[
             dst_signature.clone(),

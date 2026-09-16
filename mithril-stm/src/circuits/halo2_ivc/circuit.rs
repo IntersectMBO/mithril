@@ -4,101 +4,57 @@ use crate::circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey;
 use anyhow::anyhow;
 
 use super::{
-    Accumulator, BinaryInstructions, Circuit, CircuitValue, ComposableChip, ConstraintSystem,
-    EmulatedCurve, Error, EvaluationDomain, IvcNativeGadget, Layouter, NB_ARITH_COLS,
-    NB_ARITH_FIXED_COLS, NB_EDWARDS_COLS, NB_POSEIDON_ADVICE_COLS, NB_POSEIDON_FIXED_COLS,
-    NB_SHA256_ADVICE_COLS, NB_SHA256_FIXED_COLS, NativeField, PublicInputInstructions,
-    RECURSIVE_CIRCUIT_DEGREE, RecursiveEmulation, SimpleFloorPlanner,
-    config::{IvcConfig, configure_ivc_circuit, ivc_column_pool_sizes},
+    Accumulator, BinaryInstructions, CircuitValue, ConstraintSystem, Error, EvaluationDomain,
+    Layouter, NativeField, PublicInputInstructions, RECURSIVE_CIRCUIT_DEGREE, RecursiveEmulation,
+    Relation, ZkStdLib, ZkStdLibArch,
     constraint_builder::IvcConstraintBuilder,
     errors::IvcCircuitError,
-    nb_foreign_ecc_chip_columns,
     state::{Global, State, Witness},
     types::{CertificateProofBytes, IvcProofBytes},
     witness_assignments,
 };
+use crate::codec::{TryFromBytes, TryToBytes};
 
-/// The IVC (Incrementally Verifiable Computation) circuit itself, holding the metadata that fixes
-/// its constraint system: the verifier metadata of the certificate circuit it verifies in-circuit,
-/// and its own.
+/// Chips the recursive circuit enables.
+///
+/// Single source: the relation declares these to the standard library, and key generation
+/// configures its own verifier metadata from the same value, so the two cannot drift.
+pub(crate) fn recursive_circuit_architecture() -> ZkStdLibArch {
+    ZkStdLibArch {
+        jubjub: true,
+        poseidon: true,
+        sha2_256: true,
+        sha2_512: false,
+        keccak_256: false,
+        sha3_256: false,
+        secp256k1: false,
+        bls12_381: true,
+        base64: false,
+        nr_pow2range_cols: 4,
+        automaton: false,
+        blake2b: false,
+        curve25519: false,
+        p256: false,
+    }
+}
+
+/// The IVC (Incrementally Verifiable Computation) circuit, holding what fixes its constraint
+/// system: the certificate circuit whose proofs it verifies in-circuit, and its own verifier
+/// metadata.
 ///
 /// Mirrors `CertificateCircuit`, which likewise carries only what fixes its constraint system and
 /// none of a single execution's values.
 #[derive(Clone, Debug)]
 pub struct IvcCircuit {
-    // Domain and ConstraintSystem associated with certificate circuit VerifyingKey
-    certificate_circuit_domain_and_constraint_system:
-        (EvaluationDomain<NativeField>, ConstraintSystem<NativeField>),
+    // Certificate circuit verified in-circuit: its domain and constraint system are the verifier
+    // metadata, and it is what a serialized relation carries.
+    certificate_verification_key: NonRecursiveCircuitVerifyingKey,
     // Domain and ConstraintSystem associated with IVC circuit VerifyingKey
     ivc_circuit_domain_and_constraint_system:
         (EvaluationDomain<NativeField>, ConstraintSystem<NativeField>),
 }
 
 impl IvcCircuit {
-    /// Takes both circuits' verifier metadata from their verifying keys.
-    fn from_verification_keys(
-        certificate_verification_key: &NonRecursiveCircuitVerifyingKey,
-        ivc_verification_key: &RecursiveCircuitVerifyingKey,
-    ) -> Self {
-        IvcCircuit {
-            certificate_circuit_domain_and_constraint_system: (
-                certificate_verification_key.as_ref().get_domain().clone(),
-                certificate_verification_key.as_ref().cs().clone(),
-            ),
-            ivc_circuit_domain_and_constraint_system: (
-                ivc_verification_key.as_ref().get_domain().clone(),
-                ivc_verification_key.as_ref().cs().clone(),
-            ),
-        }
-    }
-
-    /// Derives its own verifier metadata from the circuit's configuration, for the key generation
-    /// that has no IVC verifying key to read it from yet.
-    fn for_key_generation(certificate_verification_key: &NonRecursiveCircuitVerifyingKey) -> Self {
-        let mut ivc_circuit_constraint_system = ConstraintSystem::default();
-        configure_ivc_circuit(&mut ivc_circuit_constraint_system);
-        let ivc_circuit_domain = EvaluationDomain::new(
-            ivc_circuit_constraint_system.degree() as u32,
-            RECURSIVE_CIRCUIT_DEGREE,
-        );
-
-        IvcCircuit {
-            certificate_circuit_domain_and_constraint_system: (
-                certificate_verification_key.as_ref().get_domain().clone(),
-                certificate_verification_key.as_ref().cs().clone(),
-            ),
-            ivc_circuit_domain_and_constraint_system: (
-                ivc_circuit_domain,
-                ivc_circuit_constraint_system,
-            ),
-        }
-    }
-}
-
-/// Data required to run one step of the IVC (Incrementally Verifiable Computation) circuit.
-///
-/// Holds the global root-of-trust, the current state, the next certificate witness,
-/// the associated SNARK proofs and the latest accumulator, alongside the circuit those values are
-/// run against.
-#[derive(Clone, Debug)]
-pub struct IvcCircuitData {
-    // Persistent values throughout an ivc stream. This is the root of trust for an ivc stream.
-    global: CircuitValue<Global>,
-    // State values from the last aggregated certificate
-    state: CircuitValue<State>,
-    // Witness (mainly the next certificate to be aggregated) for deriving the next state
-    witness: CircuitValue<Witness>,
-    // Snark proof of the next certificate
-    certificate_proof: CircuitValue<Vec<u8>>,
-    // Latest IVC proof
-    ivc_proof: CircuitValue<Vec<u8>>,
-    // Latest Accumulator
-    accumulator: CircuitValue<Accumulator<RecursiveEmulation>>,
-    // Circuit these values are run against
-    circuit: IvcCircuit,
-}
-
-impl IvcCircuitData {
     /// Validates that the IVC verification key degree matches the IVC circuit degree constant RECURSIVE_CIRCUIT_DEGREE.
     pub(crate) fn validate_ivc_verification_key_degree(
         ivc_verification_key: &RecursiveCircuitVerifyingKey,
@@ -113,144 +69,105 @@ impl IvcCircuitData {
         Ok(())
     }
 
-    /// Validates that the column pool allocated by `configure_ivc_circuit` is large enough
-    /// for every chip. Must be called before `Circuit::configure` is reached (e.g. in
-    /// `try_new` and `unknown`) so that the `.expect` calls inside `configure_ivc_circuit`
-    /// are guaranteed not to trigger.
-    fn validate_column_counts() -> StmResult<()> {
-        let (nb_advice_cols, nb_fixed_cols) = ivc_column_pool_sizes();
-
-        for needed in [
-            NB_ARITH_COLS,
-            NB_EDWARDS_COLS,
-            NB_POSEIDON_ADVICE_COLS,
-            NB_SHA256_ADVICE_COLS,
-            nb_foreign_ecc_chip_columns::<NativeField, EmulatedCurve, EmulatedCurve, IvcNativeGadget>(
-            ),
-        ] {
-            if needed > nb_advice_cols {
-                return Err(anyhow!(IvcCircuitError::InsufficientAdviceColumns {
-                    needed,
-                    available: nb_advice_cols,
-                }));
-            }
-        }
-
-        for needed in [NB_ARITH_FIXED_COLS, NB_POSEIDON_FIXED_COLS, NB_SHA256_FIXED_COLS] {
-            if needed > nb_fixed_cols {
-                return Err(anyhow!(IvcCircuitError::InsufficientFixedColumns {
-                    needed,
-                    available: nb_fixed_cols,
-                }));
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Creates a new `IvcCircuitData` with the given witness and proof data.
-    ///
-    /// Validates that `ivc_verification_key` has degree `RECURSIVE_CIRCUIT_DEGREE` and that the column pool allocated by
-    /// `configure_ivc_circuit` is sufficient for all chips. Returns an error containing
-    /// [`IvcCircuitError::IvcVerificationKeyDegreeMismatch`] or
-    /// [`IvcCircuitError::InsufficientAdviceColumns`] /
-    /// [`IvcCircuitError::InsufficientFixedColumns`] if either check fails.
-    #[allow(clippy::too_many_arguments)]
+    /// Builds the circuit from both circuits' verifying keys.
     pub(crate) fn try_new(
-        global: Global,
-        state: State,
-        witness: Witness,
-        certificate_proof: CertificateProofBytes,
-        ivc_proof: IvcProofBytes,
-        accumulator: Accumulator<RecursiveEmulation>,
         certificate_verification_key: &NonRecursiveCircuitVerifyingKey,
         ivc_verification_key: &RecursiveCircuitVerifyingKey,
     ) -> StmResult<Self> {
         Self::validate_ivc_verification_key_degree(ivc_verification_key)?;
-        Self::validate_column_counts()?;
-        Ok(IvcCircuitData {
-            global: CircuitValue::known(global),
-            state: CircuitValue::known(state),
-            witness: CircuitValue::known(witness),
-            certificate_proof: CircuitValue::known(certificate_proof.into_vec()),
-            ivc_proof: CircuitValue::known(ivc_proof.into_vec()),
-            accumulator: CircuitValue::known(accumulator),
-            circuit: IvcCircuit::from_verification_keys(
-                certificate_verification_key,
-                ivc_verification_key,
+
+        Ok(IvcCircuit {
+            certificate_verification_key: certificate_verification_key.clone(),
+            ivc_circuit_domain_and_constraint_system: (
+                ivc_verification_key.as_ref().get_domain().clone(),
+                ivc_verification_key.as_ref().cs().clone(),
             ),
         })
     }
 
-    /// Creates a default IVC circuit for generating the proving and verifying keys.
-    pub fn unknown(
+    /// Derives its own verifier metadata from the circuit's configuration, for the key generation
+    /// that has no IVC verifying key to read it from yet.
+    pub(crate) fn for_key_generation(
         certificate_verification_key: &NonRecursiveCircuitVerifyingKey,
-    ) -> StmResult<Self> {
-        Self::validate_column_counts()?;
+    ) -> Self {
+        let mut ivc_circuit_constraint_system = ConstraintSystem::default();
+        ZkStdLib::configure(
+            &mut ivc_circuit_constraint_system,
+            (
+                recursive_circuit_architecture(),
+                (RECURSIVE_CIRCUIT_DEGREE - 1) as u8,
+            ),
+        );
+        let ivc_circuit_domain = EvaluationDomain::new(
+            ivc_circuit_constraint_system.degree() as u32,
+            RECURSIVE_CIRCUIT_DEGREE,
+        );
 
-        Ok(IvcCircuitData {
-            global: CircuitValue::unknown(),
-            state: CircuitValue::unknown(),
-            witness: CircuitValue::unknown(),
-            certificate_proof: CircuitValue::unknown(),
-            ivc_proof: CircuitValue::unknown(),
-            accumulator: CircuitValue::unknown(),
-            circuit: IvcCircuit::for_key_generation(certificate_verification_key),
-        })
+        IvcCircuit {
+            certificate_verification_key: certificate_verification_key.clone(),
+            ivc_circuit_domain_and_constraint_system: (
+                ivc_circuit_domain,
+                ivc_circuit_constraint_system,
+            ),
+        }
     }
 }
 
-impl Circuit<NativeField> for IvcCircuitData {
-    type Config = IvcConfig;
-    type FloorPlanner = SimpleFloorPlanner;
-    type Params = ();
+impl Relation for IvcCircuit {
+    type Error = Error;
+    type Instance = Vec<NativeField>;
+    type Witness = IvcCircuitData;
 
-    fn without_witnesses(&self) -> Self {
-        IvcCircuitData {
-            global: CircuitValue::unknown(),
-            state: CircuitValue::unknown(),
-            witness: CircuitValue::unknown(),
-            certificate_proof: CircuitValue::unknown(),
-            ivc_proof: CircuitValue::unknown(),
-            accumulator: CircuitValue::unknown(),
-            circuit: self.circuit.clone(),
-        }
+    fn format_instance(instance: &Self::Instance) -> Result<Vec<NativeField>, Error> {
+        Ok(instance.clone())
     }
 
-    fn configure(meta: &mut ConstraintSystem<NativeField>) -> Self::Config {
-        configure_ivc_circuit(meta)
-    }
-
-    fn synthesize(
+    /// The statement is constrained by the assignment helpers below as each part is derived, so the
+    /// instance argument is not assigned a second time here.
+    fn circuit(
         &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<NativeField>,
+        std_lib: &ZkStdLib,
+        layouter: &mut impl Layouter<NativeField>,
+        _instance: CircuitValue<Self::Instance>,
+        witness: CircuitValue<Self::Witness>,
     ) -> Result<(), Error> {
-        let builder = IvcConstraintBuilder::new(&config);
+        let builder = IvcConstraintBuilder::new(std_lib);
+
+        let global_value = witness.clone().map(|data| data.global);
+        let state_value = witness.clone().map(|data| data.state);
+        let witness_value = witness.clone().map(|data| data.witness);
+        let certificate_proof_value = witness.clone().map(|data| data.certificate_proof);
+        let ivc_proof_value = witness.clone().map(|data| data.ivc_proof);
+        let accumulator_value = witness.map(|data| data.accumulator);
+
+        let (ivc_circuit_domain, ivc_circuit_constraint_system) =
+            &self.ivc_circuit_domain_and_constraint_system;
 
         // Assign global and constraint it as public input
         let global = witness_assignments::assign_global_as_public_input(
             &builder,
-            &mut layouter,
-            &self.global,
-            &self.circuit.certificate_circuit_domain_and_constraint_system,
-            &self.circuit.ivc_circuit_domain_and_constraint_system,
+            layouter,
+            &global_value,
+            self.certificate_verification_key.as_ref().get_domain(),
+            self.certificate_verification_key.as_ref().cs(),
+            ivc_circuit_domain,
+            ivc_circuit_constraint_system,
         )?;
         // Assign previous state
-        let state = witness_assignments::assign_state(&builder, &mut layouter, &self.state)?;
+        let state = witness_assignments::assign_state(&builder, layouter, &state_value)?;
         // Assign witness for the new certificate to be aggregated
-        let witness = witness_assignments::assign_witness(&builder, &mut layouter, &self.witness)?;
+        let witness = witness_assignments::assign_witness(&builder, layouter, &witness_value)?;
 
         // If state.step_counter = 0, we are aggregating the genesis certificate
-        let is_genesis = builder.is_genesis(&mut layouter, &state)?;
-        let is_not_genesis = builder.native_gadget.not(&mut layouter, &is_genesis)?;
+        let is_genesis = builder.is_genesis(layouter, &state)?;
+        let is_not_genesis = builder.native_gadget.not(layouter, &is_genesis)?;
 
         // Verify genesis certificate
-        builder.assert_genesis(&mut layouter, &is_not_genesis, &global, &witness)?;
+        builder.assert_genesis(layouter, &is_not_genesis, &global, &witness)?;
 
         // Verify certificate chain link between the last aggregated certificate and the new certificate to obtain the next state
         let next_state = builder.transition(
-            &mut layouter,
+            layouter,
             &is_genesis,
             &is_not_genesis,
             &global,
@@ -258,26 +175,88 @@ impl Circuit<NativeField> for IvcCircuitData {
             &witness,
         )?;
         // Constrain the next state as public input
-        witness_assignments::constrain_state_as_public_input(&builder, &mut layouter, &next_state)?;
+        witness_assignments::constrain_state_as_public_input(&builder, layouter, &next_state)?;
 
         // Verify (prepare) certificate_proof and previous ivc_proof and update accumulator
         let next_acc = builder.verify_prepare(
-            &mut layouter,
+            layouter,
             &global,
             &is_not_genesis,
             &state,
             &witness,
-            &self.certificate_proof,
-            &self.ivc_proof,
-            &self.accumulator,
+            &certificate_proof_value,
+            &ivc_proof_value,
+            &accumulator_value,
         )?;
         // Constrain the next accumulator as public input
-        builder
-            .verifier_gadget
-            .constrain_as_public_input(&mut layouter, &next_acc)?;
+        builder.verifier_gadget.constrain_as_public_input(layouter, &next_acc)
+    }
 
-        builder.core_decomp_chip.load(&mut layouter)?;
-        builder.sha2_256_chip.load(&mut layouter)
+    fn used_chips(&self) -> ZkStdLibArch {
+        recursive_circuit_architecture()
+    }
+
+    fn write_relation<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        let bytes = self
+            .certificate_verification_key
+            .to_bytes_vec()
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        writer.write_all(&(bytes.len() as u32).to_le_bytes())?;
+        writer.write_all(&bytes)
+    }
+
+    fn read_relation<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut length_bytes = [0u8; 4];
+        reader.read_exact(&mut length_bytes)?;
+        let mut bytes = vec![0u8; u32::from_le_bytes(length_bytes) as usize];
+        reader.read_exact(&mut bytes)?;
+
+        let certificate_verification_key = NonRecursiveCircuitVerifyingKey::try_from_bytes(&bytes)
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+
+        Ok(Self::for_key_generation(&certificate_verification_key))
+    }
+}
+
+/// Values of one step of the IVC (Incrementally Verifiable Computation) circuit: the witness of the
+/// relation above.
+///
+/// Holds the global root-of-trust, the current state, the next certificate witness, the associated
+/// SNARK proofs and the latest accumulator.
+#[derive(Clone, Debug)]
+pub struct IvcCircuitData {
+    // Persistent values throughout an ivc stream. This is the root of trust for an ivc stream.
+    global: Global,
+    // State values from the last aggregated certificate
+    state: State,
+    // Witness (mainly the next certificate to be aggregated) for deriving the next state
+    witness: Witness,
+    // Snark proof of the next certificate
+    certificate_proof: Vec<u8>,
+    // Latest IVC proof
+    ivc_proof: Vec<u8>,
+    // Latest Accumulator
+    accumulator: Accumulator<RecursiveEmulation>,
+}
+
+impl IvcCircuitData {
+    /// Collects the values of a single IVC step.
+    pub(crate) fn new(
+        global: Global,
+        state: State,
+        witness: Witness,
+        certificate_proof: CertificateProofBytes,
+        ivc_proof: IvcProofBytes,
+        accumulator: Accumulator<RecursiveEmulation>,
+    ) -> Self {
+        IvcCircuitData {
+            global,
+            state,
+            witness,
+            certificate_proof: certificate_proof.into_vec(),
+            ivc_proof: ivc_proof.into_vec(),
+            accumulator,
+        }
     }
 }
 
@@ -293,12 +272,27 @@ mod tests {
         codec::TryFromBytes,
     };
 
+    use midnight_zk_stdlib::MidnightCircuit;
+
     use super::*;
+
+    fn production_certificate_verification_key() -> NonRecursiveCircuitVerifyingKey {
+        NonRecursiveCircuitVerifyingKey::try_from_bytes(
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        )
+        .unwrap()
+    }
 
     #[test]
     fn ivc_circuit_constraint_count() {
         let mut cs = ConstraintSystem::<NativeField>::default();
-        configure_ivc_circuit(&mut cs);
+        ZkStdLib::configure(
+            &mut cs,
+            (
+                recursive_circuit_architecture(),
+                (RECURSIVE_CIRCUIT_DEGREE - 1) as u8,
+            ),
+        );
 
         let poly_constraints: usize = cs.gates().iter().map(|g| g.polynomials().len()).sum();
         assert_eq!(
@@ -318,16 +312,14 @@ mod tests {
 
     #[test]
     fn recursive_circuit_constraint_degree_stays_constant() {
-        let certificate_verification_key = NonRecursiveCircuitVerifyingKey::try_from_bytes(
-            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
-        )
-        .unwrap();
-        let ivc_data = IvcCircuitData::unknown(&certificate_verification_key).unwrap();
+        let certificate_verification_key = production_certificate_verification_key();
+        let ivc_circuit = IvcCircuit::for_key_generation(&certificate_verification_key);
+        let circuit = MidnightCircuit::from_relation(&ivc_circuit, Some(RECURSIVE_CIRCUIT_DEGREE));
 
         const SIZE_BLS12_KZG_COMMITMENT: usize = 48;
         const SIZE_SCALAR_FIELD_ELEMENT: usize = 32;
         let circuit_model =
-            circuit_model::<_, SIZE_BLS12_KZG_COMMITMENT, SIZE_SCALAR_FIELD_ELEMENT>(&ivc_data);
+            circuit_model::<_, SIZE_BLS12_KZG_COMMITMENT, SIZE_SCALAR_FIELD_ELEMENT>(&circuit);
 
         assert_eq!(circuit_model.k, RECURSIVE_CIRCUIT_DEGREE);
     }

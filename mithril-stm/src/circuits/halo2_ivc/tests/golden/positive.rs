@@ -159,6 +159,7 @@ mod slow {
         let public_inputs =
             build_genesis_mock_prover_public_inputs(&mock_prover_setup, &next_state);
         assert_recursive_mock_prover_accepts_with_label(
+            &mock_prover_setup.ivc_circuit(),
             ivc_circuit_data,
             public_inputs,
             "genesis base case",

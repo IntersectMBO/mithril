@@ -6,6 +6,7 @@ use midnight_curves::Bls12;
 use midnight_proofs::plonk::{keygen_pk, keygen_vk_with_k};
 use midnight_proofs::poly::commitment::Params;
 use midnight_proofs::poly::kzg::params::ParamsKZG;
+use midnight_zk_stdlib::MidnightCircuit;
 use serde::{Deserialize, Serialize};
 
 use crate::StmResult;
@@ -17,7 +18,7 @@ use crate::codec::{TryFromBytes, TryToBytes};
 
 use super::{
     KZGCommitmentScheme, NativeField, PairingEngine, ProvingKey, RECURSIVE_CIRCUIT_DEGREE,
-    VerifyingKey, circuit::IvcCircuitData,
+    VerifyingKey, circuit::IvcCircuit,
 };
 
 /// Verifying key of the recursive (IVC) circuit.
@@ -133,7 +134,7 @@ mod recursive_verifying_key_serde {
     }
 }
 
-impl KeyGenerator for IvcCircuitData {
+impl KeyGenerator for IvcCircuit {
     type VerifyingKey = RecursiveCircuitVerifyingKey;
     type ProvingKey = RecursiveCircuitProvingKey;
 
@@ -149,14 +150,15 @@ impl KeyGenerator for IvcCircuitData {
             srs.max_k() >= RECURSIVE_CIRCUIT_DEGREE,
             "the SRS must be at least the recursive circuit degree"
         );
+        let circuit = MidnightCircuit::from_relation(self, Some(RECURSIVE_CIRCUIT_DEGREE));
         let verifying_key = if srs.max_k() == RECURSIVE_CIRCUIT_DEGREE {
-            keygen_vk_with_k(srs, self, RECURSIVE_CIRCUIT_DEGREE)?
+            keygen_vk_with_k(srs, &circuit, RECURSIVE_CIRCUIT_DEGREE)?
         } else {
             let mut recursive_srs = srs.clone();
             recursive_srs.downsize(RECURSIVE_CIRCUIT_DEGREE);
-            keygen_vk_with_k(&recursive_srs, self, RECURSIVE_CIRCUIT_DEGREE)?
+            keygen_vk_with_k(&recursive_srs, &circuit, RECURSIVE_CIRCUIT_DEGREE)?
         };
-        let proving_key = keygen_pk(verifying_key.clone(), self)?;
+        let proving_key = keygen_pk(verifying_key.clone(), &circuit)?;
         Ok((
             RecursiveCircuitVerifyingKey(verifying_key),
             RecursiveCircuitProvingKey(proving_key),
@@ -200,7 +202,7 @@ impl KeyGenerator for RecursiveCircuitKeyGenerator {
         srs: &ParamsKZG<Bls12>,
     ) -> StmResult<(Self::VerifyingKey, Self::ProvingKey)> {
         let certificate_verifying_key = self.non_recursive_key_provider.verification_key(srs)?;
-        IvcCircuitData::unknown(&certificate_verifying_key)?.generate_key_pair(srs)
+        IvcCircuit::for_key_generation(&certificate_verifying_key).generate_key_pair(srs)
     }
 }
 

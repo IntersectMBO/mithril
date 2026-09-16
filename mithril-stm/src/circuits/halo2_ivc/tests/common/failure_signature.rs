@@ -5,6 +5,11 @@
 //! Advice-side members of a broken class are not enumerated: their columns and regions are named by
 //! the gadget layer and carry no stability guarantee.
 
+use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_DEGREE;
+use crate::circuits::halo2_ivc::circuit::IvcCircuit;
+use midnight_proofs::circuit::Value;
+use midnight_zk_stdlib::MidnightCircuit;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use midnight_proofs::{
@@ -136,15 +141,18 @@ pub(crate) fn assert_circuit_rejects_public_input_rows<C: Circuit<NativeField>>(
 
 /// Recursive-circuit wrapper over [`assert_circuit_rejects_public_input_rows`].
 pub(crate) fn assert_recursive_mock_prover_rejects_public_input_rows(
+    ivc_circuit: &IvcCircuit,
     ivc_circuit_data: IvcCircuitData,
     public_inputs: Vec<NativeField>,
     expected_rows: &BTreeMap<usize, &str>,
 ) {
-    assert_circuit_rejects_public_input_rows(
-        &ivc_circuit_data,
-        vec![vec![], public_inputs],
-        expected_rows,
+    let circuit = MidnightCircuit::new(
+        ivc_circuit,
+        Value::known(public_inputs.clone()),
+        Value::known(ivc_circuit_data),
+        Some(RECURSIVE_CIRCUIT_DEGREE),
     );
+    assert_circuit_rejects_public_input_rows(&circuit, vec![vec![], public_inputs], expected_rows);
 }
 
 #[cfg(test)]
