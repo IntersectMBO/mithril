@@ -30,6 +30,7 @@ pub(crate) fn recursive_circuit_architecture() -> ZkStdLibArch {
         secp256k1: false,
         bls12_381: true,
         base64: false,
+        // With production certificate metadata, 1 to 3 range columns require k=20 instead of k=19.
         nr_pow2range_cols: 4,
         automaton: false,
         blake2b: false,
