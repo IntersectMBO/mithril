@@ -88,12 +88,12 @@ manual workflow dominated by real proof generation.
 Regenerating the binaries is only half the work. Four constants are pinned in source and are not
 written by any generator.
 
-| Constant | File | Test that computes it | Computed value appears |
-|---|---|---|---|
-| production recursive key digest | `circuits/verification_key_digest.rs` | `golden_digests_of_production_circuit_keys` | right |
-| verification-context recursive key digest | `circuits/verification_key_digest.rs` | `golden_digests_of_embedded_verification_context_keys` | right |
-| `GOLDEN_R` combiner challenge | `proof_system/halo2_ivc_snark/proof.rs` | `golden_combiner_r_for_stored_recursive_step_output` | left |
-| `EXPECTED_IVC_ANCILLARY_DIGEST` | `protocol/aggregate_signature/ancillary_data.rs` | `ivc_ancillary_encoding_is_byte_stable` | left |
+| Constant                                  | File                                             | Test that computes it                                  | Computed value appears |
+| ----------------------------------------- | ------------------------------------------------ | ------------------------------------------------------ | ---------------------- |
+| production recursive key digest           | `circuits/verification_key_digest.rs`            | `golden_digests_of_production_circuit_keys`            | right                  |
+| verification-context recursive key digest | `circuits/verification_key_digest.rs`            | `golden_digests_of_embedded_verification_context_keys` | right                  |
+| `GOLDEN_R` combiner challenge             | `proof_system/halo2_ivc_snark/proof.rs`          | `golden_combiner_r_for_stored_recursive_step_output`   | left                   |
+| `EXPECTED_IVC_ANCILLARY_DIGEST`           | `protocol/aggregate_signature/ancillary_data.rs` | `ivc_ancillary_encoding_is_byte_stable`                | left                   |
 
 The assertions are not written the same way round, so check the last column before copying a value:
 taking the wrong side copies the old expected value back, leaving the test failing.
