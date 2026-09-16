@@ -1,10 +1,6 @@
 use anyhow::Context;
-use midnight_proofs::{
-    plonk::{VerifyingKey, keygen_vk_with_k},
-    poly::kzg::KZGCommitmentScheme,
-    utils::SerdeFormat,
-};
-use midnight_zk_stdlib::{MidnightCircuit, MidnightVK};
+use midnight_proofs::utils::SerdeFormat;
+use midnight_zk_stdlib::{self as zk, MidnightVK};
 
 use crate::{
     StmResult,
@@ -14,8 +10,8 @@ use crate::{
             keys::NonRecursiveCircuitVerifyingKey,
         },
         halo2_ivc::{
-            NativeField, PairingEngine, RECURSIVE_CIRCUIT_DEGREE,
-            RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::IvcCircuit,
+            RECURSIVE_CIRCUIT_DEGREE, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+            circuit::IvcCircuit,
         },
         trusted_setup::TrustedSetupProvider,
     },
@@ -38,12 +34,8 @@ fn compute_recursive_circuit_verification_key() -> StmResult<Vec<u8>> {
     );
 
     let default_ivc_circuit = IvcCircuit::for_key_generation(&certificate_verifying_key);
-    let recursive_verification_key: VerifyingKey<NativeField, KZGCommitmentScheme<PairingEngine>> =
-        keygen_vk_with_k(
-            &recursive_commitment_parameters,
-            &MidnightCircuit::from_relation(&default_ivc_circuit, Some(RECURSIVE_CIRCUIT_DEGREE)),
-            shared_srs_degree,
-        )?;
+    let recursive_verification_key =
+        zk::setup_vk(&recursive_commitment_parameters, &default_ivc_circuit);
 
     let mut buffer_for_recursive_circuit_verification_key = vec![];
     recursive_verification_key

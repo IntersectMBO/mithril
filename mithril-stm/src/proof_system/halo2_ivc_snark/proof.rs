@@ -303,7 +303,7 @@ where
             MidnightCircuit<IvcCircuit>,
         >(
             srs,
-            proving_key.proving_key(),
+            proving_key.midnight_pk().pk(),
             std::slice::from_ref(&circuit),
             1,
             &[&[&[], public_inputs]],

@@ -14,7 +14,7 @@ fn validate_ivc_verification_key_degree_rejects_wrong_degree_vk() {
     let ctx =
         load_embedded_verification_context_asset().expect("verification context asset should load");
     let wrong_degree_vk =
-        RecursiveCircuitVerifyingKey::new(ctx.certificate_verifying_key.midnight_vk().vk().clone());
+        RecursiveCircuitVerifyingKey::new(ctx.certificate_verifying_key.midnight_vk().clone());
     let actual_degree = wrong_degree_vk.verifying_key().get_domain().k();
 
     let result = IvcCircuit::validate_ivc_verification_key_degree(&wrong_degree_vk);

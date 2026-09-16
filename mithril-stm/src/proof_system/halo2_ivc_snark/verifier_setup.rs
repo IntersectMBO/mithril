@@ -331,4 +331,52 @@ mod tests {
             "embedded IVC verifier params must match the Midnight trusted SRS"
         );
     }
+    // The recursive key's guard must hold at the public envelope, not only at the byte codec: this
+    // is the path a certificate carries, and the two circuits now share one key encoding.
+    #[test]
+    fn verifier_data_rejects_a_certificate_key_in_the_recursive_position() {
+        use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
+        use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
+
+        // Mirrors `IvcVerifierData`'s CBOR shape with both keys as opaque bytes, so the recursive
+        // slot can carry an encoding the typed constructor would never allow.
+        #[derive(serde::Serialize)]
+        struct VerifierDataWithOpaqueKeys {
+            genesis_message: MessageHash,
+            #[serde(with = "serde_bytes")]
+            certificate_circuit_verification_key: Vec<u8>,
+            #[serde(with = "serde_bytes")]
+            ivc_circuit_verification_key: Vec<u8>,
+        }
+
+        let tampered = VerifierDataWithOpaqueKeys {
+            genesis_message: MessageHash::ZERO,
+            certificate_circuit_verification_key:
+                NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION.to_vec(),
+            // A certificate key where the recursive one belongs.
+            ivc_circuit_verification_key: NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION
+                .to_vec(),
+        };
+        let bytes = crate::codec::to_cbor_bytes(&tampered).expect("the mirror should encode");
+
+        let error = IvcVerifierData::from_bytes(&bytes)
+            .expect_err("a certificate key must not decode in the recursive position");
+        assert!(
+            error.to_string().contains("architecture")
+                || format!("{error:#}").contains("architecture"),
+            "expected an architecture mismatch, got: {error:#}"
+        );
+
+        // The same envelope with the real recursive key decodes, so the rejection is the guard and
+        // not the mirror's shape.
+        let valid = VerifierDataWithOpaqueKeys {
+            genesis_message: MessageHash::ZERO,
+            certificate_circuit_verification_key:
+                NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION.to_vec(),
+            ivc_circuit_verification_key: RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION
+                .to_vec(),
+        };
+        let bytes = crate::codec::to_cbor_bytes(&valid).expect("the mirror should encode");
+        IvcVerifierData::from_bytes(&bytes).expect("the real recursive key should decode");
+    }
 }

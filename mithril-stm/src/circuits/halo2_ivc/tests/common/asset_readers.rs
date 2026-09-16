@@ -136,7 +136,7 @@ pub(crate) fn store_verification_context_asset(
     }
     asset
         .recursive_verifying_key
-        .verifying_key()
+        .midnight_vk()
         .write(&mut writer, SerdeFormat::RawBytesUnchecked)?;
     write_named_fixed_bases(&mut writer, &asset.combined_fixed_bases)?;
 

@@ -499,8 +499,8 @@ mod tests {
         use sha2::{Digest, Sha256};
 
         const EXPECTED_IVC_ANCILLARY_DIGEST: [u8; 32] = [
-            166, 23, 43, 148, 143, 254, 123, 150, 165, 210, 35, 250, 36, 248, 222, 137, 180, 56,
-            75, 253, 228, 42, 64, 179, 144, 17, 68, 254, 99, 93, 223, 242,
+            162, 102, 123, 88, 167, 76, 76, 67, 63, 218, 224, 79, 162, 202, 132, 227, 110, 187, 18,
+            66, 152, 52, 140, 146, 184, 113, 211, 232, 230, 224, 207, 242,
         ];
         let context = load_embedded_verification_context_asset()
             .expect("verification context asset should load");

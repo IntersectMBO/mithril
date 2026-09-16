@@ -22,6 +22,8 @@ use {rand_chacha::ChaCha20Rng, rand_core::SeedableRng, std::fs::create_dir_all};
 /// the proper value available here: https://github.com/midnightntwrk/midnight-trusted-setup/blob/main/MIDNIGHT_SRS_CATALOG.md
 pub(crate) const MIDNIGHT_SRS_HASH_K22: &str =
     "e8ad5eed936d657a0fb59d2a55ba19f81a3083bb3554ef88f464f5377e9b2c2f";
+/// Degree of the SRS the two hashes above identify: the largest circuit it can support.
+pub(crate) const MIDNIGHT_SRS_DEGREE: u8 = 22;
 /// Constant storing URL to download the SRS of degree 22 used to create proof in production
 const MIDNIGHT_SRS_URL_K22: &str = "https://srs.midnight.network/midnight-srs-2p22";
 /// Constant holding the folder of the SRS file

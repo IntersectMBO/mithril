@@ -22,6 +22,20 @@ pub enum IvcCircuitError {
     #[error("Byte-to-field conversion received {bytes} bytes but only {bases} base weights")]
     ByteCountExceedsBaseCount { bytes: usize, bases: usize },
 
+    /// A recursive verifying key was encoded for a different standard library architecture, so it
+    /// belongs to another circuit.
+    #[error("The recursive verifying key declares an architecture that is not the IVC circuit's")]
+    RecursiveVerificationKeyArchitectureMismatch,
+
+    /// A recursive verifying key carried a different number of fixed commitments than the
+    /// configured constraint system has columns.
+    #[error("The recursive verifying key declares {actual} fixed commitments, expected {expected}")]
+    RecursiveVerificationKeyCommitmentCountMismatch { expected: usize, actual: usize },
+
+    /// A standalone recursive key encoding carried bytes beyond the key.
+    #[error("The recursive key encoding carries {trailing} trailing bytes")]
+    RecursiveKeyEncodingHasTrailingBytes { trailing: usize },
+
     /// Off-circuit step transition: the incoming certificate's epoch does not advance the
     /// chain correctly. The `kind` field carries an `EpochTransitionErrorKind` with the
     /// specific violation.

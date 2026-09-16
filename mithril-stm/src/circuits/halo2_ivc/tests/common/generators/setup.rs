@@ -1,4 +1,4 @@
-use midnight_zk_stdlib::MidnightCircuit;
+use midnight_zk_stdlib::{self as zk};
 use std::{
     collections::BTreeMap,
     io::Write,
@@ -7,10 +7,7 @@ use std::{
 
 use ff::Field;
 use midnight_curves::Bls12;
-use midnight_proofs::{
-    plonk::{keygen_pk, keygen_vk_with_k},
-    poly::kzg::params::{ParamsKZG, ParamsVerifierKZG},
-};
+use midnight_proofs::poly::kzg::params::{ParamsKZG, ParamsVerifierKZG};
 use midnight_zk_stdlib as zk_lib;
 use rand_chacha::ChaCha20Rng;
 use rand_core::{CryptoRng, RngCore, SeedableRng};
@@ -218,14 +215,10 @@ fn derive_recursive_verifying_key(
     certificate_verifying_key: &NonRecursiveCircuitVerifyingKey,
 ) -> RecursiveCircuitVerifyingKey {
     let default_ivc_circuit = IvcCircuit::for_key_generation(certificate_verifying_key);
-    RecursiveCircuitVerifyingKey::new(
-        keygen_vk_with_k(
-            recursive_commitment_parameters,
-            &MidnightCircuit::from_relation(&default_ivc_circuit, Some(RECURSIVE_CIRCUIT_DEGREE)),
-            RECURSIVE_CIRCUIT_DEGREE,
-        )
-        .expect("recursive verifying key generation should not fail"),
-    )
+    RecursiveCircuitVerifyingKey::new(zk::setup_vk(
+        recursive_commitment_parameters,
+        &default_ivc_circuit,
+    ))
 }
 
 /// Content-keyed cache entry holding the recursive verifying key derived from these inputs.
@@ -422,13 +415,10 @@ pub(crate) fn build_recursive_proving_key(
     context: &SharedRecursiveContext,
 ) -> RecursiveCircuitProvingKey {
     let default_ivc_circuit = IvcCircuit::for_key_generation(&context.certificate_verifying_key);
-    RecursiveCircuitProvingKey::new(
-        keygen_pk(
-            context.recursive_verifying_key.verifying_key().clone(),
-            &MidnightCircuit::from_relation(&default_ivc_circuit, Some(RECURSIVE_CIRCUIT_DEGREE)),
-        )
-        .expect("recursive proving key generation should not fail"),
-    )
+    RecursiveCircuitProvingKey::new(zk::setup_pk(
+        &default_ivc_circuit,
+        context.recursive_verifying_key.midnight_vk(),
+    ))
 }
 
 /// Returns the certificate, recursive, and combined fixed-base maps.
