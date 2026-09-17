@@ -3,11 +3,10 @@ use std::fmt::{self, Debug, Formatter};
 use anyhow::{Context, anyhow};
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use crate::{
     ProofOfBoundPossessionPrefix, StmResult,
-    signature_scheme::schnorr_signature::DOMAIN_SEPARATION_TAG_SCHNORR_PROOF_OF_BOUND_POSSESSION,
+    signature_scheme::compute_schnorr_proof_of_bound_possession_challenge,
 };
 
 use super::{
@@ -177,17 +176,9 @@ impl SchnorrSigningKey {
     ) -> StmResult<StandardSchnorrSignature> {
         let verification_key_bytes =
             SchnorrVerificationKey::new_from_signing_key(self.clone()).to_bytes();
-        let digest: [u8; 32] = Sha256::digest(
-            [
-                DOMAIN_SEPARATION_TAG_SCHNORR_PROOF_OF_BOUND_POSSESSION,
-                prefix,
-                &verification_key_bytes,
-            ]
-            .concat(),
-        )
-        .into();
-        let field_element = BaseFieldElement::from_raw(&digest)?;
-        self.sign_standard(&[field_element], rng)
+        let field_element_for_proof_of_bound_possession =
+            compute_schnorr_proof_of_bound_possession_challenge(prefix, &verification_key_bytes)?;
+        self.sign_standard(&[field_element_for_proof_of_bound_possession], rng)
     }
 
     /// Convert a `SchnorrSigningKey` into bytes.

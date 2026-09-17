@@ -17,13 +17,34 @@ pub use error::*;
 pub use jubjub::BaseFieldElement;
 pub(crate) use jubjub::DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE;
 pub(crate) use jubjub::*;
+use sha2::{Digest, Sha256};
 pub use signing_key::*;
 pub use standard_signature::*;
 pub use unique_signature::*;
 pub use verification_key::*;
 
+use crate::StmResult;
+
 /// Domain Separation Tag (DST) for the Schnorr Proof of Bound Possession.
 const DOMAIN_SEPARATION_TAG_SCHNORR_PROOF_OF_BOUND_POSSESSION: &[u8] = b"SCHNORR_POBP_DST";
+
+/// Helper function to compute the field element to sign for
+/// the Schnorr Proof of Bound Possession
+pub(crate) fn compute_schnorr_proof_of_bound_possession_challenge(
+    prefix: &[u8],
+    verification_key_bytes: &[u8; 64],
+) -> StmResult<BaseFieldElement> {
+    let digest: [u8; 32] = Sha256::digest(
+        [
+            DOMAIN_SEPARATION_TAG_SCHNORR_PROOF_OF_BOUND_POSSESSION,
+            prefix,
+            verification_key_bytes,
+        ]
+        .concat(),
+    )
+    .into();
+    BaseFieldElement::from_raw(&digest)
+}
 
 #[cfg(test)]
 mod tests {

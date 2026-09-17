@@ -6,14 +6,10 @@ use std::{
 use anyhow::{Context, anyhow};
 use midnight_curves::JubjubSubgroup;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use crate::{
     StandardSchnorrSignature, StmResult,
-    signature_scheme::{
-        BaseFieldElement,
-        schnorr_signature::DOMAIN_SEPARATION_TAG_SCHNORR_PROOF_OF_BOUND_POSSESSION,
-    },
+    signature_scheme::{BaseFieldElement, compute_schnorr_proof_of_bound_possession_challenge},
 };
 
 use super::{PrimeOrderProjectivePoint, ProjectivePoint, SchnorrSignatureError, SchnorrSigningKey};
@@ -57,17 +53,9 @@ impl SchnorrVerificationKey {
         prefix: &[u8],
         signature: &StandardSchnorrSignature,
     ) -> StmResult<()> {
-        let digest: [u8; 32] = Sha256::digest(
-            [
-                DOMAIN_SEPARATION_TAG_SCHNORR_PROOF_OF_BOUND_POSSESSION,
-                prefix,
-                &self.to_bytes(),
-            ]
-            .concat(),
-        )
-        .into();
-        let field_element = BaseFieldElement::from_raw(&digest)?;
-        signature.verify(&[field_element], self)
+        let field_element_for_proof_of_bound_possession =
+            compute_schnorr_proof_of_bound_possession_challenge(prefix, &self.to_bytes())?;
+        signature.verify(&[field_element_for_proof_of_bound_possession], self)
     }
 
     /// Returns the underlying Jubjub subgroup point for circuit witness encoding.
