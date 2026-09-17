@@ -66,6 +66,11 @@ impl RegistrationEntry {
     pub(crate) fn get_stake(&self) -> Stake {
         self.1
     }
+
+    #[cfg(feature = "future_snark")]
+    pub(crate) fn strip_verification_key_for_snark(&mut self) {
+        self.2 = None;
+    }
 }
 
 impl From<ClosedRegistrationEntry> for RegistrationEntry {

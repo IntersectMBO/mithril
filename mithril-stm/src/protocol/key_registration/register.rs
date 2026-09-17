@@ -59,22 +59,27 @@ impl KeyRegistration {
         }
 
         #[cfg(feature = "future_snark")]
+        let mut entry = *entry;
+        #[cfg(not(feature = "future_snark"))]
+        let entry = *entry;
+
+        #[cfg(feature = "future_snark")]
         if let Some(vk_snark) = entry.get_verification_key_for_snark()
             && self.registered_keys_for_snark.contains(&vk_snark)
         {
-            let existing = *self
+            let mut existing = *self
                 .registration_entries
                 .iter()
                 .find(|e| e.get_verification_key_for_snark() == Some(vk_snark))
                 .expect("registered_keys_for_snark and registration_entries are kept in sync");
 
             // first compares the stake then the BLS key value as bytes
-            if *entry < existing {
-                self.registered_keys_for_concatenation
-                    .remove(&existing.get_verification_key_for_concatenation());
+            if entry < existing {
                 self.registration_entries.remove(&existing);
+                existing.strip_verification_key_for_snark();
+                self.registration_entries.insert(existing);
             } else {
-                return Ok(());
+                entry.strip_verification_key_for_snark();
             }
         }
 
@@ -83,7 +88,7 @@ impl KeyRegistration {
         if let Some(vk_snark) = entry.get_verification_key_for_snark() {
             self.registered_keys_for_snark.insert(vk_snark);
         }
-        self.registration_entries.insert(*entry);
+        self.registration_entries.insert(entry);
 
         Ok(())
     }
@@ -226,7 +231,7 @@ mod tests {
     #[cfg(feature = "future_snark")]
     use crate::{
         Initializer, MithrilMembershipDigest, SchnorrSigningKey, SchnorrVerificationKey,
-        proof_system::compute_target_value_for_snark_lottery,
+        proof_system::compute_target_value_for_snark_lottery, signature_scheme::BlsVerificationKey,
     };
     use crate::{
         Parameters, VerificationKeyProofOfPossessionForConcatenation,
@@ -430,7 +435,13 @@ mod tests {
         kr.register_by_entry(&second_entry)
             .expect("a snark key collision is silently resolved, not an error");
 
-        assert_eq!(kr.registration_entries, BTreeSet::from([first_entry]));
+        let mut second_entry_without_snark = second_entry;
+        second_entry_without_snark.strip_verification_key_for_snark();
+
+        assert_eq!(
+            kr.registration_entries,
+            BTreeSet::from([first_entry, second_entry_without_snark])
+        );
     }
 
     #[cfg(feature = "future_snark")]
@@ -456,7 +467,13 @@ mod tests {
         kr.register_by_entry(&second_entry)
             .expect("a lower-stake newcomer evicts the higher-stake holder");
 
-        assert_eq!(kr.registration_entries, BTreeSet::from([second_entry]));
+        let mut first_entry_without_snark = first_entry;
+        first_entry_without_snark.strip_verification_key_for_snark();
+
+        assert_eq!(
+            kr.registration_entries,
+            BTreeSet::from([first_entry_without_snark, second_entry])
+        );
     }
 
     #[cfg(feature = "future_snark")]
@@ -476,18 +493,24 @@ mod tests {
         let first_entry = RegistrationEntry::new(first_vk_pop, 100, Some(schnorr_vk)).unwrap();
         let second_entry = RegistrationEntry::new(second_vk_pop, 100, Some(schnorr_vk)).unwrap();
         let expected_survivor = std::cmp::min(first_entry, second_entry);
+        let mut expected_loser = std::cmp::max(first_entry, second_entry);
+        expected_loser.strip_verification_key_for_snark();
 
         kr.register_by_entry(&first_entry)
             .expect("registering a new verification key pair should succeed");
         kr.register_by_entry(&second_entry)
             .expect("a snark key collision is silently resolved, not an error");
 
-        assert_eq!(kr.registration_entries, BTreeSet::from([expected_survivor]));
+        assert_eq!(
+            kr.registration_entries,
+            BTreeSet::from([expected_survivor, expected_loser])
+        );
     }
 
     #[cfg(feature = "future_snark")]
     #[test]
-    fn register_by_entry_keeps_global_minimum_stake_across_a_three_way_snark_key_collision() {
+    fn register_by_entry_keeps_concatenation_registration_and_global_minimum_stake_across_a_three_way_snark_key_collision()
+     {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let mut kr = KeyRegistration::initialize();
         let schnorr_vk =
@@ -511,9 +534,32 @@ mod tests {
         }
 
         let lowest_stake_entry = *entries.iter().min().unwrap();
+        let expected_entries: BTreeSet<RegistrationEntry> = entries
+            .iter()
+            .map(|&entry| {
+                if entry == lowest_stake_entry {
+                    entry
+                } else {
+                    let mut entry_without_snark = entry;
+                    entry_without_snark.strip_verification_key_for_snark();
+                    entry_without_snark
+                }
+            })
+            .collect();
+
+        assert_eq!(kr.registration_entries, expected_entries);
+
         assert_eq!(
-            kr.registration_entries,
-            BTreeSet::from([lowest_stake_entry])
+            kr.registered_keys_for_concatenation,
+            entries
+                .iter()
+                .map(|e| e.get_verification_key_for_concatenation())
+                .collect::<HashSet<BlsVerificationKey>>()
+        );
+
+        assert_eq!(
+            kr.registered_keys_for_snark,
+            HashSet::from([lowest_stake_entry.get_verification_key_for_snark().unwrap()])
         );
     }
 
