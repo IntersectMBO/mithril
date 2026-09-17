@@ -378,6 +378,7 @@ mod tests {
         use midnight_proofs::poly::commitment::Params;
 
         use crate::circuits::halo2::keys::NonRecursiveCircuitProvingKey;
+        use crate::circuits::halo2_ivc::errors::IvcCircuitError;
         use crate::circuits::halo2_ivc::tests::common::{
             asset_readers::load_embedded_verification_context_asset,
             generators::setup::{QUORUM_SIZE, SIGNER_COUNT},
@@ -451,11 +452,26 @@ mod tests {
                 "verification-key",
             ))
             .expect("the cached recursive verifying key must decode");
-            RecursiveCircuitProvingKey::try_from_bytes(&read_cached_key(
-                &recursive_directory,
-                "proving-key",
-            ))
-            .expect("the cached recursive proving key must decode");
+            let mut recursive_proving_key_bytes =
+                read_cached_key(&recursive_directory, "proving-key");
+            RecursiveCircuitProvingKey::try_from_bytes(&recursive_proving_key_bytes)
+                .expect("the cached recursive proving key must decode");
+
+            // Only a valid encoding can exercise the decoder's full-consumption rule, and this is
+            // the one place a valid recursive proving key exists.
+            recursive_proving_key_bytes.push(0);
+            let error =
+                match RecursiveCircuitProvingKey::try_from_bytes(&recursive_proving_key_bytes) {
+                    Ok(_) => panic!("a recursive proving key with trailing bytes must be rejected"),
+                    Err(error) => error,
+                };
+            assert!(
+                matches!(
+                    error.downcast_ref::<IvcCircuitError>(),
+                    Some(IvcCircuitError::RecursiveKeyEncodingHasTrailingBytes { trailing: 1 })
+                ),
+                "expected a trailing-byte rejection, got: {error}"
+            );
         }
 
         /// Reads the one cached key of the given name beneath `directory`, whose layout belongs to
