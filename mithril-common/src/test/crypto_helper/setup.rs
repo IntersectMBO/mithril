@@ -137,7 +137,11 @@ pub fn setup_signers_from_stake_distribution(
     protocol_parameters: &ProtocolParameters,
     #[cfg(feature = "future_snark")] epoch: Epoch,
 ) -> Vec<SignerFixture> {
-    let mut key_registration = ProtocolKeyRegistration::init(stake_distribution);
+    let mut key_registration = ProtocolKeyRegistration::init(
+        stake_distribution,
+        #[cfg(feature = "future_snark")]
+        epoch,
+    );
     let mut signers: Vec<(
         SignerWithStake,
         ProtocolInitializer,
@@ -169,30 +173,26 @@ pub fn setup_signers_from_stake_distribution(
         );
 
         key_registration
-            .register(
-                SignerRegistrationParameters {
-                    party_id: Some(signer_with_stake.party_id.to_owned()),
-                    operational_certificate,
-                    verification_key_signature_for_concatenation: protocol_initializer
-                        .verification_key_signature_for_concatenation(),
-                    kes_evolutions: Some(kes_evolutions),
-                    verification_key_for_concatenation: protocol_initializer
-                        .verification_key_for_concatenation()
-                        .into(),
-                    #[cfg(feature = "future_snark")]
-                    verification_key_for_snark: protocol_initializer
-                        .verification_key_for_snark()
-                        .map(Into::into),
-                    #[cfg(feature = "future_snark")]
-                    verification_key_signature_for_snark: protocol_initializer
-                        .verification_key_signature_for_snark(),
-                    #[cfg(feature = "future_snark")]
-                    proof_of_bound_possession_for_snark: protocol_initializer
-                        .proof_of_bound_possession_for_snark(),
-                },
+            .register(SignerRegistrationParameters {
+                party_id: Some(signer_with_stake.party_id.to_owned()),
+                operational_certificate,
+                verification_key_signature_for_concatenation: protocol_initializer
+                    .verification_key_signature_for_concatenation(),
+                kes_evolutions: Some(kes_evolutions),
+                verification_key_for_concatenation: protocol_initializer
+                    .verification_key_for_concatenation()
+                    .into(),
                 #[cfg(feature = "future_snark")]
-                epoch,
-            )
+                verification_key_for_snark: protocol_initializer
+                    .verification_key_for_snark()
+                    .map(Into::into),
+                #[cfg(feature = "future_snark")]
+                verification_key_signature_for_snark: protocol_initializer
+                    .verification_key_signature_for_snark(),
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: protocol_initializer
+                    .proof_of_bound_possession_for_snark(),
+            })
             .expect("key registration should have succeeded");
 
         signers.push((

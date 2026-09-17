@@ -41,6 +41,8 @@ impl SignerRegistrationVerifier for MithrilSignerRegistrationVerifier {
                 .iter()
                 .map(|(k, v)| (k.to_owned(), *v))
                 .collect::<Vec<_>>(),
+            #[cfg(feature = "future_snark")]
+            epoch,
         );
         let party_id_register = match signer.party_id.as_str() {
             "" => None,
@@ -71,8 +73,6 @@ impl SignerRegistrationVerifier for MithrilSignerRegistrationVerifier {
                 #[cfg(feature = "future_snark")]
                 proof_of_bound_possession_for_snark: signer.proof_of_bound_possession_for_snark,
             },
-            #[cfg(feature = "future_snark")] 
-            epoch,
         )
             .with_context(|| {
                 format!(
