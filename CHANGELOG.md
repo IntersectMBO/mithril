@@ -38,6 +38,22 @@ As a minor extension, we have adopted a slightly different versioning convention
 | mithril-signer      | `-`     |
 | mithril-stm         | `-`     |
 
+## Mithril Distribution [2630.1] - 2026-09-17
+
+- **HOTFIX**: Updated Pallas to version `1.3.0` to fix a stack overflow during import of some transactions on the `preprod` Cardano chain.
+
+- Support for `Cardano node` `11.1.1` in the signer and the aggregator.
+
+| Crate               | Version   |
+| ------------------- | --------- |
+| mithril-aggregator  | `0.9.22`  |
+| mithril-client      | `0.14.17` |
+| mithril-client-cli  | `0.13.20` |
+| mithril-client-wasm | `0.10.8`  |
+| mithril-common      | `0.7.14`  |
+| mithril-signer      | `1.1.9`   |
+| mithril-stm         | `0.12.0`  |
+
 ## Mithril Distribution [2630.0] - 2026-08-03
 
 - **REMOVED** support for `CardanoImmutableFilesFull` in Mithril signer and aggregator:
