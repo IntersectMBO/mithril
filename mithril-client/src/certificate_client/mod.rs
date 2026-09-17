@@ -149,14 +149,18 @@ pub(crate) mod tests_utils {
     impl MockCertificateAggregatorRequest {
         pub(crate) fn expect_certificate_chain(&mut self, certificate_chain: Vec<Certificate>) {
             for certificate in certificate_chain {
-                let hash = certificate.hash.clone();
-                let message: CertificateMessage = certificate.try_into().unwrap();
-
-                self.expect_get_by_hash()
-                    .with(eq(hash))
-                    .once()
-                    .returning(move |_| Ok(Some(message.to_owned())));
+                self.expect_certificate(certificate, 1)
             }
+        }
+
+        pub(crate) fn expect_certificate(&mut self, certificate: Certificate, times: usize) {
+            let hash = certificate.hash.clone();
+            let message: CertificateMessage = certificate.try_into().unwrap();
+
+            self.expect_get_by_hash()
+                .with(eq(hash))
+                .times(times)
+                .returning(move |_| Ok(Some(message.to_owned())));
         }
     }
 }
