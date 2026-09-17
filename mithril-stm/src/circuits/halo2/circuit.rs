@@ -23,6 +23,29 @@ use crate::signature_scheme::{
 };
 use crate::{LotteryIndex, Parameters, StmResult};
 
+/// Chips the certificate circuit enables.
+///
+/// Single source: the relation declares these to the standard library, and the key decoder checks
+/// an encoded key against the same value, so the two cannot drift.
+pub(crate) fn certificate_circuit_architecture() -> ZkStdLibArch {
+    ZkStdLibArch {
+        jubjub: true,
+        poseidon: true,
+        sha2_256: false,
+        sha2_512: false,
+        keccak_256: false,
+        sha3_256: false,
+        secp256k1: false,
+        bls12_381: false,
+        base64: false,
+        nr_pow2range_cols: 2,
+        automaton: false,
+        blake2b: false,
+        curve25519: false,
+        p256: false,
+    }
+}
+
 /// Halo2 relation implementing the non-recursive STM verification circuit.
 ///
 /// Carries only the parameters that fix the constraint system; the instance and witness are
@@ -296,22 +319,7 @@ impl Relation for CertificateCircuit {
     }
 
     fn used_chips(&self) -> ZkStdLibArch {
-        ZkStdLibArch {
-            jubjub: true,
-            poseidon: true,
-            sha2_256: false,
-            sha2_512: false,
-            keccak_256: false,
-            sha3_256: false,
-            secp256k1: false,
-            bls12_381: false,
-            base64: false,
-            nr_pow2range_cols: 2,
-            automaton: false,
-            blake2b: false,
-            curve25519: false,
-            p256: false,
-        }
+        certificate_circuit_architecture()
     }
 
     fn write_relation<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
