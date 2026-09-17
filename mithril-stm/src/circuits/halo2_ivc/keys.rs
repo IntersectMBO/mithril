@@ -17,7 +17,6 @@ use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 use crate::circuits::key_generator::KeyGenerator;
 use crate::circuits::key_provider::KeyProvider;
 use crate::circuits::key_serialization::KEY_SERDE_FORMAT;
-use crate::circuits::trusted_setup::MIDNIGHT_SRS_DEGREE;
 use crate::codec::{TryFromBytes, TryToBytes};
 
 use super::{
@@ -118,7 +117,7 @@ impl RecursiveCircuitVerifyingKey {
         let certificate_key = reader
             .get(..certificate_key_length)
             .ok_or_else(|| anyhow!("The relation's certificate key is truncated"))?;
-        validate_certificate_key_declared_degrees(certificate_key)?;
+        NonRecursiveCircuitVerifyingKey::validate_encoded_header(certificate_key)?;
         reader = &reader[certificate_key_length..];
 
         // The wrapped raw recursive key opens with its own version and degree.
@@ -273,54 +272,6 @@ impl TryFromBytes for RecursiveCircuitProvingKey {
     }
 }
 
-/// Rejects a certificate key whose declared degrees could not belong to any supported certificate
-/// circuit.
-///
-/// A certificate key is generated from the trusted setup, so it cannot exceed that setup's degree.
-///
-/// Certificate degrees legitimately vary — production, the full fixture and the small golden context
-/// all differ — so these are bounded rather than pinned. The key declares a degree twice, once in
-/// its Midnight envelope and once in the raw key it wraps, and the reader takes them independently:
-/// an envelope declaring a supported degree can wrap a raw key declaring any other, which reaches a
-/// domain constructor that asserts.
-fn validate_certificate_key_declared_degrees(certificate_key: &[u8]) -> StmResult<()> {
-    let mut reader = certificate_key;
-    ZkStdLibArch::read_from_serialized_vk(&mut reader)
-        .with_context(|| "Failed to read the certificate key architecture")?;
-
-    let mut envelope_degree = [0u8; 1];
-    reader
-        .read_exact(&mut envelope_degree)
-        .with_context(|| "Failed to read the certificate key envelope degree")?;
-
-    let mut public_input_count = [0u8; 4];
-    reader
-        .read_exact(&mut public_input_count)
-        .with_context(|| "Failed to read the certificate key public input count")?;
-
-    // The wrapped raw key opens with its own version and degree.
-    let mut raw_header = [0u8; 2];
-    reader
-        .read_exact(&mut raw_header)
-        .with_context(|| "Failed to read the wrapped raw certificate key header")?;
-
-    for degree in [envelope_degree[0], raw_header[1]] {
-        if degree == 0 || degree > MIDNIGHT_SRS_DEGREE {
-            return Err(anyhow!(IvcCircuitError::IvcVerificationKeyDegreeMismatch {
-                expected: u32::from(MIDNIGHT_SRS_DEGREE),
-                actual: u32::from(degree),
-            }));
-        }
-    }
-    if envelope_degree[0] != raw_header[1] {
-        return Err(anyhow!(IvcCircuitError::IvcVerificationKeyDegreeMismatch {
-            expected: u32::from(envelope_degree[0]),
-            actual: u32::from(raw_header[1]),
-        }));
-    }
-    Ok(())
-}
-
 impl KeyGenerator for IvcCircuit {
     type VerifyingKey = RecursiveCircuitVerifyingKey;
     type ProvingKey = RecursiveCircuitProvingKey;
@@ -397,6 +348,7 @@ impl KeyGenerator for RecursiveCircuitKeyGenerator {
 mod tests {
     use super::*;
     use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
+    use crate::circuits::halo2::errors::CertificateCircuitError;
     use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
 
     #[test]
@@ -604,10 +556,11 @@ mod tests {
             Err(error) => error,
         };
 
+        // The certificate key is checked by the certificate newtype, so it reports its own error.
         assert!(
             matches!(
-                error.downcast_ref::<IvcCircuitError>(),
-                Some(IvcCircuitError::IvcVerificationKeyDegreeMismatch { actual: 32, .. })
+                error.downcast_ref::<CertificateCircuitError>(),
+                Some(CertificateCircuitError::VerificationKeyDegreeMismatch { actual: 32, .. })
             ),
             "expected a degree mismatch, got: {error}"
         );

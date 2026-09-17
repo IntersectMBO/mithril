@@ -2,24 +2,29 @@
 // implementation of [`KeyGenerator`]. The newtypes wrap Midnight's self-describing
 // `MidnightVK` / `MidnightPK` and delegate their byte (de)serialization to the impls in
 // `key_serialization`.
+use std::io::Read;
+
+use anyhow::{Context, anyhow};
 use midnight_curves::Bls12;
 use midnight_proofs::poly::commitment::Params;
 use midnight_proofs::poly::kzg::params::ParamsKZG;
-use midnight_zk_stdlib::{self as zk, MidnightCircuit, MidnightPK, MidnightVK};
+use midnight_zk_stdlib::{self as zk, MidnightCircuit, MidnightPK, MidnightVK, ZkStdLibArch};
 use serde::{Deserialize, Serialize};
 
 use crate::StmResult;
+use crate::circuits::halo2::errors::CertificateCircuitError;
 use crate::circuits::halo2_ivc::{KZGCommitmentScheme, NativeField, PairingEngine, VerifyingKey};
 use crate::circuits::key_generator::KeyGenerator;
-use crate::circuits::key_serialization::midnight_verifying_key_serde;
+use crate::circuits::key_serialization::KEY_SERDE_FORMAT;
+use crate::circuits::trusted_setup::MIDNIGHT_SRS_DEGREE;
 use crate::codec::{TryFromBytes, TryToBytes};
 
-use super::circuit::CertificateCircuit;
+use super::circuit::{CertificateCircuit, certificate_circuit_architecture};
 
 /// Verifying key of the non-recursive certificate circuit.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct NonRecursiveCircuitVerifyingKey(
-    #[serde(with = "midnight_verifying_key_serde")] MidnightVK,
+    #[serde(with = "certificate_verifying_key_serde")] MidnightVK,
 );
 
 /// Proving key of the non-recursive certificate circuit.
@@ -42,6 +47,64 @@ impl NonRecursiveCircuitVerifyingKey {
     pub(crate) fn circuit_degree(&self) -> u32 {
         self.midnight_vk().vk().get_domain().k()
     }
+
+    /// Checks the header of an encoded certificate verifying key before it is decoded.
+    ///
+    /// `MidnightVK` takes its architecture and degree from the bytes, so without this any Midnight
+    /// circuit's key decodes in the certificate position — including the recursive circuit's, which
+    /// this crate now encodes the same way.
+    ///
+    /// Certificate degrees legitimately vary — production, the full fixture and the small golden
+    /// context all differ — so they are bounded by the trusted setup rather than pinned. The key
+    /// declares one twice, once in its Midnight envelope and once in the raw key it wraps, and the
+    /// reader takes them independently: each reaches a `k - 1` subtraction on a byte, which
+    /// underflows at zero, or a domain constructor that asserts.
+    pub(crate) fn validate_encoded_header(bytes: &[u8]) -> StmResult<()> {
+        let mut reader = bytes;
+        let architecture = ZkStdLibArch::read_from_serialized_vk(&mut reader)
+            .with_context(|| "Failed to read the certificate verifying key architecture")?;
+        if architecture != certificate_circuit_architecture() {
+            return Err(anyhow!(
+                CertificateCircuitError::VerificationKeyArchitectureMismatch
+            ));
+        }
+
+        let mut envelope_degree = [0u8; 1];
+        reader
+            .read_exact(&mut envelope_degree)
+            .with_context(|| "Failed to read the certificate verifying key degree")?;
+
+        let mut public_input_count = [0u8; 4];
+        reader
+            .read_exact(&mut public_input_count)
+            .with_context(|| "Failed to read the certificate verifying key public input count")?;
+
+        // The wrapped raw key opens with its own version and degree.
+        let mut raw_header = [0u8; 2];
+        reader
+            .read_exact(&mut raw_header)
+            .with_context(|| "Failed to read the wrapped raw certificate key header")?;
+
+        for degree in [envelope_degree[0], raw_header[1]] {
+            if degree == 0 || degree > MIDNIGHT_SRS_DEGREE {
+                return Err(anyhow!(
+                    CertificateCircuitError::VerificationKeyDegreeMismatch {
+                        expected: u32::from(MIDNIGHT_SRS_DEGREE),
+                        actual: u32::from(degree),
+                    }
+                ));
+            }
+        }
+        if envelope_degree[0] != raw_header[1] {
+            return Err(anyhow!(
+                CertificateCircuitError::VerificationKeyDegreeMismatch {
+                    expected: u32::from(envelope_degree[0]),
+                    actual: u32::from(raw_header[1]),
+                }
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl AsRef<VerifyingKey<NativeField, KZGCommitmentScheme<PairingEngine>>>
@@ -59,6 +122,33 @@ impl NonRecursiveCircuitProvingKey {
     }
 }
 
+/// Serde for the wrapped Midnight verifying key, routed through the newtype's guarded byte decoder
+/// so the verifier-data envelopes cannot reach the dependency's readers unchecked.
+mod certificate_verifying_key_serde {
+    use midnight_zk_stdlib::MidnightVK;
+    use serde::{Deserializer, Serializer};
+
+    use super::NonRecursiveCircuitVerifyingKey;
+    use crate::codec::{TryFromBytes, TryToBytes};
+
+    pub(super) fn serialize<S: Serializer>(
+        verifying_key: &MidnightVK,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let bytes = verifying_key.to_bytes_vec().map_err(serde::ser::Error::custom)?;
+        serializer.serialize_bytes(&bytes)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<MidnightVK, D::Error> {
+        let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
+        NonRecursiveCircuitVerifyingKey::try_from_bytes(&bytes)
+            .map(|key| key.0)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 impl TryToBytes for NonRecursiveCircuitVerifyingKey {
     fn to_bytes_vec(&self) -> StmResult<Vec<u8>> {
         self.0.to_bytes_vec()
@@ -67,7 +157,22 @@ impl TryToBytes for NonRecursiveCircuitVerifyingKey {
 
 impl TryFromBytes for NonRecursiveCircuitVerifyingKey {
     fn try_from_bytes(bytes: &[u8]) -> StmResult<Self> {
-        Ok(Self(MidnightVK::try_from_bytes(bytes)?))
+        Self::validate_encoded_header(bytes)?;
+
+        let mut reader = bytes;
+        let midnight_vk = MidnightVK::read(&mut reader, KEY_SERDE_FORMAT)
+            .with_context(|| "Failed to deserialize the certificate verifying key")?;
+        // A standalone encoding holds one key and nothing else; the streaming asset reader, where a
+        // fixed-base map follows the key, deliberately does not go through here.
+        if !reader.is_empty() {
+            return Err(anyhow!(
+                CertificateCircuitError::VerificationKeyEncodingHasTrailingBytes {
+                    trailing: reader.len(),
+                }
+            ));
+        }
+
+        Ok(Self(midnight_vk))
     }
 }
 
@@ -124,10 +229,14 @@ mod tests {
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
 
+    use midnight_zk_stdlib::ZkStdLibArch;
+
     use super::{NonRecursiveCircuitProvingKey, NonRecursiveCircuitVerifyingKey};
     use crate::Parameters;
     use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
     use crate::circuits::halo2::circuit::CertificateCircuit;
+    use crate::circuits::halo2::errors::CertificateCircuitError;
+    use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
     use crate::circuits::key_generator::KeyGenerator;
     use crate::codec::{TryFromBytes, TryToBytes};
 
@@ -139,7 +248,7 @@ mod tests {
         )
         .expect("production verifying key bytes should deserialize");
 
-        // Exercises the `#[serde(with = "midnight_verifying_key_serde")]` serialize + deserialize path.
+        // Exercises the `#[serde(with = "certificate_verifying_key_serde")]` serialize + deserialize path.
         let json = serde_json::to_vec(&verifying_key).expect("serde serialize should succeed");
         let restored: NonRecursiveCircuitVerifyingKey =
             serde_json::from_slice(&json).expect("serde deserialize should succeed");
@@ -235,6 +344,116 @@ mod tests {
             exact_srs.max_k(),
             circuit_degree,
             "the already-sized SRS must be used directly, untouched"
+        );
+    }
+
+    // Both circuits encode their keys the same way, so only the declared architecture separates
+    // them: without the header check the recursive key would decode in the certificate position.
+    #[test]
+    fn a_recursive_verifying_key_is_rejected_in_the_certificate_position() {
+        let error = NonRecursiveCircuitVerifyingKey::try_from_bytes(
+            RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        )
+        .expect_err("a recursive key must not decode as a certificate one");
+
+        assert!(
+            matches!(
+                error.downcast_ref::<CertificateCircuitError>(),
+                Some(CertificateCircuitError::VerificationKeyArchitectureMismatch)
+            ),
+            "expected an architecture mismatch, got: {error}"
+        );
+    }
+
+    // `MidnightVK::read` derives its range bit length as `k - 1` on a byte, so a zero degree would
+    // underflow inside the dependency before any check of ours could run.
+    #[test]
+    fn a_zero_degree_header_is_rejected_before_it_can_underflow() {
+        let mut bytes = NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION.to_vec();
+        // The degree byte follows the encoded architecture.
+        let mut reader = NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
+        ZkStdLibArch::read_from_serialized_vk(&mut reader).expect("architecture should read");
+        let degree_index = bytes.len() - reader.len();
+        bytes[degree_index] = 0;
+
+        let error = NonRecursiveCircuitVerifyingKey::try_from_bytes(&bytes)
+            .expect_err("a zero degree must be rejected");
+
+        assert!(
+            matches!(
+                error.downcast_ref::<CertificateCircuitError>(),
+                Some(CertificateCircuitError::VerificationKeyDegreeMismatch { actual: 0, .. })
+            ),
+            "expected a degree mismatch, got: {error}"
+        );
+    }
+
+    // The envelope and the raw key it wraps each declare a degree, and the reader takes them
+    // independently, so an envelope declaring a supported degree can carry a raw key of another.
+    #[test]
+    fn a_wrapped_raw_key_of_another_degree_is_rejected() {
+        let mut bytes = NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION.to_vec();
+        // Past the architecture, the envelope degree and the public input count lies the raw key's
+        // own version byte, and its degree follows.
+        let mut reader = NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
+        ZkStdLibArch::read_from_serialized_vk(&mut reader).expect("architecture should read");
+        let envelope_degree_index = bytes.len() - reader.len();
+        let raw_degree_index = envelope_degree_index + 1 + 4 + 1;
+        // A degree the trusted setup could have produced, so only the disagreement is under test.
+        let other_degree = bytes[envelope_degree_index] - 1;
+        bytes[raw_degree_index] = other_degree;
+
+        let error = NonRecursiveCircuitVerifyingKey::try_from_bytes(&bytes)
+            .expect_err("a wrapped key of another degree must be rejected");
+
+        assert!(
+            matches!(
+                error.downcast_ref::<CertificateCircuitError>(),
+                Some(CertificateCircuitError::VerificationKeyDegreeMismatch { actual, .. })
+                    if *actual == u32::from(other_degree)
+            ),
+            "expected a degree mismatch, got: {error}"
+        );
+    }
+
+    // A key whose canonical re-serialization differs from the bytes it was decoded from would break
+    // every digest taken over an encoded key.
+    #[test]
+    fn an_encoding_with_trailing_bytes_is_rejected() {
+        let mut bytes = NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION.to_vec();
+        bytes.push(0);
+
+        let error = NonRecursiveCircuitVerifyingKey::try_from_bytes(&bytes)
+            .expect_err("trailing bytes must be rejected");
+
+        assert!(
+            matches!(
+                error.downcast_ref::<CertificateCircuitError>(),
+                Some(
+                    CertificateCircuitError::VerificationKeyEncodingHasTrailingBytes {
+                        trailing: 1
+                    }
+                )
+            ),
+            "expected a trailing-byte rejection, got: {error}"
+        );
+    }
+
+    // Deriving Deserialize would otherwise reach the dependency's reader without the guard, and
+    // that is the path the verifier data envelopes take.
+    #[test]
+    fn serde_rejects_a_recursive_verifying_key_in_the_certificate_position() {
+        let encoded = serde_json::to_vec(&serde_bytes::ByteBuf::from(
+            RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION.to_vec(),
+        ))
+        .expect("the recursive key bytes should encode");
+
+        let error = serde_json::from_slice::<NonRecursiveCircuitVerifyingKey>(&encoded)
+            .expect_err("a recursive key must not deserialize as a certificate one");
+
+        assert!(
+            error.to_string().contains("architecture"),
+            "expected an architecture mismatch, got: {error}"
         );
     }
 }
