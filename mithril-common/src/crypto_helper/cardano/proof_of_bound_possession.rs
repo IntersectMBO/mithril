@@ -25,11 +25,11 @@ impl ProofOfBoundPossessionPrefix {
     /// Converts a Proof of Bound Possession challenge into prefix bytes
     /// in the form:
     /// stake || epoch || pool_id
-    pub(crate) fn to_prefix_bytes(&self) -> Vec<u8> {
-        let mut prefix_bytes = Vec::new();
-        prefix_bytes.extend_from_slice(&self.stake.to_be_bytes());
-        prefix_bytes.extend_from_slice(&self.epoch.to_be_bytes());
-        prefix_bytes.extend_from_slice(&self.pool_id);
+    pub(crate) fn to_prefix_bytes(&self) -> [u8; 44] {
+        let mut prefix_bytes = [0u8; 44];
+        prefix_bytes[0..8].copy_from_slice(&self.stake.to_be_bytes());
+        prefix_bytes[8..16].copy_from_slice(&self.epoch.to_be_bytes());
+        prefix_bytes[16..44].copy_from_slice(&self.pool_id);
         prefix_bytes
     }
 }
@@ -49,7 +49,7 @@ mod tests {
         expected.extend_from_slice(&5u64.to_be_bytes());
         expected.extend_from_slice(&[1u8; 28]);
 
-        assert_eq!(bytes, expected);
+        assert_eq!(expected, bytes);
     }
 
     #[test]
@@ -63,7 +63,7 @@ mod tests {
         expected.extend_from_slice(&5u64.to_be_bytes());
         expected.extend_from_slice(&[0u8; 28]);
 
-        assert_eq!(bytes, expected);
+        assert_eq!(expected, bytes);
     }
 
     #[test]

@@ -236,7 +236,7 @@ mod tests {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let sk = SchnorrSigningKey::generate(&mut rng);
         let vk = SchnorrVerificationKey::new_from_signing_key(sk.clone());
-        let prefix = b"stake=100|epoch=5|pool_id=pool1abc";
+        let prefix = b"stake=100|epoch=5|pool_id=pool1abcdefghijklm";
 
         let signature = sk.create_proof_of_bound_possession(prefix, &mut rng).unwrap();
 
@@ -249,8 +249,8 @@ mod tests {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let sk = SchnorrSigningKey::generate(&mut rng);
         let vk = SchnorrVerificationKey::new_from_signing_key(sk.clone());
-        let prefix = b"stake=100|epoch=5|pool_id=pool1abc";
-        let replayed_prefix = b"stake=100|epoch=6|pool_id=pool1abc"; // different epoch
+        let prefix = b"stake=100|epoch=5|pool_id=pool1abcdefghijklm";
+        let replayed_prefix = b"stake=100|epoch=6|pool_id=pool1abcdefghijklm"; // different epoch
 
         let signature = sk.create_proof_of_bound_possession(prefix, &mut rng).unwrap();
 
@@ -264,24 +264,12 @@ mod tests {
         let sk1 = SchnorrSigningKey::generate(&mut rng);
         let sk2 = SchnorrSigningKey::generate(&mut rng);
         let vk2 = SchnorrVerificationKey::new_from_signing_key(sk2);
-        let prefix = b"stake=100|epoch=5|pool_id=pool1abc";
+        let prefix = b"stake=100|epoch=5|pool_id=pool1abcdefghijklm";
 
         let signature = sk1.create_proof_of_bound_possession(prefix, &mut rng).unwrap();
 
         vk2.verify_proof_of_bound_possession(prefix, &signature)
             .expect_err("Proof of Bound Possession signed by sk1 must not verify against sk2's verification key");
-    }
-
-    #[test]
-    fn proof_of_bound_possession_succeeds_with_empty_prefix() {
-        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-        let sk = SchnorrSigningKey::generate(&mut rng);
-        let vk = SchnorrVerificationKey::new_from_signing_key(sk.clone());
-
-        let signature = sk.create_proof_of_bound_possession(&[], &mut rng).unwrap();
-
-        vk.verify_proof_of_bound_possession(&[], &signature)
-            .expect("Empty prefix should still round-trip successfully");
     }
 
     mod golden {

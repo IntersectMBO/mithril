@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    StmResult,
+    ProofOfBoundPossessionPrefix, StmResult,
     signature_scheme::schnorr_signature::DOMAIN_SEPARATION_TAG_SCHNORR_PROOF_OF_BOUND_POSSESSION,
 };
 
@@ -172,7 +172,7 @@ impl SchnorrSigningKey {
     /// The prefix is used to bound the signing key to a given stake, epoch and pool_id.
     pub fn create_proof_of_bound_possession<R: RngCore + CryptoRng>(
         &self,
-        prefix: &[u8],
+        prefix: &ProofOfBoundPossessionPrefix,
         rng: &mut R,
     ) -> StmResult<StandardSchnorrSignature> {
         let verification_key_bytes =
@@ -306,19 +306,20 @@ mod tests {
 
     mod golden_proof_of_bound_possession {
 
-        use crate::StandardSchnorrSignature;
+        use crate::{ProofOfBoundPossessionPrefix, StandardSchnorrSignature};
 
         use super::*;
 
-        const GOLDEN_PREFIX: &[u8] = b"stake=100|epoch=5|pool_id=pool1abc";
+        const GOLDEN_PREFIX: &ProofOfBoundPossessionPrefix =
+            b"stake=100|epoch=5|pool_id=pool1abcdefghijklm";
 
         // Generated once from golden_value() below; regenerate only if the PoBP construction
         // (DST, prefix/vk order, hash function) intentionally changes.
         const GOLDEN_BYTES: &[u8; 64] = &[
-            212, 210, 226, 239, 75, 145, 129, 104, 230, 131, 28, 199, 173, 248, 118, 82, 193, 134,
-            198, 94, 0, 236, 179, 173, 226, 137, 138, 183, 101, 205, 6, 0, 39, 3, 230, 147, 159,
-            110, 228, 252, 24, 157, 58, 151, 238, 136, 5, 76, 28, 58, 204, 197, 250, 39, 239, 166,
-            60, 110, 9, 35, 21, 246, 150, 8,
+            11, 251, 223, 3, 13, 227, 87, 101, 244, 179, 53, 226, 223, 122, 83, 107, 194, 12, 163,
+            45, 232, 160, 191, 106, 195, 65, 187, 35, 197, 214, 158, 4, 208, 18, 218, 177, 95, 135,
+            159, 36, 232, 21, 38, 102, 15, 155, 108, 215, 171, 82, 147, 232, 255, 144, 51, 136,
+            251, 84, 10, 30, 93, 12, 147, 60,
         ];
 
         fn golden_value() -> StandardSchnorrSignature {

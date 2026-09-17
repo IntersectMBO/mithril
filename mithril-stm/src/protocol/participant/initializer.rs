@@ -12,8 +12,9 @@ use crate::{
 };
 #[cfg(feature = "future_snark")]
 use crate::{
-    ClosedRegistrationEntry, RegistrationEntryForSnark, StandardSchnorrSignature,
-    VerificationKeyForSnark, proof_system::SnarkProofSigner, signature_scheme::SchnorrSigningKey,
+    ClosedRegistrationEntry, ProofOfBoundPossessionPrefix, RegistrationEntryForSnark,
+    StandardSchnorrSignature, VerificationKeyForSnark, proof_system::SnarkProofSigner,
+    signature_scheme::SchnorrSigningKey,
 };
 
 use crate::codec;
@@ -158,7 +159,7 @@ impl Initializer {
     #[cfg(feature = "future_snark")]
     pub fn create_proof_of_bound_possession<R: RngCore + CryptoRng>(
         &self,
-        prefix: &[u8],
+        prefix: &ProofOfBoundPossessionPrefix,
         rng: &mut R,
     ) -> StmResult<Option<StandardSchnorrSignature>> {
         self.schnorr_signing_key
@@ -304,7 +305,7 @@ mod tests {
         fn returns_some_signature_when_schnorr_key_present_and_it_verifies() {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
             let initializer = Initializer::new(test_parameters(), 100, &mut rng);
-            let prefix = b"stake=100|epoch=5|pool_id=pool1abc";
+            let prefix = b"stake=100|epoch=5|pool_id=pool1abcdefghijklm";
 
             let signature = initializer
                 .create_proof_of_bound_possession(prefix, &mut rng)
@@ -327,7 +328,7 @@ mod tests {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
             let mut initializer = Initializer::new(test_parameters(), 100, &mut rng);
             initializer.strip_snark_keys();
-            let prefix = b"stake=100|epoch=5|pool_id=pool1abc";
+            let prefix = b"stake=100|epoch=5|pool_id=pool1abcdefghijklm";
 
             let result = initializer.create_proof_of_bound_possession(prefix, &mut rng).expect(
                 "Proof of Bound Possession creation should not fail even without a schnorr key",
