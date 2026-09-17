@@ -1,20 +1,18 @@
 //! Positive encoding tests: preimage layout, state public input format, and
 //! serialization round-trips.
 
-use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_DEGREE;
-use crate::circuits::halo2_ivc::circuit::IvcCircuit;
-use crate::circuits::halo2_ivc::circuit::recursive_circuit_architecture;
-use midnight_zk_stdlib::MidnightCircuit;
-
 use ff::Field;
 use midnight_proofs::utils::SerdeFormat;
+use midnight_zk_stdlib::MidnightCircuit;
 use proptest::prelude::*;
 use sha2::{Digest as Sha2Digest, Sha256};
 
 use crate::circuits::halo2_ivc::{
     Accumulator, KZGCommitmentScheme, NativeField, PREIMAGE_CURRENT_EPOCH_BYTES,
     PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES, PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES,
-    PREIMAGE_SIZE, PairingEngine, ProtocolMessagePreimage, RecursiveEmulation, VerifyingKey,
+    PREIMAGE_SIZE, PairingEngine, ProtocolMessagePreimage, RECURSIVE_CIRCUIT_DEGREE,
+    RecursiveEmulation, VerifyingKey,
+    circuit::{IvcCircuit, recursive_circuit_architecture},
     io::{ReadWithFormat, WriteWithFormat},
     protocol_message::{DynamicProtocolMessagePartKey, ProtocolMessage},
     state::State,

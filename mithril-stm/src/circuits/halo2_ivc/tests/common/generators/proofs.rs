@@ -1,13 +1,10 @@
-use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_DEGREE;
-use crate::circuits::halo2_ivc::circuit::IvcCircuit;
-use midnight_proofs::circuit::Value;
-use midnight_zk_stdlib::MidnightCircuit;
 use std::hash::Hash;
 
 use ff::FromUniformBytes;
 use group::Group;
 use midnight_circuits::hash::poseidon::PoseidonState;
 use midnight_curves::Bls12;
+use midnight_proofs::circuit::Value;
 use midnight_proofs::{
     plonk::{create_proof, prepare},
     poly::{
@@ -16,11 +13,13 @@ use midnight_proofs::{
     },
     transcript::{Blake2b256, CircuitTranscript, Hashable, Sampleable, Transcript, TranscriptHash},
 };
+use midnight_zk_stdlib::MidnightCircuit;
 use rand_core::{CryptoRng, RngCore};
 
 use crate::circuits::halo2_ivc::keys::RecursiveCircuitProvingKey;
 use crate::circuits::halo2_ivc::{
-    EmulatedCurve, NativeField, PairingEngine, VerifyingKey, circuit::IvcCircuitData,
+    EmulatedCurve, NativeField, PairingEngine, RECURSIVE_CIRCUIT_DEGREE, VerifyingKey,
+    circuit::{IvcCircuit, IvcCircuitData},
 };
 
 /// Generates a recursive proof using the chosen transcript hash.

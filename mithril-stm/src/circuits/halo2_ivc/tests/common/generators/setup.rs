@@ -1,4 +1,3 @@
-use midnight_zk_stdlib::{self as zk};
 use std::{
     collections::BTreeMap,
     io::Write,
@@ -9,6 +8,7 @@ use ff::Field;
 use midnight_curves::Bls12;
 use midnight_proofs::poly::kzg::params::{ParamsKZG, ParamsVerifierKZG};
 use midnight_zk_stdlib as zk_lib;
+use midnight_zk_stdlib::{self as zk};
 use rand_chacha::ChaCha20Rng;
 use rand_core::{CryptoRng, RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};

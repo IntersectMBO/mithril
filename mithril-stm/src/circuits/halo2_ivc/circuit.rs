@@ -1,7 +1,9 @@
+use anyhow::anyhow;
+
 use crate::StmResult;
 use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 use crate::circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey;
-use anyhow::anyhow;
+use crate::codec::{TryFromBytes, TryToBytes};
 
 use super::{
     Accumulator, BinaryInstructions, CircuitValue, ConstraintSystem, Error, EvaluationDomain,
@@ -13,7 +15,6 @@ use super::{
     types::{CertificateProofBytes, IvcProofBytes},
     witness_assignments,
 };
-use crate::codec::{TryFromBytes, TryToBytes};
 
 /// Chips the recursive circuit enables.
 ///
