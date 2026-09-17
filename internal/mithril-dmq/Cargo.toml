@@ -1,7 +1,7 @@
 [package]
 name = "mithril-dmq"
 description = "Mechanisms to publish and consume messages of a 'Decentralized Message Queue network' through a DMQ node"
-version = "0.1.28"
+version = "0.1.29"
 authors.workspace = true
 documentation.workspace = true
 edition.workspace = true

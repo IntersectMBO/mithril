@@ -4359,7 +4359,7 @@ dependencies = [
 
 [[package]]
 name = "mithril-cardano-node-chain"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4555,7 +4555,7 @@ dependencies = [
 
 [[package]]
 name = "mithril-dmq"
-version = "0.1.28"
+version = "0.1.29"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4598,7 +4598,7 @@ dependencies = [
 
 [[package]]
 name = "mithril-end-to-end"
-version = "0.5.17"
+version = "0.5.18"
 dependencies = [
  "anyhow",
  "async-recursion",
