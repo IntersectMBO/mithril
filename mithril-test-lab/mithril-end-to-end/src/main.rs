@@ -258,7 +258,7 @@ struct CardanoDevnetArgs {
     cardano_epoch_length: f64,
 
     /// Cardano node version, must be a valid semver version
-    #[clap(long, default_value = "11.0.1")]
+    #[clap(long, default_value = "11.1.2")]
     cardano_node_version: semver::Version,
 
     /// Epoch at which hard fork to the latest Cardano era will be made (starts with the latest era by default)
