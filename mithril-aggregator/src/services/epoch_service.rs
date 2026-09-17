@@ -1552,7 +1552,8 @@ mod tests {
 
     #[cfg(feature = "future_snark")]
     #[test]
-    fn precompute_epoch_data_excludes_the_higher_stake_signer_when_two_signers_share_a_snark_key() {
+    fn precompute_epoch_data_excludes_the_higher_stake_signer_from_snark_registration_when_two_signers_share_a_snark_key()
+     {
         let epoch = Epoch(10);
         let [lower_stake_signer, higher_stake_signer] = create_signers_with_stake_sharing_snark_key(
             [100, 200],
@@ -1561,26 +1562,34 @@ mod tests {
         )
         .unwrap();
 
-        // Two signers sharing a SNARK key are both fed in, as if both had registered live.
         let service_with_collision = FakeEpochServiceBuilder {
-            current_signers_with_stake: vec![lower_stake_signer.clone(), higher_stake_signer],
+            current_signers_with_stake: vec![
+                lower_stake_signer.clone(),
+                higher_stake_signer.clone(),
+            ],
             next_signers_with_stake: vec![lower_stake_signer.clone()],
             ..FakeEpochServiceBuilder::dummy(epoch)
         }
         .build();
 
-        // Reference case: only the expected survivor is ever registered.
-        let service_with_only_the_survivor = FakeEpochServiceBuilder {
-            current_signers_with_stake: vec![lower_stake_signer.clone()],
+        let higher_stake_signer_without_snark_key = SignerWithStake {
+            verification_key_for_snark: None,
+            verification_key_signature_for_snark: None,
+            proof_of_bound_possession_for_snark: None,
+            ..higher_stake_signer
+        };
+        let service_with_snark_key_never_submitted = FakeEpochServiceBuilder {
+            current_signers_with_stake: vec![
+                lower_stake_signer.clone(),
+                higher_stake_signer_without_snark_key,
+            ],
             next_signers_with_stake: vec![lower_stake_signer],
             ..FakeEpochServiceBuilder::dummy(epoch)
         }
         .build();
 
-        // If deduplication correctly excluded the higher-stake signer, the two AVKs must be
-        // bit-identical — the excluded signer never contributed to it.
         assert_eq!(
-            service_with_only_the_survivor
+            service_with_snark_key_never_submitted
                 .current_aggregate_verification_key()
                 .unwrap(),
             service_with_collision.current_aggregate_verification_key().unwrap(),
