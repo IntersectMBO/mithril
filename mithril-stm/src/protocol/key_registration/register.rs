@@ -45,13 +45,16 @@ impl KeyRegistration {
     /// itself via `RegistrationEntry::new`.
     ///
     /// # Error
-    /// The function fails when the concatenation verification key is already registered.
+    /// The function fails when the concatenation verification key is already registered, or
+    /// when a SNARK verification key is tracked as registered but has no matching entry
+    /// in `registration_entries`.
     ///
     /// A SNARK verification key shared with an already-registered entry does not error: the two
     /// entries are compared via `RegistrationEntry`'s `Ord` (stake, then concatenation vk as a
-    /// deterministic tie-break) and only the lesser one is kept, silently dropping the other.
-    /// This stops two identities that happen to share a SNARK key from both counting toward the
-    /// registered stake.
+    /// deterministic tie-break), and only the lesser one keeps the SNARK verification key. The
+    /// loser's SNARK vk is stripped (set to `None`) but its concatenation registration is kept
+    /// unchanged. This stops two identities that happen to share a SNARK key from both counting
+    /// toward the registered SNARK stake, without affecting their concatenation registration.
     pub(crate) fn register_by_entry(&mut self, entry: &RegistrationEntry) -> StmResult<()> {
         let vk_concatenation = entry.get_verification_key_for_concatenation();
         if self.registered_keys_for_concatenation.contains(&vk_concatenation) {
@@ -71,7 +74,7 @@ impl KeyRegistration {
                 .registration_entries
                 .iter()
                 .find(|e| e.get_verification_key_for_snark() == Some(vk_snark))
-                .expect("registered_keys_for_snark and registration_entries are kept in sync");
+                .ok_or(RegisterError::SnarkKeyRegistrationInconsistent)?;
 
             // first compares the stake then the BLS key value as bytes
             if entry < existing {
