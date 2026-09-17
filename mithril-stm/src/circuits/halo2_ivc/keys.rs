@@ -265,10 +265,19 @@ impl TryFromBytes for RecursiveCircuitProvingKey {
         RecursiveCircuitVerifyingKey::validate_encoded_proving_key_header(bytes)?;
 
         let mut reader = bytes;
-        Ok(Self(
-            MidnightPK::<IvcCircuit>::read(&mut reader, KEY_SERDE_FORMAT)
-                .with_context(|| "Failed to deserialize the recursive proving key")?,
-        ))
+        let midnight_pk = MidnightPK::<IvcCircuit>::read(&mut reader, KEY_SERDE_FORMAT)
+            .with_context(|| "Failed to deserialize the recursive proving key")?;
+        // A cache entry holds one key and nothing else, the same rule the verifying key decoder
+        // above applies.
+        if !reader.is_empty() {
+            return Err(anyhow!(
+                IvcCircuitError::RecursiveKeyEncodingHasTrailingBytes {
+                    trailing: reader.len(),
+                }
+            ));
+        }
+
+        Ok(Self(midnight_pk))
     }
 }
 
