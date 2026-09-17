@@ -1,5 +1,5 @@
 use crate::{
-    crypto_helper::ProtocolPartyIdHash,
+    crypto_helper::ProtocolPartyIdBytes,
     entities::{Epoch, Stake},
 };
 
@@ -10,11 +10,11 @@ use crate::{
 pub(crate) struct ProofOfBoundPossessionPrefix {
     stake: Stake,
     epoch: Epoch,
-    pool_id: ProtocolPartyIdHash,
+    pool_id: ProtocolPartyIdBytes,
 }
 
 impl ProofOfBoundPossessionPrefix {
-    pub(crate) fn new(stake: Stake, epoch: Epoch, pool_id: ProtocolPartyIdHash) -> Self {
+    pub(crate) fn new(stake: Stake, epoch: Epoch, pool_id: ProtocolPartyIdBytes) -> Self {
         Self {
             stake,
             epoch,

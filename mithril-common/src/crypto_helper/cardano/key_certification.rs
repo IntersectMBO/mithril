@@ -32,7 +32,7 @@ use crate::{
 #[cfg(feature = "future_snark")]
 use crate::{
     crypto_helper::{
-        ProtocolPartyIdHash, ProtocolSignerProofOfBoundPossessionForSnark,
+        ProtocolPartyIdBytes, ProtocolSignerProofOfBoundPossessionForSnark,
         cardano::ProofOfBoundPossessionPrefix,
         types::{
             ProtocolSignerVerificationKeyForSnark, ProtocolSignerVerificationKeySignatureForSnark,
@@ -416,7 +416,7 @@ impl KeyRegWrapper {
         &self,
         stake: Stake,
         epoch: Epoch,
-        pool_id: ProtocolPartyIdHash,
+        pool_id: ProtocolPartyIdBytes,
         schnorr_verification_key: VerificationKeyForSnark,
         proof_of_bound_possession_for_snark: Option<StandardSchnorrSignature>,
     ) -> StdResult<()> {

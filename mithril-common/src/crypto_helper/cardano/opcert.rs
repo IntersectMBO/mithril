@@ -15,7 +15,7 @@ use thiserror::Error;
 
 use crate::StdResult;
 use crate::crypto_helper::cardano::ProtocolRegistrationErrorWrapper;
-use crate::crypto_helper::{KesPeriod, ProtocolPartyId, ProtocolPartyIdHash, encode_bech32};
+use crate::crypto_helper::{KesPeriod, ProtocolPartyId, ProtocolPartyIdBytes, encode_bech32};
 
 use super::SerDeShelleyFileFormat;
 
@@ -252,7 +252,7 @@ impl OpCert {
     }
 
     /// Compute protocol party id as raw bytes, without bech32 encoding.
-    pub fn compute_protocol_party_id_as_bytes(&self) -> ProtocolPartyIdHash {
+    pub fn compute_protocol_party_id_as_bytes(&self) -> ProtocolPartyIdBytes {
         let mut hasher = Blake2b::<U28>::new();
         hasher.update(self.cold_vk.as_bytes());
         let mut pool_id = [0u8; 28];
