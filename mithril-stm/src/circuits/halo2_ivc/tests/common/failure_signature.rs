@@ -5,19 +5,19 @@
 //! Advice-side members of a broken class are not enumerated: their columns and regions are named by
 //! the gadget layer and carry no stability guarantee.
 
-use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_DEGREE;
-use crate::circuits::halo2_ivc::circuit::IvcCircuit;
-use midnight_proofs::circuit::Value;
-use midnight_zk_stdlib::MidnightCircuit;
-
 use std::collections::{BTreeMap, BTreeSet};
 
+use midnight_proofs::circuit::Value;
 use midnight_proofs::{
     dev::{FailureLocation, MockProver, VerifyFailure},
     plonk::{Any, Circuit},
 };
+use midnight_zk_stdlib::MidnightCircuit;
 
-use crate::circuits::halo2_ivc::{NativeField, circuit::IvcCircuitData};
+use crate::circuits::halo2_ivc::{
+    NativeField, RECURSIVE_CIRCUIT_DEGREE,
+    circuit::{IvcCircuit, IvcCircuitData},
+};
 
 /// Index of the instance column carrying the circuit's public statement.
 ///

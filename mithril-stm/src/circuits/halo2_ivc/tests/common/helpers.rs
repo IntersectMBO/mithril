@@ -1,18 +1,17 @@
-use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_DEGREE;
-use midnight_proofs::circuit::Value;
-use midnight_zk_stdlib::MidnightCircuit;
 use std::collections::BTreeMap;
 
 use midnight_circuits::types::Instantiable;
 use midnight_curves::Bls12;
+use midnight_proofs::circuit::Value;
 use midnight_proofs::{
     dev::MockProver,
     poly::kzg::params::{ParamsKZG, ParamsVerifierKZG},
 };
+use midnight_zk_stdlib::MidnightCircuit;
 
 use crate::circuits::halo2_ivc::{
     Accumulator, AssignedAccumulator, EmulatedCurve, NativeField, PREIMAGE_SIZE, PairingEngine,
-    RecursiveEmulation,
+    RECURSIVE_CIRCUIT_DEGREE, RecursiveEmulation,
     accumulator::trivial_accumulator,
     circuit::{IvcCircuit, IvcCircuitData},
     state::{Global, State, Witness},

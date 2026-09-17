@@ -219,6 +219,8 @@ impl IvcVerifierData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
+    use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
     use crate::{
         BaseFieldElement,
         circuits::{
@@ -335,9 +337,6 @@ mod tests {
     // is the path a certificate carries, and the two circuits now share one key encoding.
     #[test]
     fn verifier_data_rejects_a_certificate_key_in_the_recursive_position() {
-        use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
-        use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
-
         // Mirrors `IvcVerifierData`'s CBOR shape with both keys as opaque bytes, so the recursive
         // slot can carry an encoding the typed constructor would never allow.
         #[derive(serde::Serialize)]

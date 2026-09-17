@@ -346,6 +346,8 @@ impl KeyGenerator for RecursiveCircuitKeyGenerator {
 
 #[cfg(test)]
 mod tests {
+    use midnight_proofs::utils::helpers::byte_length;
+
     use super::*;
     use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
     use crate::circuits::halo2::errors::CertificateCircuitError;
@@ -492,8 +494,6 @@ mod tests {
     // declare fewer than the configured constraint system has columns.
     #[test]
     fn a_key_declaring_too_few_fixed_commitments_is_rejected() {
-        use midnight_proofs::utils::helpers::byte_length;
-
         let mut reader = RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
         ZkStdLibArch::read_from_serialized_vk(&mut reader).expect("architecture should read");
         // envelope degree, public input count, then the raw key's version and degree
@@ -536,8 +536,6 @@ mod tests {
     // independently, so a supported envelope can wrap a raw key of any other degree.
     #[test]
     fn a_proving_key_whose_certificate_inner_degree_disagrees_is_rejected() {
-        use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
-
         let mut certificate_key = NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION.to_vec();
         let mut reader = NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
         ZkStdLibArch::read_from_serialized_vk(&mut reader).expect("architecture should read");
