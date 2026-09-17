@@ -1,6 +1,6 @@
 [package]
 name = "mithril-end-to-end"
-version = "0.5.17"
+version = "0.5.18"
 authors = { workspace = true }
 edition = { workspace = true }
 documentation = { workspace = true }
@@ -30,8 +30,8 @@ mithril-cardano-node-chain = { path = "../../internal/cardano-node/mithril-carda
 mithril-cardano-node-internal-database = { path = "../../internal/cardano-node/mithril-cardano-node-internal-database" }
 mithril-common = { path = "../../mithril-common" }
 mithril-doc = { path = "../../internal/mithril-doc" }
-pallas-hardano = { version = "1.1.1" }
-pallas-traverse = { version = "1.1.1" }
+pallas-hardano = { version = "1.3.0" }
+pallas-traverse = { version = "1.3.0" }
 rand = { version = "0.10.2" }
 reqwest = { workspace = true, features = ["charset", "http2", "system-proxy"] }
 semver = { workspace = true }
