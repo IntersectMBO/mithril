@@ -52,31 +52,29 @@ impl SignerBuilder {
             .iter()
             .map(|s| s.into())
             .collect::<ProtocolStakeDistribution>();
-        let mut key_registration = ProtocolKeyRegistration::init(&stake_distribution);
+        let mut key_registration = ProtocolKeyRegistration::init(
+            &stake_distribution,
+            #[cfg(feature = "future_snark")]
+            epoch,
+        );
 
         for signer in registered_signers {
             key_registration
-                .register(
-                    SignerRegistrationParameters {
-                        party_id: Some(signer.party_id.to_owned()),
-                        operational_certificate: signer.operational_certificate.clone(),
-                        verification_key_signature_for_concatenation: signer
-                            .verification_key_signature_for_concatenation,
-                        kes_evolutions: signer.kes_evolutions,
-                        verification_key_for_concatenation: signer
-                            .verification_key_for_concatenation,
-                        #[cfg(feature = "future_snark")]
-                        verification_key_for_snark: signer.verification_key_for_snark,
-                        #[cfg(feature = "future_snark")]
-                        verification_key_signature_for_snark: signer
-                            .verification_key_signature_for_snark,
-                        #[cfg(feature = "future_snark")]
-                        proof_of_bound_possession_for_snark: signer
-                            .proof_of_bound_possession_for_snark,
-                    },
+                .register(SignerRegistrationParameters {
+                    party_id: Some(signer.party_id.to_owned()),
+                    operational_certificate: signer.operational_certificate.clone(),
+                    verification_key_signature_for_concatenation: signer
+                        .verification_key_signature_for_concatenation,
+                    kes_evolutions: signer.kes_evolutions,
+                    verification_key_for_concatenation: signer.verification_key_for_concatenation,
                     #[cfg(feature = "future_snark")]
-                    epoch,
-                )
+                    verification_key_for_snark: signer.verification_key_for_snark,
+                    #[cfg(feature = "future_snark")]
+                    verification_key_signature_for_snark: signer
+                        .verification_key_signature_for_snark,
+                    #[cfg(feature = "future_snark")]
+                    proof_of_bound_possession_for_snark: signer.proof_of_bound_possession_for_snark,
+                })
                 .with_context(|| {
                     format!("Registration failed for signer: '{}'", signer.party_id)
                 })?;
