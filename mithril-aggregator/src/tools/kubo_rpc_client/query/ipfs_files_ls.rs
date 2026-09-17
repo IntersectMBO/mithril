@@ -1,8 +1,7 @@
 use anyhow::Context;
 use reqwest::{RequestBuilder, Response};
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::time::Duration;
+use std::collections::HashSet;
 
 use mithril_common::StdResult;
 
@@ -11,7 +10,7 @@ use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcQuery};
 
 /// Query to list directories in an MFS (Mutable File System) in IPFS via the Kubo RPC API.
 ///
-/// Returns a map of file names to their hashes / CIDs.
+/// Returns the names of the directory entries.
 ///
 /// see: https://docs.ipfs.tech/reference/kubo/rpc/#api-v0-files-ls
 #[derive(Debug)]
@@ -28,10 +27,8 @@ struct IpfsLsResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct IpfsLsResponseItem {
-    /// Name of the added file
+    /// Name of the entry
     name: String,
-    /// Hash of the added file (CID)
-    hash: String,
 }
 
 impl IpfsFilesLsQuery {
@@ -45,7 +42,7 @@ impl IpfsFilesLsQuery {
 
 #[async_trait::async_trait]
 impl KuboRpcQuery for IpfsFilesLsQuery {
-    type Response = Option<HashMap<String, String>>;
+    type Response = Option<HashSet<String>>;
 
     fn route(&self) -> String {
         "api/v0/files/ls".to_string()
@@ -57,12 +54,8 @@ impl KuboRpcQuery for IpfsFilesLsQuery {
     ) -> StdResult<RequestBuilder> {
         Ok(request_builder
             .query(&[("arg", &self.dir)])
-            // enable long listing (else hashes are empty) and disable sorting (handled rust-side)
-            .query(&[("long", "true"), ("U", "true")]))
-    }
-
-    fn timeout(&self) -> Duration {
-        Duration::from_secs(10)
+            // disable sorting (handled rust-side)
+            .query(&[("U", "true")]))
     }
 
     async fn handle_success(&self, response: Response) -> StdResult<Self::Response> {
@@ -72,11 +65,9 @@ impl KuboRpcQuery for IpfsFilesLsQuery {
             .with_context(|| "Failed to deserialize IPFS ls response")?;
 
         match response.entries {
-            Some(entries) => Ok(Some(
-                entries.into_iter().map(|item| (item.name, item.hash)).collect(),
-            )),
+            Some(entries) => Ok(Some(entries.into_iter().map(|item| item.name).collect())),
             // If entries are null, the directory exists but is empty
-            None => Ok(Some(HashMap::<String, String>::new())),
+            None => Ok(Some(HashSet::new())),
         }
     }
 
@@ -100,7 +91,7 @@ mod tests {
             when.method(POST)
                 .path("/api/v0/files/ls")
                 .query_param("arg", "/test/")
-                .query_param("long", "true")
+                .query_param_missing("long")
                 .query_param("U", "true");
             // Kubo returns null if the directory exists but is empty
             then.status(200).json_body(serde_json::json!({ "Entries": null }));
@@ -110,7 +101,7 @@ mod tests {
             .send(IpfsFilesLsQuery::new(&IpfsMfsDirPath::from("/test")))
             .await
             .unwrap();
-        assert_eq!(Some(HashMap::<String, String>::new()), response);
+        assert_eq!(Some(HashSet::new()), response);
     }
 
     #[tokio::test]
@@ -120,15 +111,15 @@ mod tests {
             when.method(POST)
                 .path("/api/v0/files/ls")
                 .query_param("arg", "/test/")
-                .query_param("long", "true")
+                .query_param_missing("long")
                 .query_param("U", "true");
             then.status(200).json_body(serde_json::json!({
                 "Entries":[
-                    {"Name":"00000.tar.zst","Type":0,"Size":28486,"Hash":"QmePDH8sb7dux6VEvACJYS3m76D4Cc8eyfhejs7wcDFwWi"},
-                    {"Name":"00001.tar.zst","Type":0,"Size":28557,"Hash":"QmXtTUpZervXkza1KmmmnfkxqJmLxZAsRXUfVKQHPBBkFA"},
-                    {"Name":"00002.tar.zst","Type":0,"Size":29518,"Hash":"QmYd4yX3ms9jeLcDd9r3DZaMYuKb7TNX5dL1VD1wyNgKac"},
-                    {"Name":"00003.tar.zst","Type":0,"Size":28951,"Hash":"Qmbh4AHrNT8GMrJYLAyku88zhoZAyJcsRRyXNFbDJsbCp9"},
-                    {"Name":"sub-dir","Type":1,"Size":0,"Hash":"QmX5UvqhAYnEqAGx41SCovCg4x6NTF5XEVBMLarqk8J4x7"}
+                    {"Name":"00000.tar.zst","Type":0,"Size":0,"Hash":""},
+                    {"Name":"00001.tar.zst","Type":0,"Size":0,"Hash":""},
+                    {"Name":"00002.tar.zst","Type":0,"Size":0,"Hash":""},
+                    {"Name":"00003.tar.zst","Type":0,"Size":0,"Hash":""},
+                    {"Name":"sub-dir","Type":0,"Size":0,"Hash":""}
                 ]
             }));
         });
@@ -139,27 +130,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            Some(HashMap::<String, String>::from([
-                (
-                    "00000.tar.zst".to_string(),
-                    "QmePDH8sb7dux6VEvACJYS3m76D4Cc8eyfhejs7wcDFwWi".to_string(),
-                ),
-                (
-                    "00001.tar.zst".to_string(),
-                    "QmXtTUpZervXkza1KmmmnfkxqJmLxZAsRXUfVKQHPBBkFA".to_string(),
-                ),
-                (
-                    "00002.tar.zst".to_string(),
-                    "QmYd4yX3ms9jeLcDd9r3DZaMYuKb7TNX5dL1VD1wyNgKac".to_string(),
-                ),
-                (
-                    "00003.tar.zst".to_string(),
-                    "Qmbh4AHrNT8GMrJYLAyku88zhoZAyJcsRRyXNFbDJsbCp9".to_string(),
-                ),
-                (
-                    "sub-dir".to_string(),
-                    "QmX5UvqhAYnEqAGx41SCovCg4x6NTF5XEVBMLarqk8J4x7".to_string(),
-                ),
+            Some(HashSet::from([
+                "00000.tar.zst".to_string(),
+                "00001.tar.zst".to_string(),
+                "00002.tar.zst".to_string(),
+                "00003.tar.zst".to_string(),
+                "sub-dir".to_string(),
             ])),
             response
         );
