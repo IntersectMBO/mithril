@@ -3,6 +3,7 @@ use async_trait::async_trait;
 #[cfg(feature = "unstable")]
 use slog::warn;
 use slog::{Logger, trace};
+use std::ops::Not;
 use std::sync::Arc;
 
 #[cfg(all(test, feature = "unstable"))]
@@ -122,9 +123,12 @@ impl MithrilCertificateVerifier {
                 })
                 .await;
 
-            Ok(Some(CertificateToVerify::ToDownload {
-                hash: cached_certificate.previous_hash,
-            }))
+            Ok(cached_certificate
+                .is_genesis()
+                .not()
+                .then_some(CertificateToVerify::ToDownload {
+                    hash: cached_certificate.previous_hash,
+                }))
         } else {
             let certificate = match certificate {
                 CertificateToVerify::Downloaded { certificate } => *certificate,
@@ -179,6 +183,7 @@ impl MithrilCertificateVerifier {
     }
 }
 
+#[derive(Debug)]
 enum CertificateToVerify {
     /// The certificate is already downloaded.
     Downloaded { certificate: Box<Certificate> },
@@ -560,6 +565,41 @@ mod tests {
             assert_eq!(
                 cache.get_certificate_by_hash(&certificate.hash).await.unwrap(),
                 Some(certificate.clone().try_into().unwrap())
+            );
+        }
+
+        #[tokio::test]
+        async fn verify_with_cache_returns_none_for_genesis_certificate() {
+            let chain = CertificateChainBuilder::new()
+                .with_total_certificates(1)
+                .with_certificates_per_epoch(1)
+                .build();
+            let genesis_certificate = chain.last().unwrap();
+            assert!(genesis_certificate.is_genesis());
+
+            let cache = Arc::new(
+                MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                    .with_items_from_chain(chain.iter()),
+            );
+            let verifier = build_verifier_with_cache(
+                |_mock| {},
+                chain.genesis_verifier.to_ed25519_verification_key(),
+                cache.clone(),
+            );
+
+            let cert_to_verify = verifier
+                .verify_with_cache_enabled(
+                    "certificate_chain_validation_id",
+                    CertificateToVerify::Downloaded {
+                        certificate: Box::new(genesis_certificate.clone()),
+                    },
+                )
+                .await
+                .unwrap();
+
+            assert!(
+                cert_to_verify.is_none(),
+                "Expected no certificate to verify, got: {cert_to_verify:?}",
             );
         }
 
