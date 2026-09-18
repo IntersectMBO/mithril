@@ -208,7 +208,7 @@ impl TryToBytes for GenesisSigningKeyBundle {
         bytes.push(ED25519_SIGNING_KEY_BYTES);
         bytes.extend_from_slice(&self.ed25519.to_bytes());
         bytes.push(SCHNORR_SIGNING_KEY_BYTES);
-        bytes.extend_from_slice(&self.schnorr.to_bytes());
+        bytes.extend_from_slice(&self.schnorr.to_raw_bytes());
         Ok(bytes)
     }
 }
@@ -229,7 +229,7 @@ impl TryFromBytes for GenesisSigningKeyBundle {
         )?;
         reader.check_no_trailing()?;
         let ed25519 = GenesisEd25519SecretKey::from_bytes(ed25519_bytes)?;
-        let schnorr = GenesisSchnorrSecretKey::from_bytes(schnorr_bytes)?;
+        let schnorr = GenesisSchnorrSecretKey::from_raw_bytes(schnorr_bytes)?;
         Ok(Self { ed25519, schnorr })
     }
 }
@@ -383,7 +383,10 @@ mod tests {
             .into_inner();
 
         assert_eq!(bundle.ed25519.as_bytes(), restored.ed25519.as_bytes());
-        assert_eq!(bundle.schnorr.to_raw_bytes(), restored.schnorr.to_raw_bytes());
+        assert_eq!(
+            bundle.schnorr.to_raw_bytes(),
+            restored.schnorr.to_raw_bytes()
+        );
     }
 
     #[test]
@@ -395,7 +398,10 @@ mod tests {
             .into_inner();
 
         assert_eq!(bundle.ed25519.to_bytes(), restored.ed25519.to_bytes());
-        assert_eq!(bundle.schnorr.to_bytes(), restored.schnorr.to_bytes());
+        assert_eq!(
+            bundle.schnorr.to_raw_bytes(),
+            restored.schnorr.to_raw_bytes()
+        );
     }
 
     #[test]
@@ -520,7 +526,10 @@ mod tests {
 
             assert_eq!(encoded, GOLDEN_VERIFICATION_BUNDLE_HEX);
             assert_eq!(bundle.ed25519.as_bytes(), restored.ed25519.as_bytes());
-            assert_eq!(bundle.schnorr.to_raw_bytes(), restored.schnorr.to_raw_bytes());
+            assert_eq!(
+                bundle.schnorr.to_raw_bytes(),
+                restored.schnorr.to_raw_bytes()
+            );
         }
 
         #[test]
@@ -534,7 +543,10 @@ mod tests {
 
             assert_eq!(encoded, GOLDEN_SIGNING_BUNDLE_HEX);
             assert_eq!(bundle.ed25519.to_bytes(), restored.ed25519.to_bytes());
-            assert_eq!(bundle.schnorr.to_bytes(), restored.schnorr.to_bytes());
+            assert_eq!(
+                bundle.schnorr.to_raw_bytes(),
+                restored.schnorr.to_raw_bytes()
+            );
         }
     }
 }

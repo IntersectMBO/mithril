@@ -297,13 +297,13 @@ mod tests {
         fn from_bundle_pairs_both_halves() {
             let bundle = build_bundle();
             let expected_ed25519 = bundle.ed25519.to_bytes();
-            let expected_schnorr = bundle.schnorr.to_bytes();
+            let expected_schnorr = bundle.schnorr.to_raw_bytes();
 
             let signer = GenesisSigner::from_bundle(bundle);
 
             assert_eq!(signer.ed25519.secret_key().to_bytes(), expected_ed25519);
             assert_eq!(
-                signer.schnorr.as_ref().unwrap().secret_key().to_bytes(),
+                signer.schnorr.as_ref().unwrap().secret_key().to_raw_bytes(),
                 expected_schnorr
             );
         }
@@ -311,13 +311,13 @@ mod tests {
         #[test]
         fn try_from_hex_accepts_dual_bundle() {
             let bundle = build_bundle();
-            let expected_schnorr = bundle.schnorr.to_bytes();
+            let expected_schnorr = bundle.schnorr.to_raw_bytes();
             let hex_string = ProtocolKey::new(bundle).to_bytes_hex().unwrap();
 
             let parsed = GenesisSigner::try_from_hex(&hex_string).unwrap();
 
             assert_eq!(
-                parsed.schnorr.as_ref().unwrap().secret_key().to_bytes(),
+                parsed.schnorr.as_ref().unwrap().secret_key().to_raw_bytes(),
                 expected_schnorr
             );
         }
@@ -325,7 +325,8 @@ mod tests {
         #[test]
         fn verification_key_bundle_mirrors_signer_halves() {
             let signer = GenesisSigner::from_bundle(build_bundle());
-            let expected_schnorr = signer.schnorr.as_ref().unwrap().verification_key().to_raw_bytes();
+            let expected_schnorr =
+                signer.schnorr.as_ref().unwrap().verification_key().to_raw_bytes();
 
             let bundle = signer.verification_key_bundle().unwrap();
 
@@ -350,8 +351,8 @@ mod tests {
                 signer.ed25519.secret_key().to_bytes()
             );
             assert_eq!(
-                restored.schnorr.as_ref().unwrap().secret_key().to_bytes(),
-                signer.schnorr.as_ref().unwrap().secret_key().to_bytes()
+                restored.schnorr.as_ref().unwrap().secret_key().to_raw_bytes(),
+                signer.schnorr.as_ref().unwrap().secret_key().to_raw_bytes()
             );
         }
     }
