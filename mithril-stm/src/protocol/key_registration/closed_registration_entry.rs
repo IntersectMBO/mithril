@@ -112,7 +112,7 @@ impl ClosedRegistrationEntry {
     /// with the custom tuple-based `Serialize` implementation.
     pub(crate) fn to_bytes(&self) -> StmResult<Vec<u8>> {
         let envelope = ClosedRegistrationEntryCborEnvelope {
-            verification_key_bytes: self.verification_key_for_concatenation.to_bytes().to_vec(),
+            verification_key_bytes: self.verification_key_for_concatenation.to_raw_bytes().to_vec(),
             stake: self.stake,
             #[cfg(feature = "future_snark")]
             snark_verification_key_bytes: self
@@ -135,7 +135,7 @@ impl ClosedRegistrationEntry {
             let envelope: ClosedRegistrationEntryCborEnvelope =
                 codec::from_cbor_bytes(&bytes[1..])?;
             let verification_key_for_concatenation =
-                VerificationKeyForConcatenation::from_bytes(&envelope.verification_key_bytes)?;
+                VerificationKeyForConcatenation::from_raw_bytes(&envelope.verification_key_bytes)?;
 
             #[cfg(feature = "future_snark")]
             let verification_key_for_snark = envelope
@@ -169,7 +169,7 @@ impl ClosedRegistrationEntry {
     /// bytes for the lottery target value.
     /// The order is backward compatible with previous implementations.
     fn from_bytes_legacy(bytes: &[u8]) -> StmResult<Self> {
-        let verification_key_for_concatenation = VerificationKeyForConcatenation::from_bytes(
+        let verification_key_for_concatenation = VerificationKeyForConcatenation::from_raw_bytes(
             bytes.get(..96).ok_or(RegisterError::SerializationError)?,
         )?;
         let mut u64_bytes = [0u8; 8];
@@ -509,7 +509,7 @@ mod tests {
             let evolved = EvolvedEnvelope {
                 verification_key_bytes: entry
                     .get_verification_key_for_concatenation()
-                    .to_bytes()
+                    .to_raw_bytes()
                     .to_vec(),
                 stake: 42,
                 new_field: "extra".to_string(),
@@ -540,7 +540,7 @@ mod tests {
             let minimal = MinimalEnvelope {
                 verification_key_bytes: entry
                     .get_verification_key_for_concatenation()
-                    .to_bytes()
+                    .to_raw_bytes()
                     .to_vec(),
                 stake: 42,
             };

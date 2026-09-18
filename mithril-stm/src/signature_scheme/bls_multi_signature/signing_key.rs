@@ -26,8 +26,11 @@ impl BlsSigningKey {
         BlsSignature(self.0.sign(msg, &[], &[]))
     }
 
-    /// Convert the secret key into byte string.
-    pub fn to_bytes(&self) -> [u8; 32] {
+    /// Convert the secret key into its raw byte representation.
+    ///
+    /// This exact byte layout is depended on by `Initializer`'s legacy decoder — it must
+    /// not change.
+    pub fn to_raw_bytes(&self) -> [u8; 32] {
         self.0.to_bytes()
     }
 
@@ -35,7 +38,7 @@ impl BlsSigningKey {
     ///
     /// # Error
     /// Fails if the byte string represents a scalar larger than the group order.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_raw_bytes(bytes: &[u8]) -> StmResult<Self> {
         let bytes = bytes.get(..32).ok_or(BlsSignatureError::SerializationError)?;
         match BlstSk::from_bytes(bytes) {
             Ok(sk) => Ok(Self(sk)),

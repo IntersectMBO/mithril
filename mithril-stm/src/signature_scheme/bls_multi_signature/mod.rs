@@ -34,7 +34,7 @@ macro_rules! impl_serde {
             {
                 use serde::ser::SerializeTuple;
                 let mut seq = serializer.serialize_tuple($size)?;
-                for e in self.to_bytes().iter() {
+                for e in self.to_raw_bytes().iter() {
                     seq.serialize_element(e)?;
                 }
                 seq.end()
@@ -71,7 +71,7 @@ macro_rules! impl_serde {
                                     &format!("expected bytes{}", $size.to_string()).as_str(),
                                 ))?;
                         }
-                        <$st>::from_bytes(&bytes).map_err(|_| {
+                        <$st>::from_raw_bytes(&bytes).map_err(|_| {
                             serde::de::Error::custom(
                                 &format!("deserialization failed [{}]", stringify!($st)).as_str(),
                             )
@@ -241,8 +241,8 @@ mod tests {
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             let sk = BlsSigningKey::generate(&mut rng);
             let vk = BlsVerificationKey::from(&sk);
-            let vk_bytes = vk.to_bytes();
-            let vk2 = BlsVerificationKey::from_bytes(&vk_bytes).unwrap();
+            let vk_bytes = vk.to_raw_bytes();
+            let vk2 = BlsVerificationKey::from_raw_bytes(&vk_bytes).unwrap();
             assert_eq!(vk, vk2);
             let vkpop = BlsVerificationKeyProofOfPossession::from(&sk);
             let vkpop_bytes = vkpop.to_raw_bytes();
@@ -254,8 +254,8 @@ mod tests {
         fn serialize_deserialize_sk(seed in any::<u64>()) {
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             let sk = BlsSigningKey::generate(&mut rng);
-            let sk_bytes: [u8; 32] = sk.to_bytes();
-            let sk2 = BlsSigningKey::from_bytes(&sk_bytes).unwrap();
+            let sk_bytes: [u8; 32] = sk.to_raw_bytes();
+            let sk2 = BlsSigningKey::from_raw_bytes(&sk_bytes).unwrap();
             assert_eq!(sk, sk2);
         }
     }

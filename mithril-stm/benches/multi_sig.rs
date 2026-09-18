@@ -79,7 +79,7 @@ fn aggregate_and_verify(c: &mut Criterion, nr_sigs: usize) {
         b.iter(|| {
             for sig in sigs.iter() {
                 let mut hasher = Blake2b::<U64>::new();
-                hasher.update(sig.to_bytes());
+                hasher.update(sig.to_raw_bytes());
                 hasher.finalize();
             }
             let (agg_vk, agg_sig) = BlsSignature::aggregate(&mvks, &sigs).unwrap();

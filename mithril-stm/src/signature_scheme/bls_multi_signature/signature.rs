@@ -45,7 +45,7 @@ impl BlsSignature {
             .chain_update(b"map")
             .chain_update(msg)
             .chain_update(index.to_le_bytes())
-            .chain_update(self.to_bytes())
+            .chain_update(self.to_raw_bytes())
             .finalize();
 
         let mut output = [0u8; 64];
@@ -54,8 +54,11 @@ impl BlsSignature {
         output
     }
 
-    /// Convert an `Signature` to its compressed byte representation.
-    pub fn to_bytes(self) -> [u8; 48] {
+    /// Convert a `Signature` to its raw compressed byte representation.
+    ///
+    /// This exact byte layout is depended on by `SingleSignature`'s legacy decoder — it must
+    /// not change.
+    pub fn to_raw_bytes(self) -> [u8; 48] {
         self.0.to_bytes()
     }
 
@@ -63,7 +66,7 @@ impl BlsSignature {
     ///
     /// # Error
     /// Returns an error if the byte string does not represent a point in the curve.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_raw_bytes(bytes: &[u8]) -> StmResult<Self> {
         let bytes = bytes.get(..48).ok_or(BlsSignatureError::SerializationError)?;
         match BlstSig::sig_validate(bytes, true) {
             Ok(sig) => Ok(Self(sig)),
@@ -75,8 +78,8 @@ impl BlsSignature {
     /// Compare two signatures. Used for PartialOrd impl, used to rank signatures. The comparison
     /// function can be anything, as long as it is consistent across different nodes.
     fn compare_signatures(&self, other: &Self) -> Ordering {
-        let self_bytes = self.to_bytes();
-        let other_bytes = other.to_bytes();
+        let self_bytes = self.to_raw_bytes();
+        let other_bytes = other.to_raw_bytes();
         let mut result = Ordering::Equal;
 
         for (i, j) in self_bytes.iter().zip(other_bytes.iter()) {
@@ -106,7 +109,7 @@ impl BlsSignature {
 
         let mut hashed_sigs = Blake2b::<U16>::new();
         for sig in sigs {
-            hashed_sigs.update(sig.to_bytes());
+            hashed_sigs.update(sig.to_raw_bytes());
         }
 
         // First we generate the scalars

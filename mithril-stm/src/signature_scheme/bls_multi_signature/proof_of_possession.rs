@@ -19,13 +19,16 @@ pub struct BlsProofOfPossession {
 }
 
 impl BlsProofOfPossession {
-    /// Convert to a 96 byte string.
+    /// Convert to its 96 byte raw representation.
     ///
     /// # Layout
     /// The layout of a `MspPoP` encoding is
     /// * K1 (G1 point)
     /// * K2 (G1 point)
-    pub fn to_bytes(self) -> [u8; 96] {
+    ///
+    /// This exact byte layout is depended on by `BlsVerificationKeyProofOfPossession`'s raw
+    /// concatenation — it must not change.
+    pub fn to_raw_bytes(self) -> [u8; 96] {
         let mut pop_bytes = [0u8; 96];
         pop_bytes[..48].copy_from_slice(&self.k1.to_bytes());
 
@@ -34,7 +37,7 @@ impl BlsProofOfPossession {
     }
 
     /// Deserialize a byte string to a `PublicKeyPoP`.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_raw_bytes(bytes: &[u8]) -> StmResult<Self> {
         let k1 = match BlstSig::from_bytes(
             bytes.get(..48).ok_or(BlsSignatureError::SerializationError)?,
         ) {
