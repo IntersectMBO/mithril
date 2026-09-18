@@ -74,6 +74,11 @@ impl MemoryCertificateVerifierCache {
         let now = Utc::now();
         staged.retain(|_, batch| batch.batch_expire_at >= now);
     }
+
+    fn sweep_expired_committed(committed: &mut HashMap<String, CachedCertificate>) {
+        let now = Utc::now();
+        committed.retain(|_, cached| cached.expire_at >= now);
+    }
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
@@ -85,6 +90,14 @@ impl CertificateVerifierCache for MemoryCertificateVerifierCache {
         certificate: MithrilCertificate,
     ) -> MithrilResult<()> {
         let mut staged = self.staged.write().await;
+
+        // Only sweep when staging a new batch to limit performance cost.
+        if !staged.contains_key(certificate_chain_validation_id) {
+            Self::sweep_expired_batches(&mut staged);
+            let mut committed = self.committed.write().await;
+            Self::sweep_expired_committed(&mut committed);
+        }
+
         let batch = staged
             .entry(certificate_chain_validation_id.to_string())
             .or_insert_with(|| StagedBatch {
@@ -104,10 +117,12 @@ impl CertificateVerifierCache for MemoryCertificateVerifierCache {
         let mut staged = self.staged.write().await;
         Self::sweep_expired_batches(&mut staged);
 
+        let mut committed = self.committed.write().await;
+        Self::sweep_expired_committed(&mut committed);
+
         if let Some(batch) = staged.remove(certificate_chain_validation_id) {
             let certificates_expire_at = Utc::now() + self.expiration_delay;
 
-            let mut committed = self.committed.write().await;
             for (hash, cert) in batch.certificates {
                 committed.insert(hash, CachedCertificate::new(cert, certificates_expire_at));
             }
@@ -449,9 +464,17 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn committing_certificates_sweeps_away_other_expired_batches() {
+        async fn committing_certificates_sweeps_away_expired_batches() {
             let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
                 .with_staging_expiration_delay(TimeDelta::hours(1));
+            cache
+                .stage_certificate("to_commit_id", dummy_certificate("hash2", "parent2"))
+                .await
+                .unwrap();
+            cache
+                .stage_certificate("remaining_id", dummy_certificate("hash3", "parent3"))
+                .await
+                .unwrap();
             cache
                 .stage_certificate("abandoned_id", dummy_certificate("hash", "parent"))
                 .await
@@ -459,21 +482,113 @@ mod tests {
             cache
                 .overwrite_staged_expiration_date("abandoned_id", Utc::now() - TimeDelta::hours(1))
                 .await;
-            cache
-                .stage_certificate("new_id", dummy_certificate("hash2", "parent2"))
-                .await
-                .unwrap();
-            cache
-                .stage_certificate("remaining_id", dummy_certificate("hash3", "parent3"))
-                .await
-                .unwrap();
 
             assert_eq!(3, cache.staged_batch_ids().await.len());
 
-            cache.commit_staged_certificates("new_id").await.unwrap();
+            cache.commit_staged_certificates("to_commit_id").await.unwrap();
 
             assert_eq!(
                 HashSet::from(["remaining_id".to_string()]),
+                cache.staged_batch_ids().await
+            );
+        }
+
+        #[tokio::test]
+        async fn committing_certificates_sweeps_away_expired_committed_certificates() {
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::zero()).with_items([
+                dummy_certificate("expired_hash", "parent"),
+                dummy_certificate("new_hash", "parent"),
+            ]);
+            cache
+                .overwrite_expiration_date("new_hash", Utc::now() + TimeDelta::hours(1))
+                .await;
+
+            assert_eq!(2, cache.content().await.len());
+
+            cache.commit_staged_certificates("second_id").await.unwrap();
+
+            assert_eq!(
+                HashMap::from([(
+                    "new_hash".to_string(),
+                    dummy_certificate("new_hash", "parent")
+                )]),
+                cache.content().await
+            );
+        }
+
+        #[tokio::test]
+        async fn staging_a_new_batch_sweeps_away_other_expired_batches() {
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                .with_staging_expiration_delay(TimeDelta::hours(1));
+            cache
+                .stage_certificate("expired_batch", dummy_certificate("hash", "parent"))
+                .await
+                .unwrap();
+            cache
+                .overwrite_staged_expiration_date("expired_batch", Utc::now() - TimeDelta::hours(1))
+                .await;
+
+            cache
+                .stage_certificate("new_batch", dummy_certificate("hash2", "parent2"))
+                .await
+                .unwrap();
+
+            assert_eq!(
+                HashSet::from(["new_batch".to_string()]),
+                cache.staged_batch_ids().await
+            );
+        }
+
+        #[tokio::test]
+        async fn staging_a_new_batch_sweeps_away_expired_committed_certificates() {
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::zero()).with_items([
+                dummy_certificate("expired_hash", "parent"),
+                dummy_certificate("new_hash", "parent"),
+            ]);
+            cache
+                .overwrite_expiration_date("new_hash", Utc::now() + TimeDelta::hours(1))
+                .await;
+
+            assert_eq!(2, cache.content().await.len());
+
+            cache
+                .stage_certificate("new_batch", dummy_certificate("hash2", "parent2"))
+                .await
+                .unwrap();
+
+            assert_eq!(
+                HashMap::from([(
+                    "new_hash".to_string(),
+                    dummy_certificate("new_hash", "parent")
+                )]),
+                cache.content().await
+            );
+        }
+
+        #[tokio::test]
+        async fn staging_under_an_existing_batch_does_not_sweep_other_expired_batches() {
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                .with_staging_expiration_delay(TimeDelta::hours(1));
+            cache
+                .stage_certificate("existing_id", dummy_certificate("hash2", "parent2"))
+                .await
+                .unwrap();
+            cache
+                .stage_certificate("expired_batch", dummy_certificate("hash", "parent"))
+                .await
+                .unwrap();
+            cache
+                .overwrite_staged_expiration_date("expired_batch", Utc::now() - TimeDelta::hours(1))
+                .await;
+
+            // staging a second certificate under an id that is already staged must not sweep
+            cache
+                .stage_certificate("existing_id", dummy_certificate("hash3", "parent3"))
+                .await
+                .unwrap();
+
+            assert_eq!(
+                HashSet::from(["expired_batch".to_string(), "existing_id".to_string()]),
                 cache.staged_batch_ids().await
             );
         }
