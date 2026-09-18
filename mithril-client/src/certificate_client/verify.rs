@@ -24,7 +24,9 @@ use crate::certificate_client::{
     CertificateAggregatorRequest, CertificateClient, CertificateVerifier,
 };
 #[cfg(feature = "unstable")]
-use crate::certificate_client::{CertificateVerifierCache, fetch::CachedCertificateRetriever};
+use crate::certificate_client::{
+    CertificateVerifierCache, CertificateVerifierCacheMode, fetch::CachedCertificateRetriever,
+};
 use crate::feedback::{FeedbackSender, MithrilEvent};
 use crate::{MithrilCertificate, MithrilResult};
 
@@ -53,6 +55,8 @@ pub struct MithrilCertificateVerifier {
     feedback_sender: FeedbackSender,
     #[cfg(feature = "unstable")]
     verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
+    #[cfg(feature = "unstable")]
+    _cache_mode: CertificateVerifierCacheMode, // will be used when the EarlyStopVerification is implemented
     logger: Logger,
 }
 
@@ -63,6 +67,7 @@ impl MithrilCertificateVerifier {
         genesis_verification_key: &str,
         feedback_sender: FeedbackSender,
         #[cfg(feature = "unstable")] verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
+        #[cfg(feature = "unstable")] cache_mode: CertificateVerifierCacheMode,
         logger: Logger,
     ) -> MithrilResult<MithrilCertificateVerifier> {
         let logger = logger.new_with_component_name::<Self>();
@@ -94,6 +99,8 @@ impl MithrilCertificateVerifier {
             feedback_sender,
             #[cfg(feature = "unstable")]
             verifier_cache,
+            #[cfg(feature = "unstable")]
+            _cache_mode: cache_mode,
             logger,
         })
     }
@@ -270,6 +277,8 @@ mod tests {
             FeedbackSender::new(&[]),
             #[cfg(feature = "unstable")]
             None,
+            #[cfg(feature = "unstable")]
+            CertificateVerifierCacheMode::default(),
             TestLogger::stdout(),
         )
         .map(|_| ())
@@ -404,6 +413,7 @@ mod tests {
                 &genesis_verification_key,
                 FeedbackSender::new(&[]),
                 Some(cache),
+                CertificateVerifierCacheMode::FullVerification,
                 TestLogger::stdout(),
             )
             .unwrap()
