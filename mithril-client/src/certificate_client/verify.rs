@@ -174,6 +174,18 @@ impl CertificateVerifier for MithrilCertificateVerifier {
             }
         }
 
+        #[cfg(feature = "unstable")]
+        if let Some(cache) = self.verifier_cache.as_ref()
+            && let Err(err) = cache
+                .commit_staged_certificates(&certificate_chain_validation_id)
+                .await
+        {
+            warn!(
+                self.logger, "Failed to commit the staged certificate to cache";
+                "certificate_chain_validation_id" => &certificate_chain_validation_id, "error" => ?err
+            );
+        }
+
         self.feedback_sender
             .send_event(MithrilEvent::CertificateChainValidated {
                 certificate_chain_validation_id,
@@ -390,6 +402,7 @@ mod tests {
     #[cfg(feature = "unstable")]
     mod cache {
         use chrono::TimeDelta;
+        use std::collections::HashSet;
 
         use mithril_common::test::builder::CertificateChainingMethod;
 
@@ -420,7 +433,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn genesis_certificates_verification_result_is_cached() {
+        async fn genesis_certificates_verification_result_is_staged_to_cache() {
             let chain = CertificateChainBuilder::new()
                 .with_total_certificates(1)
                 .with_certificates_per_epoch(1)
@@ -436,24 +449,20 @@ mod tests {
             );
 
             verifier
-                .verify(
-                    "certificate_chain_validation_id",
-                    genesis_certificate.clone(),
-                )
+                .verify("chain_validation_id", genesis_certificate.clone())
                 .await
                 .unwrap();
 
             assert_eq!(
                 cache
-                    .get_certificate_by_hash(&genesis_certificate.hash)
-                    .await
-                    .unwrap(),
+                    .get_staged_value(&genesis_certificate.hash, "chain_validation_id")
+                    .await,
                 Some(genesis_certificate.clone().try_into().unwrap())
             );
         }
 
         #[tokio::test]
-        async fn non_genesis_certificates_verification_result_is_cached() {
+        async fn non_genesis_certificates_verification_result_is_staged_to_cache() {
             let chain = CertificateChainBuilder::new()
                 .with_total_certificates(2)
                 .with_certificates_per_epoch(1)
@@ -470,12 +479,12 @@ mod tests {
             );
 
             verifier
-                .verify("certificate_chain_validation_id", certificate.clone())
+                .verify("chain_validation_id", certificate.clone())
                 .await
                 .unwrap();
 
             assert_eq!(
-                cache.get_certificate_by_hash(&certificate.hash).await.unwrap(),
+                cache.get_staged_value(&certificate.hash, "chain_validation_id").await,
                 Some(certificate.clone().try_into().unwrap())
             );
         }
@@ -623,6 +632,72 @@ mod tests {
                 res.is_err(),
                 "A tampered cached certificate must fail verification, not be trusted"
             )
+        }
+
+        #[tokio::test]
+        async fn successful_verify_chain_commits_all_staged_certificates() {
+            let chain = CertificateChainBuilder::new()
+                .with_total_certificates(3)
+                .with_certificates_per_epoch(1)
+                .build();
+            let last_certificate_hash = chain.first().unwrap().hash.clone();
+
+            let cache = Arc::new(MemoryCertificateVerifierCache::new(TimeDelta::hours(1)));
+            let certificate_client = CertificateClientTestBuilder::default()
+                .config_aggregator_requester_mock(|mock| {
+                    mock.expect_certificate_chain(chain.certificates_chained.clone())
+                })
+                .with_genesis_verification_key(ed25519_verification_key_hex(
+                    &chain.genesis_verifier,
+                ))
+                .with_verifier_cache(cache.clone())
+                .build();
+
+            certificate_client.verify_chain(&last_certificate_hash).await.unwrap();
+
+            let expected_hashes: HashSet<String> = chain.iter().map(|c| c.hash.clone()).collect();
+            assert_eq!(
+                expected_hashes,
+                cache.content().await.keys().cloned().collect::<HashSet<_>>()
+            );
+        }
+
+        #[tokio::test]
+        async fn failed_verify_chain_never_commits_any_staged_certificate() {
+            let chain = CertificateChainBuilder::new()
+                .with_total_certificates(3)
+                .with_certificates_per_epoch(1)
+                .with_certificate_chaining_method(CertificateChainingMethod::Sequential)
+                .with_standard_certificate_processor(&|certificate, context| {
+                    let mut certificate = certificate;
+                    if !context.is_last_certificate() {
+                        certificate.epoch += 2;
+                    }
+                    certificate
+                })
+                .build();
+            let last_certificate_hash = chain.first().unwrap().hash.clone();
+
+            let cache = Arc::new(MemoryCertificateVerifierCache::new(TimeDelta::hours(1)));
+            let certificate_client = CertificateClientTestBuilder::default()
+                .config_aggregator_requester_mock(|mock| {
+                    mock.expect_certificate_chain(chain.certificates_chained.clone())
+                })
+                .with_genesis_verification_key(ed25519_verification_key_hex(
+                    &chain.genesis_verifier,
+                ))
+                .with_verifier_cache(cache.clone())
+                .build();
+
+            certificate_client
+                .verify_chain(&last_certificate_hash)
+                .await
+                .expect_err("chain should fail due to the tampered certificates");
+
+            assert_eq!(
+                HashSet::new(),
+                cache.content().await.keys().cloned().collect::<HashSet<_>>()
+            );
         }
     }
 }
