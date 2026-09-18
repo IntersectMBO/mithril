@@ -1,36 +1,14 @@
-//! [`TryToBytes`] / [`TryFromBytes`] impls for the certificate circuit's keys — the self-describing
-//! Midnight `MidnightVK` / `MidnightPK` wrappers. Production keys use [`SerdeFormat::RawBytes`].
+//! [`TryToBytes`] / [`TryFromBytes`] impls for the certificate circuit's proving key. Its verifying
+//! key is a `MidnightVK`, whose shared encoding lives in [`crate::circuits::key_serialization`].
 
 use anyhow::Context;
-use midnight_proofs::utils::SerdeFormat;
-use midnight_zk_stdlib::{MidnightPK, MidnightVK};
+use midnight_zk_stdlib::MidnightPK;
 
 use crate::StmResult;
+use crate::circuits::key_serialization::KEY_SERDE_FORMAT;
 use crate::codec::{TryFromBytes, TryToBytes};
 
 use super::circuit::CertificateCircuit;
-
-/// Serde format used for the on-disk / in-cache production keys.
-const KEY_SERDE_FORMAT: SerdeFormat = SerdeFormat::RawBytes;
-
-// Certificate circuit verifying key. `MidnightVK` is self-describing, so reading needs only the
-// serde format (no circuit type), unlike the recursive raw PLONK keys.
-impl TryToBytes for MidnightVK {
-    fn to_bytes_vec(&self) -> StmResult<Vec<u8>> {
-        let mut bytes = Vec::new();
-        self.write(&mut bytes, KEY_SERDE_FORMAT)
-            .with_context(|| "Failed to serialize the certificate verifying key")?;
-        Ok(bytes)
-    }
-}
-
-impl TryFromBytes for MidnightVK {
-    fn try_from_bytes(bytes: &[u8]) -> StmResult<Self> {
-        let mut reader = bytes;
-        MidnightVK::read(&mut reader, KEY_SERDE_FORMAT)
-            .with_context(|| "Failed to deserialize the certificate verifying key")
-    }
-}
 
 // Certificate circuit proving key.
 impl TryToBytes for MidnightPK<CertificateCircuit> {
@@ -60,12 +38,14 @@ mod tests {
     use super::*;
     use crate::Parameters;
     use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
+    use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 
     #[test]
     fn production_verifying_key_serializes_to_the_embedded_bytes() {
-        let verifying_key =
-            MidnightVK::try_from_bytes(NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION)
-                .expect("production verifying key bytes should deserialize");
+        let verifying_key = NonRecursiveCircuitVerifyingKey::try_from_bytes(
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        )
+        .expect("production verifying key bytes should deserialize");
         assert_eq!(
             verifying_key.to_bytes_vec().expect("serialize should succeed"),
             NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,

@@ -11,6 +11,7 @@ use midnight_circuits::{
     verifier::{Accumulator, AssignedAccumulator, BlstrsEmulation},
 };
 use midnight_curves::{Bls12, G1Projective};
+use midnight_proofs::circuit::Value;
 use midnight_proofs::{
     plonk::{create_proof, prepare},
     poly::{
@@ -23,9 +24,11 @@ use midnight_proofs::{
     },
     transcript::{Blake2b256, CircuitTranscript, Hashable, Sampleable, Transcript, TranscriptHash},
 };
+use midnight_zk_stdlib::MidnightCircuit;
 use rand_core::{CryptoRng, OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
+use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_DEGREE;
 use crate::{
     AggregateVerificationKeyForSnark, AggregationError, AncillaryGenesisData, AncillaryProofInput,
     BaseFieldElement, MembershipDigest, SnarkProof, StmResult,
@@ -34,7 +37,7 @@ use crate::{
         halo2_ivc::{
             PREIMAGE_SIZE,
             accumulator::check_accumulator_fixed_bases_present,
-            circuit::IvcCircuitData,
+            circuit::{IvcCircuit, IvcCircuitData},
             keys::{RecursiveCircuitProvingKey, RecursiveCircuitVerifyingKey},
             state::{Global, State},
             types::{CertificateProofBytes, IvcProofBytes, MessageHash, ProtocolMessagePreimage},
@@ -281,20 +284,27 @@ where
     pub(crate) fn prove_with_transcript(
         srs: &ParamsKZG<Bls12>,
         proving_key: &RecursiveCircuitProvingKey,
+        ivc_circuit: &IvcCircuit,
         circuit_data: &IvcCircuitData,
         public_inputs: &[CircuitBase],
         rng: &mut (impl RngCore + CryptoRng),
     ) -> StmResult<Vec<u8>> {
+        let circuit = MidnightCircuit::new(
+            ivc_circuit,
+            Value::known(public_inputs.to_vec()),
+            Value::known(circuit_data.clone()),
+            Some(RECURSIVE_CIRCUIT_DEGREE),
+        );
         let mut transcript = CircuitTranscript::<H>::init();
         create_proof::<
             CircuitBase,
             KZGCommitmentScheme<Bls12>,
             CircuitTranscript<H>,
-            IvcCircuitData,
+            MidnightCircuit<IvcCircuit>,
         >(
             srs,
-            proving_key.proving_key(),
-            std::slice::from_ref(circuit_data),
+            proving_key.midnight_pk().pk(),
+            std::slice::from_ref(&circuit),
             1,
             &[&[&[], public_inputs]],
             &mut transcript,
@@ -434,16 +444,18 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
 
         let certificate_proof_bytes = snark_proof.into_circuit_proof_bytes();
 
-        let circuit_data = IvcCircuitData::try_new(
+        let ivc_circuit = IvcCircuit::try_new(
+            &self.ivc_setup.certificate_verifying_key,
+            &self.ivc_setup.ivc_verifying_key,
+        )?;
+        let circuit_data = IvcCircuitData::new(
             global.clone(),
             effective_rolling_state.state().clone(),
             prover_input.witness,
             certificate_proof_bytes,
             effective_rolling_state.ivc_proof().clone(),
             effective_rolling_state.accumulator().clone(),
-            &self.ivc_setup.certificate_verifying_key,
-            &self.ivc_setup.ivc_verifying_key,
-        )?;
+        );
 
         // Public inputs for the new step: [global | next_state | next_accumulator].
         let public_inputs: Vec<CircuitBase> = [
@@ -462,6 +474,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
             let poseidon_bytes = IvcProof::<PoseidonState<CircuitBase>>::prove_with_transcript(
                 &self.ivc_setup.srs,
                 &self.ivc_setup.ivc_proving_key,
+                &ivc_circuit,
                 &circuit_data,
                 &public_inputs,
                 &mut self.rng,
@@ -479,6 +492,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
         let blake2b_bytes = IvcProof::<Blake2b256>::prove_with_transcript(
             &self.ivc_setup.srs,
             &self.ivc_setup.ivc_proving_key,
+            &ivc_circuit,
             &circuit_data,
             &public_inputs,
             &mut self.rng,
@@ -514,16 +528,18 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
             global,
         )?;
 
-        let genesis_circuit_data = IvcCircuitData::try_new(
+        let genesis_ivc_circuit = IvcCircuit::try_new(
+            &self.ivc_setup.certificate_verifying_key,
+            &self.ivc_setup.ivc_verifying_key,
+        )?;
+        let genesis_circuit_data = IvcCircuitData::new(
             global.clone(),
             genesis_rolling_state.state().clone(),
             genesis_prover_input.witness,
             CertificateProofBytes::empty(),
             genesis_rolling_state.ivc_proof().clone(),
             genesis_rolling_state.accumulator().clone(),
-            &self.ivc_setup.certificate_verifying_key,
-            &self.ivc_setup.ivc_verifying_key,
-        )?;
+        );
 
         let genesis_public_inputs: Vec<CircuitBase> = [
             global.as_public_input(),
@@ -535,6 +551,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
         let poseidon_bytes = IvcProof::<PoseidonState<CircuitBase>>::prove_with_transcript(
             &self.ivc_setup.srs,
             &self.ivc_setup.ivc_proving_key,
+            &genesis_ivc_circuit,
             &genesis_circuit_data,
             &genesis_public_inputs,
             &mut self.rng,
@@ -1763,8 +1780,8 @@ mod tests {
         use super::*;
 
         const GOLDEN_R: [u8; 32] = [
-            167, 66, 11, 195, 134, 213, 22, 97, 36, 22, 169, 16, 222, 26, 110, 27, 81, 13, 53, 172,
-            191, 68, 90, 117, 248, 154, 30, 122, 198, 17, 214, 30,
+            236, 82, 235, 208, 194, 213, 21, 52, 158, 242, 42, 124, 219, 198, 65, 232, 86, 191, 84,
+            104, 0, 39, 228, 81, 172, 96, 198, 123, 29, 236, 243, 50,
         ];
 
         #[test]

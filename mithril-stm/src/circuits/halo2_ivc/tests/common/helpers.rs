@@ -2,16 +2,18 @@ use std::collections::BTreeMap;
 
 use midnight_circuits::types::Instantiable;
 use midnight_curves::Bls12;
+use midnight_proofs::circuit::Value;
 use midnight_proofs::{
     dev::MockProver,
     poly::kzg::params::{ParamsKZG, ParamsVerifierKZG},
 };
+use midnight_zk_stdlib::MidnightCircuit;
 
 use crate::circuits::halo2_ivc::{
     Accumulator, AssignedAccumulator, EmulatedCurve, NativeField, PREIMAGE_SIZE, PairingEngine,
-    RecursiveEmulation,
+    RECURSIVE_CIRCUIT_DEGREE, RecursiveEmulation,
     accumulator::trivial_accumulator,
-    circuit::IvcCircuitData,
+    circuit::{IvcCircuit, IvcCircuitData},
     state::{Global, State, Witness},
     types::{CertificateProofBytes, IvcProofBytes, MerkleTreeCommitment, ProtocolMessagePreimage},
 };
@@ -48,6 +50,17 @@ pub(crate) struct MockProverSetup {
     pub(crate) recursive_verifying_key: RecursiveCircuitVerifyingKey,
     /// Trivial accumulator derived from the loaded VKs.
     pub(crate) trivial_accumulator: Accumulator<RecursiveEmulation>,
+}
+
+impl MockProverSetup {
+    /// The relation these stimuli are run against, built from the loaded verifying keys.
+    pub(crate) fn ivc_circuit(&self) -> IvcCircuit {
+        IvcCircuit::try_new(
+            &self.certificate_verifying_key,
+            &self.recursive_verifying_key,
+        )
+        .expect("valid IvcCircuit construction")
+    }
 }
 
 /// Builds the lightweight MockProver setup by loading VKs from the committed asset.
@@ -95,6 +108,17 @@ pub(crate) struct RecursiveMockProverSetup {
     pub(crate) universal_verifier_params: ParamsVerifierKZG<PairingEngine>,
 }
 
+impl RecursiveMockProverSetup {
+    /// The relation these stimuli are run against, built from the loaded verifying keys.
+    pub(crate) fn ivc_circuit(&self) -> IvcCircuit {
+        IvcCircuit::try_new(
+            &self.certificate_verifying_key,
+            &self.recursive_verifying_key,
+        )
+        .expect("valid IvcCircuit construction")
+    }
+}
+
 /// Builds the shared recursive circuit context needed by MockProver-based golden tests.
 ///
 /// This mirrors the verifier-side setup used by the asset generators, but keeps
@@ -131,11 +155,18 @@ pub(crate) fn build_recursive_mock_prover_setup(
 /// Runs `MockProver` and asserts all constraints hold, printing `label` on failure so
 /// the failing case is identifiable when multiple scenarios share one `#[test]` function.
 pub(crate) fn assert_recursive_mock_prover_accepts_with_label(
+    ivc_circuit: &IvcCircuit,
     ivc_circuit_data: IvcCircuitData,
     public_inputs: Vec<NativeField>,
     label: &str,
 ) {
-    let prover = MockProver::run(&ivc_circuit_data, vec![vec![], public_inputs])
+    let circuit = MidnightCircuit::new(
+        ivc_circuit,
+        Value::known(public_inputs.clone()),
+        Value::known(ivc_circuit_data),
+        Some(RECURSIVE_CIRCUIT_DEGREE),
+    );
+    let prover = MockProver::run(&circuit, vec![vec![], public_inputs])
         .expect("recursive MockProver setup should succeed");
     prover.verify().unwrap_or_else(|errors| {
         panic!(
@@ -304,17 +335,14 @@ fn build_asset_backed_step_fixture(
         AssignedAccumulator::as_public_input(&stored.next_accumulator),
     ]
     .concat();
-    let ivc_circuit_data = IvcCircuitData::try_new(
+    let ivc_circuit_data = IvcCircuitData::new(
         mock_prover_setup.global.clone(),
         state,
         witness,
         stored.certificate_proof,
         ivc_proof,
         accumulator,
-        &mock_prover_setup.certificate_verifying_key,
-        &mock_prover_setup.recursive_verifying_key,
-    )
-    .expect("valid IvcCircuitData construction");
+    );
 
     AssetBackedStepFixture {
         ivc_circuit_data,
@@ -374,17 +402,14 @@ pub(crate) fn build_genesis_mock_prover_circuit(
         0,
         "the trivial-accumulator stimulus is satisfiable only at genesis"
     );
-    IvcCircuitData::try_new(
+    IvcCircuitData::new(
         setup.global.clone(),
         prev_state,
         witness,
         CertificateProofBytes::empty(),
         IvcProofBytes::empty(),
         setup.trivial_accumulator.clone(),
-        &setup.certificate_verifying_key,
-        &setup.recursive_verifying_key,
     )
-    .expect("valid IvcCircuitData construction")
 }
 
 /// Builds the public-input vector for a genesis MockProver stimulus.

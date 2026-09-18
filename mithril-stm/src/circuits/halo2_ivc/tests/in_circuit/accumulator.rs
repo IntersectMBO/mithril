@@ -139,17 +139,14 @@ mod slow {
             cert_accumulator,
         );
 
-        let ivc_circuit_data = IvcCircuitData::try_new(
+        let ivc_circuit_data = IvcCircuitData::new(
             mock_prover_setup.global.clone(),
             recursive_chain_state.state.clone(),
             ivc_witness,
             certificate_proof,
             recursive_chain_state.ivc_proof.clone(),
             recursive_chain_state.accumulator.clone(),
-            &mock_prover_setup.certificate_verifying_key,
-            &mock_prover_setup.recursive_verifying_key,
-        )
-        .expect("valid IvcCircuitData construction");
+        );
 
         let public_inputs = [
             mock_prover_setup.global.as_public_input(),
@@ -161,6 +158,7 @@ mod slow {
         // The signature below must not be satisfiable by a rejection that was already present.
         // Cloning keeps the certificate proved once.
         assert_recursive_mock_prover_accepts_with_label(
+            &mock_prover_setup.ivc_circuit(),
             ivc_circuit_data.clone(),
             public_inputs.clone(),
             "same-epoch step with a freshly proved certificate",
@@ -176,6 +174,7 @@ mod slow {
         }
 
         assert_recursive_mock_prover_rejects_public_input_rows(
+            &mock_prover_setup.ivc_circuit(),
             ivc_circuit_data,
             tampered_public_inputs,
             &expected_rows,

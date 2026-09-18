@@ -37,7 +37,7 @@ use crate::{
         halo2::{circuit::CertificateCircuit, types::CircuitBase},
         halo2_ivc::{
             PREIMAGE_SIZE, RECURSIVE_CIRCUIT_DEGREE,
-            circuit::IvcCircuitData,
+            circuit::{IvcCircuit, IvcCircuitData},
             embedded_assets::{
                 FollowingCertificateInEpochAsset, NextEpochStepOutputAsset,
                 load_embedded_following_certificate_in_epoch_asset,
@@ -82,7 +82,8 @@ pub enum TransitionPath {
 /// Everything one path needs across the measured operations, built untimed and validated once.
 pub struct PreparedStep {
     path: TransitionPath,
-    // Prover inputs: `create_proof` runs over this prebuilt circuit data and public inputs.
+    // Prover inputs: `create_proof` runs over this prebuilt relation, circuit data and public inputs.
+    ivc_circuit: IvcCircuit,
     circuit_data: IvcCircuitData,
     public_inputs: Vec<CircuitBase>,
     // Verifier inputs: the committed step proof and the state/accumulator/message it is checked against.
@@ -262,16 +263,18 @@ impl IvcBenchEnv {
         let prover_input =
             IvcProverInput::prepare_genesis(&rolling_state, &preimage, &self.global)?;
 
-        let circuit_data = IvcCircuitData::try_new(
+        let ivc_circuit = IvcCircuit::try_new(
+            &self.setup.certificate_verifying_key,
+            &self.setup.ivc_verifying_key,
+        )?;
+        let circuit_data = IvcCircuitData::new(
             self.global.clone(),
             rolling_state.state().clone(),
             prover_input.witness,
             CertificateProofBytes::empty(),
             rolling_state.ivc_proof().clone(),
             rolling_state.accumulator().clone(),
-            &self.setup.certificate_verifying_key,
-            &self.setup.ivc_verifying_key,
-        )?;
+        );
         let public_inputs =
             self.public_inputs_for(&prover_input.next_state, &prover_input.next_accumulator);
 
@@ -289,6 +292,7 @@ impl IvcBenchEnv {
 
         Ok(PreparedStep {
             path: TransitionPath::Genesis,
+            ivc_circuit,
             circuit_data,
             public_inputs,
             proof_bytes: genesis_output.ivc_proof,
@@ -336,16 +340,18 @@ impl IvcBenchEnv {
             &self.setup.prover_input_verification_context(),
         )?;
 
-        let circuit_data = IvcCircuitData::try_new(
+        let ivc_circuit = IvcCircuit::try_new(
+            &self.setup.certificate_verifying_key,
+            &self.setup.ivc_verifying_key,
+        )?;
+        let circuit_data = IvcCircuitData::new(
             self.global.clone(),
             rolling_state.state().clone(),
             prover_input.witness,
             asset.certificate_proof,
             rolling_state.ivc_proof().clone(),
             rolling_state.accumulator().clone(),
-            &self.setup.certificate_verifying_key,
-            &self.setup.ivc_verifying_key,
-        )?;
+        );
         let public_inputs =
             self.public_inputs_for(&prover_input.next_state, &prover_input.next_accumulator);
 
@@ -366,6 +372,7 @@ impl IvcBenchEnv {
 
         Ok(PreparedStep {
             path,
+            ivc_circuit,
             circuit_data,
             public_inputs,
             proof_bytes: asset.ivc_proof,
@@ -460,6 +467,7 @@ impl IvcBenchEnv {
         IvcProof::<PoseidonState<CircuitBase>>::prove_with_transcript(
             &self.setup.srs,
             &self.setup.ivc_proving_key,
+            &prepared.ivc_circuit,
             &prepared.circuit_data,
             &prepared.public_inputs,
             &mut OsRng,
@@ -471,6 +479,7 @@ impl IvcBenchEnv {
         IvcProof::<Blake2b256>::prove_with_transcript(
             &self.setup.srs,
             &self.setup.ivc_proving_key,
+            &prepared.ivc_circuit,
             &prepared.circuit_data,
             &prepared.public_inputs,
             &mut OsRng,

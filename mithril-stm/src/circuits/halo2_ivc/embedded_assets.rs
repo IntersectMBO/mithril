@@ -25,9 +25,7 @@ use crate::StmResult;
 use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 use crate::circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey;
 use crate::circuits::halo2_ivc::{
-    Accumulator, EmulatedCurve, KZGCommitmentScheme, NativeField, PREIMAGE_SIZE, PairingEngine,
-    RecursiveEmulation, VerifyingKey,
-    circuit::IvcCircuitData,
+    Accumulator, EmulatedCurve, NativeField, PREIMAGE_SIZE, PairingEngine, RecursiveEmulation,
     io::ReadWithFormat,
     state::State,
     types::{
@@ -351,12 +349,7 @@ fn load_verification_context_asset_from_reader<R: Read>(
     let global_field_elements = (0..5)
         .map(|_| read_field_element(reader))
         .collect::<Result<Vec<_>, _>>()?;
-    let recursive_verifying_key =
-        VerifyingKey::<NativeField, KZGCommitmentScheme<PairingEngine>>::read::<_, IvcCircuitData>(
-            reader,
-            SerdeFormat::RawBytesUnchecked,
-            (),
-        )?;
+    let recursive_verifying_key = MidnightVK::read(reader, SerdeFormat::RawBytesUnchecked)?;
     let combined_fixed_bases = read_named_fixed_bases(reader)?;
 
     // verifier_params is length-prefixed so the certificate verification key can follow it.

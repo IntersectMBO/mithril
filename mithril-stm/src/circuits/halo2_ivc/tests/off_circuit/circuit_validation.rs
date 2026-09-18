@@ -1,7 +1,7 @@
 //! Tests that IvcCircuitData constructor validations return the expected typed errors.
 
 use crate::circuits::halo2_ivc::{
-    RECURSIVE_CIRCUIT_DEGREE, circuit::IvcCircuitData, errors::IvcCircuitError,
+    RECURSIVE_CIRCUIT_DEGREE, circuit::IvcCircuit, errors::IvcCircuitError,
     keys::RecursiveCircuitVerifyingKey,
     tests::common::asset_readers::load_embedded_verification_context_asset,
 };
@@ -14,10 +14,10 @@ fn validate_ivc_verification_key_degree_rejects_wrong_degree_vk() {
     let ctx =
         load_embedded_verification_context_asset().expect("verification context asset should load");
     let wrong_degree_vk =
-        RecursiveCircuitVerifyingKey::new(ctx.certificate_verifying_key.midnight_vk().vk().clone());
+        RecursiveCircuitVerifyingKey::new(ctx.certificate_verifying_key.midnight_vk().clone());
     let actual_degree = wrong_degree_vk.verifying_key().get_domain().k();
 
-    let result = IvcCircuitData::validate_ivc_verification_key_degree(&wrong_degree_vk);
+    let result = IvcCircuit::validate_ivc_verification_key_degree(&wrong_degree_vk);
 
     let err = result
         .unwrap_err()

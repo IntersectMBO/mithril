@@ -6,11 +6,9 @@ use std::{
 
 use ff::Field;
 use midnight_curves::Bls12;
-use midnight_proofs::{
-    plonk::{keygen_pk, keygen_vk_with_k},
-    poly::kzg::params::{ParamsKZG, ParamsVerifierKZG},
-};
+use midnight_proofs::poly::kzg::params::{ParamsKZG, ParamsVerifierKZG};
 use midnight_zk_stdlib as zk_lib;
+use midnight_zk_stdlib::{self as zk};
 use rand_chacha::ChaCha20Rng;
 use rand_core::{CryptoRng, RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -25,7 +23,7 @@ use crate::circuits::halo2_ivc::keys::{RecursiveCircuitProvingKey, RecursiveCirc
 use crate::circuits::halo2_ivc::types::MessageHash;
 use crate::circuits::halo2_ivc::{
     CERTIFICATE_FIXED_BASES_PREFIX, EmulatedCurve, IVC_FIXED_BASES_PREFIX, NativeField,
-    PairingEngine, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::IvcCircuitData,
+    PairingEngine, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION, circuit::IvcCircuit,
     state::Global,
 };
 use crate::circuits::test_utils::file_mutex::FileMutex;
@@ -216,16 +214,11 @@ fn derive_recursive_verifying_key(
     recursive_commitment_parameters: &ParamsKZG<Bls12>,
     certificate_verifying_key: &NonRecursiveCircuitVerifyingKey,
 ) -> RecursiveCircuitVerifyingKey {
-    let default_ivc_circuit =
-        IvcCircuitData::unknown(certificate_verifying_key).expect("valid IvcCircuitData unknown");
-    RecursiveCircuitVerifyingKey::new(
-        keygen_vk_with_k(
-            recursive_commitment_parameters,
-            &default_ivc_circuit,
-            RECURSIVE_CIRCUIT_DEGREE,
-        )
-        .expect("recursive verifying key generation should not fail"),
-    )
+    let default_ivc_circuit = IvcCircuit::for_key_generation(certificate_verifying_key);
+    RecursiveCircuitVerifyingKey::new(zk::setup_vk(
+        recursive_commitment_parameters,
+        &default_ivc_circuit,
+    ))
 }
 
 /// Content-keyed cache entry holding the recursive verifying key derived from these inputs.
@@ -421,15 +414,11 @@ fn build_shared_recursive_context_with(
 pub(crate) fn build_recursive_proving_key(
     context: &SharedRecursiveContext,
 ) -> RecursiveCircuitProvingKey {
-    let default_ivc_circuit = IvcCircuitData::unknown(&context.certificate_verifying_key)
-        .expect("valid IvcCircuitData unknown");
-    RecursiveCircuitProvingKey::new(
-        keygen_pk(
-            context.recursive_verifying_key.verifying_key().clone(),
-            &default_ivc_circuit,
-        )
-        .expect("recursive proving key generation should not fail"),
-    )
+    let default_ivc_circuit = IvcCircuit::for_key_generation(&context.certificate_verifying_key);
+    RecursiveCircuitProvingKey::new(zk::setup_pk(
+        &default_ivc_circuit,
+        context.recursive_verifying_key.midnight_vk(),
+    ))
 }
 
 /// Returns the certificate, recursive, and combined fixed-base maps.
