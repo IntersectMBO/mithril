@@ -137,12 +137,40 @@ impl MithrilCertificateVerifier {
         }
 
         trace!(self.logger, "Certificate validated"; "hash" => &certificate_hash);
-        self.feedback_sender
-            .send_event(MithrilEvent::CertificateValidated {
-                certificate_hash,
+
+        #[cfg(not(feature = "unstable"))]
+        let certificate_fetched_from_cache = false;
+        // Since the cache is only committed after the chain is fully validated, this means that
+        // checking existence of a certificate in the cache is equivalent to check that the cache
+        // was used to fetch a certificate.
+        #[cfg(feature = "unstable")]
+        let certificate_fetched_from_cache = match self.verifier_cache.as_ref() {
+            Some(cache) => match cache.certificate_exist(&certificate_hash).await {
+                Ok(exist) => exist,
+                Err(err) => {
+                    warn!(
+                        self.logger, "Failed to check certificate existence in cache";
+                        "hash" => &certificate_hash, "error" => ?err
+                    );
+                    false
+                }
+            },
+            None => false,
+        };
+
+        let event = if certificate_fetched_from_cache {
+            MithrilEvent::CertificateFetchedFromCache {
+                certificate_hash: certificate_hash.clone(),
                 certificate_chain_validation_id: certificate_chain_validation_id.to_string(),
-            })
-            .await;
+            }
+        } else {
+            MithrilEvent::CertificateValidated {
+                certificate_hash: certificate_hash.clone(),
+                certificate_chain_validation_id: certificate_chain_validation_id.to_string(),
+            }
+        };
+
+        self.feedback_sender.send_event(event).await;
 
         Ok(previous_certificate)
     }
@@ -155,7 +183,6 @@ impl CertificateVerifier for MithrilCertificateVerifier {
         // Todo: move most of this code in the `mithril_common` verifier by defining
         // a new `verify_chain` method that take a callback called when a certificate is
         // validated.
-        // This refactor should also allow re-emitting `CertificateFetchedFromCache` events.
         let certificate_chain_validation_id = MithrilEvent::new_certificate_chain_validation_id();
         self.feedback_sender
             .send_event(MithrilEvent::CertificateChainValidationStarted {
@@ -486,6 +513,41 @@ mod tests {
             assert_eq!(
                 cache.get_staged_value(&certificate.hash, "chain_validation_id").await,
                 Some(certificate.clone().try_into().unwrap())
+            );
+        }
+
+        #[tokio::test]
+        async fn cached_certificate_send_certificate_fetched_from_cache_feedback_event() {
+            let feedback_receiver = Arc::new(StackFeedbackReceiver::new());
+            let feedback_receiver_clone = feedback_receiver.clone();
+            let chain = CertificateChainBuilder::new()
+                .with_total_certificates(1)
+                .with_certificates_per_epoch(1)
+                .build();
+            let certificate = chain.last().unwrap();
+
+            let cache = Arc::new(
+                MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                    .with_items_from_chain(chain.iter()),
+            );
+            let mut verifier = build_verifier_with_cache(
+                |_mock| {},
+                chain.genesis_verifier.to_ed25519_verification_key(),
+                cache.clone(),
+            );
+            verifier.feedback_sender = FeedbackSender::new(&[feedback_receiver_clone]);
+
+            verifier
+                .verify("chain_validation_id", certificate.clone())
+                .await
+                .unwrap();
+
+            assert_eq!(
+                vec![MithrilEvent::CertificateFetchedFromCache {
+                    certificate_chain_validation_id: "chain_validation_id".to_string(),
+                    certificate_hash: certificate.hash.clone(),
+                }],
+                feedback_receiver.stacked_events()
             );
         }
 

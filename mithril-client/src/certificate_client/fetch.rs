@@ -101,12 +101,6 @@ impl CertificateRetriever for CachedCertificateRetriever {
         &self,
         certificate_hash: &str,
     ) -> Result<Certificate, CertificateRetrieverError> {
-        // LIMITATION:
-        // A cache hit here can't currently emit `MithrilEvent::CertificateFetchedFromCache` as
-        // we do not have access to the `certificate_chain_validation_id` (or any per-verify_chain-call
-        // context), and this type has no `FeedbackSender`.
-        // Properly restoring the feedback needs `mithril-common` `CertificateVerifier`/`verify_certificate`
-        // to thread a per-validation context or callback down to this call site.
         let certificate = match self.cache.get_certificate_by_hash(certificate_hash).await {
             Ok(None) => None,
             Ok(Some(message)) => match Certificate::try_from(message) {

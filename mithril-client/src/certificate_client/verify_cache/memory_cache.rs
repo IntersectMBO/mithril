@@ -127,6 +127,13 @@ impl CertificateVerifierCache for MemoryCertificateVerifierCache {
             .map(|cached| cached.certificate.clone()))
     }
 
+    async fn certificate_exist(&self, certificate_hash: &str) -> MithrilResult<bool> {
+        let cache = self.committed.read().await;
+        Ok(cache
+            .get(certificate_hash)
+            .is_some_and(|cached| cached.expire_at >= Utc::now()))
+    }
+
     async fn reset(&self) -> MithrilResult<()> {
         self.staged.write().await.clear();
         self.committed.write().await.clear();
@@ -511,6 +518,46 @@ mod tests {
                 .await;
 
             assert_eq!(None, cache.get_certificate_by_hash("hash").await.unwrap());
+        }
+    }
+
+    mod certificate_exist {
+        use super::*;
+
+        #[tokio::test]
+        async fn returns_false_for_a_hash_never_committed() {
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1));
+            assert!(!cache.certificate_exist("hash").await.unwrap());
+        }
+
+        #[tokio::test]
+        async fn returns_true_for_a_committed_hash() {
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                .with_items([dummy_certificate("hash", "parent")]);
+
+            assert!(cache.certificate_exist("hash").await.unwrap());
+        }
+
+        #[tokio::test]
+        async fn returns_false_for_an_expired_committed_entry() {
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                .with_items([dummy_certificate("hash", "parent")]);
+            cache
+                .overwrite_expiration_date("hash", Utc::now() - TimeDelta::days(1))
+                .await;
+
+            assert!(!cache.certificate_exist("hash").await.unwrap());
+        }
+
+        #[tokio::test]
+        async fn returns_false_for_a_staged_but_uncommitted_hash() {
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1));
+            cache
+                .stage_certificate("id", dummy_certificate("hash", "parent"))
+                .await
+                .unwrap();
+
+            assert!(!cache.certificate_exist("hash").await.unwrap());
         }
     }
 
