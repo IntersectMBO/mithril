@@ -214,7 +214,7 @@ pub enum MithrilEvent {
         /// The validated certificate hash
         certificate_hash: String,
     },
-    /// An individual certificate of a chain have been fetched from the cache.
+    /// An individual certificate of a chain has been fetched from the cache.
     CertificateFetchedFromCache {
         /// Unique identifier used to track this specific certificate chain validation
         certificate_chain_validation_id: String,

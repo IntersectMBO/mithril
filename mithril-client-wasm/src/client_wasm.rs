@@ -9,13 +9,12 @@ use mithril_client::{
     AggregatorDiscoveryType, CardanoBlocksProofs, CardanoTransactionsProofs,
     CardanoTransactionsProofsV2, Client, ClientBuilder, ClientOptions, GenesisVerificationKey,
     MessageBuilder, MithrilCertificate,
-    certificate_client::CertificateVerifierCache,
+    certificate_client::{CertificateVerifierCache, CertificateVerifierCacheMode},
     common::Epoch,
     feedback::{FeedbackReceiver, MithrilEvent},
 };
 
 use crate::WasmResult;
-use crate::certificate_verification_cache::LocalStorageCertificateVerifierCache;
 
 const CLIENT_TYPE_WASM: &str = "WASM";
 
@@ -128,7 +127,10 @@ impl MithrilClient {
         .with_options(client_options.clone())
         .with_origin_tag(client_options.origin_tag.clone())
         .with_client_type(Some(CLIENT_TYPE_WASM.to_string()))
-        .with_certificate_verifier_cache(certificate_verifier_cache.clone())
+        .with_certificate_verifier_cache(
+            certificate_verifier_cache.clone(),
+            CertificateVerifierCacheMode::FullVerification,
+        )
         .build()
         .map_err(|err| format!("{err:?}"))
         .unwrap();
@@ -141,28 +143,10 @@ impl MithrilClient {
     }
 
     fn build_certifier_cache(
-        aggregator_endpoint: &str,
-        expiration_delay: TimeDelta,
+        _aggregator_endpoint: &str,
+        _expiration_delay: TimeDelta,
     ) -> Option<Arc<dyn CertificateVerifierCache>> {
-        if web_sys::window().is_none() {
-            web_sys::console::warn_1(
-                &"Can't enable certificate chain verification cache: window object is not available\
-                    (are you running in a browser environment?)"
-                    .into(),
-            );
-            return None;
-        }
-
-        web_sys::console::warn_1(
-            &"Danger: the certificate chain verification cache is enabled.\n\
-            This feature is highly experimental and insecure, and it must not be used in production."
-                .into(),
-        );
-
-        Some(Arc::new(LocalStorageCertificateVerifierCache::new(
-            aggregator_endpoint,
-            expiration_delay,
-        )))
+        None
     }
 
     /// Call the client to get a cardano database snapshot from a hash

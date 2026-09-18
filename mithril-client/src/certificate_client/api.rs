@@ -73,21 +73,46 @@ pub trait CertificateVerifier: Sync + Send {
     async fn verify_chain(&self, certificate: &MithrilCertificate) -> MithrilResult<()>;
 }
 
+/// Certificate verifier cache mode.
+#[cfg(feature = "unstable")]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum CertificateVerifierCacheMode {
+    /// Full verification mode
+    ///
+    /// - The whole chain is validated.
+    /// - Cached certificates are cryptographically re-verified.
+    /// - The cache only ever saves a network round-trip, never a security check.
+    #[default]
+    FullVerification,
+}
+
 #[cfg(feature = "unstable")]
 /// API that defines how to cache certificates validation results.
 #[cfg_attr(test, mockall::automock)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 pub trait CertificateVerifierCache: Sync + Send {
-    /// Store a validated certificate hash and its parent hash in the cache.
-    async fn store_validated_certificate(
+    /// Stage a certificate to the cache, unavailable until it is committed.
+    async fn stage_certificate(
         &self,
-        certificate_hash: &str,
-        previous_certificate_hash: &str,
+        certificate_chain_validation_id: &str,
+        certificate: MithrilCertificate,
     ) -> MithrilResult<()>;
 
-    /// Get the previous hash of the certificate with the given hash if available in the cache.
-    async fn get_previous_hash(&self, certificate_hash: &str) -> MithrilResult<Option<String>>;
+    /// Commit all certificates that have been staged with the given certificate chain validation id.
+    async fn commit_staged_certificates(
+        &self,
+        certificate_chain_validation_id: &str,
+    ) -> MithrilResult<()>;
+
+    /// Get the certificate with the given hash if present in the cache.
+    async fn get_certificate_by_hash(
+        &self,
+        certificate_hash: &str,
+    ) -> MithrilResult<Option<MithrilCertificate>>;
+
+    /// Check that a committed certificate with the given hash exists in the cache.
+    async fn certificate_exist(&self, certificate_hash: &str) -> MithrilResult<bool>;
 
     /// Reset the stored values
     async fn reset(&self) -> MithrilResult<()>;
