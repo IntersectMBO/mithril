@@ -73,6 +73,19 @@ pub trait CertificateVerifier: Sync + Send {
     async fn verify_chain(&self, certificate: &MithrilCertificate) -> MithrilResult<()>;
 }
 
+/// Certificate verifier cache mode.
+#[cfg(feature = "unstable")]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum CertificateVerifierCacheMode {
+    /// Full verification mode
+    ///
+    /// - The whole chain is validated.
+    /// - Cached certificates are cryptographically re-verified.
+    /// - The cache only ever saves a network round-trip, never a security check.
+    #[default]
+    FullVerification,
+}
+
 #[cfg(feature = "unstable")]
 /// API that defines how to cache certificates validation results.
 #[cfg_attr(test, mockall::automock)]

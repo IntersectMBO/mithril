@@ -9,7 +9,7 @@ use mithril_client::{
     AggregatorDiscoveryType, CardanoBlocksProofs, CardanoTransactionsProofs,
     CardanoTransactionsProofsV2, Client, ClientBuilder, ClientOptions, GenesisVerificationKey,
     MessageBuilder, MithrilCertificate,
-    certificate_client::CertificateVerifierCache,
+    certificate_client::{CertificateVerifierCache, CertificateVerifierCacheMode},
     common::Epoch,
     feedback::{FeedbackReceiver, MithrilEvent},
 };
@@ -127,7 +127,10 @@ impl MithrilClient {
         .with_options(client_options.clone())
         .with_origin_tag(client_options.origin_tag.clone())
         .with_client_type(Some(CLIENT_TYPE_WASM.to_string()))
-        .with_certificate_verifier_cache(certificate_verifier_cache.clone())
+        .with_certificate_verifier_cache(
+            certificate_verifier_cache.clone(),
+            CertificateVerifierCacheMode::FullVerification,
+        )
         .build()
         .map_err(|err| format!("{err:?}"))
         .unwrap();
