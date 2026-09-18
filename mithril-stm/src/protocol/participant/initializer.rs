@@ -211,7 +211,7 @@ impl Initializer {
         let bls_signing_key =
             BlsSigningKey::from_bytes(bytes.get(32..64).ok_or(RegisterError::SerializationError)?)?;
         let bls_verification_key_proof_of_possession =
-            VerificationKeyProofOfPossessionForConcatenation::from_bytes(
+            VerificationKeyProofOfPossessionForConcatenation::from_raw_bytes(
                 bytes.get(64..256).ok_or(RegisterError::SerializationError)?,
             )?;
 

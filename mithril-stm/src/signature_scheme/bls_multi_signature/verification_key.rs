@@ -161,13 +161,16 @@ impl BlsVerificationKeyProofOfPossession {
         }
     }
 
-    /// Convert to a 144 byte string.
+    /// Convert to its canonical 192 byte raw representation.
     ///
     /// # Layout
     /// The layout of a `PublicKeyPoP` encoding is
     /// * Public key
     /// * Proof of Possession
-    pub fn to_bytes(self) -> [u8; 192] {
+    ///
+    /// This exact byte layout is depended on by the KES sign/verify preimage and
+    /// `Initializer`'s legacy decoder — it must not change.
+    pub fn to_raw_bytes(self) -> [u8; 192] {
         let mut vkpop_bytes = [0u8; 192];
         vkpop_bytes[..96].copy_from_slice(&self.vk.to_bytes());
         vkpop_bytes[96..].copy_from_slice(&self.pop.to_bytes());
@@ -175,7 +178,7 @@ impl BlsVerificationKeyProofOfPossession {
     }
 
     /// Deserialize a byte string to a `BlsVerificationKeyProofOfPossession`.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_raw_bytes(bytes: &[u8]) -> StmResult<Self> {
         let mvk = BlsVerificationKey::from_bytes(
             bytes.get(..96).ok_or(BlsSignatureError::SerializationError)?,
         )?;

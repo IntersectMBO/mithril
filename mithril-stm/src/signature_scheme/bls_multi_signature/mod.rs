@@ -245,8 +245,8 @@ mod tests {
             let vk2 = BlsVerificationKey::from_bytes(&vk_bytes).unwrap();
             assert_eq!(vk, vk2);
             let vkpop = BlsVerificationKeyProofOfPossession::from(&sk);
-            let vkpop_bytes = vkpop.to_bytes();
-            let vkpop2: BlsVerificationKeyProofOfPossession = BlsVerificationKeyProofOfPossession::from_bytes(&vkpop_bytes).unwrap();
+            let vkpop_bytes = vkpop.to_raw_bytes();
+            let vkpop2: BlsVerificationKeyProofOfPossession = BlsVerificationKeyProofOfPossession::from_raw_bytes(&vkpop_bytes).unwrap();
             assert_eq!(vkpop, vkpop2);
         }
 
