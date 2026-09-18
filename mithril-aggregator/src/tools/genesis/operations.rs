@@ -28,6 +28,10 @@ use crate::{
     dependency_injection::GenesisCommandDependenciesContainer,
 };
 #[cfg(feature = "future_snark")]
+use mithril_circuit_key_registry::{
+    MithrilCircuitVerificationKeyCertifier, UnconfiguredCircuitVerificationKeyRegistryRetriever,
+};
+#[cfg(feature = "future_snark")]
 use mithril_common::crypto_helper::{
     GenesisBundleError, GenesisEd25519SecretKey, GenesisSchnorrSigner, GenesisSigningKeyBundle,
     GenesisVerificationKeyBundle, ProtocolKey, sha256_digest, signed_message_from_digest,
@@ -73,7 +77,8 @@ impl GenesisTools {
     }
 
     /// Build a certificate verifier that checks genesis certificates against the supplied genesis
-    /// verifier.
+    /// verifier. Genesis certificates carry no aggregate signature, so the circuit verification
+    /// key registry is never checked and no registry source is configured.
     fn build_certificate_verifier(
         &self,
         genesis_verifier: &GenesisVerifier,
@@ -82,6 +87,11 @@ impl GenesisTools {
             self.logger.clone(),
             self.certificate_repository.clone(),
             Arc::new(genesis_verifier.clone()),
+            #[cfg(feature = "future_snark")]
+            Arc::new(MithrilCircuitVerificationKeyCertifier::new(
+                Arc::new(UnconfiguredCircuitVerificationKeyRegistryRetriever),
+                Arc::new(genesis_verifier.clone()),
+            )),
         )
     }
 
@@ -466,6 +476,9 @@ mod tests {
         test::{TempDir, builder::MithrilFixtureBuilder, double::fake_data},
     };
 
+    #[cfg(feature = "future_snark")]
+    use mithril_common::test::double::FakeCircuitVerificationKeyCertifier;
+
     use crate::database::test_helper::main_db_connection;
     use crate::test::TestLogger;
 
@@ -512,6 +525,8 @@ mod tests {
             TestLogger::stdout(),
             certificate_store.clone(),
             genesis_verifier.clone(),
+            #[cfg(feature = "future_snark")]
+            Arc::new(FakeCircuitVerificationKeyCertifier::that_fails()),
         ));
         let configuration = GenesisToolsConfiguration {
             network: fake_data::network(),

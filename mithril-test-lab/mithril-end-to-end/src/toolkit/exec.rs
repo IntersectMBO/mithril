@@ -6,13 +6,11 @@ use anyhow::Context;
 use slog_scope::info;
 
 use mithril_common::StdResult;
-use mithril_common::entities::{Epoch, ProtocolParameters};
+use mithril_common::entities::Epoch;
 use mithril_common::messages::AggregatorStatusMessage;
 
 use crate::toolkit::ScenarioToolkitContext;
-use crate::{
-    AggregateSignatureType, Aggregator, Devnet, MithrilInfrastructure, ProtocolConfiguration,
-};
+use crate::{Aggregator, Devnet, MithrilInfrastructure, ProtocolConfiguration};
 
 #[derive(Debug, Clone)]
 pub struct ExecToolkit {
@@ -137,24 +135,8 @@ impl ExecToolkit {
         infrastructure: &MithrilInfrastructure,
         epoch: Epoch,
     ) -> StdResult<()> {
-        let protocol_parameters_new = match infrastructure.aggregate_signature_type() {
-            AggregateSignatureType::Concatenation => ProtocolParameters {
-                k: 283,
-                m: 433,
-                phi_f: 0.77,
-            },
-            AggregateSignatureType::Snark => ProtocolParameters {
-                k: 7,
-                m: 10,
-                phi_f: 0.95,
-            },
-            // The IVC parameters must not change as this means a new genesis certificate must be created.
-            AggregateSignatureType::IvcSnark => ProtocolParameters {
-                k: 5,
-                m: 9,
-                phi_f: 0.95,
-            },
-        };
+        let protocol_parameters_new =
+            Aggregator::updated_protocol_parameters(infrastructure.aggregate_signature_type());
 
         if aggregator.is_reading_protocol_configurations_on_chain() {
             info!("> updating on-chain protocol parameters to {protocol_parameters_new:?}...");
