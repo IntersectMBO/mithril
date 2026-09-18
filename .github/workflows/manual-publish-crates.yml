@@ -17,6 +17,7 @@ on:
           - all
           - mithril-stm
           - mithril-common
+          - mithril-circuit-key-registry
           - mithril-client
           - mithril-aggregator-client
           - mithril-aggregator-discovery
@@ -36,7 +37,7 @@ jobs:
         id: prepare
         run: |
           if [[ ${{ inputs.package }} == 'all' ]]; then
-            echo "packages=mithril-stm, mithril-build-script, mithril-common, mithril-aggregator-client, mithril-aggregator-discovery, mithril-cardano-node-internal-database, mithril-client" >> $GITHUB_OUTPUT
+            echo "packages=mithril-stm, mithril-build-script, mithril-common, mithril-circuit-key-registry, mithril-aggregator-client, mithril-aggregator-discovery, mithril-cardano-node-internal-database, mithril-client" >> $GITHUB_OUTPUT
           else
             echo "packages=${{ inputs.package }}" >> $GITHUB_OUTPUT
           fi

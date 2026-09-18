@@ -4236,6 +4236,7 @@ dependencies = [
  "mithril-api-spec",
  "mithril-cardano-node-chain",
  "mithril-cardano-node-internal-database",
+ "mithril-circuit-key-registry",
  "mithril-cli-helper",
  "mithril-common",
  "mithril-dmq",
@@ -4405,6 +4406,30 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "walkdir",
+]
+
+[[package]]
+name = "mithril-circuit-key-registry"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "futures",
+ "hex",
+ "httpmock",
+ "mithril-common",
+ "mockall",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.4",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "slog",
+ "slog-async",
+ "slog-term",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

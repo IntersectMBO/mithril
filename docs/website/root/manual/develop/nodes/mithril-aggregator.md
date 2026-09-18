@@ -470,6 +470,12 @@ Here are the available subcommands:
 | **database migrate**                  | Migrate databases located in the given stores directory                                                                                   |
 | **database vacuum**                   | Vacuum the aggregator main database                                                                                                       |
 | **tools recompute-certificates-hash** | Loads all certificates in the database, recomputing their hash, and updating all related entities                                         |
+| **circuit-key-registry export**       | Exports the circuit verification key digests of the network                                                                               |
+| **circuit-key-registry whitelist**    | Whitelists a circuit verification key in the signed registry                                                                              |
+| **circuit-key-registry expire**       | Expires a circuit verification key in the signed registry at its last allowed epoch                                                       |
+| **circuit-key-registry revoke**       | Revokes a circuit verification key in the signed registry                                                                                 |
+| **circuit-key-registry sign**         | Signs a hand-authored circuit verification key registry with the genesis secret key                                                       |
+| **circuit-key-registry bootstrap**    | Bootstraps a signed circuit verification key registry (test only usage)                                                                   |
 
 ## Configuration parameters
 
@@ -627,3 +633,64 @@ Here is a list of the available parameters for the serve command:
 | Parameter               | Command line (long) | Command line (short) | Environment variable    | Description                             | Default value | Example |     Mandatory      |
 | ----------------------- | ------------------- | :------------------: | ----------------------- | --------------------------------------- | ------------- | ------- | :----------------: |
 | `data_stores_directory` | -                   |          -           | `DATA_STORES_DIRECTORY` | Directory to store aggregator databases | -             | -       | :heavy_check_mark: |
+
+`circuit-key-registry export` command:
+
+| Parameter             | Command line (long)     | Command line (short) | Environment variable | Description                                                                                                                                                            | Default value | Example |     Mandatory      |
+| --------------------- | ----------------------- | :------------------: | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------- | :----------------: |
+| `protocol_parameters` | `--protocol-parameters` |          -           | -                    | Protocol parameters of the network as JSON (e.g. `{"k":5,"m":9,"phi_f":0.95}`), defaults to the production protocol parameters of the embedded certificate circuit key | -             | -       |         -          |
+| `target_path`         | `--target-path`         |          -           | -                    | Target Path                                                                                                                                                            | -             | -       | :heavy_check_mark: |
+| `help`                | `--help`                |         `-h`         | -                    | Print help                                                                                                                                                             | -             | -       |         -          |
+
+`circuit-key-registry whitelist` command:
+
+| Parameter                 | Command line (long)         | Command line (short) | Environment variable | Description                                                                 | Default value | Example |     Mandatory      |
+| ------------------------- | --------------------------- | :------------------: | -------------------- | --------------------------------------------------------------------------- | ------------- | ------- | :----------------: |
+| `registry_path`           | `--registry-path`           |          -           | -                    | Signed Registry Path, updated in place                                      | -             | -       | :heavy_check_mark: |
+| `genesis_secret_key_path` | `--genesis-secret-key-path` |          -           | -                    | Genesis Secret Key Path                                                     | -             | -       | :heavy_check_mark: |
+| `digest`                  | `--digest`                  |          -           | -                    | Digest of the circuit verification key (hex encoded)                        | -             | -       | :heavy_check_mark: |
+| `name`                    | `--name`                    |          -           | -                    | Name of the circuit verification key (e.g. 'certificate-circuit v1')        | -             | -       | :heavy_check_mark: |
+| `start_epoch`             | `--start-epoch`             |          -           | -                    | First epoch (inclusive) at which the key is allowed                         | -             | -       | :heavy_check_mark: |
+| `end_epoch`               | `--end-epoch`               |          -           | -                    | Last epoch (inclusive) at which the key is allowed, open-ended when omitted | -             | -       |         -          |
+| `comment`                 | `--comment`                 |          -           | -                    | Comment recorded in the entry                                               | -             | -       |         -          |
+| `help`                    | `--help`                    |         `-h`         | -                    | Print help                                                                  | -             | -       |         -          |
+
+`circuit-key-registry expire` command:
+
+| Parameter                 | Command line (long)         | Command line (short) | Environment variable | Description                                                            | Default value | Example |     Mandatory      |
+| ------------------------- | --------------------------- | :------------------: | -------------------- | ---------------------------------------------------------------------- | ------------- | ------- | :----------------: |
+| `registry_path`           | `--registry-path`           |          -           | -                    | Signed Registry Path, updated in place                                 | -             | -       | :heavy_check_mark: |
+| `genesis_secret_key_path` | `--genesis-secret-key-path` |          -           | -                    | Genesis Secret Key Path                                                | -             | -       | :heavy_check_mark: |
+| `digest`                  | `--digest`                  |          -           | -                    | Digest of the allowed circuit verification key to expire (hex encoded) | -             | -       | :heavy_check_mark: |
+| `end_epoch`               | `--end-epoch`               |          -           | -                    | Last epoch (inclusive) at which the key is allowed                     | -             | -       | :heavy_check_mark: |
+| `comment`                 | `--comment`                 |          -           | -                    | Comment recorded in the entry, kept as is when omitted                 | -             | -       |         -          |
+| `help`                    | `--help`                    |         `-h`         | -                    | Print help                                                             | -             | -       |         -          |
+
+`circuit-key-registry revoke` command:
+
+| Parameter                 | Command line (long)         | Command line (short) | Environment variable | Description                                                                          | Default value | Example |     Mandatory      |
+| ------------------------- | --------------------------- | :------------------: | -------------------- | ------------------------------------------------------------------------------------ | ------------- | ------- | :----------------: |
+| `registry_path`           | `--registry-path`           |          -           | -                    | Signed Registry Path, updated in place                                               | -             | -       | :heavy_check_mark: |
+| `genesis_secret_key_path` | `--genesis-secret-key-path` |          -           | -                    | Genesis Secret Key Path                                                              | -             | -       | :heavy_check_mark: |
+| `digest`                  | `--digest`                  |          -           | -                    | Digest of the allowed circuit verification key to revoke (hex encoded)               | -             | -       | :heavy_check_mark: |
+| `revocation_epoch`        | `--revocation-epoch`        |          -           | -                    | Epoch of the revocation, recorded in the entry (the key is rejected for every epoch) | -             | -       | :heavy_check_mark: |
+| `comment`                 | `--comment`                 |          -           | -                    | Comment recorded in the entry, explaining the revocation                             | -             | -       | :heavy_check_mark: |
+| `help`                    | `--help`                    |         `-h`         | -                    | Print help                                                                           | -             | -       |         -          |
+
+`circuit-key-registry sign` command:
+
+| Parameter                     | Command line (long)             | Command line (short) | Environment variable | Description                                                                                                                                                                      | Default value | Example |     Mandatory      |
+| ----------------------------- | ------------------------------- | :------------------: | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------- | :----------------: |
+| `to_sign_registry_path`       | `--to-sign-registry-path`       |          -           | -                    | To Sign Registry Path                                                                                                                                                            | -             | -       | :heavy_check_mark: |
+| `target_signed_registry_path` | `--target-signed-registry-path` |          -           | -                    | Target Signed Registry Path, replaced in place: the registry to sign must carry the version following the signed registry found there, or the initial version when there is none | -             | -       | :heavy_check_mark: |
+| `genesis_secret_key_path`     | `--genesis-secret-key-path`     |          -           | -                    | Genesis Secret Key Path                                                                                                                                                          | -             | -       | :heavy_check_mark: |
+| `help`                        | `--help`                        |         `-h`         | -                    | Print help                                                                                                                                                                       | -             | -       |         -          |
+
+`circuit-key-registry bootstrap` command:
+
+| Parameter              | Command line (long)      | Command line (short) | Environment variable | Description                                                                                                                                                                                                            | Default value | Example |     Mandatory      |
+| ---------------------- | ------------------------ | :------------------: | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------- | :----------------: |
+| `genesis_secret_key`   | `--genesis-secret-key`   |          -           | `GENESIS_SECRET_KEY` | Genesis Secret Key (test only)                                                                                                                                                                                         | -             | -       | :heavy_check_mark: |
+| `protocol_parameters`  | `--protocol-parameters`  |          -           | -                    | Protocol parameters of the network as JSON (e.g. `{"k":5,"m":9,"phi_f":0.95}`), repeatable to whitelist several parameter sets, defaults to the production protocol parameters of the embedded certificate circuit key | -             | -       |         -          |
+| `target_registry_path` | `--target-registry-path` |          -           | -                    | Target Registry Path                                                                                                                                                                                                   | -             | -       | :heavy_check_mark: |
+| `help`                 | `--help`                 |         `-h`         | -                    | Print help                                                                                                                                                                                                             | -             | -       |         -          |
