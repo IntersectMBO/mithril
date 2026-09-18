@@ -96,6 +96,17 @@ impl AggregateSignatureType {
             AggregateSignatureType::IvcSnark => true,
         }
     }
+
+    /// Whether an aggregate signature of this type can be chained to a certificate carrying the
+    /// given aggregate signature type, `None` standing for a genesis certificate.
+    ///
+    /// An aggregate signature that certifies the full certificate chain is recursively built from
+    /// the genesis certificate, so it can only be chained to a genesis certificate or to an
+    /// aggregate signature of the same type.
+    pub fn can_chain_to(&self, previous: Option<AggregateSignatureType>) -> bool {
+        !self.certifies_full_certificate_chain()
+            || previous.is_none_or(|previous_type| previous_type == *self)
+    }
 }
 
 impl<D: MembershipDigest> From<&AggregateSignature<D>> for AggregateSignatureType {
@@ -917,6 +928,35 @@ mod tests {
         assert_golden_value(AggregateSignatureType::Snark, true);
         #[cfg(feature = "future_snark")]
         assert_golden_value(AggregateSignatureType::IvcSnark, true);
+    }
+
+    mod can_chain_to {
+        use super::*;
+
+        #[test]
+        fn concatenation_can_chain_to_any_certificate() {
+            let aggregate_signature_type = AggregateSignatureType::Concatenation;
+
+            assert!(aggregate_signature_type.can_chain_to(None));
+            assert!(
+                aggregate_signature_type.can_chain_to(Some(AggregateSignatureType::Concatenation))
+            );
+            #[cfg(feature = "future_snark")]
+            assert!(aggregate_signature_type.can_chain_to(Some(AggregateSignatureType::IvcSnark)));
+        }
+
+        #[cfg(feature = "future_snark")]
+        #[test]
+        fn ivc_snark_can_only_chain_to_a_genesis_certificate_or_to_ivc_snark() {
+            let aggregate_signature_type = AggregateSignatureType::IvcSnark;
+
+            assert!(aggregate_signature_type.can_chain_to(None));
+            assert!(aggregate_signature_type.can_chain_to(Some(AggregateSignatureType::IvcSnark)));
+            assert!(
+                !aggregate_signature_type.can_chain_to(Some(AggregateSignatureType::Concatenation))
+            );
+            assert!(!aggregate_signature_type.can_chain_to(Some(AggregateSignatureType::Snark)));
+        }
     }
 
     mod aggregate_signature_golden_concatenation {

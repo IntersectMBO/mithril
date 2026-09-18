@@ -380,6 +380,12 @@ variable "mithril_aggregator_leader_aggregator_endpoint" {
   default     = ""
 }
 
+variable "mithril_aggregator_certificate_chain_aggregator_endpoint" {
+  type        = string
+  description = "The endpoint of the aggregator to synchronize the certificate chain from when running in follower mode, defaults to the leader aggregator endpoint (optional)"
+  default     = ""
+}
+
 variable "mithril_aggregator_ancillary_signer_type" {
   type        = string
   description = "The type of signer used to sign ancillary files"

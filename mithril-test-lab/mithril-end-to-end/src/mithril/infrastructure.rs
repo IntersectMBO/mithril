@@ -51,9 +51,10 @@ pub struct MithrilInfrastructureConfig {
     pub signer_protocol_configuration_reader_adapter: String,
     pub startup_protocol_configuration: ProtocolConfiguration,
     pub signed_entity_types: Vec<String>,
-    pub aggregate_signature_type: AggregateSignatureType,
+    pub aggregate_signature_types: Vec<AggregateSignatureType>,
     pub genesis_keys: GenesisKeys,
     pub use_relays: bool,
+    pub chain_follower_aggregators: bool,
     pub relay_signer_registration_mode: String,
     pub relay_signature_registration_mode: String,
     pub use_p2p_passive_relays: bool,
@@ -64,6 +65,15 @@ pub struct MithrilInfrastructureConfig {
 }
 
 impl MithrilInfrastructureConfig {
+    /// The aggregate signature type of the aggregator at the given index, a single configured
+    /// type applying to every aggregator
+    pub fn aggregate_signature_type_of(&self, aggregator_index: usize) -> AggregateSignatureType {
+        match self.aggregate_signature_types.as_slice() {
+            [single_type] => *single_type,
+            types => types[aggregator_index],
+        }
+    }
+
     pub fn has_leader_follower_signer_registration(&self) -> bool {
         if &self.relay_signer_registration_mode == "passthrough" {
             self.number_of_aggregators > 1
@@ -102,9 +112,10 @@ impl MithrilInfrastructureConfig {
                 enabled_signed_entity_types: SignedEntityTypeDiscriminantsMessage::all_known(),
             },
             signed_entity_types: vec!["type1".to_string()],
-            aggregate_signature_type: AggregateSignatureType::Concatenation,
+            aggregate_signature_types: vec![AggregateSignatureType::Concatenation],
             genesis_keys: GenesisKeys::LEGACY,
             use_relays: false,
+            chain_follower_aggregators: false,
             relay_signer_registration_mode: "passthrough".to_string(),
             relay_signature_registration_mode: "passthrough".to_string(),
             use_p2p_passive_relays: false,
@@ -133,7 +144,7 @@ pub struct MithrilInfrastructure {
     current_era: RwLock<String>,
     era_reader_adapter: String,
     use_era_specific_work_dir: bool,
-    aggregate_signature_type: AggregateSignatureType,
+    aggregate_signature_types: Vec<AggregateSignatureType>,
     genesis_keys: GenesisKeys,
 }
 
@@ -238,7 +249,7 @@ impl MithrilInfrastructure {
             current_era: RwLock::new(config.mithril_era.clone()),
             era_reader_adapter: config.mithril_era_reader_adapter.clone(),
             use_era_specific_work_dir: config.use_era_specific_work_dir,
-            aggregate_signature_type: config.aggregate_signature_type,
+            aggregate_signature_types: config.aggregate_signature_types.clone(),
             genesis_keys: config.genesis_keys,
         })
     }
@@ -315,11 +326,16 @@ impl MithrilInfrastructure {
             chain_observer_type,
             ipfs_devnet.and_then(|n| n.first()),
             None,
+            None,
         )
         .await?;
 
-        let mut follower_aggregators = vec![];
+        let mut follower_aggregators: Vec<Aggregator> = vec![];
         for (index, full_node) in follower_nodes.iter().enumerate() {
+            let certificate_chain_aggregator_endpoint = config
+                .chain_follower_aggregators
+                .then(|| follower_aggregators.last().map(Aggregator::endpoint))
+                .flatten();
             let aggregator = Self::prepare_aggregator(
                 index + 1,
                 full_node,
@@ -327,6 +343,7 @@ impl MithrilInfrastructure {
                 chain_observer_type,
                 ipfs_devnet.and_then(|n| n.get(index + 1)),
                 Some(leader_aggregator.endpoint()),
+                certificate_chain_aggregator_endpoint,
             )
             .await?;
             follower_aggregators.push(aggregator);
@@ -342,6 +359,7 @@ impl MithrilInfrastructure {
         chain_observer_type: &str,
         ipfs_kubo_node: Option<&KuboNode>,
         leader_aggregator_endpoint: Option<String>,
+        certificate_chain_aggregator_endpoint: Option<String>,
     ) -> StdResult<Aggregator> {
         let aggregator_name = Aggregator::name_suffix(index);
         let aggregator_artifacts_dir = config
@@ -370,9 +388,10 @@ impl MithrilInfrastructure {
                 .protocol_configuration_marker_address()?,
             startup_protocol_parameters: &config.startup_protocol_configuration.protocol_parameters,
             signed_entity_types: &config.signed_entity_types,
-            aggregate_signature_type: config.aggregate_signature_type,
+            aggregate_signature_type: config.aggregate_signature_type_of(index),
             chain_observer_type,
             leader_aggregator_endpoint: &leader_aggregator_endpoint,
+            certificate_chain_aggregator_endpoint: &certificate_chain_aggregator_endpoint,
             genesis_keys: config.genesis_keys,
             use_dmq: config.use_dmq,
             dmq_node_flavor: &config.dmq_node_flavor,
@@ -627,8 +646,8 @@ impl MithrilInfrastructure {
         &self.cardano_node_version
     }
 
-    pub fn aggregate_signature_type(&self) -> AggregateSignatureType {
-        self.aggregate_signature_type
+    pub fn most_constraining_aggregate_signature_type(&self) -> AggregateSignatureType {
+        AggregateSignatureType::most_constraining(&self.aggregate_signature_types)
     }
 
     pub async fn build_client(&self, aggregator: &Aggregator) -> StdResult<Client> {
@@ -686,7 +705,44 @@ impl MithrilInfrastructure {
 
 #[cfg(test)]
 mod tests {
-    use crate::MithrilInfrastructureConfig;
+    use crate::{AggregateSignatureType, MithrilInfrastructureConfig};
+
+    #[test]
+    fn a_single_aggregate_signature_type_applies_to_every_aggregator() {
+        let config = MithrilInfrastructureConfig {
+            aggregate_signature_types: vec![AggregateSignatureType::IvcSnark],
+            ..MithrilInfrastructureConfig::dummy()
+        };
+
+        assert_eq!(
+            AggregateSignatureType::IvcSnark,
+            config.aggregate_signature_type_of(0)
+        );
+        assert_eq!(
+            AggregateSignatureType::IvcSnark,
+            config.aggregate_signature_type_of(2)
+        );
+    }
+
+    #[test]
+    fn several_aggregate_signature_types_apply_per_aggregator_index() {
+        let config = MithrilInfrastructureConfig {
+            aggregate_signature_types: vec![
+                AggregateSignatureType::Concatenation,
+                AggregateSignatureType::IvcSnark,
+            ],
+            ..MithrilInfrastructureConfig::dummy()
+        };
+
+        assert_eq!(
+            AggregateSignatureType::Concatenation,
+            config.aggregate_signature_type_of(0)
+        );
+        assert_eq!(
+            AggregateSignatureType::IvcSnark,
+            config.aggregate_signature_type_of(1)
+        );
+    }
 
     #[test]
     fn has_leader_follower_signer_registration_succeeds() {

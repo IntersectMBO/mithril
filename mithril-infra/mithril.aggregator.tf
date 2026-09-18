@@ -211,6 +211,7 @@ export AUTH_USER_PASSWORD=$AUTH_USER_PASSWORD
 EOT
       ,
       "export LEADER_AGGREGATOR_ENDPOINT='${var.mithril_aggregator_leader_aggregator_endpoint}'",
+      "export CERTIFICATE_CHAIN_AGGREGATOR_ENDPOINT='${var.mithril_aggregator_certificate_chain_aggregator_endpoint}'",
       "export AGGREGATOR_RELAY_LISTEN_PORT='${local.mithril_aggregator_relay_mithril_listen_port}'",
       "export AGGREGATOR_DMQ_ADDR='0.0.0.0'",
       "export AGGREGATOR_DMQ_PORT='${local.mithril_aggregator_dmq_port}'",

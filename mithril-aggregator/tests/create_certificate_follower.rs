@@ -92,7 +92,7 @@ async fn create_certificate_follower() {
         phi_f: 0.95,
     };
     let fixtures =
-        EpochFixturesMapBuilder::build_fixtures_sequence(1..6, protocol_parameters.clone());
+        EpochFixturesMapBuilder::build_fixtures_sequence(1..7, protocol_parameters.clone());
     let epoch_fixtures_map = EpochFixturesMapBuilder::build_epoch_fixtures_map(&fixtures);
     let start_time_point = TimePoint {
         epoch: Epoch(1),
@@ -533,4 +533,83 @@ async fn create_certificate_follower() {
         .clone();
     assert_eq!(expected_avk, leader_expected_certificate.avk());
     assert_eq!(expected_avk, follower_expected_certificate.avk());
+
+    comment!("Leader: bootstrap a new genesis certificate");
+    leader_tester
+        .register_genesis_certificate(epoch_fixture.next_signing.unwrap())
+        .await
+        .unwrap();
+
+    assert_last_certificate_eq!(
+        leader_tester,
+        ExpectedCertificate::new_genesis(
+            Epoch(5),
+            epoch_fixture
+                .next_signing
+                .unwrap()
+                .compute_and_encode_concatenation_aggregate_verification_key()
+        )
+    );
+
+    comment!(
+        "Epoch 6:
+    - the leader aggregator does not produce a certificate
+    - the follower aggregator synchronizes the new genesis certificate only at this epoch
+    - the follower aggregator produces a new certificate chained to the new genesis certificate
+    "
+    );
+    let epoch_fixture = &epoch_fixtures_map[&Epoch(6)];
+
+    comment!("Leader: update stake distribution source");
+    leader_tester
+        .update_stake_distribution(epoch_fixture.registering.stake_distribution())
+        .await
+        .unwrap();
+
+    comment!("Follower: update stake distribution source");
+    follower_tester
+        .update_stake_distribution(epoch_fixture.registering.stake_distribution())
+        .await
+        .unwrap();
+
+    comment!("Leader: change the epoch");
+    leader_tester.increase_epoch().await.unwrap();
+    cycle!(leader_tester, "idle");
+    cycle!(leader_tester, "ready");
+
+    comment!("Follower: change the epoch after leader and synchronize the new genesis certificate");
+    follower_tester.increase_epoch().await.unwrap();
+    cycle!(follower_tester, "idle");
+    cycle!(follower_tester, "ready");
+
+    comment!("Follower: signers send their single signature");
+    cycle!(follower_tester, "signing");
+    follower_tester
+        .send_single_signatures(
+            SignedEntityTypeDiscriminants::MithrilStakeDistribution,
+            &epoch_fixture.current_signing.unwrap().signers_fixture(),
+        )
+        .await
+        .unwrap();
+
+    comment!(
+        "Follower: state machine should issue a certificate for the MithrilStakeDistribution chained to the new genesis certificate"
+    );
+    cycle!(follower_tester, "ready");
+    assert_last_certificate_eq!(
+        follower_tester,
+        ExpectedCertificate::new(
+            Epoch(6),
+            StakeDistributionParty::from_signers(
+                epoch_fixture.current_signing.unwrap().signers_with_stake(),
+            )
+            .as_slice(),
+            epoch_fixture
+                .current_signing
+                .unwrap()
+                .compute_and_encode_concatenation_aggregate_verification_key(),
+            SignedEntityType::MithrilStakeDistribution(Epoch(6)),
+            ExpectedCertificate::genesis_identifier(Epoch(5)),
+        )
+    );
 }

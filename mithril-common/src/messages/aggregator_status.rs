@@ -48,6 +48,16 @@ pub struct AggregatorStatusMessage {
 
     /// The total stake in Cardano
     pub total_cardano_stake: Stake,
+
+    /// Endpoint of the leader aggregator followed for the signer registrations, absent when this
+    /// aggregator is a leader
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leader_aggregator_endpoint: Option<String>,
+
+    /// Endpoint of the aggregator followed for the certificate chain, absent when this
+    /// aggregator is a leader
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub certificate_chain_aggregator_endpoint: Option<String>,
 }
 
 #[cfg(test)]
@@ -95,7 +105,39 @@ mod tests {
             total_next_stakes_signers: 987654321,
             total_cardano_spo: 7777,
             total_cardano_stake: 888888888,
+            leader_aggregator_endpoint: None,
+            certificate_chain_aggregator_endpoint: None,
         }
+    }
+
+    #[test]
+    fn deserializing_a_follower_json_populates_the_followed_aggregator_endpoints() {
+        let json = CURRENT_JSON.trim_end().trim_end_matches('}');
+        let json = format!(
+            r#"{json},
+        "leader_aggregator_endpoint": "https://leader.aggregator",
+        "certificate_chain_aggregator_endpoint": "https://certificates.aggregator"
+        }}"#
+        );
+
+        let message: AggregatorStatusMessage = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            Some("https://leader.aggregator".to_string()),
+            message.leader_aggregator_endpoint
+        );
+        assert_eq!(
+            Some("https://certificates.aggregator".to_string()),
+            message.certificate_chain_aggregator_endpoint
+        );
+    }
+
+    #[test]
+    fn serializing_a_leader_message_omits_the_followed_aggregator_endpoints() {
+        let json = serde_json::to_string(&golden_current_message()).unwrap();
+
+        assert!(!json.contains("leader_aggregator_endpoint"));
+        assert!(!json.contains("certificate_chain_aggregator_endpoint"));
     }
 
     #[test]

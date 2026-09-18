@@ -16,3 +16,23 @@ pub struct CertificateEpochGap {
     /// Given current epoch.
     pub current_epoch: Epoch,
 }
+
+/// Error raised when the parent of a certificate can not be retrieved from a remote source.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum RemoteParentCertificateError {
+    /// The remote source does not have the parent certificate.
+    #[error("The remote source does not have the parent certificate '{0}'")]
+    NotFound(String),
+
+    /// The remote source returned another certificate than the requested parent certificate.
+    #[error(
+        "The remote source returned the certificate '{returned_hash}' instead of the requested parent certificate '{requested_hash}'"
+    )]
+    Unexpected {
+        /// Hash of the requested parent certificate.
+        requested_hash: String,
+
+        /// Hash of the certificate returned by the remote source.
+        returned_hash: String,
+    },
+}

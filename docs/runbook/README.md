@@ -29,3 +29,4 @@ This page gathers the available guides to operate a Mithril network.
 | **Prepare Cardano node artifacts**           | [prepare-cardano-node-artifacts](./prepare-cardano-node-artifacts/README.md)             | Prepare and publish artifacts for an unreleased Cardano node version.            |
 | **Cardano Docker bundle**                    | [cardano-docker-bundle](./cardano-docker-bundle/README.md)                               | Build and publish a Docker image bundling Cardano node with Mithril.             |
 | **Update circuits verification keys**        | [update-circuit-keys](./update-circuit-keys/README.md)                                   | Update the circuits verification keys after an intentional circuit modification. |
+| **GitHub self-hosted runner**                | [self-hosted-runner](./self-hosted-runner/README.md)                                     | Set up a GCP virtual machine as a GitHub self-hosted runner for heavy workloads. |
