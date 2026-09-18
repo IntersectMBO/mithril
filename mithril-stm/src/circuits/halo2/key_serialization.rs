@@ -31,19 +31,21 @@ impl TryFromBytes for MidnightPK<CertificateCircuit> {
 #[cfg(test)]
 mod tests {
     use midnight_proofs::poly::kzg::params::ParamsKZG;
-    use midnight_zk_stdlib::{self as zk, MidnightCircuit, MidnightVK};
+    use midnight_zk_stdlib::{self as zk, MidnightCircuit};
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
 
     use super::*;
     use crate::Parameters;
     use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
+    use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 
     #[test]
     fn production_verifying_key_serializes_to_the_embedded_bytes() {
-        let verifying_key =
-            MidnightVK::try_from_bytes(NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION)
-                .expect("production verifying key bytes should deserialize");
+        let verifying_key = NonRecursiveCircuitVerifyingKey::try_from_bytes(
+            NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+        )
+        .expect("production verifying key bytes should deserialize");
         assert_eq!(
             verifying_key.to_bytes_vec().expect("serialize should succeed"),
             NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,

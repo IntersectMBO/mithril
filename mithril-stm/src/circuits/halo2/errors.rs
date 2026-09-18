@@ -128,6 +128,13 @@ pub enum CertificateCircuitError {
     /// A standalone encoded verification key is followed by bytes that are not part of it.
     #[error("The encoded certificate verification key has {trailing} trailing byte(s)")]
     VerificationKeyEncodingHasTrailingBytes { trailing: usize },
+
+    /// An encoded verification key declares fewer fixed commitments than its constraint system has
+    /// fixed columns, which the verifier indexes by column.
+    #[error(
+        "Certificate verification key fixed commitment count mismatch: expected {expected}, got {actual}"
+    )]
+    VerificationKeyCommitmentCountMismatch { expected: usize, actual: usize },
 }
 
 impl From<PlonkError> for CertificateCircuitError {
