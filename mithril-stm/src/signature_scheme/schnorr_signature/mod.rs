@@ -121,16 +121,16 @@ mod tests {
             let mut rng = ChaCha20Rng::from_seed(seed);
             let sk = SchnorrSigningKey::generate(&mut rng);
             let vk = SchnorrVerificationKey::new_from_signing_key(sk.clone());
-            let mut vk_bytes = vk.to_bytes();
+            let mut vk_bytes = vk.to_raw_bytes();
 
             // Valid conversion
-            let recovered_vk = SchnorrVerificationKey::from_bytes(&vk_bytes).unwrap();
+            let recovered_vk = SchnorrVerificationKey::from_raw_bytes(&vk_bytes).unwrap();
             assert_eq!(vk.0, recovered_vk.0, "Recovered verification key does not match with the original!");
 
             // Not enough bytes
             let mut short_bytes = [0u8; 31];
             short_bytes.copy_from_slice(vk_bytes.get(..31).unwrap());
-            let result = SchnorrVerificationKey::from_bytes(&short_bytes).expect_err("From bytes conversion of verification key should fail");
+            let result = SchnorrVerificationKey::from_raw_bytes(&short_bytes).expect_err("From bytes conversion of verification key should fail");
             assert!(
                 matches!(
                     result.downcast_ref::<SchnorrSignatureError>(),
@@ -141,7 +141,7 @@ mod tests {
 
             // Invalid bytes
             vk_bytes[31] |= 0xff;
-            let result = SchnorrVerificationKey::from_bytes(&vk_bytes).expect_err("From bytes conversion of verification key should fail");
+            let result = SchnorrVerificationKey::from_raw_bytes(&vk_bytes).expect_err("From bytes conversion of verification key should fail");
             assert!(
                 matches!(
                     result.downcast_ref::<SchnorrSignatureError>(),

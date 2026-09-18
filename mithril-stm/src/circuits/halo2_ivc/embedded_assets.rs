@@ -582,7 +582,7 @@ fn read_genesis_benchmark_fixture_from_reader<R: Read>(
 
     let mut verification_key_bytes = [0u8; 64];
     reader.read_exact(&mut verification_key_bytes)?;
-    let genesis_verification_key = SchnorrVerificationKey::from_bytes(&verification_key_bytes)?;
+    let genesis_verification_key = SchnorrVerificationKey::from_raw_bytes(&verification_key_bytes)?;
 
     let mut signature_bytes = [0u8; 64];
     reader.read_exact(&mut signature_bytes)?;

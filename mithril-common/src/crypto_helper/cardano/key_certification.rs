@@ -146,7 +146,7 @@ impl StmInitializerWrapper {
                     &stm_initializer.schnorr_verification_key
                 {
                     let (signature, _op_cert) = kes_signer.sign(
-                        &schnorr_verification_key.to_bytes(),
+                        &schnorr_verification_key.to_raw_bytes(),
                         current_kes_period.unwrap_or_default(),
                     )?;
 
@@ -445,7 +445,7 @@ impl KeyRegWrapper {
                 #[cfg(feature = "future_snark")]
                 if let Some(verification_key_for_snark) = &parameters.verification_key_for_snark {
                     self.verify_kes_signature(
-                        &verification_key_for_snark.to_bytes(),
+                        &verification_key_for_snark.to_raw_bytes(),
                         parameters
                             .verification_key_signature_for_snark
                             .map(|s| s.into_inner()),

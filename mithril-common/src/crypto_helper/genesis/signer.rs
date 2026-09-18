@@ -325,7 +325,7 @@ mod tests {
         #[test]
         fn verification_key_bundle_mirrors_signer_halves() {
             let signer = GenesisSigner::from_bundle(build_bundle());
-            let expected_schnorr = signer.schnorr.as_ref().unwrap().verification_key().to_bytes();
+            let expected_schnorr = signer.schnorr.as_ref().unwrap().verification_key().to_raw_bytes();
 
             let bundle = signer.verification_key_bundle().unwrap();
 
@@ -333,7 +333,7 @@ mod tests {
                 bundle.ed25519.as_bytes(),
                 signer.ed25519.verification_key().as_bytes()
             );
-            assert_eq!(bundle.schnorr.to_bytes(), expected_schnorr);
+            assert_eq!(bundle.schnorr.to_raw_bytes(), expected_schnorr);
         }
 
         #[test]

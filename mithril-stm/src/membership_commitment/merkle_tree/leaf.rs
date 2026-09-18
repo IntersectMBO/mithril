@@ -102,7 +102,7 @@ impl MerkleTreeLeaf for MerkleTreeSnarkLeaf {
 impl MerkleTreeSnarkLeaf {
     fn to_bytes(self) -> Vec<u8> {
         let mut result = [0u8; 96];
-        result[..64].copy_from_slice(&self.0.to_bytes());
+        result[..64].copy_from_slice(&self.0.to_raw_bytes());
         result[64..].copy_from_slice(&self.1.to_bytes());
         result.to_vec()
     }
@@ -111,7 +111,7 @@ impl MerkleTreeSnarkLeaf {
         if bytes.len() < 96 {
             return Err(MerkleTreeError::SerializationError.into());
         }
-        let pk = VerificationKeyForSnark::from_bytes(&bytes[..64])
+        let pk = VerificationKeyForSnark::from_raw_bytes(&bytes[..64])
             .map_err(|_| MerkleTreeError::SerializationError)?;
         let mut target_value_bytes = [0u8; 32];
         target_value_bytes.copy_from_slice(&bytes[64..]);
