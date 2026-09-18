@@ -99,6 +99,12 @@ pub trait CertificateVerifierCache: Sync + Send {
         certificate: MithrilCertificate,
     ) -> MithrilResult<()>;
 
+    /// Commit all certificates that have been staged with the given certificate chain validation id.
+    async fn commit_staged_certificates(
+        &self,
+        certificate_chain_validation_id: &str,
+    ) -> MithrilResult<()>;
+
     /// Get the certificate with the given hash if present in the cache.
     async fn get_certificate_by_hash(
         &self,
