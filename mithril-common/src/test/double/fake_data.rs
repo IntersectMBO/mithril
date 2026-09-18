@@ -66,6 +66,8 @@ pub fn protocol_initializer<S: Into<String>>(
         None,
         kes_period,
         stake,
+        #[cfg(feature = "future_snark")]
+        Epoch::default(),
         &mut rng,
     )
     .unwrap()
@@ -156,6 +158,15 @@ pub fn signers_with_stakes(total: usize) -> Vec<entities::SignerWithStake> {
     MithrilFixtureBuilder::default()
         .with_signers(total)
         .build()
+        .signers_with_stake()
+}
+
+/// Fake SignersWithStake, with a given epoch. `build_at_epoch` will create Proof of Bound Possession
+/// if this function is called with `future_snark`
+pub fn signers_with_stakes_at_epoch(total: usize, epoch: Epoch) -> Vec<entities::SignerWithStake> {
+    MithrilFixtureBuilder::default()
+        .with_signers(total)
+        .build_at_epoch(epoch)
         .signers_with_stake()
 }
 

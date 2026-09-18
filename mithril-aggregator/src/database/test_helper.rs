@@ -412,6 +412,13 @@ pub fn insert_signer_registrations(
                         10,
                         signer_registration_record.created_at.to_rfc3339().into(),
                     ),
+                    (
+                        11,
+                        signer_registration_record
+                            .proof_of_bound_possession_for_snark
+                            .map(Value::String)
+                            .unwrap_or(Value::Null),
+                    ),
                 ])
                 .unwrap();
 

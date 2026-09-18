@@ -17,15 +17,17 @@ use mithril_common::{
     test::builder::{MithrilFixture, MithrilFixtureBuilder},
 };
 
-/// Generate signer data
+/// Generate signer data, with each signer's Proof of Bound Possession (when applicable) built
+/// for the given epoch.
 pub fn generate_signer_data(
     number_of_signers: usize,
     protocol_parameters: ProtocolParameters,
+    epoch: Epoch,
 ) -> MithrilFixture {
     MithrilFixtureBuilder::default()
         .with_signers(number_of_signers)
         .with_protocol_parameters(protocol_parameters)
-        .build()
+        .build_at_epoch(epoch)
 }
 
 /// Generate signer registration message
@@ -58,6 +60,10 @@ pub fn generate_register_signer_message(
             verification_key_signature_for_snark: signer
                 .verification_key_signature_for_snark
                 .map(|s| s.to_json_hex().unwrap()),
+            #[cfg(feature = "future_snark")]
+            proof_of_bound_possession_for_snark: signer
+                .proof_of_bound_possession_for_snark
+                .map(|p| p.to_bytes_hex().unwrap()),
         })
         .collect::<Vec<_>>()
 }

@@ -87,6 +87,7 @@ pub trait SignerRegistrationVerifier: Send + Sync {
         &self,
         signer: &Signer,
         stake_distribution: &StakeDistribution,
+        epoch: Epoch,
     ) -> StdResult<SignerWithStake>;
 }
 

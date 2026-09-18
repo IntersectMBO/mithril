@@ -5,6 +5,8 @@ use rand_chacha::ChaCha20Rng;
 use rand_core::{CryptoRng, RngCore, SeedableRng};
 use thiserror::Error;
 
+#[cfg(feature = "future_snark")]
+use crate::entities::Epoch;
 use crate::{
     StdResult,
     crypto_helper::{
@@ -23,6 +25,8 @@ use super::SingleSigner;
 pub struct SignerBuilder {
     protocol_parameters: ProtocolParameters,
     closed_key_registration: ProtocolClosedKeyRegistration,
+    #[cfg(feature = "future_snark")]
+    epoch: Epoch,
 }
 
 /// [SignerBuilder] specific errors
@@ -38,6 +42,7 @@ impl SignerBuilder {
     pub fn new(
         registered_signers: &[SignerWithStake],
         protocol_parameters: &ProtocolParameters,
+        #[cfg(feature = "future_snark")] epoch: Epoch,
     ) -> StdResult<Self> {
         if registered_signers.is_empty() {
             return Err(SignerBuilderError::EmptySigners.into());
@@ -47,7 +52,11 @@ impl SignerBuilder {
             .iter()
             .map(|s| s.into())
             .collect::<ProtocolStakeDistribution>();
-        let mut key_registration = ProtocolKeyRegistration::init(&stake_distribution);
+        let mut key_registration = ProtocolKeyRegistration::init(
+            &stake_distribution,
+            #[cfg(feature = "future_snark")]
+            epoch,
+        );
 
         for signer in registered_signers {
             key_registration
@@ -63,6 +72,8 @@ impl SignerBuilder {
                     #[cfg(feature = "future_snark")]
                     verification_key_signature_for_snark: signer
                         .verification_key_signature_for_snark,
+                    #[cfg(feature = "future_snark")]
+                    proof_of_bound_possession_for_snark: signer.proof_of_bound_possession_for_snark,
                 })
                 .with_context(|| {
                     format!("Registration failed for signer: '{}'", signer.party_id)
@@ -74,6 +85,8 @@ impl SignerBuilder {
         Ok(Self {
             protocol_parameters: protocol_parameters.clone(),
             closed_key_registration: closed_registration,
+            #[cfg(feature = "future_snark")]
+            epoch,
         })
     }
 
@@ -112,6 +125,8 @@ impl SignerBuilder {
                 .kes_evolutions
                 .map(|kes_evolutions| KesPeriod(0) + kes_evolutions),
             signer_with_stake.stake,
+            #[cfg(feature = "future_snark")]
+            self.epoch,
             rng,
         )
         .with_context(|| {
@@ -187,7 +202,10 @@ mod test {
 
     use crate::{
         crypto_helper::KesSignerStandard,
-        test::{builder::MithrilFixtureBuilder, double::fake_data},
+        test::{
+            builder::{MithrilFixtureBuilder, StakeDistributionGenerationMethod},
+            double::fake_data,
+        },
     };
 
     use super::*;
@@ -197,7 +215,13 @@ mod test {
         let signers = vec![];
         let protocol_parameters = fake_data::protocol_parameters();
 
-        let error = SignerBuilder::new(&signers, &protocol_parameters).expect_err(
+        let error = SignerBuilder::new(
+            &signers,
+            &protocol_parameters,
+            #[cfg(feature = "future_snark")]
+            Epoch::default(),
+        )
+        .expect_err(
             "We should not be able to construct a signer builder with an empty signers list",
         );
 
@@ -213,19 +237,23 @@ mod test {
         // different stake distributions, this will pass the individual check but not the
         // register check.
         let fixture = MithrilFixtureBuilder::default().with_signers(3).build();
+        let colliding_party_stake = fixture.signers_with_stake()[0].stake;
         let fixture_with_another_stake_distribution = MithrilFixtureBuilder::default()
             .with_signers(1)
-            .with_stake_distribution(
-                crate::test::builder::StakeDistributionGenerationMethod::RandomDistribution {
-                    seed: [4u8; 32],
-                    min_stake: 1,
-                },
-            )
+            .with_stake_distribution(StakeDistributionGenerationMethod::Uniform(
+                colliding_party_stake,
+            ))
             .build();
         let mut signers = fixture.signers_with_stake();
         signers.append(&mut fixture_with_another_stake_distribution.signers_with_stake());
 
-        let error = SignerBuilder::new(&signers, &fixture.protocol_parameters()).expect_err(
+        let error = SignerBuilder::new(
+            &signers,
+            &fixture.protocol_parameters(),
+            #[cfg(feature = "future_snark")]
+            Epoch::default(),
+        )
+        .expect_err(
             "We should not be able to construct a signer builder if a signer registration fail",
         );
 
@@ -242,6 +270,8 @@ mod test {
         SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
+            #[cfg(feature = "future_snark")]
+            Epoch::default(),
         )
         .expect("We should be able to construct a signer builder with valid signers");
     }
@@ -266,6 +296,8 @@ mod test {
         let error = SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
+            #[cfg(feature = "future_snark")]
+            Epoch::default(),
         )
         .unwrap()
         .build_test_single_signer(non_registered_signer.signer_with_stake.clone(), kes_signer)
@@ -294,6 +326,8 @@ mod test {
         let builder = SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
+            #[cfg(feature = "future_snark")]
+            Epoch::default(),
         )
         .unwrap();
 
@@ -315,6 +349,8 @@ mod test {
         let first_builder = SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
+            #[cfg(feature = "future_snark")]
+            Epoch::default(),
         )
         .unwrap();
 
@@ -325,6 +361,8 @@ mod test {
         let second_builder = SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
+            #[cfg(feature = "future_snark")]
+            Epoch::default(),
         )
         .unwrap();
 

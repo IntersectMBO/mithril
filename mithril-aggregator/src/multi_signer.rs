@@ -193,8 +193,8 @@ mod tests {
     #[tokio::test]
     async fn test_verify_single_signature() {
         let epoch = Epoch(5);
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
-        let next_fixture = MithrilFixtureBuilder::default().with_signers(4).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(5).build_at_epoch(epoch);
+        let next_fixture = MithrilFixtureBuilder::default().with_signers(4).build_at_epoch(epoch);
         let multi_signer = MultiSignerImpl::new(
             AggregateSignatureType::default(),
             Arc::new(RwLock::new(
@@ -254,7 +254,7 @@ mod tests {
     #[tokio::test]
     async fn test_multi_signer_multi_signature_ok() {
         let epoch = Epoch(5);
-        let fixture = MithrilFixtureBuilder::default().with_signers(5).build();
+        let fixture = MithrilFixtureBuilder::default().with_signers(5).build_at_epoch(epoch);
         let protocol_parameters = fixture.protocol_parameters();
         let multi_signer = MultiSignerImpl::new(
             AggregateSignatureType::default(),

@@ -4,7 +4,10 @@ use anyhow::{Context, anyhow};
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::StmResult;
+use crate::{
+    ProofOfBoundPossessionPrefix, StmResult,
+    signature_scheme::compute_schnorr_proof_of_bound_possession_challenge,
+};
 
 use super::{
     BaseFieldElement, DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE,
@@ -160,6 +163,24 @@ impl SchnorrSigningKey {
         })
     }
 
+    /// Implementation of the creation of the Proof of Bound Possession (PoBP) of the Schnorr signing key.
+    ///
+    /// This function receives a prefix and uses a standard Schnorr signature to
+    /// create a PoBP of the signing key by signing:
+    /// Sha256("SCHNORR_POBP_DST" || prefix || verification_key_bytes)
+    /// The prefix is used to bound the signing key to a given stake, epoch and pool_id.
+    pub fn create_proof_of_bound_possession<R: RngCore + CryptoRng>(
+        &self,
+        prefix: &ProofOfBoundPossessionPrefix,
+        rng: &mut R,
+    ) -> StmResult<StandardSchnorrSignature> {
+        let verification_key_bytes =
+            SchnorrVerificationKey::new_from_signing_key(self.clone()).to_bytes();
+        let field_element_for_proof_of_bound_possession =
+            compute_schnorr_proof_of_bound_possession_challenge(prefix, &verification_key_bytes)?;
+        self.sign_standard(&[field_element_for_proof_of_bound_possession], rng)
+    }
+
     /// Convert a `SchnorrSigningKey` into bytes.
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0.to_bytes()
@@ -271,6 +292,38 @@ mod tests {
             let serialized = SchnorrSigningKey::to_bytes(&value);
             let golden_serialized = SchnorrSigningKey::to_bytes(&golden_value());
             assert_eq!(golden_serialized, serialized);
+        }
+    }
+
+    mod golden_proof_of_bound_possession {
+
+        use crate::{ProofOfBoundPossessionPrefix, StandardSchnorrSignature};
+
+        use super::*;
+
+        const GOLDEN_PREFIX: &ProofOfBoundPossessionPrefix =
+            b"stake=100|epoch=5|pool_id=pool1abcdefghijklm";
+
+        // Generated once from golden_value() below; regenerate only if the PoBP construction
+        // (DST, prefix/vk order, hash function) intentionally changes.
+        const GOLDEN_BYTES: &[u8; 64] = &[
+            11, 251, 223, 3, 13, 227, 87, 101, 244, 179, 53, 226, 223, 122, 83, 107, 194, 12, 163,
+            45, 232, 160, 191, 106, 195, 65, 187, 35, 197, 214, 158, 4, 208, 18, 218, 177, 95, 135,
+            159, 36, 232, 21, 38, 102, 15, 155, 108, 215, 171, 82, 147, 232, 255, 144, 51, 136,
+            251, 84, 10, 30, 93, 12, 147, 60,
+        ];
+
+        fn golden_value() -> StandardSchnorrSignature {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let sk = SchnorrSigningKey::generate(&mut rng);
+            sk.create_proof_of_bound_possession(GOLDEN_PREFIX, &mut rng).unwrap()
+        }
+
+        #[test]
+        fn golden_conversions() {
+            let value = StandardSchnorrSignature::from_bytes(GOLDEN_BYTES)
+                .expect("This from bytes should not fail");
+            assert_eq!(golden_value(), value);
         }
     }
 

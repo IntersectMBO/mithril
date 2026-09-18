@@ -5,25 +5,39 @@ use mithril_common::{
     StdResult,
     entities::{
         BlockNumber, BlockNumberOffset, CardanoBlocksTransactionsSigningConfig,
-        CardanoTransactionsSigningConfig, Epoch,
+        CardanoTransactionsSigningConfig, Epoch, ProtocolParameters,
     },
-    test::builder::MithrilFixture,
 };
 
 use crate::{
     AggregateSignatureType, Aggregator, AggregatorConfig, GenesisKeys,
-    stress_test::{entities::AggregatorParameters, fake_chain, fake_signer, wait},
+    stress_test::{entities::AggregatorParameters, fake_chain, fake_signer, payload_builder, wait},
 };
 
 /// Bootstrap an aggregator and make it compute its genesis certificate
+///
+/// A signer's Proof of Bound Possession (when applicable) is only valid for the epoch it was
+/// registered for, so the signer fixture is rebuilt (same party ids and keys, fresh PoBP) for
+/// each registration round's specific epoch rather than reused across rounds.
 pub async fn bootstrap_aggregator(
     args: &AggregatorParameters,
-    signers_fixture: &MithrilFixture,
+    num_signers: usize,
+    protocol_parameters: ProtocolParameters,
     current_epoch: &mut Epoch,
 ) -> StdResult<Aggregator> {
     info!(">> Launch Aggregator");
     let signed_entity_types = vec!["CardanoDatabase".to_string()];
     let chain_observer_type = "cardano-cli";
+
+    // `current_epoch + 2`: +1 for the `restart_aggregator_and_move_one_epoch_forward` bump
+    // below, +1 more since registration always targets the epoch after the aggregator's current
+    // one.
+    let first_round_epoch = *current_epoch + 2;
+    let mut signers_fixture = payload_builder::generate_signer_data(
+        num_signers,
+        protocol_parameters.clone(),
+        first_round_epoch,
+    );
 
     let mut aggregator = Aggregator::new(&AggregatorConfig {
         index: 0,
@@ -43,7 +57,7 @@ pub async fn bootstrap_aggregator(
         mithril_era_reader_adapter: "dummy",
         protocol_configuration_marker_address: "",
         protocol_configuration_reader_adapter: "dummy",
-        startup_protocol_parameters: &signers_fixture.protocol_parameters(),
+        startup_protocol_parameters: &protocol_parameters,
         signed_entity_types: &signed_entity_types,
         aggregate_signature_type: AggregateSignatureType::Concatenation,
         chain_observer_type,
@@ -55,7 +69,7 @@ pub async fn bootstrap_aggregator(
     .unwrap();
 
     fake_chain::set_epoch(&args.mock_epoch_file_path(), *current_epoch);
-    fake_chain::set_stake_distribution(&args.mock_stake_distribution_file_path(), signers_fixture);
+    fake_chain::set_stake_distribution(&args.mock_stake_distribution_file_path(), &signers_fixture);
 
     // Extremely large interval since, for the two following starts, only the http_server part
     // of the aggregator is relevant as we need to send signer registrations.
@@ -66,9 +80,7 @@ pub async fn bootstrap_aggregator(
             &args.mock_epoch_file_path(),
         )
         .await;
-    aggregator
-        .set_protocol_parameters(&signers_fixture.protocol_parameters())
-        .await;
+    aggregator.set_protocol_parameters(&protocol_parameters).await;
 
     let cardano_transaction_signing_config = Some(CardanoTransactionsSigningConfig {
         security_parameter: BlockNumberOffset(1),
@@ -99,7 +111,7 @@ pub async fn bootstrap_aggregator(
     fake_signer::try_register_signer_until_registration_round_is_open(
         &aggregator,
         &signers_fixture.signers()[0],
-        *current_epoch + 1,
+        first_round_epoch,
         Duration::from_secs(60),
     )
     .await?;
@@ -108,7 +120,7 @@ pub async fn bootstrap_aggregator(
     let errors = fake_signer::register_signers_to_aggregator(
         &aggregator,
         &signers_fixture.signers(),
-        *current_epoch + 1,
+        first_round_epoch,
     )
     .await?;
     assert_eq!(0, errors);
@@ -116,18 +128,24 @@ pub async fn bootstrap_aggregator(
     fake_signer::try_register_signer_until_registration_round_is_open(
         &aggregator,
         &signers_fixture.signers()[0],
-        *current_epoch + 1,
+        first_round_epoch,
         Duration::from_secs(60),
     )
     .await?;
 
     restart_aggregator_and_move_one_epoch_forward(&mut aggregator, current_epoch, args).await?;
 
+    // The second round happens a further epoch later than the first: rebuild the fixture (same
+    // party ids and keys, fresh PoBP) for the new target epoch.
+    let second_round_epoch = *current_epoch + 1;
+    signers_fixture =
+        payload_builder::generate_signer_data(num_signers, protocol_parameters, second_round_epoch);
+
     info!(">> Send the Signer Key Registrations payloads for next genesis signers");
     let errors = fake_signer::register_signers_to_aggregator(
         &aggregator,
         &signers_fixture.signers(),
-        *current_epoch + 1,
+        second_round_epoch,
     )
     .await?;
     assert_eq!(0, errors);

@@ -4,6 +4,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserver;
+use mithril_common::entities::Epoch;
 use mithril_common::{
     StdResult,
     crypto_helper::{ProtocolKeyRegistration, SignerRegistrationParameters},
@@ -31,12 +32,17 @@ impl SignerRegistrationVerifier for MithrilSignerRegistrationVerifier {
         &self,
         signer: &Signer,
         stake_distribution: &StakeDistribution,
+        epoch: Epoch,
     ) -> StdResult<SignerWithStake> {
+        #[cfg(not(feature = "future_snark"))]
+        let _epoch = epoch;
         let mut key_registration = ProtocolKeyRegistration::init(
             &stake_distribution
                 .iter()
                 .map(|(k, v)| (k.to_owned(), *v))
                 .collect::<Vec<_>>(),
+            #[cfg(feature = "future_snark")]
+            epoch,
         );
         let party_id_register = match signer.party_id.as_str() {
             "" => None,
@@ -64,7 +70,10 @@ impl SignerRegistrationVerifier for MithrilSignerRegistrationVerifier {
                 verification_key_for_snark: signer.verification_key_for_snark,
                 #[cfg(feature = "future_snark")]
                 verification_key_signature_for_snark: signer.verification_key_signature_for_snark,
-            })
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: signer.proof_of_bound_possession_for_snark,
+            },
+        )
             .with_context(|| {
                 format!(
                     "KeyRegwrapper can not register signer with party_id: '{party_id_register:?}', kes_evolutions: '{kes_evolutions:?}'"
@@ -100,7 +109,11 @@ mod tests {
         ));
 
         signer_registration_verifier
-            .verify(&signer_to_register, &fixture.stake_distribution())
+            .verify(
+                &signer_to_register,
+                &fixture.stake_distribution(),
+                Epoch::default(),
+            )
             .await
             .unwrap();
     }
@@ -118,7 +131,11 @@ mod tests {
         ));
 
         signer_registration_verifier
-            .verify(&signer_to_register, &fixture.stake_distribution())
+            .verify(
+                &signer_to_register,
+                &fixture.stake_distribution(),
+                Epoch::default(),
+            )
             .await
             .expect_err("Verification should fail");
     }

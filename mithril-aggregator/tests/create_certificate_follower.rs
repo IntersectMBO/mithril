@@ -53,7 +53,7 @@ impl EpochFixturesMapBuilder {
                                 min_stake: 10,
                             },
                         )
-                        .build(),
+                        .build_at_epoch(Epoch(epoch as u64).next()),
                 )
             })
             .collect::<HashMap<_, _>>()
