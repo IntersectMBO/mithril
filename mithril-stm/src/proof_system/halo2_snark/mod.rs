@@ -173,7 +173,7 @@ mod tests {
 
                 // Circuit encoding, as the golden helpers perform it
                 assert_eq!(32, root_bytes.len());
-                let root_circuit = BaseFieldElement::from_bytes(root_bytes)
+                let root_circuit = BaseFieldElement::from_canonical_bytes(root_bytes)
                     .expect("Poseidon root must be canonical");
 
                 assert_eq!(

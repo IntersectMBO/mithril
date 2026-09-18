@@ -160,12 +160,12 @@ impl SchnorrSigningKey {
         })
     }
 
-    /// Convert a `SchnorrSigningKey` into its canonical raw byte representation.
+    /// Convert a `SchnorrSigningKey` into its raw byte representation.
     ///
     /// This exact byte layout is depended on by the genesis signing-key bundle and
     /// `Initializer`'s legacy decoder — it must not change.
     pub fn to_raw_bytes(&self) -> [u8; 32] {
-        self.0.to_bytes()
+        self.0.to_canonical_bytes()
     }
 
     /// Convert bytes into a `SchnorrSigningKey`.
@@ -177,7 +177,7 @@ impl SchnorrSigningKey {
                 || "Not enough bytes provided to re-construct a Schnorr signing key.",
             );
         }
-        let scalar_field_element = ScalarFieldElement::from_bytes(bytes)
+        let scalar_field_element = ScalarFieldElement::from_canonical_bytes(bytes)
             .with_context(|| "Could not construct Schnorr signing key from given bytes.")?;
         Ok(SchnorrSigningKey(scalar_field_element))
     }

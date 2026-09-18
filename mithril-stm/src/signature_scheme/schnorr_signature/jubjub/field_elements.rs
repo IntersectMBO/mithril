@@ -27,14 +27,16 @@ impl BaseFieldElement {
         BaseFieldElement(JubjubBase::random(rng))
     }
 
-    /// Converts the base field element to its byte representation in
-    /// little endian form
-    pub(crate) fn to_bytes(self) -> [u8; 32] {
+    /// Converts the base field element to its canonical little-endian byte representation.
+    pub(crate) fn to_canonical_bytes(self) -> [u8; 32] {
         self.0.to_bytes_le()
     }
 
-    /// Constructs a base field element from its byte representation
-    pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    /// Constructs a base field element from its canonical byte representation.
+    ///
+    /// Rejects any encoding that isn't the canonical representative below the field modulus —
+    /// unlike the lenient `from_raw` constructor below, which applies modulus reduction instead.
+    pub(crate) fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         let mut base_bytes = [0u8; 32];
         base_bytes.copy_from_slice(
             bytes
@@ -170,13 +172,16 @@ impl ScalarFieldElement {
         Err(anyhow!(SchnorrSignatureError::RandomScalarGeneration))
     }
 
-    /// Converts the scalar field element to its byte representation
-    pub(crate) fn to_bytes(self) -> [u8; 32] {
+    /// Converts the scalar field element to its canonical byte representation.
+    pub(crate) fn to_canonical_bytes(self) -> [u8; 32] {
         self.0.to_bytes()
     }
 
-    /// Constructs a scalar field element from its byte representation
-    pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    /// Constructs a scalar field element from its canonical byte representation.
+    ///
+    /// Rejects any encoding that isn't the canonical representative below the field modulus —
+    /// unlike the lenient `from_raw` constructor below, which applies modulus reduction instead.
+    pub(crate) fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         let mut scalar_bytes = [0u8; 32];
         scalar_bytes.copy_from_slice(
             bytes
@@ -240,7 +245,7 @@ impl Sub for ScalarFieldElement {
 
 impl Hash for ScalarFieldElement {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.to_bytes().hash(state);
+        self.to_canonical_bytes().hash(state);
     }
 }
 
@@ -282,10 +287,10 @@ mod tests {
         fn from_bytes_fails_if_value_too_high() {
             let bytes = [255; 32];
 
-            let value = BaseFieldElement::from_bytes(&bytes);
+            let value = BaseFieldElement::from_canonical_bytes(&bytes);
             value.expect_err("Bytes conversion should fail because input is higher than modulus.");
 
-            let value = ScalarFieldElement::from_bytes(&bytes);
+            let value = ScalarFieldElement::from_canonical_bytes(&bytes);
             value.expect_err("Bytes conversion should fail because input is higher than modulus.");
         }
 
@@ -294,9 +299,9 @@ mod tests {
         fn from_raw_recover_element_correctly() {
             let mut rng = ChaCha20Rng::from_seed([3u8; 32]);
             let elem = BaseFieldElement::random(&mut rng);
-            let elem_bytes = elem.to_bytes();
+            let elem_bytes = elem.to_canonical_bytes();
 
-            let val1 = BaseFieldElement::from_bytes(&elem_bytes).unwrap();
+            let val1 = BaseFieldElement::from_canonical_bytes(&elem_bytes).unwrap();
             let val2 = BaseFieldElement::from_raw(&elem_bytes).unwrap();
 
             assert_eq!(val1, val2);
@@ -306,7 +311,7 @@ mod tests {
         fn from_raw_succeed_for_max_value() {
             let bytes = [255; 32];
 
-            let value = BaseFieldElement::from_bytes(&bytes);
+            let value = BaseFieldElement::from_canonical_bytes(&bytes);
             value.expect_err("Bytes conversion should fail because input is higher than modulus.");
 
             let value = BaseFieldElement::from_raw(&bytes);

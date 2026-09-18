@@ -44,7 +44,7 @@ impl SchnorrVerificationKey {
         &self.0.0
     }
 
-    /// Convert a `SchnorrVerificationKey` into its canonical raw byte representation by
+    /// Convert a `SchnorrVerificationKey` into its raw byte representation by
     /// decomposing it into its coordinates first.
     ///
     /// This exact byte layout is depended on by the KES sign/verify preimage, the Merkle-tree
@@ -52,8 +52,8 @@ impl SchnorrVerificationKey {
     pub fn to_raw_bytes(self) -> [u8; 64] {
         let (x, y) = self.0.get_coordinates();
         let mut output = [0; 64];
-        output[0..32].copy_from_slice(&x.to_bytes());
-        output[32..64].copy_from_slice(&y.to_bytes());
+        output[0..32].copy_from_slice(&x.to_canonical_bytes());
+        output[32..64].copy_from_slice(&y.to_canonical_bytes());
         output
     }
 
@@ -66,8 +66,8 @@ impl SchnorrVerificationKey {
                 || "Not enough bytes provided to construct a Schnorr verification key.",
             );
         }
-        let x = BaseFieldElement::from_bytes(&bytes[0..32])?;
-        let y = BaseFieldElement::from_bytes(&bytes[32..64])?;
+        let x = BaseFieldElement::from_canonical_bytes(&bytes[0..32])?;
+        let y = BaseFieldElement::from_canonical_bytes(&bytes[32..64])?;
         let prime_order_projective_point = PrimeOrderProjectivePoint::from_coordinates(x, y)
             .with_context(|| "Cannot construct Schnorr verification key from given bytes.")?;
 
