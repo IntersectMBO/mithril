@@ -131,7 +131,7 @@ impl SingleSignature {
                 let schnorr_signature_end = snark_offset
                     .checked_add(96)
                     .ok_or(SignatureError::SerializationError)?;
-                let schnorr_signature = crate::UniqueSchnorrSignature::from_bytes(
+                let schnorr_signature = crate::UniqueSchnorrSignature::from_raw_bytes(
                     bytes
                         .get(snark_offset..schnorr_signature_end)
                         .ok_or(SignatureError::SerializationError)?,

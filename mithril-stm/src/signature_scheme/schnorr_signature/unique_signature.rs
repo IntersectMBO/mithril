@@ -98,8 +98,11 @@ impl UniqueSchnorrSignature {
         Ok(())
     }
 
-    /// Convert a `UniqueSchnorrSignature` into bytes.
-    pub fn to_bytes(self) -> [u8; 96] {
+    /// Convert a `UniqueSchnorrSignature` into its canonical raw byte representation.
+    ///
+    /// This exact byte layout is depended on by `SingleSignature`'s legacy decoder — it must
+    /// not change.
+    pub fn to_raw_bytes(self) -> [u8; 96] {
         let mut out = [0; 96];
         out[0..32].copy_from_slice(&self.commitment_point.to_bytes());
         out[32..64].copy_from_slice(&self.response.to_bytes());
@@ -109,7 +112,7 @@ impl UniqueSchnorrSignature {
     }
 
     /// Convert bytes into a `UniqueSchnorrSignature`.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_raw_bytes(bytes: &[u8]) -> StmResult<Self> {
         if bytes.len() < 96 {
             return Err(anyhow!(SchnorrSignatureError::Serialization))
                 .with_context(|| "Not enough bytes provided to create a signature.");
@@ -199,7 +202,7 @@ mod tests {
     #[test]
     fn from_bytes_signature_not_enough_bytes() {
         let msg = vec![0u8; 95];
-        let result = UniqueSchnorrSignature::from_bytes(&msg);
+        let result = UniqueSchnorrSignature::from_raw_bytes(&msg);
         result.expect_err("Not enough bytes.");
     }
 
@@ -211,9 +214,9 @@ mod tests {
         let sk = SchnorrSigningKey::generate(&mut rng);
 
         let sig = sk.sign_unique(&[base_input], &mut rng).unwrap();
-        let sig_bytes: [u8; 96] = sig.to_bytes();
+        let sig_bytes: [u8; 96] = sig.to_raw_bytes();
 
-        let sig_restored = UniqueSchnorrSignature::from_bytes(&sig_bytes).unwrap();
+        let sig_restored = UniqueSchnorrSignature::from_raw_bytes(&sig_bytes).unwrap();
         assert_eq!(sig, sig_restored);
     }
 
@@ -225,12 +228,12 @@ mod tests {
         let sk = SchnorrSigningKey::generate(&mut rng);
 
         let sig = sk.sign_unique(&[base_input], &mut rng).unwrap();
-        let sig_bytes: [u8; 96] = sig.to_bytes();
+        let sig_bytes: [u8; 96] = sig.to_raw_bytes();
 
         let mut extended_bytes = sig_bytes.to_vec();
         extended_bytes.extend_from_slice(&[0xFF; 10]);
 
-        let sig_restored = UniqueSchnorrSignature::from_bytes(&extended_bytes).unwrap();
+        let sig_restored = UniqueSchnorrSignature::from_raw_bytes(&extended_bytes).unwrap();
         assert_eq!(sig, sig_restored);
     }
 
@@ -244,8 +247,8 @@ mod tests {
         let sig = sk.sign_unique(&[base_input], &mut rng).unwrap();
 
         // Converting to bytes multiple times should give same result
-        let bytes1 = sig.to_bytes();
-        let bytes2 = sig.to_bytes();
+        let bytes1 = sig.to_raw_bytes();
+        let bytes2 = sig.to_raw_bytes();
 
         assert_eq!(bytes1, bytes2);
     }
@@ -264,8 +267,8 @@ mod tests {
             .expect("Original signature should verify");
 
         // Roundtrip through bytes
-        let sig_bytes = sig.to_bytes();
-        let sig_restored = UniqueSchnorrSignature::from_bytes(&sig_bytes).unwrap();
+        let sig_bytes = sig.to_raw_bytes();
+        let sig_restored = UniqueSchnorrSignature::from_raw_bytes(&sig_bytes).unwrap();
 
         // Restored signature should still verify
         sig_restored
@@ -295,12 +298,12 @@ mod tests {
 
         #[test]
         fn golden_conversions() {
-            let value = UniqueSchnorrSignature::from_bytes(GOLDEN_BYTES)
+            let value = UniqueSchnorrSignature::from_raw_bytes(GOLDEN_BYTES)
                 .expect("This from bytes should not fail");
             assert_eq!(golden_value(), value);
 
-            let serialized = UniqueSchnorrSignature::to_bytes(value);
-            let golden_serialized = UniqueSchnorrSignature::to_bytes(golden_value());
+            let serialized = UniqueSchnorrSignature::to_raw_bytes(value);
+            let golden_serialized = UniqueSchnorrSignature::to_raw_bytes(golden_value());
             assert_eq!(golden_serialized, serialized);
         }
     }
