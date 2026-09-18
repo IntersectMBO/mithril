@@ -8,12 +8,16 @@ use anyhow::{Context, anyhow};
 use midnight_curves::Bls12;
 use midnight_proofs::poly::commitment::Params;
 use midnight_proofs::poly::kzg::params::ParamsKZG;
-use midnight_zk_stdlib::{self as zk, MidnightCircuit, MidnightPK, MidnightVK, ZkStdLibArch};
+use midnight_zk_stdlib::{
+    self as zk, MidnightCircuit, MidnightPK, MidnightVK, ZkStdLib, ZkStdLibArch,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::StmResult;
 use crate::circuits::halo2::errors::CertificateCircuitError;
-use crate::circuits::halo2_ivc::{KZGCommitmentScheme, NativeField, PairingEngine, VerifyingKey};
+use crate::circuits::halo2_ivc::{
+    ConstraintSystem, KZGCommitmentScheme, NativeField, PairingEngine, VerifyingKey,
+};
 use crate::circuits::key_generator::KeyGenerator;
 use crate::circuits::key_serialization::KEY_SERDE_FORMAT;
 use crate::circuits::trusted_setup::MIDNIGHT_SRS_DEGREE;
@@ -46,6 +50,21 @@ impl NonRecursiveCircuitVerifyingKey {
     /// Returns the circuit degree using the underlying `MidnightVK`
     pub(crate) fn circuit_degree(&self) -> u32 {
         self.midnight_vk().vk().get_domain().k()
+    }
+
+    /// Number of fixed commitments the approved architecture produces at `degree`.
+    ///
+    /// The reader takes this count from the bytes and reads that many commitments, so a key can
+    /// declare fewer than the configured constraint system has columns; later verification indexes
+    /// commitments by those columns. The degree comes from the key because certificate degrees vary.
+    fn expected_fixed_commitment_count(degree: u32) -> usize {
+        let mut constraint_system = ConstraintSystem::<NativeField>::default();
+        ZkStdLib::configure(
+            &mut constraint_system,
+            (certificate_circuit_architecture(), (degree - 1) as u8),
+        );
+        // Selectors become fixed columns when the key is read.
+        constraint_system.num_fixed_columns() + constraint_system.num_selectors()
     }
 
     /// Checks the header of an encoded certificate verifying key before it is decoded.
@@ -172,6 +191,17 @@ impl TryFromBytes for NonRecursiveCircuitVerifyingKey {
             ));
         }
 
+        let actual = midnight_vk.vk().fixed_commitments().len();
+        let expected = Self::expected_fixed_commitment_count(midnight_vk.vk().get_domain().k());
+        if actual != expected {
+            return Err(anyhow!(
+                CertificateCircuitError::VerificationKeyCommitmentCountMismatch {
+                    expected,
+                    actual
+                }
+            ));
+        }
+
         Ok(Self(midnight_vk))
     }
 }
@@ -229,6 +259,8 @@ mod tests {
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
 
+    use midnight_proofs::poly::commitment::PolynomialCommitmentScheme;
+    use midnight_proofs::utils::helpers::byte_length;
     use midnight_zk_stdlib::ZkStdLibArch;
 
     use super::{NonRecursiveCircuitProvingKey, NonRecursiveCircuitVerifyingKey};
@@ -236,8 +268,12 @@ mod tests {
     use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
     use crate::circuits::halo2::circuit::CertificateCircuit;
     use crate::circuits::halo2::errors::CertificateCircuitError;
-    use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
+    use crate::circuits::halo2_ivc::{
+        KZGCommitmentScheme, NativeField, PairingEngine,
+        RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+    };
     use crate::circuits::key_generator::KeyGenerator;
+    use crate::circuits::key_serialization::KEY_SERDE_FORMAT;
     use crate::codec::{TryFromBytes, TryToBytes};
 
     #[test]
@@ -454,6 +490,50 @@ mod tests {
         assert!(
             error.to_string().contains("architecture"),
             "expected an architecture mismatch, got: {error}"
+        );
+    }
+
+    // The reader takes the commitment count from the bytes and reads that many, so a key can declare
+    // fewer than its constraint system has fixed columns; verification then indexes by column.
+    #[test]
+    fn a_key_declaring_too_few_fixed_commitments_is_rejected() {
+        let mut reader = NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
+        ZkStdLibArch::read_from_serialized_vk(&mut reader).expect("architecture should read");
+        let base = NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION.len() - reader.len();
+        // envelope degree, public input count, then the raw key's version and degree
+        let count_index = base + 1 + 4 + 2;
+
+        let mut bytes = NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION.to_vec();
+        let declared = u32::from_le_bytes(bytes[count_index..count_index + 4].try_into().unwrap());
+        assert_eq!(
+            declared as usize,
+            NonRecursiveCircuitVerifyingKey::expected_fixed_commitment_count(u32::from(
+                bytes[base]
+            )),
+            "the production key should declare the configured commitment count"
+        );
+
+        // Drop one commitment along with the count, so the encoding stays internally consistent and
+        // fully consumed: only the cardinality guard can reject it.
+        let commitment_length = byte_length::<
+            <KZGCommitmentScheme<PairingEngine> as PolynomialCommitmentScheme<NativeField>>::Commitment,
+        >(KEY_SERDE_FORMAT);
+        let commitments_start = count_index + 4;
+        bytes.drain(commitments_start..commitments_start + commitment_length);
+        bytes[count_index..count_index + 4].copy_from_slice(&(declared - 1).to_le_bytes());
+
+        let error = NonRecursiveCircuitVerifyingKey::try_from_bytes(&bytes)
+            .expect_err("a short commitment count must be rejected");
+
+        assert!(
+            matches!(
+                error.downcast_ref::<CertificateCircuitError>(),
+                Some(CertificateCircuitError::VerificationKeyCommitmentCountMismatch {
+                    actual,
+                    ..
+                }) if *actual as u32 == declared - 1
+            ),
+            "expected a commitment count mismatch, got: {error}"
         );
     }
 }
