@@ -108,7 +108,7 @@ jobs:
       - name: Upload Mithril binaries
         uses: actions/upload-artifact@v7
         with:
-          name: mithril-binaries
+          name: mithril-binaries-e2e
           path: |
             target/x86_64-unknown-linux-musl/release/mithril-aggregator
             target/x86_64-unknown-linux-musl/release/mithril-client
@@ -182,7 +182,7 @@ jobs:
       - name: Download binaries
         uses: actions/download-artifact@v8
         with:
-          name: mithril-binaries
+          name: mithril-binaries-e2e
           path: ./mithril-binaries
 
       - name: Download e2e runner
