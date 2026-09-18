@@ -39,7 +39,7 @@ jobs:
             mithril_p2p_signer_relay_signature_registration_mode: p2p
             mithril_ipfs_enabled: true
             mithril_api_domain: api.mithril.network
-            mithril_era_reader_adapter_type: bootstrap-latest
+            mithril_era_reader_adapter_type: bootstrap
             mithril_signers: |
               {
                 "1" = {
@@ -74,7 +74,7 @@ jobs:
             mithril_p2p_signer_relay_signature_registration_mode: p2p
             mithril_ipfs_enabled: true
             mithril_api_domain: api.mithril.network
-            mithril_era_reader_adapter_type: bootstrap-latest
+            mithril_era_reader_adapter_type: bootstrap
             mithril_signers: |
               {}
             mithril_leader_aggregator_endpoint: https://aggregator.dev-preview.api.mithril.network/aggregator
