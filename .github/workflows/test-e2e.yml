@@ -65,6 +65,15 @@ on:
         required: false
         type: string
         default: "--features future_snark"
+    secrets:
+      E2E_RUNNER_GCP_CREDENTIALS:
+        description: "Credentials of the service account starting and stopping the self-hosted runner"
+        required: false
+
+# The self-hosted runner is a single machine started and stopped by each run: runs must not overlap
+concurrency:
+  group: e2e-self-hosted-runner
+  cancel-in-progress: false
 
 jobs:
   prepare-env-variables:
@@ -139,9 +148,31 @@ jobs:
           name: e2e-runner
           path: target/release/mithril-end-to-end
 
-  e2e:
+  start-e2e-runner:
     runs-on: ubuntu-24.04
-    needs: [prepare-env-variables, prepare-binaries, prepare-e2e-runner]
+    needs: [prepare-binaries, prepare-e2e-runner]
+    steps:
+      - name: Start the virtual machine hosting the self-hosted runner
+        shell: bash
+        env:
+          GCP_CREDENTIALS: ${{ secrets.E2E_RUNNER_GCP_CREDENTIALS }}
+        run: |
+          printf '%s' "$GCP_CREDENTIALS" > ./google-credentials.json
+          gcloud auth activate-service-account --key-file=./google-credentials.json
+          gcloud compute instances start mithril-e2e-runner \
+            --project=$(jq -r '.project_id' ./google-credentials.json) \
+            --zone=europe-west1-b
+          rm ./google-credentials.json
+
+  e2e:
+    runs-on: ${{ fromJSON(matrix.runs_on || '"ubuntu-24.04"') }}
+    needs:
+      [
+        prepare-env-variables,
+        prepare-binaries,
+        prepare-e2e-runner,
+        start-e2e-runner,
+      ]
     strategy:
       fail-fast: false
       matrix:
@@ -178,32 +209,28 @@ jobs:
           # Sized for a 16 cores machine (e.g. 'e2-standard-16'), exceeds the standard GitHub runners capacity
           - mode: "full-mixed-ivc-chained"
             aggregate_signature_type: "Concatenation,IvcSnark,IvcSnark"
-            run_args: "--mithril-era=pythagoras --mithril-next-era=lagrange --mithril-era-regenesis-on-switch --cardano-slot-length 1.0 --cardano-epoch-length 900 --mithril-run-interval 60000 --number-of-aggregators=3 --chain-follower-aggregators --use-relays --relay-signer-registration-mode=passthrough --relay-signature-registration-mode=p2p"
+            run_args: "--mithril-era=pythagoras --mithril-next-era=lagrange --mithril-era-regenesis-on-switch --cardano-slot-length 1.0 --cardano-epoch-length 600 --mithril-run-interval 60000 --number-of-aggregators=3 --chain-follower-aggregators --use-relays --relay-signer-registration-mode=passthrough --relay-signature-registration-mode=p2p"
             scenario_args: "full --signed-entity-types CardanoStakeDistribution"
-            timeout_minutes: 390
-            skip: true
+            timeout_minutes: 280
+            runs_on: '["self-hosted", "e2e-ivc-16core"]'
 
     steps:
       - name: Checkout
-        if: ${{ !matrix.skip }}
         uses: actions/checkout@v6
 
       - name: Download binaries
-        if: ${{ !matrix.skip }}
         uses: actions/download-artifact@v8
         with:
           name: mithril-binaries-e2e
           path: ./mithril-binaries
 
       - name: Download e2e runner
-        if: ${{ !matrix.skip }}
         uses: actions/download-artifact@v8
         with:
           name: e2e-runner
           path: ./mithril-binaries
 
       - name: Prepare binaries
-        if: ${{ !matrix.skip }}
         shell: bash
         run: |
           chmod +x ./mithril-binaries/mithril-aggregator
@@ -214,7 +241,6 @@ jobs:
           mkdir -p artifacts
 
       - name: Run E2E tests
-        if: ${{ !matrix.skip }}
         uses: nick-fields/retry@v4
         with:
           shell: bash
@@ -243,7 +269,7 @@ jobs:
             exit $EXIT_CODE
 
       - name: Upload E2E Tests Artifacts
-        if: ${{ failure() }}
+        if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: mithril-e2e-tests-artifacts-run_${{ github.run_number }}-attempt_${{ github.run_attempt }}-mode_${{ matrix.mode }}-cardano-${{ matrix.cardano_node_version }}
@@ -254,3 +280,24 @@ jobs:
             # exclude cardano tools, saving ~500mb of data:
             !./artifacts/devnet/bin/
           if-no-files-found: error
+
+  stop-e2e-runner:
+    runs-on: ubuntu-24.04
+    if: ${{ always() }}
+    needs: [start-e2e-runner, e2e]
+    steps:
+      - name: Stop the virtual machine hosting the self-hosted runner
+        shell: bash
+        env:
+          GCP_CREDENTIALS: ${{ secrets.E2E_RUNNER_GCP_CREDENTIALS }}
+        run: |
+          printf '%s' "$GCP_CREDENTIALS" > ./google-credentials.json
+          gcloud auth activate-service-account --key-file=./google-credentials.json
+          project=$(jq -r '.project_id' ./google-credentials.json)
+          status=$(gcloud compute instances describe mithril-e2e-runner \
+            --project=$project --zone=europe-west1-b --format='value(status)')
+          if [ "$status" != "TERMINATED" ] && [ "$status" != "STOPPING" ]; then
+            gcloud compute instances stop mithril-e2e-runner \
+              --project=$project --zone=europe-west1-b
+          fi
+          rm ./google-credentials.json

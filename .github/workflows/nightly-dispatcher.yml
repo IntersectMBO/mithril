@@ -25,6 +25,8 @@ jobs:
 
   test-e2e:
     uses: ./.github/workflows/test-e2e.yml
+    secrets:
+      E2E_RUNNER_GCP_CREDENTIALS: ${{ secrets.E2E_RUNNER_GCP_CREDENTIALS }}
 
   publish-crate-dry-run-with-verification:
     runs-on: ubuntu-24.04
