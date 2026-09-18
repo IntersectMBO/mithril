@@ -215,10 +215,6 @@ pub enum MithrilEvent {
         certificate_hash: String,
     },
     /// An individual certificate of a chain has been fetched from the cache.
-    // Note: Currently unemitted, caching now happens inside a `CertificateRetriever` decorator
-    // (`CachedCertificateRetriever` in `certificate_client/fetch.rs`), which has no
-    // `certificate_chain_validation_id` available at the point a cache hit occurs.
-    // Kept defined for a follow-up ticket that would re-allow emitting this event.
     CertificateFetchedFromCache {
         /// Unique identifier used to track this specific certificate chain validation
         certificate_chain_validation_id: String,

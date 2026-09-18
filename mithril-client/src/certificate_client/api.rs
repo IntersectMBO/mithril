@@ -111,6 +111,9 @@ pub trait CertificateVerifierCache: Sync + Send {
         certificate_hash: &str,
     ) -> MithrilResult<Option<MithrilCertificate>>;
 
+    /// Check that a committed certificate with the given hash exists in the cache.
+    async fn certificate_exist(&self, certificate_hash: &str) -> MithrilResult<bool>;
+
     /// Reset the stored values
     async fn reset(&self) -> MithrilResult<()>;
 }
