@@ -1,112 +1,91 @@
-import React, { useEffect, useRef } from "react";
 import Link from "@docusaurus/Link";
-import { WhyMithrilContents } from "../../homepage-content/why-mithril";
-import { cx } from "cva";
-import useMediaQuery from "../hooks/useMediaQuery";
-import { forLargeScreen } from "../../helpers/media-queries";
 
 const WhyMithril = () => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const isLargeScreen = useMediaQuery(forLargeScreen);
-
-  useEffect(() => {
-    let animationFrameId: number;
-
-    const animate = () => {
-      const sectionEl = containerRef.current;
-      if (!sectionEl) return;
-
-      const scrollY = window.scrollY;
-      const viewportHeight = window.innerHeight;
-
-      const sectionTop = sectionEl.offsetTop;
-      const sectionHeight = sectionEl.offsetHeight;
-      const scrollProgress =
-        (scrollY + viewportHeight - sectionTop) /
-        (sectionHeight + viewportHeight);
-
-      itemRefs.current.forEach((el, index) => {
-        if (!el) return;
-
-        const start = 0.07 + index * 0.08;
-        const end = start + 0.75;
-
-        let localProgress = (scrollProgress - start) / (end - start);
-        localProgress = Math.min(Math.max(localProgress, 0), 1);
-
-        const translateZ = -200 + localProgress * 400;
-        const opacity =
-          localProgress < 0.5 ? localProgress * 2 : (1 - localProgress) * 2;
-        const blur =
-          localProgress < 0.5
-            ? 5 - localProgress * 10
-            : (1 - localProgress) * 100;
-
-        el.style.opacity = `${opacity}`;
-        el.style.transform = `translateZ(${translateZ}px)`;
-        el.style.filter = `blur(${blur}px)`;
-      });
-
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    animationFrameId = requestAnimationFrame(animate);
-
-    return () => cancelAnimationFrame(animationFrameId);
-  }, []);
-
   return (
-    <section className="component bg-blue-light">
-      <div className="pageContainer">
-        <h5 className="text-base text-black pb-12 font-thin m-0">
-          {WhyMithrilContents.title}
-        </h5>
-
-        <div className="flex tablet:flex-row flex-col justify-between gap-6.5 text-primary">
-          <div
-            className="text-3xl text-center flex justify-center text-blue items-center basis-1/2 stuck-grid flex-col gap-4"
-            ref={containerRef}
-          >
-            {WhyMithrilContents.timeline.map((item, index) => (
-              <div
-                key={index}
-                ref={(el) => (itemRefs.current[index] = el)}
-                className={cx(
-                  "timeline-grid-item",
-                  item === "Basho" && "text-blue-highlight",
-                )}
-                style={{
-                  transformStyle: "preserve-3d",
-                  opacity: 0,
-                  filter: "blur(5px)",
-                  transform: "translateZ(-200px)",
-                  alignSelf: [
-                    "flex-start",
-                    "flex-end",
-                    "flex-start",
-                    "center",
-                    "flex-end",
-                  ][index % 5],
-                }}
-              >
-                {item}
-              </div>
-            ))}
-          </div>
-
-          <div className="flex flex-col basis-1/2 gap-10 fade-in delay">
-            {WhyMithrilContents.descriptionParagraph.message}
+    <div className="relative w-full bg-white">
+      <div className="justify-items-center py-14">
+        <h3>Why Mithril ?</h3>
+      </div>
+      <div className="max-w-3/5 mx-auto grid grid-cols-2 bg-gray-dark rounded-4xl mb-28 py-16">
+        <div className="my-auto">
+          <div className="px-16 space-y-8">
+            <img src="img/mithril-logo-dark.svg" height="50" width="50" />
+            <p className="text-white">
+              Built on stake-based threshold multisignatures,{" "}
+              <span className="text-(--ifm-color-primary) font-bold">
+                Mithril
+              </span>{" "}
+              lets clients verify Cardano chain data without running a full node
+              — ideal for wallets, exchanges, bridges, and any app that needs
+              verified chain data with minimal overhead
+            </p>
             <Link
-              className="inline-block px-4 py-3 font-bold text-sm text-white rounded-lg border-[0.5px] border-gray-border no-underline bg-secondary hover:bg-blue-extralight hover:no-underline hover:text-primary hover:scale-105 transition-all w-fit hover:text-white"
-              to="/mithril/beginner/why-use-mithril"
+              className="inline-block px-4 py-2 font-bold text-gray-dark rounded-lg border-[0.5px] bg-white hover:no-underline hover:scale-105 transition-all"
+              to="/manual/operate/run-signer-node"
             >
               Learn more
             </Link>
           </div>
         </div>
+        <div className="my-auto">
+          <div className="px-18 space-y-8 justify-items-center">
+            <div className="shine-card bg-(--ifm-color-primary-darkest)/40 rounded-xl p-5">
+              <div className="grid grid-cols-3 gap-4">
+                <img
+                  className="my-auto"
+                  src="img/people.svg"
+                  height="50"
+                  width="50"
+                />
+                <p className="my-auto col-span-2 text-white-ish text-xs/4">
+                  <span className="font-bold text-lg">250+</span>
+                  <br />
+                  Active Signers
+                </p>
+              </div>
+            </div>
+            <div
+              className="shine-card bg-(--ifm-color-primary-darkest)/40 rounded-xl p-5"
+              style={{ "--shine-delay": "0.4s" } as React.CSSProperties}
+            >
+              <div className="grid grid-cols-3 gap-4">
+                <img
+                  className="my-auto"
+                  src="img/safe.svg"
+                  height="50"
+                  width="50"
+                />
+                <p className="my-auto col-span-2 text-white-ish text-xs/4">
+                  <span className="font-bold text-lg">50M+</span>
+                  <br />
+                  ADA stake securing
+                  <br />
+                  the network
+                </p>
+              </div>
+            </div>
+            <div
+              className="shine-card bg-(--ifm-color-primary-darkest)/40 rounded-xl p-5"
+              style={{ "--shine-delay": "0.8s" } as React.CSSProperties}
+            >
+              <div className="grid grid-cols-3 gap-4">
+                <img
+                  className="my-auto"
+                  src="img/rocket.svg"
+                  height="50"
+                  width="50"
+                />
+                <p className="my-auto col-span-2 text-white-ish text-xs/4">
+                  <span className="font-bold text-lg">8 min</span>
+                  <br />
+                  To bootstrap a node
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </section>
+    </div>
   );
 };
 
