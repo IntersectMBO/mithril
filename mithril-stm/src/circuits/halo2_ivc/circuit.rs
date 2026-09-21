@@ -135,12 +135,14 @@ impl Relation for IvcCircuit {
     ) -> Result<(), Error> {
         let builder = IvcConstraintBuilder::new(std_lib);
 
-        let global_value = witness.clone().map(|data| data.global);
-        let state_value = witness.clone().map(|data| data.state);
-        let witness_value = witness.clone().map(|data| data.witness);
-        let certificate_proof_value = witness.clone().map(|data| data.certificate_proof);
-        let ivc_proof_value = witness.clone().map(|data| data.ivc_proof);
-        let accumulator_value = witness.map(|data| data.accumulator);
+        // Borrowed, so each part is copied once rather than the whole witness copied once per part.
+        let data = witness.as_ref();
+        let global_value = data.map(|data| data.global.clone());
+        let state_value = data.map(|data| data.state.clone());
+        let witness_value = data.map(|data| data.witness.clone());
+        let certificate_proof_value = data.map(|data| data.certificate_proof.clone());
+        let ivc_proof_value = data.map(|data| data.ivc_proof.clone());
+        let accumulator_value = data.map(|data| data.accumulator.clone());
 
         let (ivc_circuit_domain, ivc_circuit_constraint_system) =
             &self.ivc_circuit_domain_and_constraint_system;
