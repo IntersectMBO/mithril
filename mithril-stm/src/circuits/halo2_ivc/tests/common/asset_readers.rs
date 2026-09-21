@@ -62,7 +62,7 @@ fn write_schnorr_signature<W: Write>(
     writer: &mut W,
     signature: &StandardSchnorrSignature,
 ) -> StmResult<()> {
-    writer.write_all(&signature.to_bytes())?;
+    writer.write_all(&signature.to_raw_bytes())?;
     Ok(())
 }
 
@@ -318,8 +318,8 @@ pub(crate) fn store_genesis_benchmark_fixture(
         )
     })?;
     writer.write_all(&fixture.genesis_message)?;
-    writer.write_all(&fixture.genesis_verification_key.to_bytes())?;
-    writer.write_all(&fixture.genesis_signature.to_bytes())?;
+    writer.write_all(&fixture.genesis_verification_key.to_raw_bytes())?;
+    writer.write_all(&fixture.genesis_signature.to_raw_bytes())?;
     writer.write_all(&fixture.genesis_protocol_message_preimage)?;
     writer.flush().with_context(|| {
         format!(

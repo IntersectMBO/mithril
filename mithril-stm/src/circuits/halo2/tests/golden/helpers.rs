@@ -234,7 +234,7 @@ fn decode_merkle_tree_commitment(root_bytes: &[u8]) -> StmResult<MerkleTreeCommi
             }
         )
     })?;
-    BaseFieldElement::from_bytes(&root_array)
+    BaseFieldElement::from_canonical_bytes(&root_array)
         .ok()
         .map(Into::into)
         .ok_or_else(|| anyhow!(CertificateCircuitError::NonCanonicalMerkleTreeCommitmentBytes))
@@ -322,7 +322,7 @@ fn transcript_message(
 }
 
 fn assert_challenge_endianness(sig: &UniqueSchnorrSignature) -> StmResult<()> {
-    let challenge_bytes = sig.challenge.to_bytes();
+    let challenge_bytes = sig.challenge.to_canonical_bytes();
     let challenge_base = CircuitBase::from_bytes_le(&challenge_bytes)
         .into_option()
         .ok_or_else(|| anyhow!(CertificateCircuitError::InvalidChallengeBytes))?;

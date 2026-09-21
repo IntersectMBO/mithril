@@ -212,13 +212,13 @@ pub fn signed_message_from_digest(sha256_digest: &[u8]) -> String {
 
 /// Hex-encode a SNARK genesis signature (128 hex characters from the 64 raw bytes).
 pub fn schnorr_signature_to_hex(signature: &SchnorrSignature) -> String {
-    hex::encode(signature.to_bytes())
+    hex::encode(signature.to_raw_bytes())
 }
 
 /// Decode a hex-encoded SNARK genesis signature.
 pub fn schnorr_signature_from_hex(raw: &str) -> StdResult<SchnorrSignature> {
     let bytes = hex::decode(raw).with_context(|| "Failed to hex-decode SNARK genesis signature")?;
-    SchnorrSignature::from_bytes(&bytes)
+    SchnorrSignature::from_raw_bytes(&bytes)
         .with_context(|| "Failed to deserialise SNARK genesis signature from bytes")
 }
 

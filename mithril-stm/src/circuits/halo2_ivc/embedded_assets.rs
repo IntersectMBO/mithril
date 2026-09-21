@@ -243,7 +243,7 @@ fn read_state_public_input<R: Read>(reader: &mut R) -> StmResult<State> {
 fn read_schnorr_signature<R: Read>(reader: &mut R) -> StmResult<StandardSchnorrSignature> {
     let mut bytes = [0u8; 64];
     reader.read_exact(&mut bytes)?;
-    StandardSchnorrSignature::from_bytes(&bytes)
+    StandardSchnorrSignature::from_raw_bytes(&bytes)
 }
 
 /// Reads exactly `N` bytes stored behind a 32-bit little-endian length prefix. Returns
@@ -582,11 +582,11 @@ fn read_genesis_benchmark_fixture_from_reader<R: Read>(
 
     let mut verification_key_bytes = [0u8; 64];
     reader.read_exact(&mut verification_key_bytes)?;
-    let genesis_verification_key = SchnorrVerificationKey::from_bytes(&verification_key_bytes)?;
+    let genesis_verification_key = SchnorrVerificationKey::from_raw_bytes(&verification_key_bytes)?;
 
     let mut signature_bytes = [0u8; 64];
     reader.read_exact(&mut signature_bytes)?;
-    let genesis_signature = StandardSchnorrSignature::from_bytes(&signature_bytes)?;
+    let genesis_signature = StandardSchnorrSignature::from_raw_bytes(&signature_bytes)?;
 
     let mut genesis_protocol_message_preimage = [0u8; PREIMAGE_SIZE];
     reader.read_exact(&mut genesis_protocol_message_preimage)?;

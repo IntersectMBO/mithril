@@ -92,7 +92,10 @@ mod tests {
         let restored = GenesisSignedPayload::try_from_bytes(&bytes).unwrap();
 
         assert_eq!(restored.ed25519.to_bytes(), payload.ed25519.to_bytes());
-        assert_eq!(restored.schnorr.to_bytes(), payload.schnorr.to_bytes());
+        assert_eq!(
+            restored.schnorr.to_raw_bytes(),
+            payload.schnorr.to_raw_bytes()
+        );
     }
 
     #[test]
@@ -159,7 +162,10 @@ mod tests {
                 .expect("Golden genesis signed payload should decode");
 
             assert_eq!(GOLDEN_ED25519_HEX, hex::encode(payload.ed25519.to_bytes()));
-            assert_eq!(GOLDEN_SCHNORR_HEX, hex::encode(payload.schnorr.to_bytes()));
+            assert_eq!(
+                GOLDEN_SCHNORR_HEX,
+                hex::encode(payload.schnorr.to_raw_bytes())
+            );
         }
 
         #[test]

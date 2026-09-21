@@ -18,7 +18,7 @@ pub(crate) fn build_snark_message(
     let root_bytes: [u8; 32] = merkle_tree_commitment_bytes
         .try_into()
         .with_context(|| "Merkle tree commitment bytes must be exactly 32 bytes.")?;
-    let root_as_base_field_element = BaseFieldElement::from_bytes(&root_bytes)
+    let root_as_base_field_element = BaseFieldElement::from_canonical_bytes(&root_bytes)
         .with_context(|| "Failed to convert Merkle tree commitment bytes to BaseFieldElement.")?;
 
     let mut msg_bytes = [0u8; 32];

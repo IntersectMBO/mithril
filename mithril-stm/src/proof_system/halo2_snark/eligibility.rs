@@ -123,7 +123,7 @@ cfg_num_integer! {
         bytes.resize(32, 0);
         // It is safe to use .expect() as the value resulting from the computation is always lower than
         // the Jubjub modulus
-        BaseFieldElement::from_bytes(&bytes).expect("Input bytes are always lower than the Jubjub modulus hence canonical.")
+        BaseFieldElement::from_canonical_bytes(&bytes).expect("Input bytes are always lower than the Jubjub modulus hence canonical.")
     }
 
     /// Computes a Taylor expansion of the exponential exp(c*w) up to the (N-1)th term
@@ -869,9 +869,12 @@ mod tests {
 
             #[test]
             fn golden_check_small_values() {
-                let golden_target_0 = BaseFieldElement::from_bytes(&GOLDEN_BYTES_ZERO).unwrap();
-                let golden_target_1 = BaseFieldElement::from_bytes(&GOLDEN_BYTES_ONE).unwrap();
-                let golden_target_2 = BaseFieldElement::from_bytes(&GOLDEN_BYTES_TWO).unwrap();
+                let golden_target_0 =
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_ZERO).unwrap();
+                let golden_target_1 =
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_ONE).unwrap();
+                let golden_target_2 =
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_TWO).unwrap();
 
                 assert_eq!(
                     golden_target_0,
@@ -890,11 +893,13 @@ mod tests {
             #[test]
             fn golden_check_max_values() {
                 let golden_target_max =
-                    BaseFieldElement::from_bytes(&GOLDEN_BYTES_MAX_STAKE).unwrap();
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE).unwrap();
                 let golden_target_max_1 =
-                    BaseFieldElement::from_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_ONE).unwrap();
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_ONE)
+                        .unwrap();
                 let golden_target_max_2 =
-                    BaseFieldElement::from_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_TWO).unwrap();
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_TWO)
+                        .unwrap();
 
                 assert_eq!(
                     golden_target_max,
@@ -913,11 +918,13 @@ mod tests {
             #[test]
             fn golden_check_max_values_fail() {
                 let golden_target_max =
-                    BaseFieldElement::from_bytes(&GOLDEN_BYTES_MAX_STAKE).unwrap();
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE).unwrap();
                 let golden_target_max_1 =
-                    BaseFieldElement::from_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_ONE).unwrap();
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_ONE)
+                        .unwrap();
                 let golden_target_max_2 =
-                    BaseFieldElement::from_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_TWO).unwrap();
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_TWO)
+                        .unwrap();
 
                 assert!(
                     golden_target_max
@@ -941,7 +948,7 @@ mod tests {
                 for (t1, t2_str) in golden_target_vector.iter().zip(golden_target_from_file.lines())
                 {
                     let t2: Vec<u8> = serde_json::from_str(t2_str).unwrap();
-                    let t2_base_field = BaseFieldElement::from_bytes(&t2).unwrap();
+                    let t2_base_field = BaseFieldElement::from_canonical_bytes(&t2).unwrap();
                     assert_eq!(t1, &t2_base_field);
                 }
             }
@@ -954,7 +961,7 @@ mod tests {
                 for (t1, t2_str) in golden_target_vector.iter().zip(golden_target_from_file.lines())
                 {
                     let t2: Vec<u8> = serde_json::from_str(t2_str).unwrap();
-                    let t2_base_field = BaseFieldElement::from_bytes(&t2).unwrap();
+                    let t2_base_field = BaseFieldElement::from_canonical_bytes(&t2).unwrap();
                     assert_eq!(t1, &t2_base_field);
                 }
             }
@@ -967,7 +974,7 @@ mod tests {
                 for (t1, t2_str) in golden_target_vector.iter().zip(golden_target_from_file.lines())
                 {
                     let t2: Vec<u8> = serde_json::from_str(t2_str).unwrap();
-                    let t2_base_field = BaseFieldElement::from_bytes(&t2).unwrap();
+                    let t2_base_field = BaseFieldElement::from_canonical_bytes(&t2).unwrap();
                     assert_eq!(t1, &t2_base_field);
                 }
             }

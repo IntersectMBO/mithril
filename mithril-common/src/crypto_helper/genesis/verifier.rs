@@ -256,7 +256,7 @@ mod tests {
         fn from_bundle_pairs_both_halves() {
             let bundle = build_bundle();
             let expected_ed25519 = bundle.ed25519.as_bytes().to_vec();
-            let expected_schnorr = bundle.schnorr.to_bytes();
+            let expected_schnorr = bundle.schnorr.to_raw_bytes();
 
             let verifier = GenesisVerifier::from_bundle(bundle);
 
@@ -265,7 +265,12 @@ mod tests {
                 expected_ed25519.as_slice()
             );
             assert_eq!(
-                verifier.schnorr.as_ref().unwrap().to_verification_key().to_bytes(),
+                verifier
+                    .schnorr
+                    .as_ref()
+                    .unwrap()
+                    .to_verification_key()
+                    .to_raw_bytes(),
                 expected_schnorr
             );
         }
@@ -273,13 +278,18 @@ mod tests {
         #[test]
         fn try_from_hex_accepts_dual_bundle() {
             let bundle = build_bundle();
-            let expected_schnorr = bundle.schnorr.to_bytes();
+            let expected_schnorr = bundle.schnorr.to_raw_bytes();
             let hex_string = crate::crypto_helper::ProtocolKey::new(bundle).to_bytes_hex().unwrap();
 
             let verifier = GenesisVerifier::try_from_hex(&hex_string).unwrap();
 
             assert_eq!(
-                verifier.schnorr.as_ref().unwrap().to_verification_key().to_bytes(),
+                verifier
+                    .schnorr
+                    .as_ref()
+                    .unwrap()
+                    .to_verification_key()
+                    .to_raw_bytes(),
                 expected_schnorr
             );
         }
@@ -302,8 +312,12 @@ mod tests {
         #[test]
         fn verification_key_bundle_mirrors_verifier_halves() {
             let verifier = GenesisVerifier::from_bundle(build_bundle());
-            let expected_schnorr =
-                verifier.schnorr.as_ref().unwrap().to_verification_key().to_bytes();
+            let expected_schnorr = verifier
+                .schnorr
+                .as_ref()
+                .unwrap()
+                .to_verification_key()
+                .to_raw_bytes();
 
             let bundle = verifier.verification_key_bundle().unwrap();
 
@@ -311,18 +325,18 @@ mod tests {
                 bundle.ed25519.as_bytes(),
                 verifier.ed25519.to_verification_key().as_bytes()
             );
-            assert_eq!(bundle.schnorr.to_bytes(), expected_schnorr);
+            assert_eq!(bundle.schnorr.to_raw_bytes(), expected_schnorr);
         }
 
         #[test]
         fn to_schnorr_verification_key_returns_the_schnorr_half_for_a_dual_verifier() {
             let bundle = build_bundle();
-            let expected_schnorr = bundle.schnorr.to_bytes();
+            let expected_schnorr = bundle.schnorr.to_raw_bytes();
 
             let verifier = GenesisVerifier::from_bundle(bundle);
 
             assert_eq!(
-                verifier.to_schnorr_verification_key().unwrap().to_bytes(),
+                verifier.to_schnorr_verification_key().unwrap().to_raw_bytes(),
                 expected_schnorr
             );
         }

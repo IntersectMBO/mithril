@@ -25,8 +25,11 @@ use super::{
 pub struct BlsVerificationKey(pub BlstVk);
 
 impl BlsVerificationKey {
-    /// Convert an `VerificationKey` to its compressed byte representation.
-    pub fn to_bytes(self) -> [u8; 96] {
+    /// Convert a `VerificationKey` to its raw compressed byte representation.
+    ///
+    /// This exact byte layout is depended on by the KES sign/verify preimage and the
+    /// Merkle-tree leaf hash preimage (`MerkleTreeConcatenationLeaf`) — it must not change.
+    pub fn to_raw_bytes(self) -> [u8; 96] {
         self.0.to_bytes()
     }
 
@@ -35,7 +38,7 @@ impl BlsVerificationKey {
     /// # Error
     /// This function fails if the bytes do not represent a compressed point of the prime
     /// order subgroup of the curve Bls12-381.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_raw_bytes(bytes: &[u8]) -> StmResult<Self> {
         let bytes = bytes.get(..96).ok_or(BlsSignatureError::SerializationError)?;
         match BlstVk::key_validate(bytes) {
             Ok(vk) => Ok(Self(vk)),
@@ -47,8 +50,8 @@ impl BlsVerificationKey {
     /// Compare two `VerificationKey`. Used for PartialOrd impl, used to order signatures. The comparison
     /// function can be anything, as long as it is consistent.
     fn compare_verification_keys(&self, other: &BlsVerificationKey) -> Ordering {
-        let self_bytes = self.to_bytes();
-        let other_bytes = other.to_bytes();
+        let self_bytes = self.to_raw_bytes();
+        let other_bytes = other.to_raw_bytes();
         let mut result = Ordering::Equal;
 
         for (i, j) in self_bytes.iter().zip(other_bytes.iter()) {
@@ -68,13 +71,13 @@ impl BlsVerificationKey {
 
 impl Display for BlsVerificationKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.to_bytes())
+        write!(f, "{:?}", self.to_raw_bytes())
     }
 }
 
 impl Hash for BlsVerificationKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Hash::hash_slice(&self.to_bytes(), state)
+        Hash::hash_slice(&self.to_raw_bytes(), state)
     }
 }
 
@@ -161,26 +164,29 @@ impl BlsVerificationKeyProofOfPossession {
         }
     }
 
-    /// Convert to a 144 byte string.
+    /// Convert to its 192 byte raw representation.
     ///
     /// # Layout
     /// The layout of a `PublicKeyPoP` encoding is
     /// * Public key
     /// * Proof of Possession
-    pub fn to_bytes(self) -> [u8; 192] {
+    ///
+    /// This exact byte layout is depended on by the KES sign/verify preimage and
+    /// `Initializer`'s legacy decoder — it must not change.
+    pub fn to_raw_bytes(self) -> [u8; 192] {
         let mut vkpop_bytes = [0u8; 192];
-        vkpop_bytes[..96].copy_from_slice(&self.vk.to_bytes());
-        vkpop_bytes[96..].copy_from_slice(&self.pop.to_bytes());
+        vkpop_bytes[..96].copy_from_slice(&self.vk.to_raw_bytes());
+        vkpop_bytes[96..].copy_from_slice(&self.pop.to_raw_bytes());
         vkpop_bytes
     }
 
     /// Deserialize a byte string to a `BlsVerificationKeyProofOfPossession`.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
-        let mvk = BlsVerificationKey::from_bytes(
+    pub fn from_raw_bytes(bytes: &[u8]) -> StmResult<Self> {
+        let mvk = BlsVerificationKey::from_raw_bytes(
             bytes.get(..96).ok_or(BlsSignatureError::SerializationError)?,
         )?;
 
-        let pop = BlsProofOfPossession::from_bytes(
+        let pop = BlsProofOfPossession::from_raw_bytes(
             bytes.get(96..).ok_or(BlsSignatureError::SerializationError)?,
         )?;
 

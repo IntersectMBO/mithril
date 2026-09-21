@@ -10,7 +10,7 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [features]
-default = ["rustls"]
+default = ["rustls", "future_snark"]
 rustls = ["mithril-common/rustls", "reqwest/rustls"]
 
 future_snark = ["mithril-common/future_snark", "dep:ciborium"]

@@ -66,23 +66,26 @@ impl StandardSchnorrSignature {
         Ok(())
     }
 
-    /// Convert a `StandardSchnorrSignature` into bytes.
-    pub fn to_bytes(self) -> [u8; 64] {
+    /// Convert a `StandardSchnorrSignature` into its raw byte representation.
+    ///
+    /// This exact byte layout backs the public `SchnorrSignature` hex API (`ProtocolKey`'s
+    /// `bytes_hex_codec`) and genesis certificate messages — it must not change.
+    pub fn to_raw_bytes(self) -> [u8; 64] {
         let mut out = [0; 64];
-        out[0..32].copy_from_slice(&self.response.to_bytes());
-        out[32..64].copy_from_slice(&self.challenge.to_bytes());
+        out[0..32].copy_from_slice(&self.response.to_canonical_bytes());
+        out[32..64].copy_from_slice(&self.challenge.to_canonical_bytes());
 
         out
     }
 
     /// Convert bytes into a `StandardSchnorrSignature`.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_raw_bytes(bytes: &[u8]) -> StmResult<Self> {
         if bytes.len() < 64 {
             return Err(anyhow!(SchnorrSignatureError::Serialization))
                 .with_context(|| "Not enough bytes provided to create a standard signature.");
         }
 
-        let response = ScalarFieldElement::from_bytes(
+        let response = ScalarFieldElement::from_canonical_bytes(
             bytes
                 .get(0..32)
                 .ok_or(SchnorrSignatureError::Serialization)
@@ -90,7 +93,7 @@ impl StandardSchnorrSignature {
         )
         .with_context(|| "Could not convert the bytes to `response`")?;
 
-        let challenge = BaseFieldElement::from_bytes(
+        let challenge = BaseFieldElement::from_canonical_bytes(
             bytes
                 .get(32..64)
                 .ok_or(SchnorrSignatureError::Serialization)
@@ -157,7 +160,7 @@ mod tests {
     #[test]
     fn from_bytes_signature_not_enough_bytes() {
         let msg = vec![0u8; 62];
-        let result = StandardSchnorrSignature::from_bytes(&msg);
+        let result = StandardSchnorrSignature::from_raw_bytes(&msg);
         result.expect_err("Not enough bytes.");
     }
 
@@ -169,9 +172,9 @@ mod tests {
         let sk = SchnorrSigningKey::generate(&mut rng);
 
         let sig = sk.sign_standard(&[base_input], &mut rng).unwrap();
-        let sig_bytes: [u8; 64] = sig.to_bytes();
+        let sig_bytes: [u8; 64] = sig.to_raw_bytes();
 
-        let sig_restored = StandardSchnorrSignature::from_bytes(&sig_bytes).unwrap();
+        let sig_restored = StandardSchnorrSignature::from_raw_bytes(&sig_bytes).unwrap();
         assert_eq!(sig, sig_restored);
     }
 
@@ -183,12 +186,12 @@ mod tests {
         let sk = SchnorrSigningKey::generate(&mut rng);
 
         let sig = sk.sign_standard(&[base_input], &mut rng).unwrap();
-        let sig_bytes: [u8; 64] = sig.to_bytes();
+        let sig_bytes: [u8; 64] = sig.to_raw_bytes();
 
         let mut extended_bytes = sig_bytes.to_vec();
         extended_bytes.extend_from_slice(&[0xFF; 10]);
 
-        let sig_restored = StandardSchnorrSignature::from_bytes(&extended_bytes).unwrap();
+        let sig_restored = StandardSchnorrSignature::from_raw_bytes(&extended_bytes).unwrap();
         assert_eq!(sig, sig_restored);
     }
 
@@ -202,8 +205,8 @@ mod tests {
         let sig = sk.sign_standard(&[base_input], &mut rng).unwrap();
 
         // Converting to bytes multiple times should give same result
-        let bytes1 = sig.to_bytes();
-        let bytes2 = sig.to_bytes();
+        let bytes1 = sig.to_raw_bytes();
+        let bytes2 = sig.to_raw_bytes();
 
         assert_eq!(bytes1, bytes2);
     }
@@ -222,8 +225,8 @@ mod tests {
             .expect("Original signature should verify");
 
         // Roundtrip through bytes
-        let sig_bytes = sig.to_bytes();
-        let sig_restored = StandardSchnorrSignature::from_bytes(&sig_bytes).unwrap();
+        let sig_bytes = sig.to_raw_bytes();
+        let sig_restored = StandardSchnorrSignature::from_raw_bytes(&sig_bytes).unwrap();
 
         // Restored signature should still verify
         sig_restored
@@ -251,12 +254,12 @@ mod tests {
 
         #[test]
         fn golden_conversions() {
-            let value = StandardSchnorrSignature::from_bytes(GOLDEN_BYTES)
+            let value = StandardSchnorrSignature::from_raw_bytes(GOLDEN_BYTES)
                 .expect("This from bytes should not fail");
             assert_eq!(golden_value(), value);
 
-            let serialized = StandardSchnorrSignature::to_bytes(value);
-            let golden_serialized = StandardSchnorrSignature::to_bytes(golden_value());
+            let serialized = StandardSchnorrSignature::to_raw_bytes(value);
+            let golden_serialized = StandardSchnorrSignature::to_raw_bytes(golden_value());
             assert_eq!(golden_serialized, serialized);
         }
     }

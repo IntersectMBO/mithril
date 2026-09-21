@@ -40,7 +40,7 @@ ignored = ["serde_bytes"]
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [features]
-default = ["num-integer-backend"]
+default = ["num-integer-backend", "future_snark"]
 # For benchmarking
 benchmark-internals = []
 # Enable experimental SNARK support 

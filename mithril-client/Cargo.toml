@@ -19,7 +19,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [features]
-default = ["num-integer-backend", "enable-http-compression"]
+default = ["num-integer-backend", "enable-http-compression", "future_snark"]
 
 # Full feature set
 full = ["fs"]

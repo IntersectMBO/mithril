@@ -294,7 +294,7 @@ fn bench_merkle_tree_commitment(
         .as_slice()
         .try_into()
         .map_err(|_| anyhow!("bench: merkle tree commitment bytes have an unexpected length"))?;
-    BaseFieldElement::from_bytes(&root_array)
+    BaseFieldElement::from_canonical_bytes(&root_array)
         .ok()
         .map(Into::into)
         .ok_or_else(|| {

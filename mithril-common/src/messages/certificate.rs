@@ -123,7 +123,7 @@ impl CertificateMessage {
                     "Can not convert message to certificate: SNARK genesis signature is not valid hex"
                 })?;
                 let snark_signature =
-                    GenesisSchnorrSignature::from_bytes(&snark_bytes).with_context(|| {
+                    GenesisSchnorrSignature::from_raw_bytes(&snark_bytes).with_context(|| {
                         "Can not convert message to certificate: can not decode the SNARK genesis signature"
                     })?;
                 Ok(CertificateSignature::GenesisDualSignature(
@@ -276,7 +276,7 @@ impl TryFrom<Certificate> for CertificateMessage {
             ),
             #[cfg(feature = "future_snark")]
             CertificateSignature::GenesisDualSignature(ed_signature, schnorr_signature) => {
-                genesis_schnorr_signature = hex::encode(schnorr_signature.to_bytes());
+                genesis_schnorr_signature = hex::encode(schnorr_signature.to_raw_bytes());
                 (
                     String::new(),
                     String::try_from(&ed_signature).with_context(|| {
@@ -582,7 +582,7 @@ mod tests {
                     aggregate_verification_key: "00000000000000000404036cb79141a645faca33405ae82d67388a663fd1f55116781006608cccd2370000000000000006".to_string(),
                     multi_signature: "".to_string(),
                     genesis_signature: "c21f77fb812a8111b547c2145d765f854ca224b17e883d6483b668a8c4d095fd893efd2a2ba1d41da9f49d82bf02d8ee603791998b64436000e49184c000170b".to_string(),
-                    genesis_schnorr_signature: hex::encode(snark_signature.to_bytes()),
+                    genesis_schnorr_signature: hex::encode(snark_signature.to_raw_bytes()),
                     ..golden_certificate_message()
                 }
             }

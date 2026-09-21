@@ -78,13 +78,17 @@ impl ProjectivePoint {
         (affine_point.get_u(), affine_point.get_v())
     }
 
-    /// Converts the projective point to its byte representation
-    pub(crate) fn to_bytes(self) -> [u8; 32] {
+    /// Converts the projective point to its canonical compressed byte representation.
+    ///
+    /// Used by `UniqueSchnorrSignature`'s raw layout and this type's `Serialize` impl.
+    pub(crate) fn to_canonical_bytes(self) -> [u8; 32] {
         self.0.to_bytes()
     }
 
-    /// Constructs a projective point from its byte representation
-    pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    /// Constructs a projective point from its canonical compressed byte representation.
+    ///
+    /// Rejects any non-canonical encoding.
+    pub(crate) fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         let mut projective_point_bytes = [0u8; 32];
         projective_point_bytes
             .copy_from_slice(bytes.get(..32).ok_or(SchnorrSignatureError::Serialization)?);
@@ -129,7 +133,7 @@ impl From<PrimeOrderProjectivePoint> for ProjectivePoint {
 
 impl Hash for ProjectivePoint {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.to_bytes().hash(state);
+        self.to_canonical_bytes().hash(state);
     }
 }
 
@@ -141,7 +145,7 @@ impl PartialOrd for ProjectivePoint {
 
 impl Ord for ProjectivePoint {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.to_bytes().cmp(&other.to_bytes())
+        self.to_canonical_bytes().cmp(&other.to_canonical_bytes())
     }
 }
 
@@ -196,13 +200,18 @@ impl PrimeOrderProjectivePoint {
         Ok(prime_order_point)
     }
 
-    /// Converts the prime order projective point to its byte representation
-    pub(crate) fn to_bytes(self) -> [u8; 32] {
+    /// Converts the prime order projective point to its canonical compressed byte representation.
+    ///
+    /// Backs `SchnorrVerificationKey`'s `Serialize` impl via this module's `impl_serde!` macro,
+    /// which is the wire format for real signer-registration JSON messages — not test-only.
+    pub(crate) fn to_canonical_bytes(self) -> [u8; 32] {
         self.0.to_bytes()
     }
 
-    /// Constructs a prime order projective point from its byte representation
-    pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    /// Constructs a prime order projective point from its canonical compressed byte representation.
+    ///
+    /// Rejects any non-canonical encoding.
+    pub(crate) fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         let mut prime_order_projective_point_bytes = [0u8; 32];
         prime_order_projective_point_bytes
             .copy_from_slice(bytes.get(..32).ok_or(SchnorrSignatureError::Serialization)?);
@@ -284,8 +293,8 @@ mod tests {
 
         #[test]
         fn golden_hash() {
-            let value =
-                ProjectivePoint::from_bytes(GOLDEN_BYTES).expect("This from bytes should not fail");
+            let value = ProjectivePoint::from_canonical_bytes(GOLDEN_BYTES)
+                .expect("This from bytes should not fail");
             assert_eq!(golden_value(), value);
         }
     }
@@ -304,8 +313,8 @@ mod tests {
             let p1 = scalar1 * point;
             let p2 = scalar2 * point;
             let result = p1 + p2;
-            let bytes = result.to_bytes();
-            let recovered = ProjectivePoint::from_bytes(&bytes).unwrap();
+            let bytes = result.to_canonical_bytes();
+            let recovered = ProjectivePoint::from_canonical_bytes(&bytes).unwrap();
 
             assert_eq!(result, recovered);
         }
@@ -359,8 +368,8 @@ mod tests {
             let point = ProjectivePoint::hash_to_projective_point(&[base_input]).unwrap();
 
             let result = scalar * point;
-            let bytes = result.to_bytes();
-            let recovered = ProjectivePoint::from_bytes(&bytes).unwrap();
+            let bytes = result.to_canonical_bytes();
+            let recovered = ProjectivePoint::from_canonical_bytes(&bytes).unwrap();
 
             assert_eq!(result, recovered);
         }
@@ -411,8 +420,8 @@ mod tests {
 
             let result = p1 + p2;
 
-            let bytes = result.to_bytes();
-            let recovered = PrimeOrderProjectivePoint::from_bytes(&bytes).unwrap();
+            let bytes = result.to_canonical_bytes();
+            let recovered = PrimeOrderProjectivePoint::from_canonical_bytes(&bytes).unwrap();
             assert_eq!(result, recovered);
         }
 
@@ -464,8 +473,8 @@ mod tests {
 
             let result = scalar * generator;
 
-            let bytes = result.to_bytes();
-            let recovered = PrimeOrderProjectivePoint::from_bytes(&bytes).unwrap();
+            let bytes = result.to_canonical_bytes();
+            let recovered = PrimeOrderProjectivePoint::from_canonical_bytes(&bytes).unwrap();
             assert_eq!(result, recovered);
         }
 

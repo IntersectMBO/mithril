@@ -7,14 +7,11 @@ use crate::{LotteryTargetValue, VerificationKeyForSnark};
 
 use crate::{Stake, VerificationKeyForConcatenation};
 
-#[cfg(feature = "future_snark")]
-// TODO: remove this allow dead_code directive when function is called or future_snark is activated
-#[allow(dead_code)]
+// Needed only by the two types' from_hash_bytes decoders, both test-only.
+#[cfg(all(test, feature = "future_snark"))]
 use crate::StmResult;
 
-#[cfg(feature = "future_snark")]
-// TODO: remove this allow dead_code directive when function is called or future_snark is activated
-#[allow(dead_code)]
+#[cfg(all(test, feature = "future_snark"))]
 use super::MerkleTreeError;
 
 /// Trait implemented to be used as a Merkle tree leaf.
@@ -30,23 +27,25 @@ pub struct MerkleTreeConcatenationLeaf(pub VerificationKeyForConcatenation, pub 
 
 impl MerkleTreeLeaf for MerkleTreeConcatenationLeaf {
     fn as_bytes_for_merkle_tree(&self) -> Vec<u8> {
-        self.to_bytes()
+        self.to_hash_bytes()
     }
 }
 
 impl MerkleTreeConcatenationLeaf {
-    fn to_bytes(self) -> Vec<u8> {
+    /// Byte layout hashed into the Merkle tree via `as_bytes_for_merkle_tree`. Consensus-critical:
+    /// changing this changes every previously-computed Merkle root.
+    fn to_hash_bytes(self) -> Vec<u8> {
         let mut result = [0u8; 104];
-        result[..96].copy_from_slice(&self.0.to_bytes());
+        result[..96].copy_from_slice(&self.0.to_raw_bytes());
         result[96..].copy_from_slice(&self.1.to_be_bytes());
         result.to_vec()
     }
 
-    #[cfg(feature = "future_snark")]
-    // TODO: remove this allow dead_code directive when function is called or future_snark is activated
-    #[allow(dead_code)]
-    pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
-        let pk = VerificationKeyForConcatenation::from_bytes(bytes)
+    /// Decodes a leaf from its hash-preimage bytes. Only ever used by this type's own
+    /// round-trip tests today — nothing decodes a leaf back from bytes in production.
+    #[cfg(all(test, feature = "future_snark"))]
+    pub(crate) fn from_hash_bytes(bytes: &[u8]) -> StmResult<Self> {
+        let pk = VerificationKeyForConcatenation::from_raw_bytes(bytes)
             .map_err(|_| MerkleTreeError::SerializationError)?;
         let mut u64_bytes = [0u8; 8];
         u64_bytes.copy_from_slice(&bytes[96..]);
@@ -92,30 +91,33 @@ pub struct MerkleTreeSnarkLeaf(pub VerificationKeyForSnark, pub LotteryTargetVal
 #[allow(dead_code)]
 impl MerkleTreeLeaf for MerkleTreeSnarkLeaf {
     fn as_bytes_for_merkle_tree(&self) -> Vec<u8> {
-        self.to_bytes()
+        self.to_hash_bytes()
     }
 }
 
 #[cfg(feature = "future_snark")]
-// TODO: remove this allow dead_code directive when function is called or future_snark is activated
-#[allow(dead_code)]
 impl MerkleTreeSnarkLeaf {
-    fn to_bytes(self) -> Vec<u8> {
+    /// Byte layout hashed into the Merkle tree via `as_bytes_for_merkle_tree`. Consensus-critical:
+    /// changing this changes every previously-computed Merkle root.
+    fn to_hash_bytes(self) -> Vec<u8> {
         let mut result = [0u8; 96];
-        result[..64].copy_from_slice(&self.0.to_bytes());
-        result[64..].copy_from_slice(&self.1.to_bytes());
+        result[..64].copy_from_slice(&self.0.to_raw_bytes());
+        result[64..].copy_from_slice(&self.1.to_canonical_bytes());
         result.to_vec()
     }
 
-    pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    /// Decodes a leaf from its hash-preimage bytes. Only ever used by this type's own
+    /// round-trip tests today — nothing decodes a leaf back from bytes in production.
+    #[cfg(test)]
+    pub(crate) fn from_hash_bytes(bytes: &[u8]) -> StmResult<Self> {
         if bytes.len() < 96 {
             return Err(MerkleTreeError::SerializationError.into());
         }
-        let pk = VerificationKeyForSnark::from_bytes(&bytes[..64])
+        let pk = VerificationKeyForSnark::from_raw_bytes(&bytes[..64])
             .map_err(|_| MerkleTreeError::SerializationError)?;
         let mut target_value_bytes = [0u8; 32];
         target_value_bytes.copy_from_slice(&bytes[64..]);
-        let target_value = LotteryTargetValue::from_bytes(&target_value_bytes)
+        let target_value = LotteryTargetValue::from_canonical_bytes(&target_value_bytes)
             .map_err(|_| MerkleTreeError::SerializationError)?;
         Ok(MerkleTreeSnarkLeaf(pk, target_value))
     }
@@ -186,12 +188,12 @@ mod tests {
 
             #[test]
             fn golden_conversions() {
-                let value = MerkleTreeConcatenationLeaf::from_bytes(GOLDEN_BYTES)
+                let value = MerkleTreeConcatenationLeaf::from_hash_bytes(GOLDEN_BYTES)
                     .expect("This from bytes should not fail");
                 assert_eq!(golden_value(), value);
 
-                let serialized = MerkleTreeConcatenationLeaf::to_bytes(value);
-                let golden_serialized = MerkleTreeConcatenationLeaf::to_bytes(golden_value());
+                let serialized = MerkleTreeConcatenationLeaf::to_hash_bytes(value);
+                let golden_serialized = MerkleTreeConcatenationLeaf::to_hash_bytes(golden_value());
                 assert_eq!(golden_serialized, serialized);
             }
         }
@@ -261,12 +263,12 @@ mod tests {
 
             #[test]
             fn golden_conversions() {
-                let value = MerkleTreeSnarkLeaf::from_bytes(GOLDEN_BYTES)
+                let value = MerkleTreeSnarkLeaf::from_hash_bytes(GOLDEN_BYTES)
                     .expect("This from bytes should not fail");
                 assert_eq!(golden_value(), value);
 
-                let serialized = MerkleTreeSnarkLeaf::to_bytes(value);
-                let golden_serialized = MerkleTreeSnarkLeaf::to_bytes(golden_value());
+                let serialized = MerkleTreeSnarkLeaf::to_hash_bytes(value);
+                let golden_serialized = MerkleTreeSnarkLeaf::to_hash_bytes(golden_value());
                 assert_eq!(golden_serialized, serialized);
             }
         }

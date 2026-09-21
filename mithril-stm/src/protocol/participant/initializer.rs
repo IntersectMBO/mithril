@@ -208,20 +208,23 @@ impl Initializer {
         let stake = u64::from_be_bytes(u64_bytes);
         let params =
             Parameters::from_bytes(bytes.get(8..32).ok_or(RegisterError::SerializationError)?)?;
-        let bls_signing_key =
-            BlsSigningKey::from_bytes(bytes.get(32..64).ok_or(RegisterError::SerializationError)?)?;
+        let bls_signing_key = BlsSigningKey::from_raw_bytes(
+            bytes.get(32..64).ok_or(RegisterError::SerializationError)?,
+        )?;
         let bls_verification_key_proof_of_possession =
-            VerificationKeyProofOfPossessionForConcatenation::from_bytes(
+            VerificationKeyProofOfPossessionForConcatenation::from_raw_bytes(
                 bytes.get(64..256).ok_or(RegisterError::SerializationError)?,
             )?;
 
         #[cfg(feature = "future_snark")]
         let (schnorr_signing_key, schnorr_verification_key) = {
-            let schnorr_signing_key =
-                bytes.get(256..288).map(SchnorrSigningKey::from_bytes).transpose()?;
+            let schnorr_signing_key = bytes
+                .get(256..288)
+                .map(SchnorrSigningKey::from_raw_bytes)
+                .transpose()?;
             let schnorr_verification_key = bytes
                 .get(288..352)
-                .map(VerificationKeyForSnark::from_bytes)
+                .map(VerificationKeyForSnark::from_raw_bytes)
                 .transpose()?;
 
             match (&schnorr_signing_key, &schnorr_verification_key) {
@@ -250,7 +253,7 @@ impl PartialEq for Initializer {
     fn eq(&self, other: &Self) -> bool {
         let base_eq = self.stake == other.stake
             && self.parameters == other.parameters
-            && self.bls_signing_key.to_bytes() == other.bls_signing_key.to_bytes()
+            && self.bls_signing_key.to_raw_bytes() == other.bls_signing_key.to_raw_bytes()
             && self.get_verification_key_proof_of_possession_for_concatenation()
                 == other.get_verification_key_proof_of_possession_for_concatenation();
 
