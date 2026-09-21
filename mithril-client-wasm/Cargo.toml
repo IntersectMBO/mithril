@@ -14,10 +14,6 @@ all-features = true
 # enable unstable features in the documentation
 rustdoc-args = ["--cfg", "docsrs"]
 
-[package.metadata.cargo-machete]
-# wasm-bindgen-futures is required to build the project, but it's not used in the code
-ignored = ["wasm-bindgen-futures"]
-
 [lib]
 crate-type = ["cdylib"]
 
@@ -28,14 +24,30 @@ test-node = []
 future_snark = ["mithril-client/future_snark"]
 
 [dependencies]
+anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+js-sys = "0.3.103"
 mithril-client = { path = "../mithril-client", default-features = false, features = ["unstable"] }
 serde = { workspace = true }
 serde-wasm-bindgen = "0.6.5"
+serde_json = { workspace = true }
 wasm-bindgen = "0.2.126"
 wasm-bindgen-futures = "0.4.76"
-web-sys = { version = "0.3.103", features = ["BroadcastChannel"] }
+web-sys = { version = "0.3.103", features = [
+    "BroadcastChannel",
+    "DomException",
+    "IdbDatabase",
+    "IdbFactory",
+    "IdbIndex",
+    "IdbKeyRange",
+    "IdbObjectStore",
+    "IdbObjectStoreParameters",
+    "IdbOpenDbRequest",
+    "IdbRequest",
+    "IdbTransaction",
+    "IdbTransactionMode",
+] }
 
 [target.'cfg(all(target_family = "wasm"))'.dependencies]
 # This getrandom version is required without the future_snark feature, and it can be removed once the future_snark feature is enabled.
@@ -47,4 +59,5 @@ getrandom-future-snark = { package = "getrandom", version = "0.4.3", features = 
 mithril-build-script = { path = "../internal/mithril-build-script" }
 
 [dev-dependencies]
+mithril-common = { path = "../mithril-common", default-features = false }
 wasm-bindgen-test = "0.3.76"
