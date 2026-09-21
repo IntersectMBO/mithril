@@ -63,6 +63,8 @@ mod verify_cache;
 
 pub use api::*;
 pub use verify::MithrilCertificateVerifier;
+#[cfg(all(feature = "unstable", feature = "fs"))]
+pub use verify_cache::FileCertificateVerifierCache;
 #[cfg(feature = "unstable")]
 pub use verify_cache::MemoryCertificateVerifierCache;
 
