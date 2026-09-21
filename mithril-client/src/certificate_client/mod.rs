@@ -58,14 +58,12 @@
 mod api;
 mod fetch;
 mod verify;
-#[cfg(feature = "unstable")]
 mod verify_cache;
 
 pub use api::*;
 pub use verify::MithrilCertificateVerifier;
-#[cfg(all(feature = "unstable", feature = "fs"))]
+#[cfg(feature = "fs")]
 pub use verify_cache::FileCertificateVerifierCache;
-#[cfg(feature = "unstable")]
 pub use verify_cache::MemoryCertificateVerifierCache;
 
 #[cfg(test)]
@@ -85,9 +83,7 @@ pub(crate) mod tests_utils {
         aggregator_requester: MockCertificateAggregatorRequest,
         genesis_verification_key: Option<String>,
         feedback_receivers: Vec<Arc<dyn FeedbackReceiver>>,
-        #[cfg(feature = "unstable")]
         verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
-        #[cfg(feature = "unstable")]
         verifier_cache_mode: CertificateVerifierCacheMode,
     }
 
@@ -113,7 +109,6 @@ pub(crate) mod tests_utils {
             self
         }
 
-        #[cfg(feature = "unstable")]
         pub fn with_verifier_cache(
             mut self,
             verifier_cache: Arc<dyn CertificateVerifierCache>,
@@ -122,7 +117,6 @@ pub(crate) mod tests_utils {
             self
         }
 
-        #[cfg(feature = "unstable")]
         pub fn with_verifier_cache_mode(
             mut self,
             verifier_cache_mode: CertificateVerifierCacheMode,
@@ -147,9 +141,7 @@ pub(crate) mod tests_utils {
                             aggregator_client.clone(),
                             &genesis_verification_key,
                             FeedbackSender::new(&self.feedback_receivers),
-                            #[cfg(feature = "unstable")]
                             self.verifier_cache,
-                            #[cfg(feature = "unstable")]
                             self.verifier_cache_mode,
                             logger.clone(),
                         )

@@ -1,17 +1,16 @@
 use anyhow::Context;
 use async_trait::async_trait;
-#[cfg(feature = "unstable")]
 use slog::Logger;
 use std::sync::Arc;
 
 use mithril_common::certificate_chain::{CertificateRetriever, CertificateRetrieverError};
 use mithril_common::entities::Certificate;
-#[cfg(feature = "unstable")]
 use mithril_common::logging::LoggerExtensions;
 
-use crate::certificate_client::{CertificateAggregatorRequest, CertificateClient};
-#[cfg(feature = "unstable")]
-use crate::certificate_client::{CertificateVerifierCache, CertificateVerifierCacheSpace};
+use crate::certificate_client::{
+    CertificateAggregatorRequest, CertificateClient, CertificateVerifierCache,
+    CertificateVerifierCacheSpace,
+};
 use crate::{MithrilCertificate, MithrilCertificateListItem, MithrilResult};
 
 #[inline]
@@ -71,7 +70,6 @@ impl CertificateRetriever for InternalCertificateRetriever {
     }
 }
 
-#[cfg(feature = "unstable")]
 pub(super) struct CachedCertificateRetriever {
     inner: Arc<dyn CertificateRetriever>,
     cache: Arc<dyn CertificateVerifierCache>,
@@ -79,7 +77,6 @@ pub(super) struct CachedCertificateRetriever {
     logger: Logger,
 }
 
-#[cfg(feature = "unstable")]
 impl CachedCertificateRetriever {
     pub(super) fn new(
         inner: Arc<dyn CertificateRetriever>,
@@ -105,7 +102,6 @@ impl CachedCertificateRetriever {
     }
 }
 
-#[cfg(feature = "unstable")]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl CertificateRetriever for CachedCertificateRetriever {
@@ -252,7 +248,6 @@ mod tests {
             .expect_err("The certificate client should fail here.");
     }
 
-    #[cfg(feature = "unstable")]
     mod cached_retriever {
         use chrono::TimeDelta;
 

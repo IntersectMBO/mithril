@@ -1,13 +1,10 @@
 use anyhow::Context;
 use async_trait::async_trait;
-#[cfg(feature = "unstable")]
-use slog::warn;
-use slog::{Logger, trace};
+use slog::{Logger, trace, warn};
 use std::sync::Arc;
 
-#[cfg(feature = "unstable")]
 use mithril_common::certificate_chain::CertificateRetriever;
-#[cfg(all(test, feature = "unstable"))]
+#[cfg(test)]
 use mithril_common::crypto_helper::GenesisEd25519VerificationKey;
 use mithril_common::{
     certificate_chain::{
@@ -21,12 +18,8 @@ use mithril_common::{
 
 use crate::certificate_client::fetch::InternalCertificateRetriever;
 use crate::certificate_client::{
-    CertificateAggregatorRequest, CertificateClient, CertificateVerifier,
-};
-#[cfg(feature = "unstable")]
-use crate::certificate_client::{
-    CertificateVerifierCache, CertificateVerifierCacheMode, CertificateVerifierCacheSpace,
-    fetch::CachedCertificateRetriever,
+    CertificateAggregatorRequest, CertificateClient, CertificateVerifier, CertificateVerifierCache,
+    CertificateVerifierCacheMode, CertificateVerifierCacheSpace, fetch::CachedCertificateRetriever,
 };
 use crate::feedback::{FeedbackSender, MithrilEvent};
 use crate::{MithrilCertificate, MithrilResult};
@@ -54,11 +47,8 @@ pub(super) async fn verify_chain(
 pub struct MithrilCertificateVerifier {
     internal_verifier: Arc<dyn CommonCertificateVerifier>,
     feedback_sender: FeedbackSender,
-    #[cfg(feature = "unstable")]
     verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
-    #[cfg(feature = "unstable")]
     cache_mode: CertificateVerifierCacheMode,
-    #[cfg(feature = "unstable")]
     cache_space: CertificateVerifierCacheSpace,
     logger: Logger,
 }
@@ -69,7 +59,6 @@ enum RetrievedCertificate {
     /// The certificate was downloaded from the aggregator.
     FromAggregator(Certificate),
     /// The certificate is the one committed to the cache under its hash.
-    #[cfg(feature = "unstable")]
     FromCache(Certificate),
 }
 
@@ -77,7 +66,6 @@ impl From<RetrievedCertificate> for Certificate {
     fn from(retrieved_certificate: RetrievedCertificate) -> Self {
         match retrieved_certificate {
             RetrievedCertificate::FromAggregator(certificate) => certificate,
-            #[cfg(feature = "unstable")]
             RetrievedCertificate::FromCache(certificate) => certificate,
         }
     }
@@ -89,8 +77,8 @@ impl MithrilCertificateVerifier {
         aggregator_requester: Arc<dyn CertificateAggregatorRequest>,
         genesis_verification_key: &str,
         feedback_sender: FeedbackSender,
-        #[cfg(feature = "unstable")] verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
-        #[cfg(feature = "unstable")] cache_mode: CertificateVerifierCacheMode,
+        verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
+        cache_mode: CertificateVerifierCacheMode,
         logger: Logger,
     ) -> MithrilResult<MithrilCertificateVerifier> {
         let logger = logger.new_with_component_name::<Self>();
@@ -98,10 +86,8 @@ impl MithrilCertificateVerifier {
             GenesisVerifier::try_from_hex(genesis_verification_key)
                 .with_context(|| "Invalid genesis verification key")?,
         );
-        #[cfg(feature = "unstable")]
         let cache_space = CertificateVerifierCacheSpace::from_genesis_verifier(&genesis_verifier);
         let retriever = Arc::new(InternalCertificateRetriever::new(aggregator_requester));
-        #[cfg(feature = "unstable")]
         let certificate_retriever: Arc<dyn CertificateRetriever> = match verifier_cache.as_ref() {
             Some(cache) => Arc::new(CachedCertificateRetriever::new(
                 retriever,
@@ -111,8 +97,6 @@ impl MithrilCertificateVerifier {
             )),
             None => retriever.clone(),
         };
-        #[cfg(not(feature = "unstable"))]
-        let certificate_retriever = retriever;
         let internal_verifier = Arc::new(CommonMithrilCertificateVerifier::new(
             logger.clone(),
             certificate_retriever,
@@ -122,11 +106,8 @@ impl MithrilCertificateVerifier {
         Ok(Self {
             internal_verifier,
             feedback_sender,
-            #[cfg(feature = "unstable")]
             verifier_cache,
-            #[cfg(feature = "unstable")]
             cache_mode,
-            #[cfg(feature = "unstable")]
             cache_space,
             logger,
         })
@@ -139,12 +120,8 @@ impl MithrilCertificateVerifier {
     ) -> MithrilResult<Option<RetrievedCertificate>> {
         let certificate_hash = certificate.hash.clone();
         let previous_certificate = self.internal_verifier.verify_certificate(&certificate).await?;
-        #[cfg(not(feature = "unstable"))]
-        let certificate_fetched_from_cache = false;
-        #[cfg(feature = "unstable")]
         let certificate_fetched_from_cache = self.matches_committed_certificate(&certificate).await;
 
-        #[cfg(feature = "unstable")]
         if let Some(cache) = self.verifier_cache.as_ref() {
             match certificate.try_into() {
                 Ok(message) => {
@@ -198,7 +175,6 @@ impl MithrilCertificateVerifier {
         &self,
         previous_certificate: Certificate,
     ) -> RetrievedCertificate {
-        #[cfg(feature = "unstable")]
         if self.cache_mode == CertificateVerifierCacheMode::EarlyStopVerification
             && self.matches_committed_certificate(&previous_certificate).await
         {
@@ -211,7 +187,6 @@ impl MithrilCertificateVerifier {
     /// Since the cache is only committed once the whole chain is validated, a certificate whose hash
     /// binds its content and equal to the one committed under its hash was verified within a valid
     /// chain and served by the cache.
-    #[cfg(feature = "unstable")]
     async fn matches_committed_certificate(&self, certificate: &Certificate) -> bool {
         let Some(cache) = self.verifier_cache.as_ref() else {
             return false;
@@ -238,7 +213,6 @@ impl MithrilCertificateVerifier {
 
     /// Stop the chain verification at a certificate trusted from the cache, reporting it as fetched
     /// from the cache, and return whether the verification stopped.
-    #[cfg(feature = "unstable")]
     async fn stop_early_at_cached_certificate(
         &self,
         certificate_chain_validation_id: &str,
@@ -281,7 +255,6 @@ impl CertificateVerifier for MithrilCertificateVerifier {
         let mut current_certificate: Option<Certificate> = Some(certificate.clone().try_into()?);
         while let Some(next) = current_certificate {
             let retrieved_certificate = self.verify(&certificate_chain_validation_id, next).await?;
-            #[cfg(feature = "unstable")]
             if self
                 .stop_early_at_cached_certificate(
                     &certificate_chain_validation_id,
@@ -294,7 +267,6 @@ impl CertificateVerifier for MithrilCertificateVerifier {
             current_certificate = retrieved_certificate.map(Certificate::from);
         }
 
-        #[cfg(feature = "unstable")]
         if let Some(cache) = self.verifier_cache.as_ref()
             && let Err(err) = cache
                 .commit_staged_certificates(&self.cache_space, &certificate_chain_validation_id)
@@ -423,9 +395,7 @@ mod tests {
             aggregator_client,
             genesis_verification_key,
             FeedbackSender::new(&[]),
-            #[cfg(feature = "unstable")]
             None,
-            #[cfg(feature = "unstable")]
             CertificateVerifierCacheMode::default(),
             TestLogger::stdout(),
         )
@@ -520,7 +490,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "unstable")]
     mod cache {
         use anyhow::anyhow;
         use chrono::TimeDelta;

@@ -1,9 +1,7 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 
-#[cfg(feature = "unstable")]
 use mithril_common::crypto_helper::GenesisVerifier;
-#[cfg(feature = "unstable")]
 use mithril_common::entities::HexEncodedDigest;
 use mithril_common::logging::LoggerExtensions;
 
@@ -78,7 +76,6 @@ pub trait CertificateVerifier: Sync + Send {
 }
 
 /// Certificate verifier cache mode.
-#[cfg(feature = "unstable")]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum CertificateVerifierCacheMode {
     /// Full verification mode
@@ -104,11 +101,9 @@ pub enum CertificateVerifierCacheMode {
 ///
 /// A certificate committed in a space is only trusted by a client using the same genesis
 /// verification key, so that a cache can be shared between clients of different networks.
-#[cfg(feature = "unstable")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CertificateVerifierCacheSpace(HexEncodedDigest);
 
-#[cfg(feature = "unstable")]
 impl CertificateVerifierCacheSpace {
     /// Space of the certificates validated with the given genesis verifier, identified by the
     /// fingerprint of its genesis verification key.
@@ -122,7 +117,6 @@ impl CertificateVerifierCacheSpace {
     }
 }
 
-#[cfg(feature = "unstable")]
 /// API that defines how to cache certificates validation results.
 #[cfg_attr(test, mockall::automock)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]

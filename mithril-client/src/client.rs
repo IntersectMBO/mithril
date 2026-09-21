@@ -31,10 +31,9 @@ use crate::cardano_transaction_client::CardanoTransactionClient;
 #[cfg(feature = "unstable")]
 use crate::cardano_transaction_v2_client::CardanoTransactionV2Client;
 use crate::certificate_client::{
-    CertificateClient, CertificateVerifier, MithrilCertificateVerifier,
+    CertificateClient, CertificateVerifier, CertificateVerifierCache, CertificateVerifierCacheMode,
+    MithrilCertificateVerifier,
 };
-#[cfg(feature = "unstable")]
-use crate::certificate_client::{CertificateVerifierCache, CertificateVerifierCacheMode};
 #[cfg(not(target_family = "wasm"))]
 use crate::common::MithrilNetwork;
 use crate::era::{EraFetcher, MithrilEraClient};
@@ -106,9 +105,8 @@ pub struct ClientOptions {
 
     /// Whether to enable certificate chain verification caching in the WASM client.
     ///
-    /// `unstable` must be set to `true` for this option to have any effect.
-    ///
-    /// DANGER: This feature is highly experimental and insecure, and it must not be used in production
+    /// Verified certificates are stored in IndexedDB and cryptographically re-verified when
+    /// reused, the cache only saves network round-trips.
     #[cfg(target_family = "wasm")]
     #[cfg_attr(target_family = "wasm", serde(default))]
     pub enable_certificate_chain_verification_cache: bool,
@@ -117,8 +115,8 @@ pub struct ClientOptions {
     ///
     /// Default to one week (604800 seconds).
     ///
-    /// `enable_certificate_chain_verification_cache` and `unstable` must both be set to `true`
-    /// for this option to have any effect.
+    /// `enable_certificate_chain_verification_cache` must be set to `true` for this option to
+    /// have any effect.
     #[cfg(target_family = "wasm")]
     #[cfg_attr(target_family = "wasm", serde(default = "one_week_in_seconds"))]
     pub certificate_chain_verification_cache_duration_in_seconds: u32,
@@ -226,9 +224,7 @@ pub struct ClientBuilder {
     ipfs_file_downloader: Option<Arc<dyn FileDownloader>>,
     #[cfg(all(feature = "unstable", feature = "fs"))]
     ipfs_rpc_base_url: Option<String>,
-    #[cfg(feature = "unstable")]
     certificate_verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
-    #[cfg(feature = "unstable")]
     certificate_verifier_cache_mode: Option<CertificateVerifierCacheMode>,
     era_fetcher: Option<Arc<dyn EraFetcher>>,
     logger: Option<Logger>,
@@ -281,9 +277,7 @@ impl ClientBuilder {
             ipfs_file_downloader: None,
             #[cfg(all(feature = "unstable", feature = "fs"))]
             ipfs_rpc_base_url: None,
-            #[cfg(feature = "unstable")]
             certificate_verifier_cache: None,
-            #[cfg(feature = "unstable")]
             certificate_verifier_cache_mode: None,
             era_fetcher: None,
             logger: None,
@@ -358,9 +352,7 @@ impl ClientBuilder {
                     aggregator_client.clone(),
                     genesis_verification_key,
                     feedback_sender.clone(),
-                    #[cfg(feature = "unstable")]
                     self.certificate_verifier_cache,
-                    #[cfg(feature = "unstable")]
                     self.certificate_verifier_cache_mode.unwrap_or_default(),
                     logger.clone(),
                 )
@@ -563,19 +555,17 @@ impl ClientBuilder {
         self
     }
 
-    cfg_unstable! {
-        /// Set the certificate verifier cache with the given implementation and mode.
-        ///
-        /// Passing a `None` value will disable the cache if any was previously set.
-        pub fn with_certificate_verifier_cache(
-            mut self,
-            certificate_verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
-            mode: CertificateVerifierCacheMode,
-        ) -> ClientBuilder {
-            self.certificate_verifier_cache = certificate_verifier_cache;
-            self.certificate_verifier_cache_mode = Some(mode);
-            self
-        }
+    /// Set the certificate verifier cache with the given implementation and mode.
+    ///
+    /// Passing a `None` value will disable the cache if any was previously set.
+    pub fn with_certificate_verifier_cache(
+        mut self,
+        certificate_verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
+        mode: CertificateVerifierCacheMode,
+    ) -> ClientBuilder {
+        self.certificate_verifier_cache = certificate_verifier_cache;
+        self.certificate_verifier_cache_mode = Some(mode);
+        self
     }
 
     cfg_fs! {
