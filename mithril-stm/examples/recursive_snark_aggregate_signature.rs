@@ -7,11 +7,29 @@
 //! a verifier checks a single proof rather than every aggregate signature since genesis. This
 //! example anchors a chain at genesis and advances it by two epochs, verifying each one as it goes.
 //!
-//! Run it with:
+//! The library reads the trusted setup from its cache and never downloads it, so download the SRS
+//! once beforehand (about 800 MB) and check its hash:
+//!
+//! ```text
+//! SRS_FOLDER="${TMPDIR:-/tmp}/mithril-circuit/srs"
+//! SRS_HASH="e8ad5eed936d657a0fb59d2a55ba19f81a3083bb3554ef88f464f5377e9b2c2f"
+//! mkdir -p "$SRS_FOLDER"
+//! curl -fL https://srs.midnight.network/midnight-srs-2p22 -o "$SRS_FOLDER/srs-parameters.download"
+//! if echo "$SRS_HASH  $SRS_FOLDER/srs-parameters.download" | sha256sum -c; then
+//!   mv "$SRS_FOLDER/srs-parameters.download" "$SRS_FOLDER/srs-parameters"
+//! else
+//!   rm -f "$SRS_FOLDER/srs-parameters.download"
+//! fi
+//! ```
+//!
+//! The file is moved into place only once its hash matches, so a failed transfer never leaves a
+//! file the library would read. On macOS, `sha256sum -c` is `shasum -a 256 -c`.
+//!
+//! Then run it with:
 //!
 //! ```text
 //! cargo run --release -p mithril-stm --example recursive_snark_aggregate_signature \
-//!     --features future_snark,rustls
+//!     --features future_snark
 //! ```
 //!
 //! Advancing an epoch proves the same circuit twice, under a different transcript each time. Only
@@ -22,10 +40,9 @@
 //!
 //! Expect roughly four and a half minutes and about 12 GB of peak memory, measured on an Apple M4
 //! Max with 16 cores and 48 GB of memory. That measurement had memory to spare; a machine with less
-//! than the peak installed will page, and take correspondingly longer. The first run additionally
-//! downloads the trusted setup. Every aggregation generates the circuit keys afresh, because the
-//! example's parameters are sized so it can be run at all and its keys are therefore not the
-//! production ones the key cache recognises.
+//! than the peak installed will page, and take correspondingly longer. Every aggregation generates
+//! the circuit keys afresh, because the example's parameters are sized so it can be run at all and
+//! its keys are therefore not the production ones the key cache recognises.
 //!
 //! The signer seed below is published with this source and is therefore compromised. It is fixed
 //! only so that a run this expensive behaves the same way every time, rather than depending on which

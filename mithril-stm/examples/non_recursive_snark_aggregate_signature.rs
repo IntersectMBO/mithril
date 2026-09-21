@@ -7,20 +7,36 @@
 //! verifier checks one proof rather than every individual signature. Unlike the recursive proof
 //! system, each aggregate signature stands alone: nothing links it to the ones before it.
 //!
-//! Run it with:
+//! The library reads the trusted setup from its cache and never downloads it, so download the SRS
+//! once beforehand (about 800 MB) and check its hash:
+//!
+//! ```text
+//! SRS_FOLDER="${TMPDIR:-/tmp}/mithril-circuit/srs"
+//! SRS_HASH="e8ad5eed936d657a0fb59d2a55ba19f81a3083bb3554ef88f464f5377e9b2c2f"
+//! mkdir -p "$SRS_FOLDER"
+//! curl -fL https://srs.midnight.network/midnight-srs-2p22 -o "$SRS_FOLDER/srs-parameters.download"
+//! if echo "$SRS_HASH  $SRS_FOLDER/srs-parameters.download" | sha256sum -c; then
+//!   mv "$SRS_FOLDER/srs-parameters.download" "$SRS_FOLDER/srs-parameters"
+//! else
+//!   rm -f "$SRS_FOLDER/srs-parameters.download"
+//! fi
+//! ```
+//!
+//! The file is moved into place only once its hash matches, so a failed transfer never leaves a
+//! file the library would read. On macOS, `sha256sum -c` is `shasum -a 256 -c`.
+//!
+//! Then run it with:
 //!
 //! ```text
 //! cargo run --release -p mithril-stm --example non_recursive_snark_aggregate_signature \
-//!     --features future_snark,rustls
+//!     --features future_snark
 //! ```
 //!
-//! Expect about three and a half seconds and roughly 1.3 GB of peak memory once the trusted setup
-//! is cached, measured on an Apple M4 Max with 16 cores and 48 GB of memory; the first run
-//! additionally downloads that setup. The circuit keys are generated on each run, because the
+//! Expect about three and a half seconds and roughly 1.3 GB of peak memory, measured on an Apple M4
+//! Max with 16 cores and 48 GB of memory. The circuit keys are generated on each run, because the
 //! example's parameters are sized so it can be run at all and its keys are therefore not the
-//! production ones the key cache recognises. Verification is cheap by comparison and does not
-//! download the full SRS: the KZG verifier parameters derived from the trusted setup are embedded
-//! in the crate.
+//! production ones the key cache recognises. Verification is cheap by comparison and does not need
+//! the SRS: the KZG verifier parameters derived from the trusted setup are embedded in the crate.
 //!
 //! The proof system is described at
 //! <https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/non-recursive-snark>.

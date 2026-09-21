@@ -8,7 +8,7 @@
   - the [_concatenation proof system_](https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/concatenation) (Section 4.3), currently used by the Mithril network. The aggregate signature carries one entry per contributing signer, together covering at least the `k` winning lottery indices the quorum requires, so its size follows the number of signers needed rather than `k` alone. Verification needs no trusted setup.
   - a [_non-recursive SNARK_](https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/non-recursive-snark) proof system, in which the aggregate signature consists in a single succinct proof that the quorum was met, so a verifier checks one proof rather than every individual signature.
   - a [_recursive SNARK_](https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/recursive-snark) proof system, in which each aggregate signature proves the whole chain behind it, so a verifier checks one proof rather than every aggregate signature since genesis.
-- The two SNARK proof systems are **experimental**. They are gated behind the `future_snark` feature, which also requires one of `rustls` or `native-tls` for the trusted setup download.
+- The two SNARK proof systems are **experimental**. They are gated behind the `future_snark` feature.
 - We implemented the concatenation proof system as batch proofs:
   - Individual signatures do not contain the Merkle path to prove membership of the avk. Instead, it is the role of the aggregator to generate such proofs. This allows for a more efficient implementation of batched membership proofs (or batched Merkle paths).
 - Protocol documentation is given in [Mithril Protocol in depth](https://mithril.network/doc/mithril/mithril-protocol/protocol/).
@@ -46,13 +46,38 @@ cd mithril-stm
 cargo build --release
 ```
 
-## TLS backend
+## Trusted setup
 
-The `future_snark` feature downloads the SRS of the trusted setup over HTTPS and lets the caller pick the TLS backend. Enable exactly one of the `rustls` or `native-tls` features along with it:
+The two SNARK proof systems are enabled with the `future_snark` feature:
 
 ```shell
-cargo build --release --features future_snark,rustls
+cargo build --release --features future_snark
 ```
+
+Proving needs the SRS of the [Midnight trusted setup](https://github.com/midnightntwrk/midnight-trusted-setup).
+The library reads it from the `mithril-circuit/srs/srs-parameters` file of the system temporary directory
+and never downloads it itself: the download is abstracted behind the `TrustedSetupDownloader` trait,
+which a proving node implements over its own HTTP client and hands to `SnarkProverSetupWarmer`,
+as the Mithril aggregator does. Before proving anywhere else, download the SRS (about 800 MB)
+into that cache and check its hash:
+
+```shell
+SRS_FOLDER="${TMPDIR:-/tmp}/mithril-circuit/srs"
+SRS_HASH="e8ad5eed936d657a0fb59d2a55ba19f81a3083bb3554ef88f464f5377e9b2c2f"
+mkdir -p "$SRS_FOLDER"
+curl -fL https://srs.midnight.network/midnight-srs-2p22 -o "$SRS_FOLDER/srs-parameters.download"
+if echo "$SRS_HASH  $SRS_FOLDER/srs-parameters.download" | sha256sum -c; then
+  mv "$SRS_FOLDER/srs-parameters.download" "$SRS_FOLDER/srs-parameters"
+else
+  rm -f "$SRS_FOLDER/srs-parameters.download"
+fi
+```
+
+The download lands on a temporary name and is moved into place only once its hash matches,
+so an interrupted or failed transfer never leaves a file the library would read.
+On macOS, `sha256sum -c` is `shasum -a 256 -c`.
+
+Verification never needs the SRS: the KZG verifier parameters derived from it are embedded in the crate.
 
 ## Running the tests
 
@@ -72,13 +97,13 @@ cargo bench
 
 One runnable example per proof system, each covering aggregation and verification.
 
-| Example                                                                                                                                  | Command                                                                                                               |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| [Concatenation](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/concatenation_aggregate_signature.rs)             | `cargo run -p mithril-stm --example concatenation_aggregate_signature`                                                |
-| [Non-recursive SNARK](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/non_recursive_snark_aggregate_signature.rs) | `cargo run --release -p mithril-stm --example non_recursive_snark_aggregate_signature --features future_snark,rustls` |
-| [Recursive SNARK](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/recursive_snark_aggregate_signature.rs)         | `cargo run --release -p mithril-stm --example recursive_snark_aggregate_signature --features future_snark,rustls`     |
+| Example                                                                                                                                  | Command                                                                                                        |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| [Concatenation](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/concatenation_aggregate_signature.rs)             | `cargo run -p mithril-stm --example concatenation_aggregate_signature`                                         |
+| [Non-recursive SNARK](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/non_recursive_snark_aggregate_signature.rs) | `cargo run --release -p mithril-stm --example non_recursive_snark_aggregate_signature --features future_snark` |
+| [Recursive SNARK](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/recursive_snark_aggregate_signature.rs)         | `cargo run --release -p mithril-stm --example recursive_snark_aggregate_signature --features future_snark`     |
 
-The concatenation example runs in well under a second. The two SNARK examples generate real proofs and are substantially more demanding; each states its measured cost and its hardware requirement in its own header. The first run of either downloads the trusted setup, unless it is already cached.
+The concatenation example runs in well under a second. The two SNARK examples generate real proofs and are substantially more demanding; each states its measured cost and its hardware requirement in its own header. Both need the trusted setup cached beforehand, see [Trusted setup](#trusted-setup).
 
 [Key registration](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/key_registration.rs) shows the registration phase on its own, treating each participant individually.
 
@@ -169,15 +194,15 @@ Three metrics are measured per tier: VK/PK setup time, proof generation time, an
 Small and medium tiers use Criterion (10 samples, flat sampling — one iteration per sample):
 
 ```bash
-cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/small
-cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/medium
+cargo bench -p mithril-stm --features future_snark,benchmark-internals --bench halo2_snark -- certificate/small
+cargo bench -p mithril-stm --features future_snark,benchmark-internals --bench halo2_snark -- certificate/medium
 ```
 
 Large and production tiers run a single timed measurement (Criterion's 10-sample minimum is impractical at this scale):
 
 ```bash
-cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/large
-cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_snark -- certificate/production
+cargo bench -p mithril-stm --features future_snark,benchmark-internals --bench halo2_snark -- certificate/large
+cargo bench -p mithril-stm --features future_snark,benchmark-internals --bench halo2_snark -- certificate/production
 ```
 
 ## CI Parameter Benchmarks
@@ -216,5 +241,5 @@ All tiers complete in under 15 minutes on any developer machine with at least 4 
 ### Running the benchmarks
 
 ```bash
-cargo bench -p mithril-stm --features future_snark,rustls,benchmark-internals --bench halo2_prover_modes
+cargo bench -p mithril-stm --features future_snark,benchmark-internals --bench halo2_prover_modes
 ```
