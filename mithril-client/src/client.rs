@@ -30,11 +30,11 @@ use crate::cardano_stake_distribution_client::CardanoStakeDistributionClient;
 use crate::cardano_transaction_client::CardanoTransactionClient;
 #[cfg(feature = "unstable")]
 use crate::cardano_transaction_v2_client::CardanoTransactionV2Client;
-#[cfg(feature = "unstable")]
-use crate::certificate_client::CertificateVerifierCache;
 use crate::certificate_client::{
     CertificateClient, CertificateVerifier, MithrilCertificateVerifier,
 };
+#[cfg(feature = "unstable")]
+use crate::certificate_client::{CertificateVerifierCache, CertificateVerifierCacheMode};
 #[cfg(not(target_family = "wasm"))]
 use crate::common::MithrilNetwork;
 use crate::era::{EraFetcher, MithrilEraClient};
@@ -228,6 +228,8 @@ pub struct ClientBuilder {
     ipfs_rpc_base_url: Option<String>,
     #[cfg(feature = "unstable")]
     certificate_verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
+    #[cfg(feature = "unstable")]
+    certificate_verifier_cache_mode: Option<CertificateVerifierCacheMode>,
     era_fetcher: Option<Arc<dyn EraFetcher>>,
     logger: Option<Logger>,
     feedback_receivers: Vec<Arc<dyn FeedbackReceiver>>,
@@ -281,6 +283,8 @@ impl ClientBuilder {
             ipfs_rpc_base_url: None,
             #[cfg(feature = "unstable")]
             certificate_verifier_cache: None,
+            #[cfg(feature = "unstable")]
+            certificate_verifier_cache_mode: None,
             era_fetcher: None,
             logger: None,
             feedback_receivers: vec![],
@@ -356,6 +360,8 @@ impl ClientBuilder {
                     feedback_sender.clone(),
                     #[cfg(feature = "unstable")]
                     self.certificate_verifier_cache,
+                    #[cfg(feature = "unstable")]
+                    self.certificate_verifier_cache_mode.unwrap_or_default(),
                     logger.clone(),
                 )
                 .with_context(|| "Building certificate verifier failed")?,
@@ -558,14 +564,16 @@ impl ClientBuilder {
     }
 
     cfg_unstable! {
-        /// Set the [CertificateVerifierCache] that will be used to cache certificate validation results.
+        /// Set the certificate verifier cache with the given implementation and mode.
         ///
         /// Passing a `None` value will disable the cache if any was previously set.
         pub fn with_certificate_verifier_cache(
             mut self,
             certificate_verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
+            mode: CertificateVerifierCacheMode,
         ) -> ClientBuilder {
             self.certificate_verifier_cache = certificate_verifier_cache;
+            self.certificate_verifier_cache_mode = Some(mode);
             self
         }
     }

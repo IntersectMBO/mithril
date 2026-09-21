@@ -2,7 +2,6 @@
 #![cfg(target_family = "wasm")]
 #![cfg_attr(target_family = "wasm", warn(missing_docs))]
 
-mod certificate_verification_cache;
 mod client_wasm;
 #[cfg(test)]
 mod test_data;
