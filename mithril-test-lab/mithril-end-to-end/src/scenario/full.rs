@@ -75,6 +75,12 @@ impl FullScenario {
         let mut join_set = JoinSet::new();
         let spec = Arc::new(self);
 
+        if spec.infrastructure.chains_follower_aggregators() {
+            info!("Starting chained followers");
+            let spec_clone = spec.clone();
+            join_set.spawn(async move { spec_clone.start_chained_follower_aggregators().await });
+        }
+
         // Transfer some funds on the devnet to have some Cardano transactions to sign.
         // This step needs to be executed early in the process so that the transactions are available
         // for signing in the penultimate immutable chunk before the end of the test.
@@ -84,10 +90,19 @@ impl FullScenario {
         info!("Bootstrapping leader aggregator");
         spec.bootstrap_leader_aggregator(&spec.infrastructure).await?;
 
-        info!("Starting followers");
-        for follower_aggregator in spec.infrastructure.follower_aggregators() {
-            follower_aggregator.serve().await?;
+        if !spec.infrastructure.chains_follower_aggregators() {
+            info!("Starting followers");
+            for follower_aggregator in spec.infrastructure.follower_aggregators() {
+                follower_aggregator.serve().await?;
+            }
         }
+
+        let start_epoch = spec
+            .infrastructure
+            .chain_observer()
+            .get_current_epoch()
+            .await?
+            .unwrap_or_default();
 
         info!("Running scenarios");
         for index in 0..spec.infrastructure.aggregators().len() {
@@ -96,13 +111,48 @@ impl FullScenario {
                 let infrastructure = &spec_clone.infrastructure;
 
                 spec_clone
-                    .run_scenario(infrastructure.aggregator(index), infrastructure)
+                    .run_scenario(
+                        infrastructure.aggregator(index),
+                        start_epoch,
+                        infrastructure,
+                    )
                     .await
             });
         }
 
         while let Some(res) = join_set.join_next().await {
             res??;
+        }
+
+        Ok(())
+    }
+
+    /// Start the chained follower aggregators in order, each joining the network a configurable
+    /// number of epochs after the epoch at which the aggregator it follows started.
+    async fn start_chained_follower_aggregators(&self) -> StdResult<()> {
+        let start_epoch_offset =
+            self.infrastructure.chain_follower_aggregators_start_epoch_offset();
+        let mut source_start_epoch = self.infrastructure.leader_start_epoch();
+
+        for index in 1..self.infrastructure.aggregators().len() {
+            let aggregator = self.infrastructure.aggregator(index);
+            self.toolkit
+                .wait
+                .for_aggregator_at_target_epoch(
+                    aggregator,
+                    source_start_epoch + start_epoch_offset,
+                    format!(
+                        "epoch at which the chained follower {} joins the network",
+                        aggregator.name()
+                    ),
+                )
+                .await?;
+            aggregator.serve().await?;
+            source_start_epoch = aggregator
+                .chain_observer()
+                .get_current_epoch()
+                .await?
+                .unwrap_or_default();
         }
 
         Ok(())
@@ -159,11 +209,9 @@ impl FullScenario {
     pub async fn run_scenario(
         &self,
         aggregator: &Aggregator,
+        start_epoch: Epoch,
         infrastructure: &MithrilInfrastructure,
     ) -> StdResult<()> {
-        let chain_observer = aggregator.chain_observer();
-        let start_epoch = chain_observer.get_current_epoch().await?.unwrap_or_default();
-
         // Wait 2 epochs before changing protocol parameters
         let mut target_epoch = start_epoch + 2;
         self.toolkit
@@ -180,7 +228,8 @@ impl FullScenario {
             // Given the time needed to restart the aggregator, a restart crossing an epoch
             // boundary before the current epoch is certified would create an unrecoverable
             // epoch gap and block the aggregator
-            let current_epoch = chain_observer
+            let current_epoch = aggregator
+                .chain_observer()
                 .get_current_epoch()
                 .await?
                 .ok_or(anyhow!("Current epoch is not available"))?;

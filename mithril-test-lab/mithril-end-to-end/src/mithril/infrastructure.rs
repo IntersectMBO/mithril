@@ -55,6 +55,7 @@ pub struct MithrilInfrastructureConfig {
     pub genesis_keys: GenesisKeys,
     pub use_relays: bool,
     pub chain_follower_aggregators: bool,
+    pub chain_follower_aggregators_start_epoch_offset: u64,
     pub relay_signer_registration_mode: String,
     pub relay_signature_registration_mode: String,
     pub use_p2p_passive_relays: bool,
@@ -107,6 +108,7 @@ impl MithrilInfrastructureConfig {
             genesis_keys: GenesisKeys::LEGACY,
             use_relays: false,
             chain_follower_aggregators: false,
+            chain_follower_aggregators_start_epoch_offset: 2,
             relay_signer_registration_mode: "passthrough".to_string(),
             relay_signature_registration_mode: "passthrough".to_string(),
             use_p2p_passive_relays: false,
@@ -137,6 +139,9 @@ pub struct MithrilInfrastructure {
     use_era_specific_work_dir: bool,
     aggregate_signature_type: AggregateSignatureType,
     genesis_keys: GenesisKeys,
+    chain_follower_aggregators: bool,
+    chain_follower_aggregators_start_epoch_offset: u64,
+    leader_start_epoch: Epoch,
 }
 
 impl MithrilInfrastructure {
@@ -191,6 +196,11 @@ impl MithrilInfrastructure {
             )
             .await?;
         leader_aggregator.serve().await?;
+        let leader_start_epoch = leader_aggregator
+            .chain_observer()
+            .get_current_epoch()
+            .await?
+            .unwrap_or_default();
 
         let follower_aggregator_endpoints = follower_aggregators
             .iter()
@@ -242,6 +252,10 @@ impl MithrilInfrastructure {
             use_era_specific_work_dir: config.use_era_specific_work_dir,
             aggregate_signature_type: config.aggregate_signature_type,
             genesis_keys: config.genesis_keys,
+            chain_follower_aggregators: config.chain_follower_aggregators,
+            chain_follower_aggregators_start_epoch_offset: config
+                .chain_follower_aggregators_start_epoch_offset,
+            leader_start_epoch,
         })
     }
 
@@ -603,6 +617,18 @@ impl MithrilInfrastructure {
 
     pub fn follower_aggregator(&self, index: usize) -> &Aggregator {
         &self.aggregators[index + 1]
+    }
+
+    pub fn chains_follower_aggregators(&self) -> bool {
+        self.chain_follower_aggregators
+    }
+
+    pub fn chain_follower_aggregators_start_epoch_offset(&self) -> u64 {
+        self.chain_follower_aggregators_start_epoch_offset
+    }
+
+    pub fn leader_start_epoch(&self) -> Epoch {
+        self.leader_start_epoch
     }
 
     pub fn signers(&self) -> &[Signer] {

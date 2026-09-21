@@ -164,6 +164,11 @@ struct NetworkTopologyArgs {
     #[clap(long)]
     chain_follower_aggregators: bool,
 
+    /// Number of epochs a chained follower aggregator starts after the epoch at which the
+    /// aggregator it follows started (used only when 'chain_follower_aggregators' is set)
+    #[clap(long, default_value_t = 2)]
+    chain_follower_aggregators_start_epoch_offset: u64,
+
     /// Signer registration relay mode (used only when 'use_relays' is set, can be 'passthrough' or 'p2p')
     #[clap(long, default_value = "passthrough")]
     relay_signer_registration_mode: String,
@@ -594,6 +599,9 @@ impl App {
                     dmq_node_flavor: args.network_topology.dmq_node_flavor,
                     use_relays,
                     chain_follower_aggregators: args.network_topology.chain_follower_aggregators,
+                    chain_follower_aggregators_start_epoch_offset: args
+                        .network_topology
+                        .chain_follower_aggregators_start_epoch_offset,
                     relay_signer_registration_mode,
                     relay_signature_registration_mode,
                     skip_signature_delayer: args.mithril.skip_signature_delayer,
