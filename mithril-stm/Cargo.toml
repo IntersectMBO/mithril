@@ -30,7 +30,7 @@ include = [
 ]
 
 [package.metadata.docs.rs]
-features = ["future_snark", "rustls"]
+features = ["future_snark"]
 
 [package.metadata.cargo-machete]
 # `serde_bytes` is used for proof bytes serialization
@@ -56,12 +56,7 @@ future_snark = [
     "dep:rand",
     "dep:sha2",
     "dep:rand_chacha",
-    "dep:reqwest",
 ]
-# TLS backend for the SRS download client (used by `future_snark`).
-# Exactly one of these must be enabled together with `future_snark`.
-native-tls = ["reqwest?/native-tls"]
-rustls = ["reqwest?/rustls"]
 num-integer-backend = ["dep:num-bigint", "dep:num-integer", "dep:num-rational", "dep:num-traits"]
 rug-backend = ["dep:rug"]
 
@@ -87,7 +82,6 @@ rand = { version = "0.10.2", optional = true }
 rand_chacha = { workspace = true, optional = true }
 rand_core = { workspace = true, features = ["std"] }
 rayon = { workspace = true }
-reqwest = { workspace = true, default-features = false, features = ["blocking"], optional = true }
 serde = { workspace = true }
 serde_bytes = "0.11.19"
 sha2 = { version = "0.10.9", optional = true }
@@ -110,7 +104,6 @@ rug = { version = "1.30.0", optional = true }
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }
 fs2 = "0.4.3"
-httpmock = "0.8.3"
 mockall = { workspace = true }
 num-bigint = "0.4.6"
 num-rational = "0.4.2"
