@@ -106,8 +106,8 @@ impl MithrilClient {
                 .unwrap()
         };
 
-        let certificate_verifier_cache = if client_options.unstable
-            && client_options.enable_certificate_chain_verification_cache
+        let certificate_verifier_cache = if client_options
+            .enable_certificate_chain_verification_cache
         {
             Some(Self::build_certificate_verifier_cache(
                 aggregator_endpoint,
@@ -316,6 +316,22 @@ impl MithrilClient {
         Ok(serde_wasm_bindgen::to_value(&result)?)
     }
 
+    /// Reset the certificate verifier cache if enabled
+    #[wasm_bindgen]
+    pub async fn reset_certificate_verifier_cache(&self) -> Result<(), JsValue> {
+        if let Some(cache) = self.certificate_verifier_cache.as_ref() {
+            cache.reset().await.map_err(|err| format!("{err:?}"))?;
+        }
+
+        Ok(())
+    }
+
+    /// Check if the certificate verifier cache is enabled
+    #[wasm_bindgen]
+    pub async fn is_certificate_verifier_cache_enabled(&self) -> Result<bool, JsValue> {
+        Ok(self.certificate_verifier_cache.is_some())
+    }
+
     /// Call the client for the list of available Cardano transactions snapshots
     #[wasm_bindgen]
     pub async fn list_cardano_transactions_snapshots(&self) -> WasmResult {
@@ -500,26 +516,6 @@ impl MithrilClient {
         }
 
         Ok(())
-    }
-
-    /// `unstable` Reset the certificate verifier cache if enabled
-    #[wasm_bindgen]
-    pub async fn reset_certificate_verifier_cache(&self) -> Result<(), JsValue> {
-        self.guard_unstable()?;
-
-        if let Some(cache) = self.certificate_verifier_cache.as_ref() {
-            cache.reset().await.map_err(|err| format!("{err:?}"))?;
-        }
-
-        Ok(())
-    }
-
-    /// `unstable` Check if the certificate verifier cache is enabled
-    #[wasm_bindgen]
-    pub async fn is_certificate_verifier_cache_enabled(&self) -> Result<bool, JsValue> {
-        self.guard_unstable()?;
-
-        Ok(self.certificate_verifier_cache.is_some())
     }
 
     /// `unstable` Call the client for the list of available Cardano transactions V2 snapshots
@@ -726,7 +722,7 @@ mod tests {
     }
 
     fn get_mithril_client_with_certificate_verifier_cache() -> MithrilClient {
-        let mut options = ClientOptions::new(None).with_unstable_features(true);
+        let mut options = ClientOptions::new(None).with_unstable_features(false);
         options.enable_certificate_chain_verification_cache = true;
         get_mithril_client(options)
     }
@@ -917,7 +913,7 @@ mod tests {
                 .unwrap()
         );
         assert!(
-            !get_mithril_client_unstable()
+            !get_mithril_client_stable()
                 .is_certificate_verifier_cache_enabled()
                 .await
                 .unwrap()
