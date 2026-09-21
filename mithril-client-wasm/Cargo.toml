@@ -22,7 +22,7 @@ ignored = ["wasm-bindgen-futures"]
 crate-type = ["cdylib"]
 
 [features]
-default = ["rustls"]
+default = ["rustls", "future_snark"]
 rustls = ["mithril-client/rustls"]
 test-node = []
 future_snark = ["mithril-client/future_snark"]

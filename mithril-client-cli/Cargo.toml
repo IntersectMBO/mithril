@@ -22,7 +22,7 @@ name = "mithril-client"
 path = "src/main.rs"
 
 [features]
-default = ["rustls"]
+default = ["rustls", "future_snark"]
 rustls = ["mithril-client/rustls"]
 future_snark = ["mithril-client/future_snark"]
 

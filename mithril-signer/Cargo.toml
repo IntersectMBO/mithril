@@ -14,7 +14,7 @@ repository = { workspace = true }
 ignored = ["reqwest"]
 
 [features]
-default = ["rustls"]
+default = ["rustls", "future_snark"]
 future_snark = ["mithril-common/future_snark"]
 rustls = ["mithril-common/rustls", "reqwest/rustls"]
 
