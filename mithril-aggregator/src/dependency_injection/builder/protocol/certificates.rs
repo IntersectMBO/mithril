@@ -102,6 +102,8 @@ impl DependenciesBuilder {
             self.get_ticker_service().await?,
             self.get_mithril_network_configuration_provider().await?,
             Arc::new(NoTrustedSetupDownload),
+            SnarkAggregateSignatureProverWarmer::DEFAULT_RETRY_DELAY,
+            SnarkAggregateSignatureProverWarmer::DEFAULT_MAX_RETRY_DELAY,
             self.root_logger(),
         );
 

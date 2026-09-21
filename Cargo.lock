@@ -4252,6 +4252,7 @@ dependencies = [
  "mockall",
  "paste",
  "percent-encoding",
+ "rand_core 0.6.4",
  "rayon",
  "regex",
  "reqwest",
