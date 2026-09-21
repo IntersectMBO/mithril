@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.20 (09-21-2026)
+
+### Changed
+
+- Moved the IVC circuit onto the Midnight standard library's `Relation` trait, replacing the hand-written configuration. The statement and the degree are unchanged, but the standard library registers gates in a different order, so the recursive verifying key moves: a breaking circuit key change requiring a re-genesis, with every derived asset regenerated.
+- Encoded the recursive circuit keys in the certificate keys' format, through one shared codec. The inner key is byte-identical, so this adds a 23-byte envelope without altering circuit identity.
+- Bound the recursive key into the recursive circuit's cache identity, non-production entries having been fingerprinted from the certificate key alone.
+- Borrowed the witness during synthesis instead of copying it once per assigned part.
+
+### Fixed
+
+- Rejected a key of the wrong circuit, degree or shape before it reaches the dependency's readers, on both verifying keys and on the recursive proving key. One shared key format left each circuit's key decodable in the other's position, where a chosen architecture, degree or fixed commitment count reaches a panic.
+
+### Added
+
+- Documented the constants that asset regeneration must update, with the assertion orientation of each.
+- Decoded the cached key pairs through their typed decoders in the prover setup test, the recursive proving key having had no coverage on a valid key.
+
 ## 0.12.19 (09-15-2026)
 
 ### Added
