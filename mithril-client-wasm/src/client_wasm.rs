@@ -15,8 +15,10 @@ use mithril_client::{
 };
 
 use crate::WasmResult;
+use crate::indexed_db_certificate_verifier_cache::IndexedDbCertificateVerifierCache;
 
 const CLIENT_TYPE_WASM: &str = "WASM";
+const CERTIFICATE_VERIFIER_CACHE_DATABASE_PREFIX: &str = "mithril-client-certificate-cache-";
 
 #[wasm_bindgen]
 struct JSBroadcastChannelFeedbackReceiver {
@@ -107,12 +109,12 @@ impl MithrilClient {
         let certificate_verifier_cache = if client_options.unstable
             && client_options.enable_certificate_chain_verification_cache
         {
-            Self::build_certifier_cache(
+            Some(Self::build_certificate_verifier_cache(
                 aggregator_endpoint,
                 TimeDelta::seconds(
                     client_options.certificate_chain_verification_cache_duration_in_seconds as i64,
                 ),
-            )
+            ))
         } else {
             None
         };
@@ -142,11 +144,14 @@ impl MithrilClient {
         }
     }
 
-    fn build_certifier_cache(
-        _aggregator_endpoint: &str,
-        _expiration_delay: TimeDelta,
-    ) -> Option<Arc<dyn CertificateVerifierCache>> {
-        None
+    fn build_certificate_verifier_cache(
+        aggregator_endpoint: &str,
+        expiration_delay: TimeDelta,
+    ) -> Arc<dyn CertificateVerifierCache> {
+        Arc::new(IndexedDbCertificateVerifierCache::new(
+            &format!("{CERTIFICATE_VERIFIER_CACHE_DATABASE_PREFIX}{aggregator_endpoint}"),
+            expiration_delay,
+        ))
     }
 
     /// Call the client to get a cardano database snapshot from a hash
@@ -720,6 +725,12 @@ mod tests {
         get_mithril_client(options)
     }
 
+    fn get_mithril_client_with_certificate_verifier_cache() -> MithrilClient {
+        let mut options = ClientOptions::new(None).with_unstable_features(true);
+        options.enable_certificate_chain_verification_cache = true;
+        get_mithril_client(options)
+    }
+
     #[cfg(not(feature = "test-node"))]
     wasm_bindgen_test_configure!(run_in_browser);
 
@@ -895,6 +906,49 @@ mod tests {
             .expect("verify_certificate_chain should not fail");
         serde_wasm_bindgen::from_value::<MithrilCertificate>(certificate_js_value)
             .expect("conversion should not fail");
+    }
+
+    #[wasm_bindgen_test]
+    async fn is_certificate_verifier_cache_enabled_reflects_the_client_option() {
+        assert!(
+            get_mithril_client_with_certificate_verifier_cache()
+                .is_certificate_verifier_cache_enabled()
+                .await
+                .unwrap()
+        );
+        assert!(
+            !get_mithril_client_unstable()
+                .is_certificate_verifier_cache_enabled()
+                .await
+                .unwrap()
+        );
+    }
+
+    #[cfg(not(feature = "test-node"))]
+    #[wasm_bindgen_test]
+    async fn verify_certificate_chain_twice_with_the_certificate_verifier_cache_then_reset_it() {
+        let client = get_mithril_client_with_certificate_verifier_cache();
+        client.reset_certificate_verifier_cache().await.unwrap();
+        let msd_js_value = client
+            .get_mithril_stake_distribution(test_data::mithril_stake_distribution_hashes()[0])
+            .await
+            .unwrap();
+        let msd = serde_wasm_bindgen::from_value::<MithrilStakeDistribution>(msd_js_value).unwrap();
+
+        let first_verification = client
+            .verify_certificate_chain(&msd.certificate_hash)
+            .await
+            .expect("first verify_certificate_chain should not fail");
+        let second_verification = client
+            .verify_certificate_chain(&msd.certificate_hash)
+            .await
+            .expect("second verify_certificate_chain should not fail");
+
+        assert_eq!(
+            serde_wasm_bindgen::from_value::<MithrilCertificate>(first_verification).unwrap(),
+            serde_wasm_bindgen::from_value::<MithrilCertificate>(second_verification).unwrap()
+        );
+        client.reset_certificate_verifier_cache().await.unwrap();
     }
 
     #[wasm_bindgen_test]
