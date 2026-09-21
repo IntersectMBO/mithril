@@ -9,12 +9,12 @@ use anyhow::Context;
 use async_trait::async_trait;
 use rand_core::{OsRng, RngCore};
 use slog::{Logger, error, info, warn};
+use thiserror::Error;
 use tokio::sync::oneshot;
 use tokio::time::sleep;
 
 use mithril_common::crypto_helper::{
-    ProtocolParameters, SnarkProverSetupWarmer, TrustedSetupDownloader, TrustedSetupError,
-    TrustedSetupProvider,
+    ProtocolParameters, SnarkProverSetupWarmer, TrustedSetupError, TrustedSetupProvider,
 };
 use mithril_common::logging::LoggerExtensions;
 use mithril_common::{AggregateSignatureType, StdResult};
@@ -22,6 +22,15 @@ use mithril_protocol_config::interface::MithrilNetworkConfigurationProvider;
 use mithril_ticker::TickerService;
 
 use crate::services::TrustedSetupDownloadError;
+
+/// Errors of the prover warm-up that no further attempt resolves.
+#[derive(Debug, Error)]
+pub enum ProverWarmUpError {
+    /// The thread materializing the setups stopped without reporting its outcome, which only a
+    /// panic causes, so attempting the same materialization again would panic the same way.
+    #[error("The prover setup warm-up thread panicked before reporting its outcome")]
+    SetupThreadPanicked,
+}
 
 /// Warms up the aggregate signature prover, so the first signing round does not materialize the
 /// prover setup inside its aggregation.
@@ -43,7 +52,7 @@ pub struct SnarkAggregateSignatureProverWarmer {
     aggregate_signature_type: AggregateSignatureType,
     ticker_service: Arc<dyn TickerService>,
     network_configuration_provider: Arc<dyn MithrilNetworkConfigurationProvider>,
-    trusted_setup_downloader: Arc<dyn TrustedSetupDownloader>,
+    trusted_setup_provider: Arc<TrustedSetupProvider>,
     retry_delay: Duration,
     max_retry_delay: Duration,
     logger: Logger,
@@ -56,9 +65,6 @@ impl SnarkAggregateSignatureProverWarmer {
     /// Ceiling the doubled retry delay is capped at.
     pub const DEFAULT_MAX_RETRY_DELAY: Duration = Duration::from_secs(900);
 
-    /// Largest power the retry delay is doubled by, which keeps the computation in range.
-    const MAX_RETRY_DELAY_EXPONENT: u32 = 16;
-
     /// Fraction of a retry delay the random extra wait is drawn from.
     const RETRY_DELAY_JITTER_RATIO: u128 = 4;
 
@@ -67,7 +73,7 @@ impl SnarkAggregateSignatureProverWarmer {
         aggregate_signature_type: AggregateSignatureType,
         ticker_service: Arc<dyn TickerService>,
         network_configuration_provider: Arc<dyn MithrilNetworkConfigurationProvider>,
-        trusted_setup_downloader: Arc<dyn TrustedSetupDownloader>,
+        trusted_setup_provider: Arc<TrustedSetupProvider>,
         retry_delay: Duration,
         max_retry_delay: Duration,
         logger: Logger,
@@ -76,7 +82,7 @@ impl SnarkAggregateSignatureProverWarmer {
             aggregate_signature_type,
             ticker_service,
             network_configuration_provider,
-            trusted_setup_downloader,
+            trusted_setup_provider,
             retry_delay,
             max_retry_delay,
             logger: logger.new_with_component_name::<Self>(),
@@ -87,38 +93,58 @@ impl SnarkAggregateSignatureProverWarmer {
     ///
     /// An epoch the node cannot read yet, a connection that drops and a server error all resolve
     /// on their own. An SRS whose hash does not match the one pinned in the library, a provider
-    /// with no downloader, a download issued from a runtime thread and a request the server
-    /// answers with a client error each describe a state no further attempt changes.
+    /// with no downloader, a download issued from a runtime thread, a request the server answers
+    /// with a client error, a node shutting down and a setup thread that panicked each describe
+    /// a state no further attempt changes.
     fn is_retryable(error: &anyhow::Error) -> bool {
-        if matches!(
-            error.downcast_ref::<TrustedSetupError>(),
-            Some(TrustedSetupError::VerifyHashFail { .. } | TrustedSetupError::DownloadUnavailable)
-        ) {
-            return false;
-        }
-
-        match error.downcast_ref::<TrustedSetupDownloadError>() {
-            Some(TrustedSetupDownloadError::CalledFromRuntimeThread) => false,
-            Some(TrustedSetupDownloadError::AttemptsExhausted { source, .. }) => {
-                !source.status().is_some_and(|status| status.is_client_error())
-            }
+        let setup_retryable = match error.downcast_ref::<TrustedSetupError>() {
+            Some(
+                TrustedSetupError::VerifyHashFail { .. } | TrustedSetupError::DownloadUnavailable,
+            ) => false,
             None => true,
-        }
+        };
+        let download_retryable = match error.downcast_ref::<TrustedSetupDownloadError>() {
+            Some(
+                TrustedSetupDownloadError::CalledFromRuntimeThread
+                | TrustedSetupDownloadError::Stopped { .. }
+                | TrustedSetupDownloadError::Rejected { .. },
+            ) => false,
+            Some(TrustedSetupDownloadError::AttemptsExhausted { .. }) | None => true,
+        };
+        let warm_up_retryable = match error.downcast_ref::<ProverWarmUpError>() {
+            Some(ProverWarmUpError::SetupThreadPanicked) => false,
+            None => true,
+        };
+
+        setup_retryable && download_retryable && warm_up_retryable
     }
 
-    /// Delay before `attempt`, doubling from `base_delay` up to `max_delay`, plus a random extra
-    /// wait so the nodes of a fleet restarted together do not retry in lockstep.
-    fn retry_delay_for(attempt: u32, base_delay: Duration, max_delay: Duration) -> Duration {
-        let exponent = attempt.saturating_sub(1).min(Self::MAX_RETRY_DELAY_EXPONENT);
+    /// Whether `error` reports the node shutting down while the warm-up was running, which is no
+    /// failure of the warm-up itself.
+    fn is_shutdown(error: &anyhow::Error) -> bool {
+        matches!(
+            error.downcast_ref::<TrustedSetupDownloadError>(),
+            Some(TrustedSetupDownloadError::Stopped { .. })
+        )
+    }
+
+    /// Delay before the attempt following `failed_attempts` failures, doubling from `base_delay`
+    /// up to `max_delay`, plus a random extra wait so the nodes of a fleet restarted together do
+    /// not retry in lockstep.
+    fn retry_delay_for(
+        failed_attempts: u32,
+        base_delay: Duration,
+        max_delay: Duration,
+    ) -> Duration {
         let delay = base_delay
-            .saturating_mul(2u32.saturating_pow(exponent))
+            .saturating_mul(2u32.saturating_pow(failed_attempts.saturating_sub(1)))
             .min(max_delay);
         let jitter_span =
             u64::try_from(delay.as_nanos() / Self::RETRY_DELAY_JITTER_RATIO).unwrap_or(u64::MAX);
 
         match jitter_span {
             0 => delay,
-            span => delay + Duration::from_nanos(OsRng.next_u64() % span),
+            span => delay.saturating_add(Duration::from_nanos(OsRng.next_u64() % span)),
         }
     }
 
@@ -145,8 +171,22 @@ impl SnarkAggregateSignatureProverWarmer {
         ))
     }
 
+    /// Runs `materialize` on a thread of its own, which the SRS download blocks for the whole
+    /// transfer, and reports its outcome without blocking the runtime.
+    async fn materialize_on_own_thread<M>(materialize: M) -> StdResult<()>
+    where
+        M: FnOnce() -> StdResult<()> + Send + 'static,
+    {
+        let (sender, receiver) = oneshot::channel();
+        thread::spawn(move || {
+            let _ = sender.send(materialize());
+        });
+
+        receiver.await.map_err(|_| ProverWarmUpError::SetupThreadPanicked)?
+    }
+
     /// One warm-up attempt: resolves the parameters of the current epoch, then materializes the
-    /// setups on a thread of its own, which the SRS download blocks for the whole transfer.
+    /// setups on a thread of its own.
     async fn warm_once(
         aggregate_signature_type: AggregateSignatureType,
         ticker_service: Arc<dyn TickerService>,
@@ -158,19 +198,15 @@ impl SnarkAggregateSignatureProverWarmer {
             &network_configuration_provider,
         )
         .await?;
-        let (sender, receiver) = oneshot::channel();
 
-        thread::spawn(move || {
-            let _ = sender.send(SnarkProverSetupWarmer::warm(
+        Self::materialize_on_own_thread(move || {
+            SnarkProverSetupWarmer::warm(
                 &protocol_parameters,
                 aggregate_signature_type,
                 &trusted_setup_provider,
-            ));
-        });
-
-        receiver
-            .await
-            .with_context(|| "The prover setup warm-up stopped before reporting its result")?
+            )
+        })
+        .await
     }
 
     /// Runs `warm` until it succeeds or fails with an error that cannot heal, waiting longer
@@ -220,9 +256,7 @@ impl AggregateSignatureProverWarmer for SnarkAggregateSignatureProverWarmer {
         let aggregate_signature_type = self.aggregate_signature_type;
         let ticker_service = self.ticker_service.clone();
         let network_configuration_provider = self.network_configuration_provider.clone();
-        let trusted_setup_provider = Arc::new(TrustedSetupProvider::with_downloader(
-            self.trusted_setup_downloader.clone(),
-        ));
+        let trusted_setup_provider = self.trusted_setup_provider.clone();
         let retry_delay = self.retry_delay;
         let max_retry_delay = self.max_retry_delay;
         let logger = self.logger.clone();
@@ -249,6 +283,10 @@ impl AggregateSignatureProverWarmer for SnarkAggregateSignatureProverWarmer {
                     logger, "Aggregate signature prover warmed up";
                     "elapsed_seconds" => started_at.elapsed().as_secs()
                 ),
+                Err(error) if Self::is_shutdown(&error) => info!(
+                    logger, "Aggregate signature prover warm-up abandoned, the node is shutting down";
+                    "elapsed_seconds" => started_at.elapsed().as_secs()
+                ),
                 Err(error) => error!(
                     logger, "Gave up warming up the aggregate signature prover, which cannot \
                              produce an aggregate signature until it is restarted";
@@ -263,23 +301,101 @@ impl AggregateSignatureProverWarmer for SnarkAggregateSignatureProverWarmer {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use anyhow::anyhow;
     use httpmock::{Method::GET, MockServer};
     use tokio::runtime::Runtime;
+    use tokio::sync::watch;
+    use tokio::task::yield_now;
+    use tokio::time::{Instant, timeout};
 
     use mithril_cardano_node_chain::test::double::FakeChainObserver;
     use mithril_cardano_node_internal_database::test::double::DumbImmutableFileObserver;
-    use mithril_common::crypto_helper::NoTrustedSetupDownload;
+    use mithril_common::crypto_helper::{NoTrustedSetupDownload, TrustedSetupDownloader};
     use mithril_common::entities::{self, Epoch, TimePoint};
+    use mithril_common::temp_dir_create;
     use mithril_common::test::double::{Dummy, fake_data};
     use mithril_protocol_config::model::MithrilNetworkConfigurationForEpoch;
     use mithril_protocol_config::test::double::configuration_provider::FakeMithrilNetworkConfigurationProvider;
     use mithril_ticker::MithrilTickerService;
 
-    use crate::services::{ReqwestTrustedSetupDownloader, TrustedSetupDownloadRetryPolicy};
+    use crate::services::{
+        ReqwestTrustedSetupDownloader, TrustedSetupDownloadRetryPolicy,
+        TrustedSetupDownloadTimeouts,
+    };
     use crate::test::TestLogger;
 
     use super::*;
+
+    struct RecordingTickerService {
+        epoch_reads: AtomicUsize,
+        epoch_readable: bool,
+    }
+
+    impl RecordingTickerService {
+        fn readable() -> Self {
+            Self {
+                epoch_reads: AtomicUsize::new(0),
+                epoch_readable: true,
+            }
+        }
+
+        fn unreadable() -> Self {
+            Self {
+                epoch_reads: AtomicUsize::new(0),
+                epoch_readable: false,
+            }
+        }
+
+        fn epoch_reads(&self) -> usize {
+            self.epoch_reads.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl TickerService for RecordingTickerService {
+        async fn get_current_time_point(&self) -> StdResult<TimePoint> {
+            self.epoch_reads.fetch_add(1, Ordering::SeqCst);
+
+            if self.epoch_readable {
+                Ok(TimePoint::dummy())
+            } else {
+                Err(anyhow!("the epoch cannot be read"))
+            }
+        }
+    }
+
+    struct StoppingTrustedSetupDownloader;
+
+    impl TrustedSetupDownloader for StoppingTrustedSetupDownloader {
+        fn download(&self) -> StdResult<Vec<u8>> {
+            Err(TrustedSetupDownloadError::Stopped {
+                url: "https://srs.example/srs".to_string(),
+            }
+            .into())
+        }
+    }
+
+    fn provider_without_download_in(cache_folder: PathBuf) -> Arc<TrustedSetupProvider> {
+        Arc::new(TrustedSetupProvider::new(
+            cache_folder,
+            "expected srs hash",
+            Arc::new(NoTrustedSetupDownload),
+        ))
+    }
+
+    async fn wait_until(condition: impl Fn() -> bool) {
+        timeout(Duration::from_secs(10), async {
+            while !condition() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the condition must be met within ten seconds");
+    }
 
     fn ticker_service_with_current_epoch(current_epoch: Option<Epoch>) -> Arc<dyn TickerService> {
         let time_point = current_epoch.map(|epoch| TimePoint {
@@ -309,15 +425,17 @@ mod tests {
     fn warmer(
         aggregate_signature_type: AggregateSignatureType,
         ticker_service: Arc<dyn TickerService>,
+        trusted_setup_provider: Arc<TrustedSetupProvider>,
+        logger: Logger,
     ) -> SnarkAggregateSignatureProverWarmer {
         SnarkAggregateSignatureProverWarmer::new(
             aggregate_signature_type,
             ticker_service,
             provider_aggregating_with(fake_data::protocol_parameters()),
-            Arc::new(NoTrustedSetupDownload),
-            Duration::ZERO,
-            Duration::ZERO,
-            TestLogger::stdout(),
+            trusted_setup_provider,
+            SnarkAggregateSignatureProverWarmer::DEFAULT_RETRY_DELAY,
+            SnarkAggregateSignatureProverWarmer::DEFAULT_MAX_RETRY_DELAY,
+            logger,
         )
     }
 
@@ -350,16 +468,127 @@ mod tests {
 
     #[tokio::test]
     async fn concatenation_skips_the_warm_up_entirely() {
+        let ticker_service = Arc::new(RecordingTickerService::unreadable());
+
         warmer(
             AggregateSignatureType::Concatenation,
-            ticker_service_with_current_epoch(None),
+            ticker_service.clone(),
+            provider_without_download_in(temp_dir_create!()),
+            TestLogger::stdout(),
         )
         .warm_up()
         .await
-        .expect("a concatenation node must not read the epoch nor warm up any setup");
+        .unwrap();
+        yield_now().await;
+
+        assert_eq!(
+            0,
+            ticker_service.epoch_reads(),
+            "a concatenation node must not read the epoch its warm-up would start from"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn snark_warm_up_retries_reading_the_epoch_it_starts_from() {
+        let ticker_service = Arc::new(RecordingTickerService::unreadable());
+
+        warmer(
+            AggregateSignatureType::Snark,
+            ticker_service.clone(),
+            provider_without_download_in(temp_dir_create!()),
+            TestLogger::stdout(),
+        )
+        .warm_up()
+        .await
+        .unwrap();
+        yield_now().await;
+        let epoch_reads_before_the_retry_delay = ticker_service.epoch_reads();
+        sleep(SnarkAggregateSignatureProverWarmer::DEFAULT_RETRY_DELAY * 2).await;
+
+        assert_eq!(
+            1, epoch_reads_before_the_retry_delay,
+            "the warm-up must read the epoch once before waiting for a retry"
+        );
+        assert_eq!(
+            2,
+            ticker_service.epoch_reads(),
+            "the warm-up must read the epoch again after the retry delay"
+        );
     }
 
     #[tokio::test]
+    async fn snark_warm_up_gives_up_on_a_failure_no_attempt_resolves() {
+        let (logger, log_inspector) = TestLogger::memory();
+        let ticker_service = Arc::new(RecordingTickerService::readable());
+
+        warmer(
+            AggregateSignatureType::Snark,
+            ticker_service.clone(),
+            provider_without_download_in(temp_dir_create!()),
+            logger,
+        )
+        .warm_up()
+        .await
+        .unwrap();
+        wait_until(|| {
+            log_inspector.contains_log("Gave up warming up the aggregate signature prover")
+        })
+        .await;
+
+        assert_eq!(
+            1,
+            ticker_service.epoch_reads(),
+            "a warm-up failing with a missing SRS download must not be attempted again"
+        );
+    }
+
+    #[tokio::test]
+    async fn snark_warm_up_abandoned_by_a_shutdown_is_not_reported_as_a_failure() {
+        let (logger, log_inspector) = TestLogger::memory();
+        let trusted_setup_provider = Arc::new(TrustedSetupProvider::new(
+            temp_dir_create!(),
+            "expected srs hash",
+            Arc::new(StoppingTrustedSetupDownloader),
+        ));
+
+        warmer(
+            AggregateSignatureType::Snark,
+            Arc::new(RecordingTickerService::readable()),
+            trusted_setup_provider,
+            logger,
+        )
+        .warm_up()
+        .await
+        .unwrap();
+        wait_until(|| log_inspector.contains_log("warm-up abandoned")).await;
+
+        assert!(
+            !log_inspector.contains_log("Gave up warming up"),
+            "a shutdown must not be reported as a warm-up failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn warm_once_reports_the_failure_of_the_setup_materialization() {
+        let error = SnarkAggregateSignatureProverWarmer::warm_once(
+            AggregateSignatureType::Snark,
+            Arc::new(RecordingTickerService::readable()),
+            provider_aggregating_with(fake_data::protocol_parameters()),
+            provider_without_download_in(temp_dir_create!()),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                error.downcast_ref::<TrustedSetupError>(),
+                Some(TrustedSetupError::DownloadUnavailable)
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn retries_the_warm_up_until_it_succeeds() {
         let mut attempts = 0;
 
@@ -374,8 +603,8 @@ mod tests {
 
                 async move { outcome }
             },
-            Duration::ZERO,
-            Duration::ZERO,
+            SnarkAggregateSignatureProverWarmer::DEFAULT_RETRY_DELAY,
+            SnarkAggregateSignatureProverWarmer::DEFAULT_MAX_RETRY_DELAY,
             &TestLogger::stdout(),
         )
         .await
@@ -384,7 +613,40 @@ mod tests {
         assert_eq!(3, attempts, "the warm-up must be retried until it succeeds");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
+    async fn waits_a_doubling_delay_capped_at_the_ceiling_before_each_further_attempt() {
+        let base_delay = Duration::from_secs(60);
+        let max_delay = Duration::from_secs(150);
+        let mut attempts_at = Vec::new();
+
+        SnarkAggregateSignatureProverWarmer::warm_until_done(
+            || {
+                attempts_at.push(Instant::now());
+                let outcome = if attempts_at.len() < 4 {
+                    Err(anyhow!("warm-up attempt {} failed", attempts_at.len()))
+                } else {
+                    Ok(())
+                };
+
+                async move { outcome }
+            },
+            base_delay,
+            max_delay,
+            &TestLogger::stdout(),
+        )
+        .await
+        .unwrap();
+
+        let waits = attempts_at.windows(2).map(|attempts| attempts[1] - attempts[0]);
+        for (wait, backoff) in waits.zip([60, 120, 150].map(Duration::from_secs)) {
+            assert!(
+                (backoff..backoff + backoff / 4).contains(&wait),
+                "the loop must wait {backoff:?} plus jitter, waited {wait:?}"
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn does_not_retry_a_successful_warm_up() {
         let mut attempts = 0;
 
@@ -394,8 +656,8 @@ mod tests {
 
                 async move { Ok(()) }
             },
-            Duration::ZERO,
-            Duration::ZERO,
+            SnarkAggregateSignatureProverWarmer::DEFAULT_RETRY_DELAY,
+            SnarkAggregateSignatureProverWarmer::DEFAULT_MAX_RETRY_DELAY,
             &TestLogger::stdout(),
         )
         .await
@@ -404,7 +666,7 @@ mod tests {
         assert_eq!(1, attempts, "a successful warm-up must not be retried");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn stops_retrying_an_srs_whose_hash_does_not_match() {
         let mut attempts = 0;
 
@@ -419,8 +681,8 @@ mod tests {
 
                 async move { outcome }
             },
-            Duration::ZERO,
-            Duration::ZERO,
+            SnarkAggregateSignatureProverWarmer::DEFAULT_RETRY_DELAY,
+            SnarkAggregateSignatureProverWarmer::DEFAULT_MAX_RETRY_DELAY,
             &TestLogger::stdout(),
         )
         .await;
@@ -439,10 +701,12 @@ mod tests {
             then.status(status);
         });
         let runtime = Runtime::new().unwrap();
+        let (_stop_tx, stop_rx) = watch::channel(());
         let downloader = ReqwestTrustedSetupDownloader::new(
             server.url("/srs"),
             runtime.handle().clone(),
-            Duration::from_secs(5),
+            stop_rx,
+            TrustedSetupDownloadTimeouts::default(),
             TrustedSetupDownloadRetryPolicy::never(),
             TestLogger::stdout(),
         )
@@ -463,6 +727,73 @@ mod tests {
         assert!(SnarkAggregateSignatureProverWarmer::is_retryable(
             &download_error_for_status(500)
         ));
+    }
+
+    #[tokio::test]
+    async fn materializing_on_its_own_thread_reports_a_successful_materialization() {
+        SnarkAggregateSignatureProverWarmer::materialize_on_own_thread(|| Ok(()))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn materializing_on_its_own_thread_reports_the_outcome_of_the_materialization() {
+        let error = SnarkAggregateSignatureProverWarmer::materialize_on_own_thread(|| {
+            Err(anyhow!("materialization failed"))
+        })
+        .await
+        .unwrap_err();
+
+        assert_eq!("materialization failed", error.to_string());
+    }
+
+    #[tokio::test]
+    async fn a_setup_thread_that_panics_stops_the_warm_up() {
+        let mut attempts = 0;
+
+        let error = SnarkAggregateSignatureProverWarmer::warm_until_done(
+            || {
+                attempts += 1;
+
+                SnarkAggregateSignatureProverWarmer::materialize_on_own_thread(|| {
+                    panic!("the setup materialization panicked")
+                })
+            },
+            Duration::ZERO,
+            Duration::ZERO,
+            &TestLogger::stdout(),
+        )
+        .await
+        .expect_err("a setup thread that panicked must stop the warm-up");
+
+        assert_eq!(
+            1, attempts,
+            "a panicking materialization must not be retried"
+        );
+        assert!(
+            matches!(
+                error.downcast_ref::<ProverWarmUpError>(),
+                Some(ProverWarmUpError::SetupThreadPanicked)
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_provider_without_download_is_not_retryable() {
+        let error = TrustedSetupError::DownloadUnavailable.into();
+
+        assert!(!SnarkAggregateSignatureProverWarmer::is_retryable(&error));
+    }
+
+    #[test]
+    fn a_download_abandoned_by_a_stopping_node_is_not_retryable() {
+        let error = TrustedSetupDownloadError::Stopped {
+            url: "https://srs.example/srs".to_string(),
+        }
+        .into();
+
+        assert!(!SnarkAggregateSignatureProverWarmer::is_retryable(&error));
     }
 
     #[test]
@@ -490,6 +821,32 @@ mod tests {
                 "attempt {attempt} must wait {backoff:?} plus jitter, got {delay:?}"
             );
         }
+    }
+
+    #[test]
+    fn retry_delay_adds_a_random_extra_wait_below_a_quarter_of_the_backoff() {
+        let backoff = Duration::from_secs(60);
+
+        let delays: HashSet<Duration> = (0..100)
+            .map(|_| {
+                SnarkAggregateSignatureProverWarmer::retry_delay_for(
+                    1,
+                    backoff,
+                    Duration::from_secs(900),
+                )
+            })
+            .collect();
+
+        assert!(
+            delays.len() > 1,
+            "the extra wait must be random, every delay was {delays:?}"
+        );
+        assert!(
+            delays
+                .iter()
+                .all(|delay| (backoff..backoff + backoff / 4).contains(delay)),
+            "every delay must be the backoff plus less than a quarter of it, got {delays:?}"
+        );
     }
 
     #[test]

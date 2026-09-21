@@ -13,7 +13,9 @@ repository = { workspace = true }
 default = ["rustls"]
 rustls = ["reqwest/rustls"]
 
-future_snark = ["mithril-common/future_snark", "dep:ciborium", "dep:rand_core"]
+# The SRS download needs a TLS backend, which the removal of the `mithril-stm` TLS features no
+# longer enforces anywhere else.
+future_snark = ["mithril-common/future_snark", "dep:ciborium", "dep:rand_core", "rustls"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -79,6 +81,7 @@ mithril-common = { path = "../mithril-common", features = ["allow_skip_signer_ce
 mockall = { workspace = true }
 slog-scope = "4.4.1"
 slog-term = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 warp = { workspace = true, features = ["test"] }
 
 [[bench]]

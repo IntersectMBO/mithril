@@ -6,7 +6,7 @@ use tokio::runtime::Handle;
 use mithril_common::certificate_chain::{CertificateVerifier, MithrilCertificateVerifier};
 use mithril_common::crypto_helper::GenesisVerifier;
 #[cfg(feature = "future_snark")]
-use mithril_common::crypto_helper::MIDNIGHT_SRS_URL_K22;
+use mithril_common::crypto_helper::{MIDNIGHT_SRS_URL_K22, TrustedSetupProvider};
 
 use crate::database::repository::{BufferedSingleSignatureRepository, SingleSignatureRepository};
 use crate::dependency_injection::{DependenciesBuilder, DependenciesBuilderError, Result};
@@ -15,6 +15,7 @@ use crate::get_dependency;
 use crate::services::{
     AggregateSignatureProverWarmer, ReqwestTrustedSetupDownloader,
     SnarkAggregateSignatureProverWarmer, TrustedSetupDownloadRetryPolicy,
+    TrustedSetupDownloadTimeouts,
 };
 use crate::services::{
     BufferedCertifierService, CertificateChainSynchronizer, CertifierService,
@@ -102,19 +103,23 @@ impl DependenciesBuilder {
     pub async fn create_aggregate_signature_prover_warmer(
         &mut self,
     ) -> Result<Arc<dyn AggregateSignatureProverWarmer>> {
+        let (_stop_tx, stop_rx) = self.get_stop_signal_channel().await?;
         let trusted_setup_downloader = ReqwestTrustedSetupDownloader::new(
             MIDNIGHT_SRS_URL_K22.to_string(),
             Handle::current(),
-            ReqwestTrustedSetupDownloader::DEFAULT_TIMEOUT,
+            stop_rx,
+            TrustedSetupDownloadTimeouts::default(),
             TrustedSetupDownloadRetryPolicy::default(),
             self.root_logger(),
         )
         .with_context(|| "Dependencies Builder can not create the trusted setup downloader")?;
+        let trusted_setup_provider =
+            TrustedSetupProvider::with_downloader(Arc::new(trusted_setup_downloader));
         let warmer = SnarkAggregateSignatureProverWarmer::new(
             self.configuration.aggregate_signature_type(),
             self.get_ticker_service().await?,
             self.get_mithril_network_configuration_provider().await?,
-            Arc::new(trusted_setup_downloader),
+            Arc::new(trusted_setup_provider),
             SnarkAggregateSignatureProverWarmer::DEFAULT_RETRY_DELAY,
             SnarkAggregateSignatureProverWarmer::DEFAULT_MAX_RETRY_DELAY,
             self.root_logger(),

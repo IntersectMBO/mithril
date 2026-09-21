@@ -1,7 +1,7 @@
 use std::{
     fs::File,
-    io::{BufReader, Write},
-    path::{Path, PathBuf},
+    io::{BufReader, ErrorKind, Write},
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -111,10 +111,9 @@ impl TrustedSetupProvider {
         hex::encode(hasher.finalize())
     }
 
-    /// Computes the SHA256 hash of the file at `path` and returns its hex encoding, streaming it
-    /// rather than holding the whole SRS in memory.
-    fn compute_file_hash(path: &Path) -> StmResult<String> {
-        let mut file = File::open(path)?;
+    /// Computes the SHA256 hash of `file` and returns its hex encoding, streaming it rather than
+    /// holding the whole SRS in memory.
+    fn compute_file_hash(mut file: File) -> StmResult<String> {
         let mut hasher = Sha256::new();
         std::io::copy(&mut file, &mut hasher)?;
 
@@ -165,44 +164,58 @@ impl TrustedSetupProvider {
         Ok(())
     }
 
-    /// Removes the cached SRS file when it does not match the expected hash, so that the next
-    /// download replaces it instead of the node reading a corrupt file for as long as it sits
-    /// there. A provider with no expected hash keeps whatever is cached.
-    fn discard_cached_srs_file_with_unexpected_hash(&self) {
+    /// Whether the cached SRS file is present and matches the expected hash, a provider with no
+    /// expected hash keeping whatever is cached. A cached file whose hash does not match is
+    /// removed so that a download replaces it, and a file that cannot be read or removed
+    /// surfaces its error rather than being discarded or read as it is.
+    fn is_srs_file_cached_with_expected_hash(&self) -> StmResult<bool> {
         let srs_file_path = self.local_srs_folder_path.join(MITHRIL_CIRCUIT_SRS_FILENAME);
-        if self.srs_expected_hash.is_empty() || !srs_file_path.exists() {
-            return;
+        let srs_file = match File::open(&srs_file_path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("Failed to open the cached SRS file at {srs_file_path:?}.")
+                });
+            }
+        };
+        if self.srs_expected_hash.is_empty() {
+            return Ok(true);
         }
 
-        let matches_expected_hash = Self::compute_file_hash(&srs_file_path)
-            .is_ok_and(|hash| hash == self.srs_expected_hash);
-        if !matches_expected_hash {
-            let _ = std::fs::remove_file(&srs_file_path);
+        let computed_hash = Self::compute_file_hash(srs_file)
+            .with_context(|| format!("Failed to hash the cached SRS file at {srs_file_path:?}."))?;
+        if computed_hash == self.srs_expected_hash {
+            return Ok(true);
         }
+
+        std::fs::remove_file(&srs_file_path).with_context(|| {
+            format!("Failed to remove the cached SRS file at {srs_file_path:?} whose hash does not match.")
+        })?;
+
+        Ok(false)
     }
 
     /// Ensures the SRS file is present and matches the expected hash. If the file is missing or
     /// does not match, downloads it, verifies its hash and stores it if the hash is valid.
-    fn download_srs_file_if_not_cached(&self) -> StmResult<()> {
-        self.discard_cached_srs_file_with_unexpected_hash();
-
-        if !self.local_srs_folder_path.join(MITHRIL_CIRCUIT_SRS_FILENAME).exists() {
-            let srs_bytes = self
-                .downloader
-                .download()
-                .with_context(|| "Making the SRS file available should have succeeded.")?;
-            self.verify_bytes_sha256_hash(&srs_bytes)?;
-            self.store_srs_bytes_to_file(&srs_bytes)
-                .with_context(|| "Saving the SRS to disk should have succeeded.")?;
+    fn ensure_verified_srs_file_is_cached(&self) -> StmResult<()> {
+        if self.is_srs_file_cached_with_expected_hash()? {
+            return Ok(());
         }
 
-        Ok(())
+        let srs_bytes = self
+            .downloader
+            .download()
+            .with_context(|| "Making the SRS file available should have succeeded.")?;
+        self.verify_bytes_sha256_hash(&srs_bytes)?;
+        self.store_srs_bytes_to_file(&srs_bytes)
+            .with_context(|| "Saving the SRS to disk should have succeeded.")
     }
 
     /// Ensures the SRS file is available, downloading it if necessary
     /// and deserializes it into memory.
     pub fn get_trusted_setup_parameters(&self) -> StmResult<ParamsKZG<Bls12>> {
-        self.download_srs_file_if_not_cached()?;
+        self.ensure_verified_srs_file_is_cached()?;
 
         let srs_file_path = self.local_srs_folder_path.join(MITHRIL_CIRCUIT_SRS_FILENAME);
         let file = File::open(&srs_file_path)
@@ -272,6 +285,8 @@ impl TrustedSetupProvider {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use anyhow::anyhow;
 
     use super::*;
@@ -423,7 +438,7 @@ mod tests {
 
         let result =
             TrustedSetupProvider::new(temp_dir.path(), SRS_HASH_K1, downloader_never_called())
-                .download_srs_file_if_not_cached();
+                .ensure_verified_srs_file_is_cached();
 
         assert!(result.is_ok());
     }
@@ -434,7 +449,7 @@ mod tests {
         let srs_file = cache_srs_file_content(temp_dir.path(), b"unsafe srs");
 
         let result = TrustedSetupProvider::new(temp_dir.path(), "", downloader_never_called())
-            .download_srs_file_if_not_cached();
+            .ensure_verified_srs_file_is_cached();
 
         assert!(result.is_ok());
         assert_eq!(b"unsafe srs".to_vec(), std::fs::read(&srs_file).unwrap());
@@ -451,7 +466,7 @@ mod tests {
 
         let result =
             TrustedSetupProvider::new(temp_dir.path(), SRS_HASH_K1, downloader_serving(SRS_K1))
-                .download_srs_file_if_not_cached();
+                .ensure_verified_srs_file_is_cached();
 
         assert!(srs_folder.join(MITHRIL_CIRCUIT_SRS_FILENAME).exists());
         assert!(result.is_ok());
@@ -463,7 +478,7 @@ mod tests {
         let srs_path = temp_dir.path().join("srs").join(MITHRIL_CIRCUIT_SRS_FILENAME);
 
         TrustedSetupProvider::new(temp_dir.path(), SRS_HASH_K1, downloader_serving(SRS_K1))
-            .download_srs_file_if_not_cached()
+            .ensure_verified_srs_file_is_cached()
             .unwrap();
 
         assert!(srs_path.exists());
@@ -479,7 +494,7 @@ mod tests {
             SRS_HASH_K1,
             downloader_serving(b"tampered content"),
         )
-        .download_srs_file_if_not_cached();
+        .ensure_verified_srs_file_is_cached();
 
         let err = result.unwrap_err();
 
@@ -502,7 +517,7 @@ mod tests {
         let srs_path = temp_dir.path().join("download_fails");
 
         let result = TrustedSetupProvider::new(&srs_path, SRS_HASH_K1, downloader_failing())
-            .download_srs_file_if_not_cached();
+            .ensure_verified_srs_file_is_cached();
 
         assert!(result.is_err());
         assert!(!srs_path.exists());
@@ -515,7 +530,7 @@ mod tests {
 
         let result =
             TrustedSetupProvider::new(&srs_path, SRS_HASH_K1, Arc::new(NoTrustedSetupDownload))
-                .download_srs_file_if_not_cached();
+                .ensure_verified_srs_file_is_cached();
 
         let err = result.unwrap_err();
 
@@ -547,6 +562,45 @@ mod tests {
             .expect("a corrupt cached SRS must be replaced by a fresh download");
 
         assert_eq!(SRS_K1.to_vec(), std::fs::read(&srs_file).unwrap());
+    }
+
+    #[cfg(unix)]
+    mod cached_srs_file_the_filesystem_refuses {
+        use std::fs::Permissions;
+        use std::os::unix::fs::PermissionsExt;
+
+        use super::*;
+
+        #[test]
+        fn unreadable_cached_srs_surfaces_the_error_and_keeps_the_file() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let srs_file = cache_srs_file_content(temp_dir.path(), SRS_K1);
+            std::fs::set_permissions(&srs_file, Permissions::from_mode(0o000)).unwrap();
+
+            let result =
+                TrustedSetupProvider::new(temp_dir.path(), SRS_HASH_K1, downloader_never_called())
+                    .ensure_verified_srs_file_is_cached();
+
+            std::fs::set_permissions(&srs_file, Permissions::from_mode(0o644)).unwrap();
+            result.expect_err("a cached SRS that cannot be read must surface the error");
+            assert_eq!(SRS_K1.to_vec(), std::fs::read(&srs_file).unwrap());
+        }
+
+        #[test]
+        fn cached_srs_with_an_unexpected_hash_that_cannot_be_removed_is_not_read() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let srs_file = cache_srs_file_content(temp_dir.path(), b"not an srs");
+            let srs_folder = srs_file.parent().unwrap();
+            std::fs::set_permissions(srs_folder, Permissions::from_mode(0o555)).unwrap();
+
+            let result =
+                TrustedSetupProvider::new(temp_dir.path(), SRS_HASH_K1, downloader_never_called())
+                    .ensure_verified_srs_file_is_cached();
+
+            std::fs::set_permissions(srs_folder, Permissions::from_mode(0o755)).unwrap();
+            result.expect_err("a corrupt cached SRS that cannot be removed must not be read");
+            assert_eq!(b"not an srs".to_vec(), std::fs::read(&srs_file).unwrap());
+        }
     }
 
     mod with_unsafe_srs {
@@ -630,6 +684,29 @@ mod tests {
     }
     mod golden {
         use super::*;
+
+        #[test]
+        fn documented_srs_download_snippets_carry_the_production_hash_and_url() {
+            let manifest_folder = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+            for document in [
+                "README.md",
+                "examples/non_recursive_snark_aggregate_signature.rs",
+                "examples/recursive_snark_aggregate_signature.rs",
+                "../docs/runbook/update-circuit-keys/README.md",
+            ] {
+                let content = std::fs::read_to_string(manifest_folder.join(document)).unwrap();
+
+                assert!(
+                    content.contains(&format!("SRS_HASH=\"{MIDNIGHT_SRS_HASH_K22}\"")),
+                    "{document} must check the download against the production SRS hash"
+                );
+                assert!(
+                    content.contains(&format!("{MIDNIGHT_SRS_URL_K22} -o")),
+                    "{document} must download the SRS from the production URL"
+                );
+            }
+        }
 
         #[test]
         fn golden_test_for_production_srs_url() {

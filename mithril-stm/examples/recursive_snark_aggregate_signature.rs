@@ -14,11 +14,13 @@
 //! SRS_FOLDER="${TMPDIR:-/tmp}/mithril-circuit/srs"
 //! SRS_HASH="e8ad5eed936d657a0fb59d2a55ba19f81a3083bb3554ef88f464f5377e9b2c2f"
 //! mkdir -p "$SRS_FOLDER"
-//! curl -fL https://srs.midnight.network/midnight-srs-2p22 -o "$SRS_FOLDER/srs-parameters.download"
+//! curl -fL --proto '=https' --proto-redir '=https' https://srs.midnight.network/midnight-srs-2p22 -o "$SRS_FOLDER/srs-parameters.download"
 //! if echo "$SRS_HASH  $SRS_FOLDER/srs-parameters.download" | sha256sum -c; then
 //!   mv "$SRS_FOLDER/srs-parameters.download" "$SRS_FOLDER/srs-parameters"
 //! else
 //!   rm -f "$SRS_FOLDER/srs-parameters.download"
+//!   echo "The SRS download failed or its hash does not match, no SRS was placed in $SRS_FOLDER" >&2
+//!   exit 1
 //! fi
 //! ```
 //!
