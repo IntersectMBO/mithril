@@ -21,6 +21,8 @@ use mithril_common::{AggregateSignatureType, StdResult};
 use mithril_protocol_config::interface::MithrilNetworkConfigurationProvider;
 use mithril_ticker::TickerService;
 
+use crate::services::TrustedSetupDownloadError;
+
 /// Warms up the aggregate signature prover, so the first signing round does not materialize the
 /// prover setup inside its aggregation.
 #[async_trait]
@@ -88,10 +90,20 @@ impl SnarkAggregateSignatureProverWarmer {
     /// with no downloader, a download issued from a runtime thread and a request the server
     /// answers with a client error each describe a state no further attempt changes.
     fn is_retryable(error: &anyhow::Error) -> bool {
-        !matches!(
+        if matches!(
             error.downcast_ref::<TrustedSetupError>(),
             Some(TrustedSetupError::VerifyHashFail { .. } | TrustedSetupError::DownloadUnavailable)
-        )
+        ) {
+            return false;
+        }
+
+        match error.downcast_ref::<TrustedSetupDownloadError>() {
+            Some(TrustedSetupDownloadError::CalledFromRuntimeThread) => false,
+            Some(TrustedSetupDownloadError::AttemptsExhausted { source, .. }) => {
+                !source.status().is_some_and(|status| status.is_client_error())
+            }
+            None => true,
+        }
     }
 
     /// Delay before `attempt`, doubling from `base_delay` up to `max_delay`, plus a random extra
@@ -252,6 +264,8 @@ impl AggregateSignatureProverWarmer for SnarkAggregateSignatureProverWarmer {
 #[cfg(test)]
 mod tests {
     use anyhow::anyhow;
+    use httpmock::{Method::GET, MockServer};
+    use tokio::runtime::Runtime;
 
     use mithril_cardano_node_chain::test::double::FakeChainObserver;
     use mithril_cardano_node_internal_database::test::double::DumbImmutableFileObserver;
@@ -262,6 +276,7 @@ mod tests {
     use mithril_protocol_config::test::double::configuration_provider::FakeMithrilNetworkConfigurationProvider;
     use mithril_ticker::MithrilTickerService;
 
+    use crate::services::{ReqwestTrustedSetupDownloader, TrustedSetupDownloadRetryPolicy};
     use crate::test::TestLogger;
 
     use super::*;
@@ -415,6 +430,46 @@ mod tests {
             1, attempts,
             "a failure no attempt resolves must be tried once"
         );
+    }
+
+    fn download_error_for_status(status: u16) -> anyhow::Error {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/srs");
+            then.status(status);
+        });
+        let runtime = Runtime::new().unwrap();
+        let downloader = ReqwestTrustedSetupDownloader::new(
+            server.url("/srs"),
+            runtime.handle().clone(),
+            Duration::from_secs(5),
+            TrustedSetupDownloadRetryPolicy::never(),
+            TestLogger::stdout(),
+        )
+        .unwrap();
+
+        downloader.download().unwrap_err()
+    }
+
+    #[test]
+    fn a_download_rejected_with_a_client_error_is_not_retryable() {
+        assert!(!SnarkAggregateSignatureProverWarmer::is_retryable(
+            &download_error_for_status(404)
+        ));
+    }
+
+    #[test]
+    fn a_download_failing_with_a_server_error_is_retryable() {
+        assert!(SnarkAggregateSignatureProverWarmer::is_retryable(
+            &download_error_for_status(500)
+        ));
+    }
+
+    #[test]
+    fn a_download_called_from_a_runtime_thread_is_not_retryable() {
+        let error = TrustedSetupDownloadError::CalledFromRuntimeThread.into();
+
+        assert!(!SnarkAggregateSignatureProverWarmer::is_retryable(&error));
     }
 
     #[test]
