@@ -14,39 +14,24 @@ pub(crate) use crate::circuits::CircuitCurve;
 pub(crate) use midnight_circuits::{
     ecc::{
         curves::CircuitCurve as CircuitCurveTrait,
-        foreign::weierstrass_chip::{
-            ForeignWeierstrassEccChip, ForeignWeierstrassEccConfig, nb_foreign_ecc_chip_columns,
-        },
-        native::{EccChip, EccConfig, NB_EDWARDS_COLS},
+        foreign::weierstrass_chip::ForeignWeierstrassEccChip, native::EccChip,
     },
-    field::{
-        NativeChip, NativeConfig, NativeGadget,
-        decomposition::{
-            chip::{P2RDecompositionChip, P2RDecompositionConfig},
-            pow2range::Pow2RangeChip,
-        },
-        foreign::FieldChip,
-        native::{NB_ARITH_COLS, NB_ARITH_FIXED_COLS},
-    },
-    hash::poseidon::{
-        NB_POSEIDON_ADVICE_COLS, NB_POSEIDON_FIXED_COLS, PoseidonChip, PoseidonConfig,
-    },
-    hash::sha256::{NB_SHA256_ADVICE_COLS, NB_SHA256_FIXED_COLS},
+    field::{NativeChip, NativeGadget, decomposition::chip::P2RDecompositionChip},
     instructions::{
         ArithInstructions, AssertionInstructions, AssignmentInstructions, BinaryInstructions,
         ControlFlowInstructions, ConversionInstructions, EccInstructions, EqualityInstructions,
-        HashInstructions, PublicInputInstructions, ZeroInstructions,
+        PublicInputInstructions, ZeroInstructions,
     },
     types::{
         AssignedBit, AssignedByte, AssignedForeignPoint, AssignedNative, AssignedNativePoint,
-        AssignedScalarOfNativeCurve, ComposableChip, Instantiable,
+        AssignedScalarOfNativeCurve, Instantiable,
     },
     verifier::{self, Accumulator, AssignedAccumulator, AssignedVk, Msm, VerifierGadget},
 };
 
 pub(crate) use midnight_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, ProvingKey, VerifyingKey},
+    circuit::{Layouter, Value},
+    plonk::{ConstraintSystem, Error, VerifyingKey},
     poly::{EvaluationDomain, kzg::KZGCommitmentScheme},
 };
 
@@ -55,7 +40,6 @@ pub(crate) mod accumulator;
 pub mod bench;
 pub(crate) mod certificate_proof;
 pub(crate) mod circuit;
-pub(crate) mod config;
 pub(crate) mod constraint_builder;
 #[cfg(any(test, feature = "benchmark-internals"))]
 #[cfg_attr(not(test), allow(dead_code))]
@@ -63,8 +47,6 @@ pub(crate) mod embedded_assets;
 pub(crate) mod errors;
 pub(crate) mod gadgets;
 pub(crate) mod io;
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) mod key_serialization;
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod keys;
 #[cfg(test)]
@@ -80,8 +62,9 @@ pub(crate) use types::{CircuitValue, ProtocolMessagePreimage};
 
 mod midnight_backend;
 
-use midnight_backend::{EmulatedCurve, EmulatedCurveBaseField, RecursiveEmulation};
+use midnight_backend::{EmulatedCurve, RecursiveEmulation};
 pub(crate) use midnight_backend::{NativeField, PairingEngine};
+pub(crate) use midnight_zk_stdlib::{Relation, ZkStdLib, ZkStdLibArch};
 
 type IvcNativeGadget =
     NativeGadget<NativeField, P2RDecompositionChip<NativeField>, NativeChip<NativeField>>;

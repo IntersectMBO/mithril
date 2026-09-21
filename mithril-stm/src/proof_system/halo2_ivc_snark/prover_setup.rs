@@ -157,6 +157,24 @@ impl IvcProverSetup {
         Self::build_for_test_degree(parameters, merkle_tree_depth, RECURSIVE_CIRCUIT_DEGREE)
     }
 
+    /// The shared cache the test setup derives its keys in.
+    ///
+    /// Defined once so a test can locate the cache without restating the inputs its identity is
+    /// built from.
+    #[cfg(test)]
+    fn test_key_cache(parameters_bytes: &[u8], depth_bytes: &[u8], seed_bytes: &[u8]) -> FileMutex {
+        FileMutex::for_shared_cache(
+            "ivc-setup",
+            &[
+                NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                parameters_bytes,
+                depth_bytes,
+                seed_bytes,
+            ],
+        )
+    }
+
     /// Builds an [`IvcProverSetup`] from a deterministic unsafe SRS with degree determined by the input
     /// `unsafe_srs_degree`.
     /// Uses a cache for the unsafe SRS to avoid regenerating it when a SRS of the correct degree already exists
@@ -178,16 +196,7 @@ impl IvcProverSetup {
         let trusted_setup_provider =
             TrustedSetupProvider::with_unsafe_srs(&srs_directory, unsafe_srs_degree);
 
-        let key_cache = FileMutex::for_shared_cache(
-            "ivc-setup",
-            &[
-                NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
-                RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
-                &parameters_bytes,
-                &depth_bytes,
-                &seed_bytes,
-            ],
-        );
+        let key_cache = Self::test_key_cache(&parameters_bytes, &depth_bytes, &seed_bytes);
         let cache_directory = key_cache.directory().to_path_buf();
         // Serialize cold-start keygen across the parallel slow-test processes.
         let _key_cache_lock = key_cache.lock()?;
@@ -364,27 +373,31 @@ mod tests {
     }
 
     mod slow {
+        use std::path::Path;
+
         use midnight_proofs::poly::commitment::Params;
 
+        use crate::circuits::halo2::keys::NonRecursiveCircuitProvingKey;
+        use crate::circuits::halo2_ivc::errors::IvcCircuitError;
         use crate::circuits::halo2_ivc::tests::common::{
             asset_readers::load_embedded_verification_context_asset,
             generators::setup::{QUORUM_SIZE, SIGNER_COUNT},
         };
+        use crate::codec::TryFromBytes;
 
         use super::*;
 
         // Runs the real `load` path against an oversized unsafe SRS; runs in the `slow` tier.
         #[test]
         fn load_succeeds_with_unsafe_srs() {
-            let setup = IvcProverSetup::build_for_test(
-                &Parameters {
-                    k: 3,
-                    m: 10,
-                    phi_f: 0.2,
-                },
-                4,
-            )
-            .expect("IvcProverSetup::build_for_test should succeed");
+            let parameters = Parameters {
+                k: 3,
+                m: 10,
+                phi_f: 0.2,
+            };
+            let merkle_tree_depth = 4;
+            let setup = IvcProverSetup::build_for_test(&parameters, merkle_tree_depth)
+                .expect("IvcProverSetup::build_for_test should succeed");
 
             assert!(
                 !setup.certificate_fixed_bases.is_empty(),
@@ -409,6 +422,80 @@ mod tests {
                     "combined map should preserve every IVC base"
                 );
             }
+
+            // A cold run generates the keys, writes them and keeps the generated ones, so it never
+            // decodes what it wrote; no other slow test shares this configuration's cache. Without
+            // this, the recursive proving-key decoder would only ever see malformed bytes, being
+            // the one key type with no valid-key round-trip test of its own. The generated keys are
+            // dropped first so the recursive pair, a gigabyte on disk, is never held twice.
+            let key_cache = IvcProverSetup::test_key_cache(
+                &parameters.to_bytes().expect("parameters should encode"),
+                &merkle_tree_depth.to_le_bytes(),
+                &UNSAFE_SRS_SEED.to_le_bytes(),
+            );
+            let certificate_directory = key_cache.directory().join("certificate");
+            let recursive_directory = key_cache.directory().join("recursive");
+            drop(setup);
+
+            NonRecursiveCircuitVerifyingKey::try_from_bytes(&read_cached_key(
+                &certificate_directory,
+                "verification-key",
+            ))
+            .expect("the cached certificate verifying key must decode");
+            NonRecursiveCircuitProvingKey::try_from_bytes(&read_cached_key(
+                &certificate_directory,
+                "proving-key",
+            ))
+            .expect("the cached certificate proving key must decode");
+            RecursiveCircuitVerifyingKey::try_from_bytes(&read_cached_key(
+                &recursive_directory,
+                "verification-key",
+            ))
+            .expect("the cached recursive verifying key must decode");
+            let mut recursive_proving_key_bytes =
+                read_cached_key(&recursive_directory, "proving-key");
+            RecursiveCircuitProvingKey::try_from_bytes(&recursive_proving_key_bytes)
+                .expect("the cached recursive proving key must decode");
+
+            // Only a valid encoding can exercise the decoder's full-consumption rule, and this is
+            // the one place a valid recursive proving key exists.
+            recursive_proving_key_bytes.push(0);
+            let error =
+                match RecursiveCircuitProvingKey::try_from_bytes(&recursive_proving_key_bytes) {
+                    Ok(_) => panic!("a recursive proving key with trailing bytes must be rejected"),
+                    Err(error) => error,
+                };
+            assert!(
+                matches!(
+                    error.downcast_ref::<IvcCircuitError>(),
+                    Some(IvcCircuitError::RecursiveKeyEncodingHasTrailingBytes { trailing: 1 })
+                ),
+                "expected a trailing-byte rejection, got: {error}"
+            );
+        }
+
+        /// Reads the one cached key of the given name beneath `directory`, whose layout belongs to
+        /// the key provider rather than to this test.
+        fn read_cached_key(directory: &Path, name: &str) -> Vec<u8> {
+            let mut found = Vec::new();
+            let mut pending = vec![directory.to_path_buf()];
+            while let Some(current) = pending.pop() {
+                for entry in std::fs::read_dir(&current).into_iter().flatten().flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        pending.push(path);
+                    } else if path.file_name().and_then(|file| file.to_str()) == Some(name) {
+                        found.push(path);
+                    }
+                }
+            }
+            assert_eq!(
+                found.len(),
+                1,
+                "exactly one {name} should be cached under {}, found: {found:?}",
+                directory.display()
+            );
+            std::fs::read(&found[0]).expect("a cached key should be readable")
         }
 
         // `IvcProverSetup::build_for_test` loads from an oversized unsafe SRS that shares the production

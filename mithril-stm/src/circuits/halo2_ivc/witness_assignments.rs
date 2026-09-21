@@ -20,14 +20,10 @@ pub(crate) fn assign_global_as_public_input(
     builder: &IvcConstraintBuilder,
     layouter: &mut impl Layouter<NativeField>,
     global: &CircuitValue<Global>,
-    certificate_circuit_domain_and_constraint_system: &(
-        EvaluationDomain<NativeField>,
-        ConstraintSystem<NativeField>,
-    ),
-    ivc_circuit_domain_and_constraint_system: &(
-        EvaluationDomain<NativeField>,
-        ConstraintSystem<NativeField>,
-    ),
+    certificate_circuit_domain: &EvaluationDomain<NativeField>,
+    certificate_circuit_constraint_system: &ConstraintSystem<NativeField>,
+    ivc_circuit_domain: &EvaluationDomain<NativeField>,
+    ivc_circuit_constraint_system: &ConstraintSystem<NativeField>,
 ) -> Result<AssignedGlobal, Error> {
     let genesis_message: AssignedNative<_> = builder.native_gadget.assign_as_public_input(
         layouter,
@@ -41,8 +37,6 @@ pub(crate) fn assign_global_as_public_input(
                 .map(|gl| *gl.genesis_verification_key.as_jubjub_subgroup()),
         )?;
 
-    let (certificate_circuit_domain, certificate_circuit_constraint_system) =
-        &certificate_circuit_domain_and_constraint_system;
     let certificate_verification_key: AssignedVk<RecursiveEmulation> =
         builder.verifier_gadget.assign_vk_as_public_input(
             layouter,
@@ -55,8 +49,6 @@ pub(crate) fn assign_global_as_public_input(
         )?;
 
     // Assign for IVC proof verification
-    let (ivc_circuit_domain, ivc_circuit_constraint_system) =
-        &ivc_circuit_domain_and_constraint_system;
     let ivc_verification_key: AssignedVk<RecursiveEmulation> =
         builder.verifier_gadget.assign_vk_as_public_input(
             layouter,

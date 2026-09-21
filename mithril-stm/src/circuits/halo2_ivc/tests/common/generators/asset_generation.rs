@@ -30,7 +30,7 @@ use crate::circuits::halo2_ivc::tests::common::asset_readers::{
 use crate::circuits::halo2_ivc::{
     Accumulator, AssignedAccumulator, EmulatedCurve, PREIMAGE_SIZE, RecursiveEmulation,
     accumulator::trivial_accumulator,
-    circuit::IvcCircuitData,
+    circuit::{IvcCircuit, IvcCircuitData},
     keys::RecursiveCircuitProvingKey,
     state::{Global, State},
     types::{CertificateProofBytes, IvcProofBytes},
@@ -129,17 +129,19 @@ fn build_recursive_chain_snapshot(
             INITIAL_CHAIN_LENGTH + 1
         );
         let recursive_step_start = Instant::now();
-        let ivc_circuit_data = IvcCircuitData::try_new(
+        let ivc_circuit = IvcCircuit::try_new(
+            &context.certificate_verifying_key,
+            &context.recursive_verifying_key,
+        )
+        .expect("valid IvcCircuit construction");
+        let ivc_circuit_data = IvcCircuitData::new(
             global.clone(),
             current_state.clone(),
             artifacts.recursive_witnesses[i].clone(),
             artifacts.certificate_proofs[i].clone(),
             recursive_proof.clone(),
             current_accumulator.clone(),
-            &context.certificate_verifying_key,
-            &context.recursive_verifying_key,
-        )
-        .expect("valid IvcCircuitData construction");
+        );
 
         let public_inputs = [
             global.as_public_input(),
@@ -151,6 +153,7 @@ fn build_recursive_chain_snapshot(
         let proof = prove_poseidon_ivc(
             &context.recursive_commitment_parameters,
             recursive_proving_key,
+            &ivc_circuit,
             &ivc_circuit_data,
             &public_inputs,
             &mut recursive_random_generator,
@@ -312,17 +315,19 @@ fn build_recursive_step_output_proof(
     next_step_inputs: &NextRecursiveStepInputs,
 ) -> Vec<u8> {
     let mut recursive_step_output_random_generator = OsRng;
-    let ivc_circuit_data = IvcCircuitData::try_new(
+    let ivc_circuit = IvcCircuit::try_new(
+        &context.certificate_verifying_key,
+        &context.recursive_verifying_key,
+    )
+    .expect("valid IvcCircuit construction");
+    let ivc_circuit_data = IvcCircuitData::new(
         global.clone(),
         recursive_chain_state.state.clone(),
         next_step_inputs.recursive_witness.clone(),
         next_step_inputs.certificate_proof.clone(),
         recursive_chain_state.ivc_proof.clone(),
         recursive_chain_state.accumulator.clone(),
-        &context.certificate_verifying_key,
-        &context.recursive_verifying_key,
-    )
-    .expect("valid IvcCircuitData construction");
+    );
     let public_inputs = [
         global.as_public_input(),
         next_step_inputs.next_state.as_public_input(),
@@ -335,6 +340,7 @@ fn build_recursive_step_output_proof(
     let final_proof = prove_blake2b_ivc(
         &context.recursive_commitment_parameters,
         recursive_proving_key,
+        &ivc_circuit,
         &ivc_circuit_data,
         &public_inputs,
         &mut recursive_step_output_random_generator,
@@ -541,17 +547,19 @@ pub(crate) fn generate_genesis_step_output_asset(setup: &AssetGenerationSetup, p
     let current_accumulator = trivial_accumulator(&combined_fixed_base_names);
     let next_accumulator = current_accumulator.clone();
 
-    let ivc_circuit_data = IvcCircuitData::try_new(
+    let ivc_circuit = IvcCircuit::try_new(
+        &context.certificate_verifying_key,
+        &context.recursive_verifying_key,
+    )
+    .expect("valid IvcCircuit construction");
+    let ivc_circuit_data = IvcCircuitData::new(
         global.clone(),
         State::genesis(),
         genesis_witness,
         CertificateProofBytes::empty(),
         IvcProofBytes::empty(),
         current_accumulator,
-        &context.certificate_verifying_key,
-        &context.recursive_verifying_key,
-    )
-    .expect("valid IvcCircuitData construction");
+    );
 
     let public_inputs = [
         global.as_public_input(),
@@ -566,6 +574,7 @@ pub(crate) fn generate_genesis_step_output_asset(setup: &AssetGenerationSetup, p
     let proof = prove_blake2b_ivc(
         &context.recursive_commitment_parameters,
         &recursive_proving_key,
+        &ivc_circuit,
         &ivc_circuit_data,
         &public_inputs,
         &mut rng,
@@ -692,17 +701,19 @@ pub(crate) fn generate_same_epoch_step_output_asset(
         "same-epoch next accumulator check failed"
     );
 
-    let ivc_circuit_data = IvcCircuitData::try_new(
+    let ivc_circuit = IvcCircuit::try_new(
+        &context.certificate_verifying_key,
+        &context.recursive_verifying_key,
+    )
+    .expect("valid IvcCircuit construction");
+    let ivc_circuit_data = IvcCircuitData::new(
         global.clone(),
         chain_state.state.clone(),
         ivc_witness.clone(),
         certificate_proof.clone(),
         chain_state.ivc_proof.clone(),
         chain_state.accumulator.clone(),
-        &context.certificate_verifying_key,
-        &context.recursive_verifying_key,
-    )
-    .expect("valid IvcCircuitData construction");
+    );
 
     let public_inputs = [
         global.as_public_input(),
@@ -716,6 +727,7 @@ pub(crate) fn generate_same_epoch_step_output_asset(
     let proof = prove_blake2b_ivc(
         &context.recursive_commitment_parameters,
         &recursive_proving_key,
+        &ivc_circuit,
         &ivc_circuit_data,
         &public_inputs,
         &mut rng,

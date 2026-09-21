@@ -3,14 +3,16 @@
 
 use ff::Field;
 use midnight_proofs::utils::SerdeFormat;
+use midnight_zk_stdlib::MidnightCircuit;
 use proptest::prelude::*;
 use sha2::{Digest as Sha2Digest, Sha256};
 
 use crate::circuits::halo2_ivc::{
     Accumulator, KZGCommitmentScheme, NativeField, PREIMAGE_CURRENT_EPOCH_BYTES,
     PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES, PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES,
-    PREIMAGE_SIZE, PairingEngine, ProtocolMessagePreimage, RecursiveEmulation, VerifyingKey,
-    circuit::IvcCircuitData,
+    PREIMAGE_SIZE, PairingEngine, ProtocolMessagePreimage, RECURSIVE_CIRCUIT_DEGREE,
+    RecursiveEmulation, VerifyingKey,
+    circuit::{IvcCircuit, recursive_circuit_architecture},
     io::{ReadWithFormat, WriteWithFormat},
     protocol_message::{DynamicProtocolMessagePartKey, ProtocolMessage},
     state::State,
@@ -216,8 +218,15 @@ fn vk_serialization_round_trip() {
 
     let deserialized = VerifyingKey::<NativeField, KZGCommitmentScheme<PairingEngine>>::read::<
         _,
-        IvcCircuitData,
-    >(&mut bytes.as_slice(), SerdeFormat::RawBytesUnchecked, ())
+        MidnightCircuit<IvcCircuit>,
+    >(
+        &mut bytes.as_slice(),
+        SerdeFormat::RawBytesUnchecked,
+        (
+            recursive_circuit_architecture(),
+            (RECURSIVE_CIRCUIT_DEGREE - 1) as u8,
+        ),
+    )
     .expect("verifying key deserialization should succeed");
 
     assert_eq!(

@@ -115,6 +115,26 @@ pub enum CertificateCircuitError {
     /// A proving/verification backend error surfaced at the relation boundary.
     #[error("Backend error: {0}")]
     Backend(String),
+
+    /// An encoded verification key declares an architecture that is not the certificate circuit's.
+    #[error("The encoded key does not declare the certificate circuit architecture")]
+    VerificationKeyArchitectureMismatch,
+
+    /// An encoded verification key declares a degree no certificate circuit could have been
+    /// generated with, or declares two degrees that disagree.
+    #[error("Certificate verification key degree mismatch: expected {expected}, got {actual}")]
+    VerificationKeyDegreeMismatch { expected: u32, actual: u32 },
+
+    /// A standalone encoded verification key is followed by bytes that are not part of it.
+    #[error("The encoded certificate verification key has {trailing} trailing byte(s)")]
+    VerificationKeyEncodingHasTrailingBytes { trailing: usize },
+
+    /// An encoded verification key declares fewer fixed commitments than its constraint system has
+    /// fixed columns, which the verifier indexes by column.
+    #[error(
+        "Certificate verification key fixed commitment count mismatch: expected {expected}, got {actual}"
+    )]
+    VerificationKeyCommitmentCountMismatch { expected: usize, actual: usize },
 }
 
 impl From<PlonkError> for CertificateCircuitError {

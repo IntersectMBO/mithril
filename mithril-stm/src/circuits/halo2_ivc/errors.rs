@@ -22,17 +22,19 @@ pub enum IvcCircuitError {
     #[error("Byte-to-field conversion received {bytes} bytes but only {bases} base weights")]
     ByteCountExceedsBaseCount { bytes: usize, bases: usize },
 
-    /// Not enough advice columns were allocated to satisfy chip requirements.
-    #[error(
-        "Too few advice columns allocated for the IVC circuit: need {needed}, only {available} allocated"
-    )]
-    InsufficientAdviceColumns { needed: usize, available: usize },
+    /// A recursive verifying key was encoded for a different standard library architecture, so it
+    /// belongs to another circuit.
+    #[error("The recursive verifying key declares an architecture that is not the IVC circuit's")]
+    RecursiveVerificationKeyArchitectureMismatch,
 
-    /// Not enough fixed columns were allocated to satisfy chip requirements.
-    #[error(
-        "Too few fixed columns allocated for the IVC circuit: need {needed}, only {available} allocated"
-    )]
-    InsufficientFixedColumns { needed: usize, available: usize },
+    /// A recursive verifying key carried a different number of fixed commitments than the
+    /// configured constraint system has columns.
+    #[error("The recursive verifying key declares {actual} fixed commitments, expected {expected}")]
+    RecursiveVerificationKeyCommitmentCountMismatch { expected: usize, actual: usize },
+
+    /// A standalone recursive key encoding carried bytes beyond the key.
+    #[error("The recursive key encoding carries {trailing} trailing bytes")]
+    RecursiveKeyEncodingHasTrailingBytes { trailing: usize },
 
     /// Off-circuit step transition: the incoming certificate's epoch does not advance the
     /// chain correctly. The `kind` field carries an `EpochTransitionErrorKind` with the
