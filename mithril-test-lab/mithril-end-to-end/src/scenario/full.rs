@@ -273,7 +273,7 @@ impl FullScenario {
             if aggregator.is_leader() {
                 infrastructure.register_switch_to_next_era(next_era).await?;
             }
-            target_epoch += 5;
+            target_epoch += 2;
             self.toolkit
                 .wait
                 .for_aggregator_at_target_epoch(
@@ -289,7 +289,7 @@ impl FullScenario {
                 if aggregator.is_leader() {
                     self.toolkit.exec.bootstrap_genesis_certificate(aggregator).await?;
                 }
-                target_epoch += 5;
+                target_epoch += 3;
                 self.toolkit
                     .wait
                     .for_aggregator_at_target_epoch(
