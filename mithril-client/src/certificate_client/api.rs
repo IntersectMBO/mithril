@@ -84,6 +84,14 @@ pub enum CertificateVerifierCacheMode {
     /// - The cache only ever saves a network round-trip, never a security check.
     #[default]
     FullVerification,
+    /// Early stop verification mode
+    ///
+    /// - The chain is validated until a cached certificate is reached.
+    /// - The certificate chained to a cached certificate is verified exactly as in full verification mode.
+    /// - Cached certificates are trusted without being re-verified, as they were committed after a full validation of their chain.
+    /// - The verified certificates are committed to the cache even when the validation stops early.
+    /// - The cache saves security checks, so it must be protected against tampering.
+    EarlyStopVerification,
 }
 
 #[cfg(feature = "unstable")]

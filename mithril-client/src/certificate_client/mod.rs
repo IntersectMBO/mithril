@@ -85,6 +85,8 @@ pub(crate) mod tests_utils {
         feedback_receivers: Vec<Arc<dyn FeedbackReceiver>>,
         #[cfg(feature = "unstable")]
         verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
+        #[cfg(feature = "unstable")]
+        verifier_cache_mode: CertificateVerifierCacheMode,
     }
 
     impl CertificateClientTestBuilder {
@@ -118,6 +120,15 @@ pub(crate) mod tests_utils {
             self
         }
 
+        #[cfg(feature = "unstable")]
+        pub fn with_verifier_cache_mode(
+            mut self,
+            verifier_cache_mode: CertificateVerifierCacheMode,
+        ) -> Self {
+            self.verifier_cache_mode = verifier_cache_mode;
+            self
+        }
+
         /// Builds a new [CertificateClient] with the given configuration.
         ///
         /// If no genesis verification key is provided, a [MockCertificateVerifier] will be used,
@@ -137,7 +148,7 @@ pub(crate) mod tests_utils {
                             #[cfg(feature = "unstable")]
                             self.verifier_cache,
                             #[cfg(feature = "unstable")]
-                            Default::default(),
+                            self.verifier_cache_mode,
                             logger.clone(),
                         )
                         .unwrap(),

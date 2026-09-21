@@ -56,7 +56,7 @@ pub struct MithrilCertificateVerifier {
     #[cfg(feature = "unstable")]
     verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
     #[cfg(feature = "unstable")]
-    _cache_mode: CertificateVerifierCacheMode, // will be used when the EarlyStopVerification is implemented
+    cache_mode: CertificateVerifierCacheMode,
     logger: Logger,
 }
 
@@ -120,7 +120,7 @@ impl MithrilCertificateVerifier {
             #[cfg(feature = "unstable")]
             verifier_cache,
             #[cfg(feature = "unstable")]
-            _cache_mode: cache_mode,
+            cache_mode,
             logger,
         })
     }
@@ -184,15 +184,17 @@ impl MithrilCertificateVerifier {
         }
     }
 
-    /// A previous certificate is trusted from the cache only when it is the certificate committed
-    /// under its hash, so that a certificate downloaded from the aggregator under a cached hash is
-    /// never trusted.
+    /// In early stop verification mode, a previous certificate is trusted from the cache only when
+    /// it is the certificate committed under its hash, so that a certificate downloaded from the
+    /// aggregator under a cached hash is never trusted.
     async fn locate_previous_certificate(
         &self,
         previous_certificate: Certificate,
     ) -> RetrievedCertificate {
         #[cfg(feature = "unstable")]
-        if self.matches_committed_certificate(&previous_certificate).await {
+        if self.cache_mode == CertificateVerifierCacheMode::EarlyStopVerification
+            && self.matches_committed_certificate(&previous_certificate).await
+        {
             return RetrievedCertificate::FromCache(previous_certificate);
         }
 
@@ -223,6 +225,33 @@ impl MithrilCertificateVerifier {
             }
         }
     }
+
+    /// Stop the chain verification at a certificate trusted from the cache, reporting it as fetched
+    /// from the cache, and return whether the verification stopped.
+    #[cfg(feature = "unstable")]
+    async fn stop_early_at_cached_certificate(
+        &self,
+        certificate_chain_validation_id: &str,
+        retrieved_certificate: Option<&RetrievedCertificate>,
+    ) -> bool {
+        let Some(RetrievedCertificate::FromCache(cached_certificate)) = retrieved_certificate
+        else {
+            return false;
+        };
+
+        trace!(
+            self.logger, "Certificate chain verification stopped at cached certificate";
+            "hash" => &cached_certificate.hash
+        );
+        self.feedback_sender
+            .send_event(MithrilEvent::CertificateFetchedFromCache {
+                certificate_hash: cached_certificate.hash.clone(),
+                certificate_chain_validation_id: certificate_chain_validation_id.to_string(),
+            })
+            .await;
+
+        true
+    }
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
@@ -241,10 +270,18 @@ impl CertificateVerifier for MithrilCertificateVerifier {
 
         let mut current_certificate: Option<Certificate> = Some(certificate.clone().try_into()?);
         while let Some(next) = current_certificate {
-            current_certificate = self
-                .verify(&certificate_chain_validation_id, next)
-                .await?
-                .map(Certificate::from);
+            let retrieved_certificate = self.verify(&certificate_chain_validation_id, next).await?;
+            #[cfg(feature = "unstable")]
+            if self
+                .stop_early_at_cached_certificate(
+                    &certificate_chain_validation_id,
+                    retrieved_certificate.as_ref(),
+                )
+                .await
+            {
+                break;
+            }
+            current_certificate = retrieved_certificate.map(Certificate::from);
         }
 
         #[cfg(feature = "unstable")]
@@ -478,6 +515,7 @@ mod tests {
         use chrono::TimeDelta;
         use std::collections::HashSet;
 
+        use mithril_common::certificate_chain::CertificateVerifierError;
         use mithril_common::test::builder::CertificateChainingMethod;
         use mithril_common::test::mock_extensions::MockBuilder;
 
@@ -493,6 +531,7 @@ mod tests {
             aggregator_client_mock_config: impl FnOnce(&mut MockCertificateAggregatorRequest),
             genesis_verification_key: GenesisEd25519VerificationKey,
             cache: Arc<dyn CertificateVerifierCache>,
+            cache_mode: CertificateVerifierCacheMode,
         ) -> MithrilCertificateVerifier {
             let mut aggregator_client = MockCertificateAggregatorRequest::new();
             aggregator_client_mock_config(&mut aggregator_client);
@@ -503,7 +542,7 @@ mod tests {
                 &genesis_verification_key,
                 FeedbackSender::new(&[]),
                 Some(cache),
-                CertificateVerifierCacheMode::FullVerification,
+                cache_mode,
                 TestLogger::stdout(),
             )
             .unwrap()
@@ -523,6 +562,7 @@ mod tests {
                 |_mock| {},
                 chain.genesis_verifier.to_ed25519_verification_key(),
                 cache.clone(),
+                CertificateVerifierCacheMode::FullVerification,
             );
 
             verifier
@@ -553,6 +593,7 @@ mod tests {
                 |mock| mock.expect_certificate_chain(vec![genesis_certificate.clone()]),
                 chain.genesis_verifier.to_ed25519_verification_key(),
                 cache.clone(),
+                CertificateVerifierCacheMode::FullVerification,
             );
 
             verifier
@@ -584,6 +625,7 @@ mod tests {
                 |_mock| {},
                 chain.genesis_verifier.to_ed25519_verification_key(),
                 cache.clone(),
+                CertificateVerifierCacheMode::FullVerification,
             );
             verifier.feedback_sender = FeedbackSender::new(&[feedback_receiver_clone]);
 
@@ -618,6 +660,7 @@ mod tests {
                 |_mock| {},
                 chain.genesis_verifier.to_ed25519_verification_key(),
                 cache.clone(),
+                CertificateVerifierCacheMode::FullVerification,
             );
 
             let parent = verifier
@@ -648,6 +691,7 @@ mod tests {
                 |mock| mock.expect_certificate_chain(vec![genesis_certificate.clone()]),
                 chain.genesis_verifier.to_ed25519_verification_key(),
                 cache,
+                CertificateVerifierCacheMode::FullVerification,
             );
 
             let previous = verifier
@@ -664,7 +708,8 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn verify_returns_previous_certificate_from_cache_when_committed_to_cache() {
+        async fn verify_returns_previous_certificate_from_cache_when_committed_to_cache_in_early_stop_verification_mode()
+         {
             let chain = CertificateChainBuilder::new()
                 .with_total_certificates(2)
                 .with_certificates_per_epoch(1)
@@ -680,6 +725,7 @@ mod tests {
                 |_mock| {},
                 chain.genesis_verifier.to_ed25519_verification_key(),
                 cache,
+                CertificateVerifierCacheMode::EarlyStopVerification,
             );
 
             let previous = verifier
@@ -689,6 +735,40 @@ mod tests {
 
             assert_eq!(
                 Some(RetrievedCertificate::FromCache(genesis_certificate.clone())),
+                previous
+            );
+        }
+
+        #[tokio::test]
+        async fn verify_returns_previous_certificate_from_aggregator_when_committed_to_cache_in_full_verification_mode()
+         {
+            let chain = CertificateChainBuilder::new()
+                .with_total_certificates(2)
+                .with_certificates_per_epoch(1)
+                .build();
+            let certificate = chain.first().unwrap();
+            let genesis_certificate = chain.last().unwrap();
+
+            let cache = Arc::new(
+                MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                    .with_items_from_chain([genesis_certificate]),
+            );
+            let verifier = build_verifier_with_cache(
+                |_mock| {},
+                chain.genesis_verifier.to_ed25519_verification_key(),
+                cache,
+                CertificateVerifierCacheMode::FullVerification,
+            );
+
+            let previous = verifier
+                .verify("chain_validation_id", certificate.clone())
+                .await
+                .unwrap();
+
+            assert_eq!(
+                Some(RetrievedCertificate::FromAggregator(
+                    genesis_certificate.clone()
+                )),
                 previous
             );
         }
@@ -715,6 +795,7 @@ mod tests {
                 |mock| mock.expect_certificate_chain(vec![genesis_certificate.clone()]),
                 chain.genesis_verifier.to_ed25519_verification_key(),
                 cache,
+                CertificateVerifierCacheMode::EarlyStopVerification,
             );
 
             let previous = verifier
@@ -725,6 +806,44 @@ mod tests {
             assert_eq!(
                 Some(RetrievedCertificate::FromAggregator(
                     genesis_certificate.clone()
+                )),
+                previous
+            );
+        }
+
+        #[tokio::test]
+        async fn verify_returns_previous_certificate_from_aggregator_when_committed_certificate_does_not_match_its_hash()
+         {
+            let chain = CertificateChainBuilder::new()
+                .with_total_certificates(2)
+                .with_certificates_per_epoch(1)
+                .build();
+            let certificate = chain.first().unwrap();
+            let genesis_certificate = chain.last().unwrap();
+            let tampered_genesis_certificate = Certificate {
+                signed_message: "tampered".to_string(),
+                ..genesis_certificate.clone()
+            };
+
+            let cache = Arc::new(
+                MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                    .with_items_from_chain([&tampered_genesis_certificate]),
+            );
+            let verifier = build_verifier_with_cache(
+                |mock| mock.expect_certificate_chain(vec![tampered_genesis_certificate.clone()]),
+                chain.genesis_verifier.to_ed25519_verification_key(),
+                cache,
+                CertificateVerifierCacheMode::EarlyStopVerification,
+            );
+
+            let previous = verifier
+                .verify("chain_validation_id", certificate.clone())
+                .await
+                .unwrap();
+
+            assert_eq!(
+                Some(RetrievedCertificate::FromAggregator(
+                    tampered_genesis_certificate
                 )),
                 previous
             );
@@ -749,6 +868,7 @@ mod tests {
                 |mock| mock.expect_certificate_chain(vec![genesis_certificate.clone()]),
                 chain.genesis_verifier.to_ed25519_verification_key(),
                 cache,
+                CertificateVerifierCacheMode::EarlyStopVerification,
             );
 
             let previous = verifier
@@ -764,182 +884,643 @@ mod tests {
             );
         }
 
-        #[tokio::test]
-        async fn verification_uses_cached_ancestors_after_fetching_the_requested_certificate() {
-            let chain = CertificateChainBuilder::new()
-                .with_total_certificates(6)
-                .with_certificates_per_epoch(3)
-                .build();
-            let certificate_to_verify = chain.first().unwrap();
-
-            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(3))
-                .with_items_from_chain(chain.iter());
-
-            let certificate_client = CertificateClientTestBuilder::default()
-                .config_aggregator_requester_mock(|mock| {
-                    // For now the first certificate is always fetched from network
-                    mock.expect_certificate(certificate_to_verify.clone(), 1);
-                })
-                .with_genesis_verification_key(ed25519_verification_key_hex(
-                    &chain.genesis_verifier,
-                ))
-                .with_verifier_cache(Arc::new(cache))
-                .build();
-
-            certificate_client
-                .verify_chain(&certificate_to_verify.hash)
-                .await
-                .unwrap();
+        fn certificate_validated_event(
+            certificate_chain_validation_id: &str,
+            certificate: &Certificate,
+        ) -> MithrilEvent {
+            MithrilEvent::CertificateValidated {
+                certificate_chain_validation_id: certificate_chain_validation_id.to_string(),
+                certificate_hash: certificate.hash.clone(),
+            }
         }
 
-        #[tokio::test]
-        async fn verify_chain_return_fetch_uncached_certificate_from_network() {
-            // Scenario:
-            // | Certificate | epoch |         Parent | Cached? | Fetched from network? |
-            // |     [index] |       |                |         |                       |
-            // |------------:|------:|---------------:|---------|-----------------------|
-            // |     n°6 [0] |     3 |            n°5 | No      | Yes                   |
-            // |     n°5 [1] |     3 |            n°4 | No      | Yes                   |
-            // |     n°4 [2] |     2 |            n°3 | Yes     | No                    |
-            // |     n°3 [3] |     2 |            n°2 | Yes     | No                    |
-            // |     n°2 [4] |     2 |            n°1 | No      | Yes                   |
-            // |     n°1 [5] |     1 | None (genesis) | Yes     | No                    |
-            let chain = CertificateChainBuilder::new()
-                .with_total_certificates(6)
-                .with_certificates_per_epoch(3)
-                .with_certificate_chaining_method(CertificateChainingMethod::Sequential)
-                .build();
-            let last_certificate_hash = chain.first().unwrap().hash.clone();
+        fn certificate_fetched_from_cache_event(
+            certificate_chain_validation_id: &str,
+            certificate: &Certificate,
+        ) -> MithrilEvent {
+            MithrilEvent::CertificateFetchedFromCache {
+                certificate_chain_validation_id: certificate_chain_validation_id.to_string(),
+                certificate_hash: certificate.hash.clone(),
+            }
+        }
 
-            let cached_certificates =
-                vec![chain[2].clone(), chain[3].clone(), chain.last().unwrap().clone()];
-            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(3))
-                .with_items_from_chain(&cached_certificates);
+        mod full_verification {
+            use super::*;
 
-            let certificate_client = CertificateClientTestBuilder::default()
-                .config_aggregator_requester_mock(|mock| {
-                    mock.expect_certificate_chain(vec![
-                        chain[0].clone(),
-                        chain[1].clone(),
-                        chain[4].clone(),
-                    ])
-                })
-                .with_genesis_verification_key(ed25519_verification_key_hex(
-                    &chain.genesis_verifier,
-                ))
-                .with_verifier_cache(Arc::new(cache))
-                .build();
+            #[tokio::test]
+            async fn verification_uses_cached_ancestors_after_fetching_the_requested_certificate() {
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(6)
+                    .with_certificates_per_epoch(3)
+                    .build();
+                let certificate_to_verify = chain.first().unwrap();
 
-            let certificate =
+                let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(3))
+                    .with_items_from_chain(chain.iter());
+
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        // For now the first certificate is always fetched from network
+                        mock.expect_certificate(certificate_to_verify.clone(), 1);
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(Arc::new(cache))
+                    .build();
+
+                certificate_client
+                    .verify_chain(&certificate_to_verify.hash)
+                    .await
+                    .unwrap();
+            }
+
+            #[tokio::test]
+            async fn verify_chain_return_fetch_uncached_certificate_from_network() {
+                // Scenario:
+                // | Certificate | epoch |         Parent | Cached? | Fetched from network? |
+                // |     [index] |       |                |         |                       |
+                // |------------:|------:|---------------:|---------|-----------------------|
+                // |     n°6 [0] |     3 |            n°5 | No      | Yes                   |
+                // |     n°5 [1] |     3 |            n°4 | No      | Yes                   |
+                // |     n°4 [2] |     2 |            n°3 | Yes     | No                    |
+                // |     n°3 [3] |     2 |            n°2 | Yes     | No                    |
+                // |     n°2 [4] |     2 |            n°1 | No      | Yes                   |
+                // |     n°1 [5] |     1 | None (genesis) | Yes     | No                    |
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(6)
+                    .with_certificates_per_epoch(3)
+                    .with_certificate_chaining_method(CertificateChainingMethod::Sequential)
+                    .build();
+                let last_certificate_hash = chain.first().unwrap().hash.clone();
+
+                let cached_certificates =
+                    vec![chain[2].clone(), chain[3].clone(), chain.last().unwrap().clone()];
+                let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(3))
+                    .with_items_from_chain(&cached_certificates);
+
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        mock.expect_certificate_chain(vec![
+                            chain[0].clone(),
+                            chain[1].clone(),
+                            chain[4].clone(),
+                        ])
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(Arc::new(cache))
+                    .build();
+
+                let certificate =
+                    certificate_client.verify_chain(&last_certificate_hash).await.unwrap();
+
+                assert_eq!(certificate.hash, last_certificate_hash);
+            }
+
+            #[tokio::test]
+            async fn cached_certificate_are_verified() {
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(2)
+                    .with_certificates_per_epoch(1)
+                    // Note: `CertificateChainingMethod::ToMasterCertificate` link certificate based on
+                    // their epoch, which conflicts with the epoch tempering below
+                    .with_certificate_chaining_method(CertificateChainingMethod::Sequential)
+                    .with_genesis_certificate_processor(&|certificate, _context, _signer| {
+                        let mut certificate = certificate;
+                        certificate.epoch += 2;
+                        certificate
+                    })
+                    .build();
+                let last_certificate = chain.first().unwrap();
+                let genesis_certificate = chain.last().unwrap();
+
+                // All certificates are cached except the last two (to cross an epoch boundary) and the genesis
+                let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(3))
+                    .with_items_from_chain([genesis_certificate]);
+
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        // For now the first certificate is always fetched from network
+                        mock.expect_certificate(last_certificate.clone(), 1);
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(Arc::new(cache))
+                    .build();
+
+                let res = certificate_client.verify_chain(&last_certificate.hash).await;
+
+                assert!(
+                    res.is_err(),
+                    "A tampered cached certificate must fail verification, not be trusted"
+                )
+            }
+
+            #[tokio::test]
+            async fn successful_verify_chain_commits_all_staged_certificates() {
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(3)
+                    .with_certificates_per_epoch(1)
+                    .build();
+                let last_certificate_hash = chain.first().unwrap().hash.clone();
+
+                let cache = Arc::new(MemoryCertificateVerifierCache::new(TimeDelta::hours(1)));
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        mock.expect_certificate_chain(chain.certificates_chained.clone())
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(cache.clone())
+                    .build();
+
                 certificate_client.verify_chain(&last_certificate_hash).await.unwrap();
 
-            assert_eq!(certificate.hash, last_certificate_hash);
+                let expected_hashes: HashSet<String> =
+                    chain.iter().map(|c| c.hash.clone()).collect();
+                assert_eq!(
+                    expected_hashes,
+                    cache.content().await.keys().cloned().collect::<HashSet<_>>()
+                );
+            }
+
+            #[tokio::test]
+            async fn failed_verify_chain_never_commits_any_staged_certificate() {
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(3)
+                    .with_certificates_per_epoch(1)
+                    .with_certificate_chaining_method(CertificateChainingMethod::Sequential)
+                    .with_standard_certificate_processor(&|certificate, context| {
+                        let mut certificate = certificate;
+                        if !context.is_last_certificate() {
+                            certificate.epoch += 2;
+                        }
+                        certificate
+                    })
+                    .build();
+                let last_certificate_hash = chain.first().unwrap().hash.clone();
+
+                let cache = Arc::new(MemoryCertificateVerifierCache::new(TimeDelta::hours(1)));
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        mock.expect_certificate_chain(chain.certificates_chained.clone())
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(cache.clone())
+                    .build();
+
+                certificate_client
+                    .verify_chain(&last_certificate_hash)
+                    .await
+                    .expect_err("chain should fail due to the tampered certificates");
+
+                assert_eq!(
+                    HashSet::new(),
+                    cache.content().await.keys().cloned().collect::<HashSet<_>>()
+                );
+            }
+
+            #[tokio::test]
+            async fn verifies_cached_certificates_down_to_genesis() {
+                // Scenario:
+                // | Certificate | epoch |         Parent | Cached? | Fetched from network? |
+                // |     [index] |       |                |         |                       |
+                // |------------:|------:|---------------:|---------|-----------------------|
+                // |     n°6 [0] |     3 |            n°5 | No      | Yes                   |
+                // |     n°5 [1] |     3 |            n°4 | No      | Yes                   |
+                // |     n°4 [2] |     2 |            n°3 | Yes     | No                    |
+                // |     n°3 [3] |     2 |            n°2 | Yes     | No                    |
+                // |     n°2 [4] |     2 |            n°1 | No      | Yes                   |
+                // |     n°1 [5] |     1 | None (genesis) | Yes     | No                    |
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(6)
+                    .with_certificates_per_epoch(3)
+                    .with_certificate_chaining_method(CertificateChainingMethod::Sequential)
+                    .build();
+                let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(3))
+                    .with_items_from_chain([&chain[2], &chain[3], &chain[5]]);
+                let feedback_receiver = Arc::new(StackFeedbackReceiver::new());
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        mock.expect_certificate_chain(vec![
+                            chain[0].clone(),
+                            chain[1].clone(),
+                            chain[4].clone(),
+                        ])
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(Arc::new(cache))
+                    .with_verifier_cache_mode(CertificateVerifierCacheMode::FullVerification)
+                    .add_feedback_receiver(feedback_receiver.clone())
+                    .build();
+
+                certificate_client.verify_chain(&chain[0].hash).await.unwrap();
+
+                let events = feedback_receiver.stacked_events();
+                let id = events[0].event_id();
+                assert_eq!(
+                    vec![
+                        MithrilEvent::CertificateChainValidationStarted {
+                            certificate_chain_validation_id: id.to_string(),
+                        },
+                        certificate_validated_event(id, &chain[0]),
+                        certificate_validated_event(id, &chain[1]),
+                        certificate_fetched_from_cache_event(id, &chain[2]),
+                        certificate_fetched_from_cache_event(id, &chain[3]),
+                        certificate_validated_event(id, &chain[4]),
+                        certificate_fetched_from_cache_event(id, &chain[5]),
+                        MithrilEvent::CertificateChainValidated {
+                            certificate_chain_validation_id: id.to_string(),
+                        },
+                    ],
+                    events
+                );
+            }
         }
 
-        #[tokio::test]
-        async fn cached_certificate_are_verified() {
-            let chain = CertificateChainBuilder::new()
-                .with_total_certificates(2)
-                .with_certificates_per_epoch(1)
-                // Note: `CertificateChainingMethod::ToMasterCertificate` link certificate based on
-                // their epoch, which conflicts with the epoch tempering below
-                .with_certificate_chaining_method(CertificateChainingMethod::Sequential)
-                .with_genesis_certificate_processor(&|certificate, _context, _signer| {
-                    let mut certificate = certificate;
-                    certificate.epoch += 2;
-                    certificate
-                })
-                .build();
-            let last_certificate = chain.first().unwrap();
-            let genesis_certificate = chain.last().unwrap();
+        mod early_stop_verification {
+            use chrono::Utc;
 
-            // All certificates are cached except the last two (to cross an epoch boundary) and the genesis
-            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(3))
-                .with_items_from_chain([genesis_certificate]);
+            use super::*;
 
-            let certificate_client = CertificateClientTestBuilder::default()
-                .config_aggregator_requester_mock(|mock| {
-                    // For now the first certificate is always fetched from network
-                    mock.expect_certificate(last_certificate.clone(), 1);
-                })
-                .with_genesis_verification_key(ed25519_verification_key_hex(
-                    &chain.genesis_verifier,
-                ))
-                .with_verifier_cache(Arc::new(cache))
-                .build();
+            #[tokio::test]
+            async fn stops_at_the_first_cached_certificate() {
+                // Scenario:
+                // | Certificate | epoch |         Parent | Cached? | Fetched from network? | Verified? |
+                // |     [index] |       |                |         |                       |           |
+                // |------------:|------:|---------------:|---------|-----------------------|-----------|
+                // |     n°6 [0] |     3 |            n°5 | No      | Yes                   | Yes       |
+                // |     n°5 [1] |     3 |            n°4 | No      | Yes                   | Yes       |
+                // |     n°4 [2] |     2 |            n°3 | Yes     | No                    | No (stop) |
+                // |     n°3 [3] |     2 |            n°2 | Yes     | No                    | No        |
+                // |     n°2 [4] |     2 |            n°1 | No      | No                    | No        |
+                // |     n°1 [5] |     1 | None (genesis) | Yes     | No                    | No        |
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(6)
+                    .with_certificates_per_epoch(3)
+                    .with_certificate_chaining_method(CertificateChainingMethod::Sequential)
+                    .build();
+                let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(3))
+                    .with_items_from_chain([&chain[2], &chain[3], &chain[5]]);
+                let feedback_receiver = Arc::new(StackFeedbackReceiver::new());
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        mock.expect_certificate_chain(vec![chain[0].clone(), chain[1].clone()])
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(Arc::new(cache))
+                    .with_verifier_cache_mode(CertificateVerifierCacheMode::EarlyStopVerification)
+                    .add_feedback_receiver(feedback_receiver.clone())
+                    .build();
 
-            let res = certificate_client.verify_chain(&last_certificate.hash).await;
+                certificate_client.verify_chain(&chain[0].hash).await.unwrap();
 
-            assert!(
-                res.is_err(),
-                "A tampered cached certificate must fail verification, not be trusted"
-            )
-        }
+                let events = feedback_receiver.stacked_events();
+                let id = events[0].event_id();
+                assert_eq!(
+                    vec![
+                        MithrilEvent::CertificateChainValidationStarted {
+                            certificate_chain_validation_id: id.to_string(),
+                        },
+                        certificate_validated_event(id, &chain[0]),
+                        certificate_validated_event(id, &chain[1]),
+                        certificate_fetched_from_cache_event(id, &chain[2]),
+                        MithrilEvent::CertificateChainValidated {
+                            certificate_chain_validation_id: id.to_string(),
+                        },
+                    ],
+                    events
+                );
+            }
 
-        #[tokio::test]
-        async fn successful_verify_chain_commits_all_staged_certificates() {
-            let chain = CertificateChainBuilder::new()
-                .with_total_certificates(3)
-                .with_certificates_per_epoch(1)
-                .build();
-            let last_certificate_hash = chain.first().unwrap().hash.clone();
+            #[tokio::test]
+            async fn fails_if_the_certificate_does_not_chain_onto_the_cached_certificate() {
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(3)
+                    .with_certificates_per_epoch(1)
+                    .build();
+                let genesis_certificate = chain.last().unwrap();
+                let mut unchained_certificate = Certificate {
+                    previous_hash: genesis_certificate.hash.clone(),
+                    ..chain[0].clone()
+                };
+                unchained_certificate.hash = unchained_certificate.try_compute_hash().unwrap();
+                let cache = Arc::new(
+                    MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                        .with_items_from_chain([genesis_certificate]),
+                );
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        mock.expect_certificate_chain(vec![unchained_certificate.clone()])
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(cache.clone())
+                    .with_verifier_cache_mode(CertificateVerifierCacheMode::EarlyStopVerification)
+                    .build();
 
-            let cache = Arc::new(MemoryCertificateVerifierCache::new(TimeDelta::hours(1)));
-            let certificate_client = CertificateClientTestBuilder::default()
-                .config_aggregator_requester_mock(|mock| {
-                    mock.expect_certificate_chain(chain.certificates_chained.clone())
-                })
-                .with_genesis_verification_key(ed25519_verification_key_hex(
-                    &chain.genesis_verifier,
-                ))
-                .with_verifier_cache(cache.clone())
-                .build();
+                let error = certificate_client
+                    .verify_chain(&unchained_certificate.hash)
+                    .await
+                    .expect_err("a certificate that does not chain onto the cached certificate must be rejected");
+                assert!(
+                    matches!(
+                        error.root_cause().downcast_ref::<CertificateVerifierError>(),
+                        Some(CertificateVerifierError::CertificateChainMissingEpoch)
+                    ),
+                    "unexpected error: {error:?}"
+                );
 
-            certificate_client.verify_chain(&last_certificate_hash).await.unwrap();
+                assert_eq!(
+                    HashSet::from([genesis_certificate.hash.clone()]),
+                    cache.content().await.keys().cloned().collect::<HashSet<_>>()
+                );
+            }
 
-            let expected_hashes: HashSet<String> = chain.iter().map(|c| c.hash.clone()).collect();
-            assert_eq!(
-                expected_hashes,
-                cache.content().await.keys().cloned().collect::<HashSet<_>>()
-            );
-        }
+            #[tokio::test]
+            async fn commits_the_verified_certificates_when_stopping_early() {
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(6)
+                    .with_certificates_per_epoch(3)
+                    .with_certificate_chaining_method(CertificateChainingMethod::Sequential)
+                    .build();
+                let cache = Arc::new(
+                    MemoryCertificateVerifierCache::new(TimeDelta::hours(3))
+                        .with_items_from_chain([&chain[2], &chain[3], &chain[5]]),
+                );
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        mock.expect_certificate_chain(vec![chain[0].clone(), chain[1].clone()])
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(cache.clone())
+                    .with_verifier_cache_mode(CertificateVerifierCacheMode::EarlyStopVerification)
+                    .build();
 
-        #[tokio::test]
-        async fn failed_verify_chain_never_commits_any_staged_certificate() {
-            let chain = CertificateChainBuilder::new()
-                .with_total_certificates(3)
-                .with_certificates_per_epoch(1)
-                .with_certificate_chaining_method(CertificateChainingMethod::Sequential)
-                .with_standard_certificate_processor(&|certificate, context| {
-                    let mut certificate = certificate;
-                    if !context.is_last_certificate() {
-                        certificate.epoch += 2;
-                    }
-                    certificate
-                })
-                .build();
-            let last_certificate_hash = chain.first().unwrap().hash.clone();
+                certificate_client.verify_chain(&chain[0].hash).await.unwrap();
 
-            let cache = Arc::new(MemoryCertificateVerifierCache::new(TimeDelta::hours(1)));
-            let certificate_client = CertificateClientTestBuilder::default()
-                .config_aggregator_requester_mock(|mock| {
-                    mock.expect_certificate_chain(chain.certificates_chained.clone())
-                })
-                .with_genesis_verification_key(ed25519_verification_key_hex(
-                    &chain.genesis_verifier,
-                ))
-                .with_verifier_cache(cache.clone())
-                .build();
+                let expected_hashes: HashSet<String> =
+                    [&chain[0], &chain[1], &chain[2], &chain[3], &chain[5]]
+                        .into_iter()
+                        .map(|certificate| certificate.hash.clone())
+                        .collect();
+                assert_eq!(
+                    expected_hashes,
+                    cache.content().await.keys().cloned().collect::<HashSet<_>>()
+                );
+                assert!(cache.staged_batch_ids().await.is_empty());
+            }
 
-            certificate_client
-                .verify_chain(&last_certificate_hash)
-                .await
-                .expect_err("chain should fail due to the tampered certificates");
+            #[tokio::test]
+            async fn walks_down_to_genesis_on_a_cold_cache() {
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(3)
+                    .with_certificates_per_epoch(1)
+                    .build();
+                let cache = Arc::new(MemoryCertificateVerifierCache::new(TimeDelta::hours(1)));
+                let feedback_receiver = Arc::new(StackFeedbackReceiver::new());
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        mock.expect_certificate_chain(chain.certificates_chained.clone())
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(cache.clone())
+                    .with_verifier_cache_mode(CertificateVerifierCacheMode::EarlyStopVerification)
+                    .add_feedback_receiver(feedback_receiver.clone())
+                    .build();
 
-            assert_eq!(
-                HashSet::new(),
-                cache.content().await.keys().cloned().collect::<HashSet<_>>()
-            );
+                certificate_client.verify_chain(&chain[0].hash).await.unwrap();
+
+                let events = feedback_receiver.stacked_events();
+                let id = events[0].event_id();
+                assert_eq!(
+                    vec![
+                        MithrilEvent::CertificateChainValidationStarted {
+                            certificate_chain_validation_id: id.to_string(),
+                        },
+                        certificate_validated_event(id, &chain[0]),
+                        certificate_validated_event(id, &chain[1]),
+                        certificate_validated_event(id, &chain[2]),
+                        MithrilEvent::CertificateChainValidated {
+                            certificate_chain_validation_id: id.to_string(),
+                        },
+                    ],
+                    events
+                );
+                let expected_hashes: HashSet<String> =
+                    chain.iter().map(|certificate| certificate.hash.clone()).collect();
+                assert_eq!(
+                    expected_hashes,
+                    cache.content().await.keys().cloned().collect::<HashSet<_>>()
+                );
+            }
+
+            #[tokio::test]
+            async fn does_not_stop_at_an_expired_cached_certificate() {
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(2)
+                    .with_certificates_per_epoch(1)
+                    .build();
+                let genesis_certificate = chain.last().unwrap();
+                let cache = Arc::new(
+                    MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                        .with_items_from_chain([genesis_certificate]),
+                );
+                cache
+                    .overwrite_expiration_date(
+                        &genesis_certificate.hash,
+                        Utc::now() - TimeDelta::hours(1),
+                    )
+                    .await;
+                let feedback_receiver = Arc::new(StackFeedbackReceiver::new());
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        mock.expect_certificate_chain(chain.certificates_chained.clone())
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(cache)
+                    .with_verifier_cache_mode(CertificateVerifierCacheMode::EarlyStopVerification)
+                    .add_feedback_receiver(feedback_receiver.clone())
+                    .build();
+
+                certificate_client.verify_chain(&chain[0].hash).await.unwrap();
+
+                let events = feedback_receiver.stacked_events();
+                let id = events[0].event_id();
+                assert_eq!(
+                    vec![
+                        MithrilEvent::CertificateChainValidationStarted {
+                            certificate_chain_validation_id: id.to_string(),
+                        },
+                        certificate_validated_event(id, &chain[0]),
+                        certificate_validated_event(id, genesis_certificate),
+                        MithrilEvent::CertificateChainValidated {
+                            certificate_chain_validation_id: id.to_string(),
+                        },
+                    ],
+                    events
+                );
+            }
+
+            #[tokio::test]
+            async fn downloads_and_verifies_a_cached_certificate_whose_content_does_not_match_its_hash()
+             {
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(2)
+                    .with_certificates_per_epoch(1)
+                    .build();
+                let genesis_certificate = chain.last().unwrap();
+                let tampered_genesis_certificate = Certificate {
+                    signed_message: "tampered".to_string(),
+                    ..genesis_certificate.clone()
+                };
+                let cache = Arc::new(
+                    MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                        .with_items_from_chain([&tampered_genesis_certificate]),
+                );
+                let feedback_receiver = Arc::new(StackFeedbackReceiver::new());
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        mock.expect_certificate_chain(chain.certificates_chained.clone())
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(cache.clone())
+                    .with_verifier_cache_mode(CertificateVerifierCacheMode::EarlyStopVerification)
+                    .add_feedback_receiver(feedback_receiver.clone())
+                    .build();
+
+                certificate_client.verify_chain(&chain[0].hash).await.unwrap();
+
+                let events = feedback_receiver.stacked_events();
+                let id = events[0].event_id();
+                assert_eq!(
+                    vec![
+                        MithrilEvent::CertificateChainValidationStarted {
+                            certificate_chain_validation_id: id.to_string(),
+                        },
+                        certificate_validated_event(id, &chain[0]),
+                        certificate_validated_event(id, genesis_certificate),
+                        MithrilEvent::CertificateChainValidated {
+                            certificate_chain_validation_id: id.to_string(),
+                        },
+                    ],
+                    events
+                );
+                assert_eq!(
+                    Some(genesis_certificate.clone().try_into().unwrap()),
+                    cache.content().await.get(&genesis_certificate.hash).cloned()
+                );
+            }
+
+            #[tokio::test]
+            async fn stops_at_a_cached_certificate_several_epochs_earlier() {
+                // Scenario:
+                // | Certificate | epoch |         Parent | Cached? | Fetched from network? | Verified? |
+                // |     [index] |       |                |         |                       |           |
+                // |------------:|------:|---------------:|---------|-----------------------|-----------|
+                // |     n°5 [0] |     5 |            n°4 | No      | Yes                   | Yes       |
+                // |     n°4 [1] |     4 |            n°3 | No      | Yes                   | Yes       |
+                // |     n°3 [2] |     3 |            n°2 | No      | Yes                   | Yes       |
+                // |     n°2 [3] |     2 |            n°1 | Yes     | No                    | No (stop) |
+                // |     n°1 [4] |     1 | None (genesis) | Yes     | No                    | No        |
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(5)
+                    .with_certificates_per_epoch(1)
+                    .build();
+                let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(3))
+                    .with_items_from_chain([&chain[3], &chain[4]]);
+                let feedback_receiver = Arc::new(StackFeedbackReceiver::new());
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        mock.expect_certificate_chain(vec![
+                            chain[0].clone(),
+                            chain[1].clone(),
+                            chain[2].clone(),
+                        ])
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(Arc::new(cache))
+                    .with_verifier_cache_mode(CertificateVerifierCacheMode::EarlyStopVerification)
+                    .add_feedback_receiver(feedback_receiver.clone())
+                    .build();
+
+                certificate_client.verify_chain(&chain[0].hash).await.unwrap();
+
+                let events = feedback_receiver.stacked_events();
+                let id = events[0].event_id();
+                assert_eq!(
+                    vec![
+                        MithrilEvent::CertificateChainValidationStarted {
+                            certificate_chain_validation_id: id.to_string(),
+                        },
+                        certificate_validated_event(id, &chain[0]),
+                        certificate_validated_event(id, &chain[1]),
+                        certificate_validated_event(id, &chain[2]),
+                        certificate_fetched_from_cache_event(id, &chain[3]),
+                        MithrilEvent::CertificateChainValidated {
+                            certificate_chain_validation_id: id.to_string(),
+                        },
+                    ],
+                    events
+                );
+            }
+
+            #[tokio::test]
+            async fn commits_the_certificates_verified_over_several_epochs_before_stopping() {
+                let chain = CertificateChainBuilder::new()
+                    .with_total_certificates(5)
+                    .with_certificates_per_epoch(1)
+                    .build();
+                let cache = Arc::new(
+                    MemoryCertificateVerifierCache::new(TimeDelta::hours(3))
+                        .with_items_from_chain([&chain[3], &chain[4]]),
+                );
+                let certificate_client = CertificateClientTestBuilder::default()
+                    .config_aggregator_requester_mock(|mock| {
+                        mock.expect_certificate_chain(vec![
+                            chain[0].clone(),
+                            chain[1].clone(),
+                            chain[2].clone(),
+                        ])
+                    })
+                    .with_genesis_verification_key(ed25519_verification_key_hex(
+                        &chain.genesis_verifier,
+                    ))
+                    .with_verifier_cache(cache.clone())
+                    .with_verifier_cache_mode(CertificateVerifierCacheMode::EarlyStopVerification)
+                    .build();
+
+                certificate_client.verify_chain(&chain[0].hash).await.unwrap();
+
+                let expected_hashes: HashSet<String> =
+                    chain.iter().map(|certificate| certificate.hash.clone()).collect();
+                assert_eq!(
+                    expected_hashes,
+                    cache.content().await.keys().cloned().collect::<HashSet<_>>()
+                );
+                assert!(cache.staged_batch_ids().await.is_empty());
+            }
         }
     }
 }
