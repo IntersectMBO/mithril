@@ -33,6 +33,33 @@ function add_finished_div() {
   document.body.appendChild(div);
 }
 
+const mithril_events = [];
+const mithril_events_channel = new BroadcastChannel("mithril-client");
+mithril_events_channel.onmessage = (message) => mithril_events.push(message.data);
+
+function count_events(event_type) {
+  return mithril_events.filter((event) => event.type === event_type).length;
+}
+
+async function wait_for_events(event_type, expected_count) {
+  const deadline = Date.now() + 10_000;
+  while (count_events(event_type) < expected_count) {
+    if (Date.now() > deadline) {
+      throw new Error(`Timeout waiting for ${expected_count} '${event_type}' events`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+async function verify_certificate_chain_and_count_cache_hits(certificate_hash) {
+  const chain_validations_before = count_events("CertificateChainValidated");
+  const cache_hits_before = count_events("CertificateFetchedFromCache");
+  const certificate = await client.verify_certificate_chain(certificate_hash);
+  await wait_for_events("CertificateChainValidated", chain_validations_before + 1);
+  const cache_hits = count_events("CertificateFetchedFromCache") - cache_hits_before;
+  return { certificate, cache_hits };
+}
+
 await initMithrilClient();
 const aggregator_endpoint = process.env.AGGREGATOR_ENDPOINT;
 const genesis_verification_key = process.env.GENESIS_VERIFICATION_KEY;
@@ -51,7 +78,15 @@ await run_test("constructor", test_number, async () => {
     // The following option activates the unstable features of the client.
     // Unstable features will trigger an error if this option is not set.
     unstable: true,
+    enable_certificate_chain_verification_cache: true,
   });
+});
+
+test_number++;
+await run_test("is_certificate_verifier_cache_enabled", test_number, async () => {
+  if (!(await client.is_certificate_verifier_cache_enabled())) {
+    throw new Error("The certificate verifier cache should be enabled");
+  }
 });
 
 if (aggregator_capabilities.includes("CardanoBlocksTransactions")) {
@@ -206,6 +241,24 @@ test_number++;
 await run_test("verify_certificate_chain", test_number, async () => {
   last_certificate_from_chain = await client.verify_certificate_chain(certificate.hash);
   console.log("last_certificate_from_chain", last_certificate_from_chain);
+});
+
+test_number++;
+await run_test("verify_certificate_chain_from_cache", test_number, async () => {
+  const { cache_hits } = await verify_certificate_chain_and_count_cache_hits(certificate.hash);
+  if (cache_hits === 0) {
+    throw new Error("No certificate was fetched from the cache");
+  }
+  console.log("certificates fetched from the cache", cache_hits);
+});
+
+test_number++;
+await run_test("reset_certificate_verifier_cache", test_number, async () => {
+  await client.reset_certificate_verifier_cache();
+  const { cache_hits } = await verify_certificate_chain_and_count_cache_hits(certificate.hash);
+  if (cache_hits > 0) {
+    throw new Error(`${cache_hits} certificates were fetched from the cache after its reset`);
+  }
 });
 
 let mithril_stake_distribution_message;
