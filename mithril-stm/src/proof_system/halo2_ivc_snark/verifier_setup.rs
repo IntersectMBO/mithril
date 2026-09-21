@@ -317,7 +317,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires SRS download from the internet"]
+    #[ignore = "requires the production SRS in the local cache, see the mithril-stm README"]
     fn ivc_verifier_params_match_trusted_srs() {
         let srs = TrustedSetupProvider::default()
             .get_trusted_setup_parameters()

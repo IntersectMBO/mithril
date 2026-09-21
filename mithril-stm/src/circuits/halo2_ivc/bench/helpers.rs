@@ -14,7 +14,7 @@
 //! and a **warm start** (load from the on-disk cache); the recursive circuit keys are the dominant
 //! setup cost.
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use anyhow::{anyhow, ensure};
 use group::Group;
@@ -50,7 +50,7 @@ use crate::{
             types::{CertificateProofBytes, IvcProofBytes, ProtocolMessagePreimage},
         },
         key_provider::KeyProvider,
-        trusted_setup::TrustedSetupProvider,
+        trusted_setup::{NoTrustedSetupDownload, TrustedSetupProvider},
     },
     proof_system::halo2_ivc_snark::{
         IvcProof, IvcProverInput, IvcProverSetup, IvcRollingState, IvcVerifierSetup,
@@ -558,9 +558,8 @@ impl IvcBenchEnv {
     /// same downsized end state, with no network dependency. Precondition: a prior `measure_srs_cold_start`
     /// (or any generation) has populated `cache_dir`.
     pub fn measure_srs_warm_start(cache_dir: &Path) -> StmResult<ParamsKZG<Bls12>> {
-        let mut srs =
-            TrustedSetupProvider::new(cache_dir, "", "", std::time::Duration::from_secs(600))
-                .get_trusted_setup_parameters()?;
+        let mut srs = TrustedSetupProvider::new(cache_dir, "", Arc::new(NoTrustedSetupDownload))
+            .get_trusted_setup_parameters()?;
         srs.downsize(RECURSIVE_CIRCUIT_DEGREE);
         Ok(srs)
     }

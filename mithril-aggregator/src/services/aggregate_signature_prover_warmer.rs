@@ -8,7 +8,9 @@ use anyhow::Context;
 use async_trait::async_trait;
 use slog::{Logger, info, warn};
 
-use mithril_common::crypto_helper::{ProtocolParameters, SnarkProverSetupWarmer};
+use mithril_common::crypto_helper::{
+    ProtocolParameters, SnarkProverSetupWarmer, TrustedSetupDownloader, TrustedSetupProvider,
+};
 use mithril_common::logging::LoggerExtensions;
 use mithril_common::{AggregateSignatureType, StdResult};
 use mithril_protocol_config::interface::MithrilNetworkConfigurationProvider;
@@ -23,11 +25,13 @@ pub trait AggregateSignatureProverWarmer: Send + Sync {
 }
 
 /// Warms up the SNARK prover setups on a thread of their own, into the process-wide cache the
-/// provers read, so a shutdown never waits for them.
+/// provers read, so a shutdown never waits for them. The SRS of the trusted setup is downloaded
+/// on that thread when it is missing, the provers never downloading it themselves.
 pub struct SnarkAggregateSignatureProverWarmer {
     aggregate_signature_type: AggregateSignatureType,
     ticker_service: Arc<dyn TickerService>,
     network_configuration_provider: Arc<dyn MithrilNetworkConfigurationProvider>,
+    trusted_setup_downloader: Arc<dyn TrustedSetupDownloader>,
     logger: Logger,
 }
 
@@ -37,12 +41,14 @@ impl SnarkAggregateSignatureProverWarmer {
         aggregate_signature_type: AggregateSignatureType,
         ticker_service: Arc<dyn TickerService>,
         network_configuration_provider: Arc<dyn MithrilNetworkConfigurationProvider>,
+        trusted_setup_downloader: Arc<dyn TrustedSetupDownloader>,
         logger: Logger,
     ) -> Self {
         Self {
             aggregate_signature_type,
             ticker_service,
             network_configuration_provider,
+            trusted_setup_downloader,
             logger: logger.new_with_component_name::<Self>(),
         }
     }
@@ -85,11 +91,17 @@ impl AggregateSignatureProverWarmer for SnarkAggregateSignatureProverWarmer {
             "aggregate_signature_type" => %self.aggregate_signature_type
         );
         let aggregate_signature_type = self.aggregate_signature_type;
+        let trusted_setup_provider =
+            TrustedSetupProvider::with_downloader(self.trusted_setup_downloader.clone());
         let logger = self.logger.clone();
 
         thread::spawn(move || {
             let started_at = Instant::now();
-            match SnarkProverSetupWarmer::warm(&protocol_parameters, aggregate_signature_type) {
+            match SnarkProverSetupWarmer::warm(
+                &protocol_parameters,
+                aggregate_signature_type,
+                &trusted_setup_provider,
+            ) {
                 Ok(()) => info!(
                     logger, "Aggregate signature prover warmed up";
                     "elapsed_seconds" => started_at.elapsed().as_secs()
@@ -109,6 +121,7 @@ impl AggregateSignatureProverWarmer for SnarkAggregateSignatureProverWarmer {
 mod tests {
     use mithril_cardano_node_chain::test::double::FakeChainObserver;
     use mithril_cardano_node_internal_database::test::double::DumbImmutableFileObserver;
+    use mithril_common::crypto_helper::NoTrustedSetupDownload;
     use mithril_common::entities::{self, Epoch, TimePoint};
     use mithril_common::test::double::{Dummy, fake_data};
     use mithril_protocol_config::model::MithrilNetworkConfigurationForEpoch;
@@ -151,6 +164,7 @@ mod tests {
             AggregateSignatureType::Snark,
             ticker_service_with_current_epoch(Some(Epoch(3))),
             provider_aggregating_with(protocol_parameters.clone()),
+            Arc::new(NoTrustedSetupDownload),
             TestLogger::stdout(),
         );
 
@@ -168,6 +182,7 @@ mod tests {
             AggregateSignatureType::Snark,
             ticker_service_with_current_epoch(None),
             provider_aggregating_with(fake_data::protocol_parameters()),
+            Arc::new(NoTrustedSetupDownload),
             TestLogger::stdout(),
         );
 

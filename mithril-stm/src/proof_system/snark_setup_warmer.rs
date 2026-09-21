@@ -6,6 +6,7 @@
 
 use crate::{
     AggregateSignatureType, MERKLE_TREE_DEPTH_FOR_SNARK, Parameters, StmResult,
+    circuits::trusted_setup::TrustedSetupProvider,
     proof_system::snark_setup_cache::SnarkProverSetupReuse,
 };
 
@@ -18,21 +19,31 @@ impl SnarkProverSetupWarmer {
     /// certificate before folding it, so both setups are materialized for it. Nothing to
     /// materialize for a concatenation aggregate signature.
     ///
+    /// The SRS comes from `trusted_setup_provider`: this is the only place a node downloads it,
+    /// since the provers only read the local cache.
+    ///
     /// The setups are kept resident, since the process calling this is the one that will aggregate.
     pub fn warm(
         parameters: &Parameters,
         aggregate_signature_type: AggregateSignatureType,
+        trusted_setup_provider: &TrustedSetupProvider,
     ) -> StmResult<()> {
         match aggregate_signature_type {
             AggregateSignatureType::Concatenation => (),
             AggregateSignatureType::Snark => {
-                SnarkProverSetupReuse::Enabled
-                    .certificate_setup(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?;
+                SnarkProverSetupReuse::Enabled.certificate_setup(
+                    parameters,
+                    MERKLE_TREE_DEPTH_FOR_SNARK,
+                    trusted_setup_provider,
+                )?;
             }
             AggregateSignatureType::IvcSnark => {
-                SnarkProverSetupReuse::Enabled
-                    .certificate_setup(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?;
-                SnarkProverSetupReuse::Enabled.ivc_setup(parameters)?;
+                SnarkProverSetupReuse::Enabled.certificate_setup(
+                    parameters,
+                    MERKLE_TREE_DEPTH_FOR_SNARK,
+                    trusted_setup_provider,
+                )?;
+                SnarkProverSetupReuse::Enabled.ivc_setup(parameters, trusted_setup_provider)?;
             }
         }
 

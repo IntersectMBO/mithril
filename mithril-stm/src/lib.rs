@@ -74,6 +74,12 @@ pub use hash::poseidon::MidnightPoseidonDigest;
 pub use circuits::{CIRCUIT_VERIFICATION_KEY_DIGEST_SIZE, CircuitVerificationKeyDigest};
 
 #[cfg(feature = "future_snark")]
+pub use circuits::trusted_setup::{
+    MIDNIGHT_SRS_URL_K22, NoTrustedSetupDownload, TrustedSetupDownloader, TrustedSetupError,
+    TrustedSetupProvider,
+};
+
+#[cfg(feature = "future_snark")]
 pub use proof_system::{
     AggregateVerificationKeyForSnark, MERKLE_TREE_DEPTH_FOR_SNARK, SnarkProof,
     SnarkProverSetupWarmer, SnarkVerifierData,

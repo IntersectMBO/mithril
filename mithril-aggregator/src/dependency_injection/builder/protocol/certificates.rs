@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use mithril_common::certificate_chain::{CertificateVerifier, MithrilCertificateVerifier};
 use mithril_common::crypto_helper::GenesisVerifier;
+#[cfg(feature = "future_snark")]
+use mithril_common::crypto_helper::NoTrustedSetupDownload;
 
 use crate::database::repository::{BufferedSingleSignatureRepository, SingleSignatureRepository};
 use crate::dependency_injection::{DependenciesBuilder, DependenciesBuilderError, Result};
@@ -99,6 +101,7 @@ impl DependenciesBuilder {
             self.configuration.aggregate_signature_type(),
             self.get_ticker_service().await?,
             self.get_mithril_network_configuration_provider().await?,
+            Arc::new(NoTrustedSetupDownload),
             self.root_logger(),
         );
 

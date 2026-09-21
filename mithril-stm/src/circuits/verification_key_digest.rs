@@ -89,7 +89,10 @@ impl CircuitVerificationKeyDigest {
     }
 
     /// Compute the digest of the certificate circuit verification key for the given protocol
-    /// parameters, deriving the key from the trusted setup when it is not cached yet.
+    /// parameters, deriving the key from the trusted setup read in the local cache.
+    ///
+    /// The SRS is never downloaded here: a caller whose cache is empty gets
+    /// [`TrustedSetupError::DownloadUnavailable`](crate::TrustedSetupError::DownloadUnavailable).
     ///
     /// The key is derived through the same prover the clerk uses to aggregate signatures, so the
     /// digest matches the one carried by the certificates produced with these parameters.

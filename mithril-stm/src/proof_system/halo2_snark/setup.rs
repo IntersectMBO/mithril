@@ -46,12 +46,15 @@ pub struct SnarkProverSetup {
 }
 
 impl SnarkProverSetup {
-    /// Builds the production trusted setup provider and certificate key provider, then delegates to
-    /// [`Self::load`].
-    pub(crate) fn try_new(params: &Parameters, merkle_tree_depth: u32) -> StmResult<Self> {
-        let trusted_setup_provider = TrustedSetupProvider::default();
+    /// Builds the production certificate key provider, then delegates to [`Self::load`] with
+    /// `trusted_setup_provider`.
+    pub(crate) fn try_new(
+        params: &Parameters,
+        merkle_tree_depth: u32,
+        trusted_setup_provider: &TrustedSetupProvider,
+    ) -> StmResult<Self> {
         let provider = KeyProvider::for_non_recursive_circuit(params, merkle_tree_depth)?;
-        Self::load(&trusted_setup_provider, &provider)
+        Self::load(trusted_setup_provider, &provider)
     }
 
     /// Derives the certificate setup from a trusted setup provider and a certificate key provider,
@@ -235,7 +238,7 @@ mod test {
         use crate::proof_system::halo2_snark::SnarkVerifierSetup;
 
         #[test]
-        #[ignore = "requires SRS download from the internet"]
+        #[ignore = "requires the production SRS in the local cache, see the mithril-stm README"]
         fn verifier_setup_matches_trusted_srs() {
             let setup = SnarkVerifierSetup::try_new().unwrap();
             let srs = TrustedSetupProvider::default()

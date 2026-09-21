@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::{
     MERKLE_TREE_DEPTH_FOR_SNARK, Parameters, StmResult,
+    circuits::trusted_setup::TrustedSetupProvider,
     proof_system::{halo2_ivc_snark::IvcProverSetup, halo2_snark::SnarkProverSetup},
 };
 
@@ -99,29 +100,41 @@ pub(crate) enum SnarkProverSetupReuse {
 
 impl SnarkProverSetupReuse {
     /// Certificate-circuit setup for `parameters` and `merkle_tree_depth`, from the process cache
-    /// when reuse is enabled and freshly loaded otherwise.
+    /// when reuse is enabled and freshly loaded otherwise, its SRS coming from
+    /// `trusted_setup_provider`.
     pub(crate) fn certificate_setup(
         &self,
         parameters: &Parameters,
         merkle_tree_depth: u32,
+        trusted_setup_provider: &TrustedSetupProvider,
     ) -> StmResult<Arc<SnarkProverSetup>> {
         match self {
-            Self::Enabled => {
-                SnarkProverSetupCache::certificate_setup(parameters, merkle_tree_depth)
-            }
+            Self::Enabled => SnarkProverSetupCache::certificate_setup(
+                parameters,
+                merkle_tree_depth,
+                trusted_setup_provider,
+            ),
             Self::Disabled => Ok(Arc::new(SnarkProverSetup::try_new(
                 parameters,
                 merkle_tree_depth,
+                trusted_setup_provider,
             )?)),
         }
     }
 
     /// IVC setup for `parameters`, from the process cache when reuse is enabled and freshly loaded
-    /// otherwise.
-    pub(crate) fn ivc_setup(&self, parameters: &Parameters) -> StmResult<Arc<IvcProverSetup>> {
+    /// otherwise, its SRS coming from `trusted_setup_provider`.
+    pub(crate) fn ivc_setup(
+        &self,
+        parameters: &Parameters,
+        trusted_setup_provider: &TrustedSetupProvider,
+    ) -> StmResult<Arc<IvcProverSetup>> {
         match self {
-            Self::Enabled => SnarkProverSetupCache::ivc_setup(parameters),
-            Self::Disabled => Ok(Arc::new(IvcProverSetup::try_new(parameters)?)),
+            Self::Enabled => SnarkProverSetupCache::ivc_setup(parameters, trusted_setup_provider),
+            Self::Disabled => Ok(Arc::new(IvcProverSetup::try_new(
+                parameters,
+                trusted_setup_provider,
+            )?)),
         }
     }
 }
@@ -134,18 +147,22 @@ impl SnarkProverSetupCache {
     fn certificate_setup(
         parameters: &Parameters,
         merkle_tree_depth: u32,
+        trusted_setup_provider: &TrustedSetupProvider,
     ) -> StmResult<Arc<SnarkProverSetup>> {
         CERTIFICATE_SETUP.get_or_load(
             SetupCacheKey::try_new(parameters, merkle_tree_depth)?,
-            || SnarkProverSetup::try_new(parameters, merkle_tree_depth),
+            || SnarkProverSetup::try_new(parameters, merkle_tree_depth, trusted_setup_provider),
         )
     }
 
     /// IVC setup for `parameters`, loaded once per process.
-    fn ivc_setup(parameters: &Parameters) -> StmResult<Arc<IvcProverSetup>> {
+    fn ivc_setup(
+        parameters: &Parameters,
+        trusted_setup_provider: &TrustedSetupProvider,
+    ) -> StmResult<Arc<IvcProverSetup>> {
         IVC_SETUP.get_or_load(
             SetupCacheKey::try_new(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?,
-            || IvcProverSetup::try_new(parameters),
+            || IvcProverSetup::try_new(parameters, trusted_setup_provider),
         )
     }
 }

@@ -79,10 +79,13 @@ pub(crate) struct IvcProverSetup {
 }
 
 impl IvcProverSetup {
-    /// Builds the production trusted setup provider and recursive key provider derived from
-    /// `parameters` and [`MERKLE_TREE_DEPTH_FOR_SNARK`], then delegates to [`Self::load`].
-    pub(crate) fn try_new(parameters: &Parameters) -> StmResult<Self> {
-        let trusted_setup_provider = TrustedSetupProvider::default();
+    /// Builds the production recursive key provider derived from `parameters` and
+    /// [`MERKLE_TREE_DEPTH_FOR_SNARK`], then delegates to [`Self::load`] with
+    /// `trusted_setup_provider`.
+    pub(crate) fn try_new(
+        parameters: &Parameters,
+        trusted_setup_provider: &TrustedSetupProvider,
+    ) -> StmResult<Self> {
         let certificate_key_provider =
             KeyProvider::for_non_recursive_circuit(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?;
         let recursive_key_provider = KeyProvider::for_recursive_circuit(
@@ -91,7 +94,7 @@ impl IvcProverSetup {
             MERKLE_TREE_DEPTH_FOR_SNARK,
         )?;
 
-        Self::load(&trusted_setup_provider, &recursive_key_provider)
+        Self::load(trusted_setup_provider, &recursive_key_provider)
     }
 
     /// Derives the full IVC setup around a single SRS loaded once.

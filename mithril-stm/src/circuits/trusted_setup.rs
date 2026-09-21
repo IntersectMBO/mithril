@@ -1,8 +1,8 @@
 use std::{
     fs::File,
     io::{BufReader, Write},
-    path::PathBuf,
-    time::Duration,
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use anyhow::Context;
@@ -24,8 +24,9 @@ pub(crate) const MIDNIGHT_SRS_HASH_K22: &str =
     "e8ad5eed936d657a0fb59d2a55ba19f81a3083bb3554ef88f464f5377e9b2c2f";
 /// Degree of the SRS the two hashes above identify: the largest circuit it can support.
 pub(crate) const MIDNIGHT_SRS_DEGREE: u8 = 22;
-/// Constant storing URL to download the SRS of degree 22 used to create proof in production
-const MIDNIGHT_SRS_URL_K22: &str = "https://srs.midnight.network/midnight-srs-2p22";
+/// URL of the SRS of degree 22 used to create proofs in production, which a proving node
+/// downloads through its [`TrustedSetupDownloader`].
+pub const MIDNIGHT_SRS_URL_K22: &str = "https://srs.midnight.network/midnight-srs-2p22";
 /// Constant holding the folder of the SRS file
 const MITHRIL_CIRCUIT_SRS_FOLDER: &str = "srs";
 /// Constant holding the filename of the SRS
@@ -39,37 +40,67 @@ pub enum TrustedSetupError {
         "The hash of the SRS file does not match the hard-coded value. Expected: {expected}, Computed hash: {computed}"
     )]
     VerifyHashFail { expected: String, computed: String },
+    /// The SRS file is missing locally and the provider has no download to fetch it
+    #[error("The SRS file is missing locally and no download is available to fetch it")]
+    DownloadUnavailable,
 }
 
-/// A structure to manage the trusted setup SRS. It stores the local path of the SRS file
-/// and information to download the file and verify integrity if it is missing.
+/// Fetches the bytes of the trusted setup SRS when it is missing locally.
+///
+/// [`TrustedSetupProvider`] keeps the whole orchestration of a verified, cached SRS and abstracts
+/// only the transport behind this trait: a proving node implements it over its own HTTP client,
+/// on a thread that may block for the whole download.
+#[cfg_attr(test, mockall::automock)]
+pub trait TrustedSetupDownloader: Send + Sync {
+    /// Downloads the SRS file and returns its bytes, which the provider verifies before storing.
+    fn download(&self) -> StmResult<Vec<u8>>;
+}
+
+/// The downloader of a process that never fetches the SRS, which is then only read from the local
+/// cache: the lazy proving path, where a download would block a runtime thread, and the nodes that
+/// never prove.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NoTrustedSetupDownload;
+
+impl TrustedSetupDownloader for NoTrustedSetupDownload {
+    fn download(&self) -> StmResult<Vec<u8>> {
+        Err(TrustedSetupError::DownloadUnavailable.into())
+    }
+}
+
+/// A structure to manage the trusted setup SRS. It stores the local path of the SRS file, the
+/// downloader fetching the file when it is missing and the hash verifying its integrity.
 pub struct TrustedSetupProvider {
     /// Path of the local SRS folder
     local_srs_folder_path: PathBuf,
     /// Expected hash of the downloaded SRS file
     srs_expected_hash: String,
-    /// URL where to download the SRS file if it is not present locally
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
-    url_to_download_srs: String,
-    /// The timeout limit when trying to download the SRS file
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
-    download_timeout_limit: Duration,
+    /// Downloader of the SRS file when it is not present locally
+    downloader: Arc<dyn TrustedSetupDownloader>,
 }
 
 impl TrustedSetupProvider {
     /// Create a new TrustedSetupProvider
-    pub fn new<P: Into<PathBuf>, S: Into<String>, U: Into<String>>(
+    pub fn new<P: Into<PathBuf>, S: Into<String>>(
         local_srs_folder_path: P,
         srs_expected_hash: S,
-        url_to_download_srs: U,
-        download_timeout_limit: Duration,
+        downloader: Arc<dyn TrustedSetupDownloader>,
     ) -> Self {
         Self {
             local_srs_folder_path: local_srs_folder_path.into().join(MITHRIL_CIRCUIT_SRS_FOLDER),
             srs_expected_hash: srs_expected_hash.into(),
-            url_to_download_srs: url_to_download_srs.into(),
-            download_timeout_limit,
+            downloader,
         }
+    }
+
+    /// Provider of the production SRS in the process-wide circuit cache, fetched through
+    /// `downloader` when it is missing.
+    pub fn with_downloader(downloader: Arc<dyn TrustedSetupDownloader>) -> Self {
+        Self::new(
+            std::env::temp_dir().join(MITHRIL_CIRCUIT_CACHE_FOLDER),
+            MIDNIGHT_SRS_HASH_K22,
+            downloader,
+        )
     }
 
     /// Computes the SHA256 hash of the given bytes and returns its hex encoding.
@@ -78,6 +109,16 @@ impl TrustedSetupProvider {
         hasher.update(bytes);
 
         hex::encode(hasher.finalize())
+    }
+
+    /// Computes the SHA256 hash of the file at `path` and returns its hex encoding, streaming it
+    /// rather than holding the whole SRS in memory.
+    fn compute_file_hash(path: &Path) -> StmResult<String> {
+        let mut file = File::open(path)?;
+        let mut hasher = Sha256::new();
+        std::io::copy(&mut file, &mut hasher)?;
+
+        Ok(hex::encode(hasher.finalize()))
     }
 
     /// Checks SHA256 hash of the given bytes against the stored expected value.
@@ -92,30 +133,6 @@ impl TrustedSetupProvider {
             .into());
         }
         Ok(())
-    }
-
-    /// Fetches the SRS from `self.url_to_download_srs` and returns its bytes.
-    #[cfg(not(target_family = "wasm"))]
-    fn download_srs_file(&self) -> StmResult<Vec<u8>> {
-        let response = reqwest::blocking::Client::builder()
-            .timeout(self.download_timeout_limit)
-            .build()?
-            .get(&self.url_to_download_srs)
-            .header("User-Agent", "mithril-stm")
-            .send()?
-            .error_for_status()?;
-        let bytes = response.bytes()?;
-
-        Ok(bytes.to_vec())
-    }
-
-    /// The SRS download relies on a blocking HTTP client that is unavailable on wasm targets,
-    /// where the prover is never executed.
-    #[cfg(target_family = "wasm")]
-    fn download_srs_file(&self) -> StmResult<Vec<u8>> {
-        Err(anyhow::anyhow!(
-            "SRS download is not supported on wasm targets"
-        ))
     }
 
     /// Saves the given bytes in a temporary file then atomically moves it to the stored path
@@ -148,13 +165,32 @@ impl TrustedSetupProvider {
         Ok(())
     }
 
-    /// Ensures the SRS file is present. If the file is missing,
-    /// downloads it, verifies its hash and stores it if the hash is valid.
+    /// Removes the cached SRS file when it does not match the expected hash, so that the next
+    /// download replaces it instead of the node reading a corrupt file for as long as it sits
+    /// there. A provider with no expected hash keeps whatever is cached.
+    fn discard_cached_srs_file_with_unexpected_hash(&self) {
+        let srs_file_path = self.local_srs_folder_path.join(MITHRIL_CIRCUIT_SRS_FILENAME);
+        if self.srs_expected_hash.is_empty() || !srs_file_path.exists() {
+            return;
+        }
+
+        let matches_expected_hash = Self::compute_file_hash(&srs_file_path)
+            .is_ok_and(|hash| hash == self.srs_expected_hash);
+        if !matches_expected_hash {
+            let _ = std::fs::remove_file(&srs_file_path);
+        }
+    }
+
+    /// Ensures the SRS file is present and matches the expected hash. If the file is missing or
+    /// does not match, downloads it, verifies its hash and stores it if the hash is valid.
     fn download_srs_file_if_not_cached(&self) -> StmResult<()> {
+        self.discard_cached_srs_file_with_unexpected_hash();
+
         if !self.local_srs_folder_path.join(MITHRIL_CIRCUIT_SRS_FILENAME).exists() {
             let srs_bytes = self
-                .download_srs_file()
-                .with_context(|| "Download of the SRS file should have succeeded.")?;
+                .downloader
+                .download()
+                .with_context(|| "Making the SRS file available should have succeeded.")?;
             self.verify_bytes_sha256_hash(&srs_bytes)?;
             self.store_srs_bytes_to_file(&srs_bytes)
                 .with_context(|| "Saving the SRS to disk should have succeeded.")?;
@@ -168,28 +204,20 @@ impl TrustedSetupProvider {
     pub fn get_trusted_setup_parameters(&self) -> StmResult<ParamsKZG<Bls12>> {
         self.download_srs_file_if_not_cached()?;
 
-        let file = File::open(self.local_srs_folder_path.join(MITHRIL_CIRCUIT_SRS_FILENAME))
-            .with_context(|| {
-                format!(
-                    "Failed to open SRS file at {:?}.",
-                    self.local_srs_folder_path.join(MITHRIL_CIRCUIT_SRS_FILENAME)
-                )
-            })?;
+        let srs_file_path = self.local_srs_folder_path.join(MITHRIL_CIRCUIT_SRS_FILENAME);
+        let file = File::open(&srs_file_path)
+            .with_context(|| format!("Failed to open SRS file at {srs_file_path:?}."))?;
         let mut reader = BufReader::new(file);
 
         ParamsKZG::read_custom(&mut reader, SerdeFormat::RawBytesUnchecked)
-            .with_context(|| "Failed to deserialize SRS from file.")
+            .with_context(|| format!("Failed to deserialize the SRS from {srs_file_path:?}."))
     }
 }
 
 impl Default for TrustedSetupProvider {
+    /// Provider of the production SRS that is only read from the process-wide circuit cache.
     fn default() -> Self {
-        Self::new(
-            std::env::temp_dir().join(MITHRIL_CIRCUIT_CACHE_FOLDER),
-            MIDNIGHT_SRS_HASH_K22,
-            MIDNIGHT_SRS_URL_K22,
-            Duration::from_secs(600),
-        )
+        Self::with_downloader(Arc::new(NoTrustedSetupDownload))
     }
 }
 
@@ -212,7 +240,7 @@ impl TrustedSetupProvider {
         let srs_file = srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME);
 
         if srs_file.exists() {
-            return Self::new(degree_k_dir, "", "", Duration::from_secs(600));
+            return Self::new(degree_k_dir, "", Arc::new(NoTrustedSetupDownload));
         }
 
         let srs = ParamsKZG::<Bls12>::unsafe_setup(k, ChaCha20Rng::seed_from_u64(UNSAFE_SRS_SEED));
@@ -238,13 +266,13 @@ impl TrustedSetupProvider {
         std::fs::rename(temp_path, srs_file).unwrap();
 
         // No hash needed for the test srs
-        Self::new(degree_k_dir, "", "", Duration::from_secs(600))
+        Self::new(degree_k_dir, "", Arc::new(NoTrustedSetupDownload))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use httpmock::MockServer;
+    use anyhow::anyhow;
 
     use super::*;
 
@@ -292,6 +320,33 @@ mod tests {
         109, 196, 20, 125, 56, 227, 25, 54, 16, 90, 73, 68, 203, 89,
     ];
 
+    fn downloader_serving(bytes: &'static [u8]) -> Arc<MockTrustedSetupDownloader> {
+        let mut downloader = MockTrustedSetupDownloader::new();
+        downloader
+            .expect_download()
+            .once()
+            .returning(move || Ok(bytes.to_vec()));
+
+        Arc::new(downloader)
+    }
+
+    fn downloader_failing() -> Arc<MockTrustedSetupDownloader> {
+        let mut downloader = MockTrustedSetupDownloader::new();
+        downloader
+            .expect_download()
+            .once()
+            .returning(|| Err(anyhow!("download failed")));
+
+        Arc::new(downloader)
+    }
+
+    fn downloader_never_called() -> Arc<MockTrustedSetupDownloader> {
+        let mut downloader = MockTrustedSetupDownloader::new();
+        downloader.expect_download().never();
+
+        Arc::new(downloader)
+    }
+
     #[test]
     fn both_bytes_encoding_work_to_load_srs_from_file() {
         let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
@@ -299,8 +354,11 @@ mod tests {
         let mut srs_file =
             File::create(temp_dir.path().join("srs").join(MITHRIL_CIRCUIT_SRS_FILENAME)).unwrap();
         srs_file.write_all(SRS_K1).unwrap();
-        let srs_manager =
-            TrustedSetupProvider::new(temp_dir.path(), SRS_HASH_K1, "", Duration::from_secs(600));
+        let srs_manager = TrustedSetupProvider::new(
+            temp_dir.path(),
+            SRS_HASH_K1,
+            Arc::new(NoTrustedSetupDownload),
+        );
         let loaded_srs = srs_manager.get_trusted_setup_parameters().unwrap();
         let srs_rawbytes: ParamsKZG<Bls12> =
             ParamsKZG::read_custom(&mut SRS_K1.as_slice(), SerdeFormat::RawBytes).unwrap();
@@ -333,7 +391,7 @@ mod tests {
         let mut tampered_bytes = SRS_K1.to_vec();
         tampered_bytes[0] = tampered_bytes[0].wrapping_add(1);
 
-        let result = TrustedSetupProvider::new("", SRS_HASH_K1, "", Duration::from_secs(600))
+        let result = TrustedSetupProvider::new("", SRS_HASH_K1, Arc::new(NoTrustedSetupDownload))
             .verify_bytes_sha256_hash(&tampered_bytes);
 
         let err = result.unwrap_err();
@@ -352,44 +410,38 @@ mod tests {
 
     #[test]
     fn hash_of_correct_bytes_verifies() {
-        let result = TrustedSetupProvider::new("", SRS_HASH_K1, "", Duration::from_secs(600))
+        let result = TrustedSetupProvider::new("", SRS_HASH_K1, Arc::new(NoTrustedSetupDownload))
             .verify_bytes_sha256_hash(SRS_K1);
 
         assert!(result.is_ok());
     }
 
     #[test]
-    fn existing_file_on_disk_skips_download_and_verification() {
-        let server = MockServer::start();
-        let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::GET).path("/srs");
-            then.status(200).body([0, 1, 2, 3, 4]);
-        });
+    fn existing_file_on_disk_with_the_expected_hash_skips_download() {
         let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
-        std::fs::create_dir_all(temp_dir.path().join("srs")).unwrap();
-        let mut srs_file =
-            File::create(temp_dir.path().join("srs").join(MITHRIL_CIRCUIT_SRS_FILENAME)).unwrap();
-        srs_file.write_all(&[0, 1, 2, 3, 4]).unwrap();
+        cache_srs_file_content(temp_dir.path(), SRS_K1);
 
-        let result = TrustedSetupProvider::new(
-            temp_dir.path(),
-            SRS_HASH_K1,
-            server.url("/srs"),
-            Duration::from_secs(600),
-        )
-        .download_srs_file_if_not_cached();
+        let result =
+            TrustedSetupProvider::new(temp_dir.path(), SRS_HASH_K1, downloader_never_called())
+                .download_srs_file_if_not_cached();
 
         assert!(result.is_ok());
-        mock.assert_calls(0);
+    }
+
+    #[test]
+    fn existing_file_on_disk_is_kept_unverified_when_no_hash_is_expected() {
+        let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
+        let srs_file = cache_srs_file_content(temp_dir.path(), b"unsafe srs");
+
+        let result = TrustedSetupProvider::new(temp_dir.path(), "", downloader_never_called())
+            .download_srs_file_if_not_cached();
+
+        assert!(result.is_ok());
+        assert_eq!(b"unsafe srs".to_vec(), std::fs::read(&srs_file).unwrap());
     }
 
     #[test]
     fn interrupted_writing_of_srs_resumes_properly_at_next_try() {
-        let server = MockServer::start();
-        let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::GET).path("/srs");
-            then.status(200).body(SRS_K1);
-        });
         let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
         let srs_folder = temp_dir.path().join("srs");
         std::fs::create_dir_all(&srs_folder).unwrap();
@@ -397,57 +449,35 @@ mod tests {
 
         assert!(!srs_folder.join(MITHRIL_CIRCUIT_SRS_FILENAME).exists());
 
-        let result = TrustedSetupProvider::new(
-            temp_dir.path(),
-            SRS_HASH_K1,
-            server.url("/srs"),
-            Duration::from_secs(600),
-        )
-        .download_srs_file_if_not_cached();
+        let result =
+            TrustedSetupProvider::new(temp_dir.path(), SRS_HASH_K1, downloader_serving(SRS_K1))
+                .download_srs_file_if_not_cached();
 
         assert!(srs_folder.join(MITHRIL_CIRCUIT_SRS_FILENAME).exists());
         assert!(result.is_ok());
-        mock.assert();
     }
 
     #[test]
     fn missing_srs_file_triggers_download_verification_and_storage() {
-        let server = MockServer::start();
-        let mock = server.mock(|when, then| {
-            when.method(httpmock::Method::GET).path("/srs");
-            then.status(200).body(SRS_K1);
-        });
         let temp_dir = tempfile::tempdir().unwrap();
         let srs_path = temp_dir.path().join("srs").join(MITHRIL_CIRCUIT_SRS_FILENAME);
 
-        TrustedSetupProvider::new(
-            temp_dir.path(),
-            SRS_HASH_K1,
-            server.url("/srs"),
-            Duration::from_secs(600),
-        )
-        .download_srs_file_if_not_cached()
-        .unwrap();
+        TrustedSetupProvider::new(temp_dir.path(), SRS_HASH_K1, downloader_serving(SRS_K1))
+            .download_srs_file_if_not_cached()
+            .unwrap();
 
-        mock.assert();
         assert!(srs_path.exists());
     }
 
     #[test]
     fn downloaded_file_with_wrong_hash_fails_and_does_not_store_file() {
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(httpmock::Method::GET).path("/srs");
-            then.status(200).body(b"tampered content");
-        });
         let temp_dir = tempfile::tempdir().unwrap();
         let srs_path = temp_dir.path().join("dl_wrong_hash");
 
         let result = TrustedSetupProvider::new(
             &srs_path,
             SRS_HASH_K1,
-            server.url("/srs"),
-            Duration::from_secs(600),
+            downloader_serving(b"tampered content"),
         )
         .download_srs_file_if_not_cached();
 
@@ -467,25 +497,56 @@ mod tests {
     }
 
     #[test]
-    fn server_error_during_download_returns_error() {
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(httpmock::Method::GET).path("/srs");
-            then.status(404);
-        });
-
+    fn failed_download_returns_error_and_does_not_store_file() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let srs_path = temp_dir.path().join("server_error_fails");
+        let srs_path = temp_dir.path().join("download_fails");
 
-        let result = TrustedSetupProvider::new(
-            srs_path,
-            SRS_HASH_K1,
-            server.url("/srs"),
-            Duration::from_secs(600),
-        )
-        .download_srs_file_if_not_cached();
+        let result = TrustedSetupProvider::new(&srs_path, SRS_HASH_K1, downloader_failing())
+            .download_srs_file_if_not_cached();
 
         assert!(result.is_err());
+        assert!(!srs_path.exists());
+    }
+
+    #[test]
+    fn missing_srs_file_without_download_fails_and_does_not_store_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let srs_path = temp_dir.path().join("no_download");
+
+        let result =
+            TrustedSetupProvider::new(&srs_path, SRS_HASH_K1, Arc::new(NoTrustedSetupDownload))
+                .download_srs_file_if_not_cached();
+
+        let err = result.unwrap_err();
+
+        assert!(
+            matches!(
+                err.downcast_ref::<TrustedSetupError>(),
+                Some(TrustedSetupError::DownloadUnavailable)
+            ),
+            "A missing SRS without download must surface the unavailable download, got: {err:?}"
+        );
+        assert!(!srs_path.exists());
+    }
+
+    fn cache_srs_file_content(temp_dir: &Path, content: &[u8]) -> PathBuf {
+        let srs_file = temp_dir.join("srs").join(MITHRIL_CIRCUIT_SRS_FILENAME);
+        std::fs::create_dir_all(srs_file.parent().unwrap()).unwrap();
+        std::fs::write(&srs_file, content).unwrap();
+
+        srs_file
+    }
+
+    #[test]
+    fn cached_srs_with_an_unexpected_hash_is_discarded_and_downloaded_again() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let srs_file = cache_srs_file_content(temp_dir.path(), b"not an srs");
+
+        TrustedSetupProvider::new(temp_dir.path(), SRS_HASH_K1, downloader_serving(SRS_K1))
+            .get_trusted_setup_parameters()
+            .expect("a corrupt cached SRS must be replaced by a fresh download");
+
+        assert_eq!(SRS_K1.to_vec(), std::fs::read(&srs_file).unwrap());
     }
 
     mod with_unsafe_srs {
