@@ -95,8 +95,10 @@ pub(crate) fn sample_valid_circuit_witness_entry(
     let stm_tree = StmMerkleTree::<MidnightPoseidonDigest, StmMerkleTreeSnarkLeaf>::new(
         &vec![leaf; 1 << TEST_MERKLE_TREE_DEPTH],
     );
-    let merkle_tree_commitment: MerkleTreeCommitment =
-        BaseFieldElement::from_canonical_bytes(stm_tree.to_merkle_tree_commitment().root.as_slice())?.into();
+    let merkle_tree_commitment: MerkleTreeCommitment = BaseFieldElement::from_canonical_bytes(
+        stm_tree.to_merkle_tree_commitment().root.as_slice(),
+    )?
+    .into();
     let message = SignedMessageWithoutPrefix::from(42u64);
     let transcript = [merkle_tree_commitment.into(), message.into()];
     let unique_schnorr_signature = signing_key.sign_unique(&transcript, &mut rng)?;

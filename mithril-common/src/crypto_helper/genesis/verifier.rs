@@ -265,7 +265,12 @@ mod tests {
                 expected_ed25519.as_slice()
             );
             assert_eq!(
-                verifier.schnorr.as_ref().unwrap().to_verification_key().to_raw_bytes(),
+                verifier
+                    .schnorr
+                    .as_ref()
+                    .unwrap()
+                    .to_verification_key()
+                    .to_raw_bytes(),
                 expected_schnorr
             );
         }
@@ -279,7 +284,12 @@ mod tests {
             let verifier = GenesisVerifier::try_from_hex(&hex_string).unwrap();
 
             assert_eq!(
-                verifier.schnorr.as_ref().unwrap().to_verification_key().to_raw_bytes(),
+                verifier
+                    .schnorr
+                    .as_ref()
+                    .unwrap()
+                    .to_verification_key()
+                    .to_raw_bytes(),
                 expected_schnorr
             );
         }
@@ -302,8 +312,12 @@ mod tests {
         #[test]
         fn verification_key_bundle_mirrors_verifier_halves() {
             let verifier = GenesisVerifier::from_bundle(build_bundle());
-            let expected_schnorr =
-                verifier.schnorr.as_ref().unwrap().to_verification_key().to_raw_bytes();
+            let expected_schnorr = verifier
+                .schnorr
+                .as_ref()
+                .unwrap()
+                .to_verification_key()
+                .to_raw_bytes();
 
             let bundle = verifier.verification_key_bundle().unwrap();
 

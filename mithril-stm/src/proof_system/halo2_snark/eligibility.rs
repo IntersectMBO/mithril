@@ -869,9 +869,12 @@ mod tests {
 
             #[test]
             fn golden_check_small_values() {
-                let golden_target_0 = BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_ZERO).unwrap();
-                let golden_target_1 = BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_ONE).unwrap();
-                let golden_target_2 = BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_TWO).unwrap();
+                let golden_target_0 =
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_ZERO).unwrap();
+                let golden_target_1 =
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_ONE).unwrap();
+                let golden_target_2 =
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_TWO).unwrap();
 
                 assert_eq!(
                     golden_target_0,
@@ -892,9 +895,11 @@ mod tests {
                 let golden_target_max =
                     BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE).unwrap();
                 let golden_target_max_1 =
-                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_ONE).unwrap();
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_ONE)
+                        .unwrap();
                 let golden_target_max_2 =
-                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_TWO).unwrap();
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_TWO)
+                        .unwrap();
 
                 assert_eq!(
                     golden_target_max,
@@ -915,9 +920,11 @@ mod tests {
                 let golden_target_max =
                     BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE).unwrap();
                 let golden_target_max_1 =
-                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_ONE).unwrap();
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_ONE)
+                        .unwrap();
                 let golden_target_max_2 =
-                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_TWO).unwrap();
+                    BaseFieldElement::from_canonical_bytes(&GOLDEN_BYTES_MAX_STAKE_MINUS_TWO)
+                        .unwrap();
 
                 assert!(
                     golden_target_max
