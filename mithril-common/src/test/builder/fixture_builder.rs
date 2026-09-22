@@ -98,17 +98,13 @@ impl MithrilFixtureBuilder {
         let signers = crypto_helper::setup_signers_from_stake_distribution(
             &protocol_stake_distribution,
             &self.protocol_parameters.clone().into(),
-            #[cfg(feature = "future_snark")]
             epoch,
         );
-        #[cfg(not(feature = "future_snark"))]
-        let _epoch = epoch;
 
         MithrilFixture::new(
             self.protocol_parameters.clone(),
             signers,
             protocol_stake_distribution,
-            #[cfg(feature = "future_snark")]
             epoch,
         )
     }

@@ -35,7 +35,6 @@ pub struct MithrilFixture {
     protocol_parameters: ProtocolParameters,
     signers: Vec<SignerFixture>,
     stake_distribution: ProtocolStakeDistribution,
-    #[cfg(feature = "future_snark")]
     epoch: Epoch,
 }
 
@@ -113,13 +112,12 @@ impl MithrilFixture {
         protocol_parameters: ProtocolParameters,
         signers: Vec<SignerFixture>,
         stake_distribution: ProtocolStakeDistribution,
-        #[cfg(feature = "future_snark")] epoch: Epoch,
+        epoch: Epoch,
     ) -> Self {
         Self {
             protocol_parameters,
             signers,
             stake_distribution,
-            #[cfg(feature = "future_snark")]
             epoch,
         }
     }
@@ -192,7 +190,6 @@ impl MithrilFixture {
         SignerBuilder::new(
             &self.signers_with_stake(),
             &self.protocol_parameters,
-            #[cfg(feature = "future_snark")]
             self.epoch,
         )
         .unwrap()

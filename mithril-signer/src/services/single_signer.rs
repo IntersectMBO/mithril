@@ -122,7 +122,6 @@ impl MithrilSingleSigner {
         let builder = SignerBuilder::new(
             &current_signers_with_stake,
             &protocol_initializer.get_protocol_parameters().into(),
-            #[cfg(feature = "future_snark")]
             epoch_service
                 .epoch_of_current_data()?
                 .offset_to_signer_retrieval_epoch_saturating(),

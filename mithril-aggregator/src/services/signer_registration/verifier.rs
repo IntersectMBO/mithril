@@ -34,14 +34,11 @@ impl SignerRegistrationVerifier for MithrilSignerRegistrationVerifier {
         stake_distribution: &StakeDistribution,
         epoch: Epoch,
     ) -> StdResult<SignerWithStake> {
-        #[cfg(not(feature = "future_snark"))]
-        let _epoch = epoch;
         let mut key_registration = ProtocolKeyRegistration::init(
             &stake_distribution
                 .iter()
                 .map(|(k, v)| (k.to_owned(), *v))
                 .collect::<Vec<_>>(),
-            #[cfg(feature = "future_snark")]
             epoch,
         );
         let party_id_register = match signer.party_id.as_str() {

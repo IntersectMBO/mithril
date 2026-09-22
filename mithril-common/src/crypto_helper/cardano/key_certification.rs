@@ -18,6 +18,14 @@ use mithril_stm::{
 #[cfg(feature = "future_snark")]
 use mithril_stm::{SchnorrSigningKey, StandardSchnorrSignature, VerificationKeyForSnark};
 
+#[cfg(feature = "future_snark")]
+use crate::crypto_helper::{
+    ProtocolPartyIdBytes, ProtocolSignerProofOfBoundPossessionForSnark,
+    cardano::ProofOfBoundPossessionPrefix,
+    types::{
+        ProtocolSignerVerificationKeyForSnark, ProtocolSignerVerificationKeySignatureForSnark,
+    },
+};
 use crate::{
     StdError, StdResult,
     crypto_helper::{
@@ -26,16 +34,6 @@ use crate::{
         types::{
             ProtocolParameters, ProtocolPartyId, ProtocolSignerVerificationKeyForConcatenation,
             ProtocolSignerVerificationKeySignatureForConcatenation, ProtocolStakeDistribution,
-        },
-    },
-};
-#[cfg(feature = "future_snark")]
-use crate::{
-    crypto_helper::{
-        ProtocolPartyIdBytes, ProtocolSignerProofOfBoundPossessionForSnark,
-        cardano::ProofOfBoundPossessionPrefix,
-        types::{
-            ProtocolSignerVerificationKeyForSnark, ProtocolSignerVerificationKeySignatureForSnark,
         },
     },
     entities::Epoch,
@@ -444,7 +442,6 @@ impl KeyRegWrapper {
             &parameters.verification_key_for_concatenation.to_bytes(),
             parameters
                 .verification_key_signature_for_concatenation
-                .clone()
                 .map(|s| s.into_inner()),
             opcert,
             kes_evolutions,
@@ -476,7 +473,6 @@ impl KeyRegWrapper {
             &verification_key_for_snark.to_bytes(),
             parameters
                 .verification_key_signature_for_snark
-                .clone()
                 .map(|s| s.into_inner()),
             opcert,
             kes_evolutions,
@@ -489,7 +485,6 @@ impl KeyRegWrapper {
             .ok_or(ProtocolRegistrationErrorWrapper::PartyIdNonExisting)?;
         let proof_of_bound_possession_for_snark = parameters
             .proof_of_bound_possession_for_snark
-            .clone()
             .ok_or(ProtocolRegistrationErrorWrapper::ProofOfBoundPossessionForSnarkMissing)
             .map(|s| s.into_inner())?;
         self.verify_proof_of_bound_possession_for_snark(
@@ -606,6 +601,7 @@ mod test_extensions {
 mod test {
     use crate::crypto_helper::cardano::kes::KesSignerStandard;
     use crate::crypto_helper::{OpCert, SerDeShelleyFileFormat};
+    #[cfg(feature = "future_snark")]
     use crate::test::builder::MithrilFixtureBuilder;
     use crate::test::crypto_helper::{
         KesCryptographicMaterialForTest, KesPartyIndexForTest, create_kes_cryptographic_material,
@@ -643,11 +639,8 @@ mod test {
             "test_vector_key_reg",
         );
 
-        let mut key_reg = KeyRegWrapper::init(
-            &vec![(party_id_1, 10), (party_id_2, 3)],
-            #[cfg(feature = "future_snark")]
-            Epoch::default(),
-        );
+        let mut key_reg =
+            KeyRegWrapper::init(&vec![(party_id_1, 10), (party_id_2, 3)], Epoch::default());
 
         let initializer_1 = StmInitializerWrapper::setup(
             params,
@@ -747,11 +740,7 @@ mod test {
             "register_fails_when_proof_of_bound_possession_for_snark_is_missing",
         );
 
-        let mut key_reg = KeyRegWrapper::init(
-            &vec![(party_id, 10)],
-            #[cfg(feature = "future_snark")]
-            Epoch::default(),
-        );
+        let mut key_reg = KeyRegWrapper::init(&vec![(party_id, 10)], Epoch::default());
 
         let initializer = StmInitializerWrapper::setup(
             params,
@@ -815,11 +804,7 @@ mod test {
         let correct_epoch = Epoch(5);
         let wrong_epoch = Epoch(6);
 
-        let mut key_reg = KeyRegWrapper::init(
-            &vec![(party_id, 10)],
-            #[cfg(feature = "future_snark")]
-            wrong_epoch,
-        );
+        let mut key_reg = KeyRegWrapper::init(&vec![(party_id, 10)], wrong_epoch);
 
         let initializer = StmInitializerWrapper::setup(
             params,

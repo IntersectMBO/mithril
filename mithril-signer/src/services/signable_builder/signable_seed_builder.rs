@@ -11,15 +11,12 @@ use tokio::sync::RwLock;
 use mithril_common::{
     StdResult,
     crypto_helper::{ProtocolAggregateVerificationKeyForConcatenation, ProtocolInitializer},
-    entities::{ProtocolMessagePartValue, ProtocolParameters, SignerWithStake},
+    entities::{Epoch, ProtocolMessagePartValue, ProtocolParameters, SignerWithStake},
     protocol::SignerBuilder,
     signable_builder::SignableSeedBuilder,
 };
 #[cfg(feature = "future_snark")]
-use mithril_common::{
-    crypto_helper::ProtocolKey,
-    entities::{Epoch, SupportedEra},
-};
+use mithril_common::{crypto_helper::ProtocolKey, entities::SupportedEra};
 
 use crate::{services::EpochService, store::ProtocolInitializerStorer};
 
@@ -45,12 +42,11 @@ impl SignerSignableSeedBuilder {
         &self,
         protocol_initializer: ProtocolInitializer,
         signers_with_stake: &[SignerWithStake],
-        #[cfg(feature = "future_snark")] epoch: Epoch,
+        epoch: Epoch,
     ) -> StdResult<String> {
         let signer_builder = SignerBuilder::new(
             signers_with_stake,
             &protocol_initializer.get_protocol_parameters().into(),
-            #[cfg(feature = "future_snark")]
             epoch,
         )
         .with_context(|| "SignerSignableSeedBuilder can not compute aggregate verification key")?;
@@ -113,12 +109,8 @@ impl SignableSeedBuilder for SignerSignableSeedBuilder {
                 format!("can not get protocol_initializer at epoch {next_signer_retrieval_epoch}")
             })?;
         let next_signers_with_stake = epoch_service.next_signers_with_stake().await?;
-        let next_aggregate_verification_key = self.compute_encode_avk(
-            next_protocol_initializer,
-            &next_signers_with_stake,
-            #[cfg(feature = "future_snark")]
-            epoch,
-        )?;
+        let next_aggregate_verification_key =
+            self.compute_encode_avk(next_protocol_initializer, &next_signers_with_stake, epoch)?;
 
         Ok(next_aggregate_verification_key)
     }

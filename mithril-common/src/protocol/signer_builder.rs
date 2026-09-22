@@ -5,8 +5,6 @@ use rand_chacha::ChaCha20Rng;
 use rand_core::{CryptoRng, RngCore, SeedableRng};
 use thiserror::Error;
 
-#[cfg(feature = "future_snark")]
-use crate::entities::Epoch;
 use crate::{
     StdResult,
     crypto_helper::{
@@ -14,6 +12,7 @@ use crate::{
         ProtocolClosedKeyRegistration, ProtocolInitializer, ProtocolKeyRegistration,
         ProtocolStakeDistribution, SignerRegistrationParameters,
     },
+    entities::Epoch,
     entities::{PartyId, ProtocolParameters, SignerWithStake},
     protocol::MultiSigner,
 };
@@ -42,7 +41,7 @@ impl SignerBuilder {
     pub fn new(
         registered_signers: &[SignerWithStake],
         protocol_parameters: &ProtocolParameters,
-        #[cfg(feature = "future_snark")] epoch: Epoch,
+        epoch: Epoch,
     ) -> StdResult<Self> {
         if registered_signers.is_empty() {
             return Err(SignerBuilderError::EmptySigners.into());
@@ -52,11 +51,7 @@ impl SignerBuilder {
             .iter()
             .map(|s| s.into())
             .collect::<ProtocolStakeDistribution>();
-        let mut key_registration = ProtocolKeyRegistration::init(
-            &stake_distribution,
-            #[cfg(feature = "future_snark")]
-            epoch,
-        );
+        let mut key_registration = ProtocolKeyRegistration::init(&stake_distribution, epoch);
 
         for signer in registered_signers {
             key_registration
@@ -215,15 +210,10 @@ mod test {
         let signers = vec![];
         let protocol_parameters = fake_data::protocol_parameters();
 
-        let error = SignerBuilder::new(
-            &signers,
-            &protocol_parameters,
-            #[cfg(feature = "future_snark")]
-            Epoch::default(),
-        )
-        .expect_err(
-            "We should not be able to construct a signer builder with an empty signers list",
-        );
+        let error = SignerBuilder::new(&signers, &protocol_parameters, Epoch::default())
+            .expect_err(
+                "We should not be able to construct a signer builder with an empty signers list",
+            );
 
         match error.downcast_ref::<SignerBuilderError>() {
             Some(SignerBuilderError::EmptySigners) => (),
@@ -247,15 +237,10 @@ mod test {
         let mut signers = fixture.signers_with_stake();
         signers.append(&mut fixture_with_another_stake_distribution.signers_with_stake());
 
-        let error = SignerBuilder::new(
-            &signers,
-            &fixture.protocol_parameters(),
-            #[cfg(feature = "future_snark")]
-            Epoch::default(),
-        )
-        .expect_err(
-            "We should not be able to construct a signer builder if a signer registration fail",
-        );
+        let error = SignerBuilder::new(&signers, &fixture.protocol_parameters(), Epoch::default())
+            .expect_err(
+                "We should not be able to construct a signer builder if a signer registration fail",
+            );
 
         match error.downcast_ref::<RegisterError>() {
             Some(RegisterError::EntryAlreadyRegistered) => (),
@@ -270,7 +255,6 @@ mod test {
         SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
-            #[cfg(feature = "future_snark")]
             Epoch::default(),
         )
         .expect("We should be able to construct a signer builder with valid signers");
@@ -296,7 +280,6 @@ mod test {
         let error = SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
-            #[cfg(feature = "future_snark")]
             Epoch::default(),
         )
         .unwrap()
@@ -326,7 +309,6 @@ mod test {
         let builder = SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
-            #[cfg(feature = "future_snark")]
             Epoch::default(),
         )
         .unwrap();
@@ -349,7 +331,6 @@ mod test {
         let first_builder = SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
-            #[cfg(feature = "future_snark")]
             Epoch::default(),
         )
         .unwrap();
@@ -361,7 +342,6 @@ mod test {
         let second_builder = SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
-            #[cfg(feature = "future_snark")]
             Epoch::default(),
         )
         .unwrap();

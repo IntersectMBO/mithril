@@ -49,11 +49,9 @@ impl SingleSigner {
 mod test {
     use std::sync::Arc;
 
-    #[cfg(feature = "future_snark")]
-    use crate::entities::Epoch;
     use crate::{
         crypto_helper::{KesSigner, KesSignerStandard},
-        entities::ProtocolMessage,
+        entities::{Epoch, ProtocolMessage},
         protocol::SignerBuilder,
         test::builder::MithrilFixtureBuilder,
     };
@@ -71,7 +69,6 @@ mod test {
         let (single_signer, _) = SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
-            #[cfg(feature = "future_snark")]
             Epoch::default(),
         )
         .unwrap()

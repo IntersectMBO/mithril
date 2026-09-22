@@ -64,7 +64,6 @@ impl MessageBuilder {
         let signer_builder = SignerBuilder::new(
             &signers,
             &mithril_stake_distribution.protocol_parameters,
-            #[cfg(feature = "future_snark")]
             mithril_stake_distribution.epoch,
         )
         .with_context(

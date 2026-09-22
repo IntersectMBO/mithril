@@ -111,7 +111,6 @@ impl GenesisTools {
         let protocol_multi_signer = SignerBuilder::new(
             &genesis_signers,
             &genesis_protocol_parameters,
-            #[cfg(feature = "future_snark")]
             genesis_avk_epoch,
         )
         .with_context(|| "Could not build a multi signer to compute the genesis avk")?

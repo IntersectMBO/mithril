@@ -4,14 +4,13 @@ use std::{fs, path::PathBuf, sync::Arc};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
-#[cfg(feature = "future_snark")]
-use crate::entities::Epoch;
 use crate::{
     crypto_helper::{
         KesEvolutions, KesPeriod, KesSigner, KesSignerStandard, OpCert, ProtocolInitializer,
         ProtocolKeyRegistration, ProtocolOpCert, ProtocolParameters, ProtocolPartyId,
         ProtocolStakeDistribution, SerDeShelleyFileFormat, SignerRegistrationParameters,
     },
+    entities::Epoch,
     entities::{ProtocolMessage, ProtocolMessagePartKey, SignerWithStake, Stake},
     test::{
         TempDir,
@@ -135,13 +134,9 @@ fn decode_op_cert_in_dir(dir: Option<PathBuf>) -> Option<ProtocolOpCert> {
 pub fn setup_signers_from_stake_distribution(
     stake_distribution: &ProtocolStakeDistribution,
     protocol_parameters: &ProtocolParameters,
-    #[cfg(feature = "future_snark")] epoch: Epoch,
+    epoch: Epoch,
 ) -> Vec<SignerFixture> {
-    let mut key_registration = ProtocolKeyRegistration::init(
-        stake_distribution,
-        #[cfg(feature = "future_snark")]
-        epoch,
-    );
+    let mut key_registration = ProtocolKeyRegistration::init(stake_distribution, epoch);
     let mut signers: Vec<(
         SignerWithStake,
         ProtocolInitializer,
