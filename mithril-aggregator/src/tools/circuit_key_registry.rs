@@ -180,7 +180,6 @@ impl CircuitKeyRegistryTools {
         entry: &CircuitVerificationKeyEntry,
     ) -> StdResult<String> {
         let mut registry_value: Value = serde_json::from_str(current_registry_json)?;
-        Self::increment_version(&mut registry_value)?;
         let entries = Self::entries_mut(&mut registry_value)?;
         if entries.iter().any(|listed| Self::has_digest(listed, &entry.digest)) {
             return Err(anyhow!(
@@ -189,6 +188,7 @@ impl CircuitKeyRegistryTools {
             ));
         }
         entries.push(serde_json::to_value(entry)?);
+        Self::increment_version(&mut registry_value)?;
 
         Ok(serde_json::to_string_pretty(&registry_value)?)
     }
@@ -201,7 +201,6 @@ impl CircuitKeyRegistryTools {
         edit: impl FnOnce(&mut Map<String, Value>),
     ) -> StdResult<String> {
         let mut registry_value: Value = serde_json::from_str(current_registry_json)?;
-        Self::increment_version(&mut registry_value)?;
         let entry = Self::entries_mut(&mut registry_value)?
             .iter_mut()
             .find(|listed| Self::has_digest(listed, digest))
@@ -217,6 +216,7 @@ impl CircuitKeyRegistryTools {
             .as_object_mut()
             .ok_or_else(|| anyhow!("The registry entry of '{digest}' is not an object"))?;
         edit(entry_object);
+        Self::increment_version(&mut registry_value)?;
 
         Ok(serde_json::to_string_pretty(&registry_value)?)
     }
