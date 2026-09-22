@@ -1,0 +1,24 @@
+{
+  "registry": {
+  "entries": [
+    {
+      "comment": "initial publication",
+      "digest": "b4f2e431d9b6f016d6c551a3b6ae9f2b6b494941181eabdafd1313fc7c240f25",
+      "end_epoch": null,
+      "name": "certificate-circuit v1 (k=1944, m=16948)",
+      "start_epoch": 0,
+      "status": "allowed"
+    },
+    {
+      "comment": "initial publication",
+      "digest": "8a6b414e9b007a6c4ff68a349ea2a7447cb1c94cb7d3de59307197284a8db252",
+      "end_epoch": null,
+      "name": "ivc-circuit v1",
+      "start_epoch": 0,
+      "status": "allowed"
+    }
+  ],
+  "version": 2
+},
+  "signature": "ec9b9fde6ef6810240c8249e4a7f14017cb61c296a83285c174e4ce3296067df0b6cbdc0c1d309ad8c3ed3df92746b0c06f30c0826abc8388d3b9cbcccafc70e"
+}
