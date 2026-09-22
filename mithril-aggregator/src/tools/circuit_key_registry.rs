@@ -173,8 +173,8 @@ impl CircuitKeyRegistryTools {
     /// Append the entry to the registry JSON, refusing a digest already listed, and increment
     /// the version.
     ///
-    /// The edit is applied to the JSON document rather than to the parsed registry, so the fields
-    /// added by a future schema version survive an entry added by an older binary.
+    /// The entry is appended to the JSON document rather than to the parsed registry, so the
+    /// fields added by a future schema version survive an entry added by an older binary.
     fn extended_registry_json(
         current_registry_json: &str,
         entry: &CircuitVerificationKeyEntry,
@@ -317,7 +317,7 @@ impl CircuitKeyRegistryTools {
         Ok(())
     }
 
-    /// Create and sign the circuit verification key registry whitelisting from epoch 0 the
+    /// Create and sign the circuit verification key registry, whitelisting from epoch 0 the
     /// certificate circuit key of every given protocol parameter set (or of the production
     /// parameters when none is given) and the IVC circuit key, and write the signed registry
     /// JSON. For test only.

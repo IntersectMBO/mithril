@@ -167,7 +167,7 @@ impl VerifiedRegistryCache {
         }
     }
 
-    /// Whether the cached registry does not need a refresh yet.
+    /// Whether the cached registry is still fresh.
     ///
     /// A cache refreshed in the future (the clock jumped backwards) is stale, so it forces a
     /// refresh instead of staying fresh until the clock catches up.
