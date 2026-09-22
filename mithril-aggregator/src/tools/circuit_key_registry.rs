@@ -2,6 +2,7 @@
 //! expire and revoke circuit keys in a genesis-signed registry, sign and bootstrap it.
 
 use std::{
+    collections::HashSet,
     fs::{File, read_to_string, rename},
     io::Write,
     path::Path,
@@ -431,18 +432,14 @@ impl CircuitKeyRegistryTools {
     /// a single entry, and no allowed entry has an inverted epoch range (which would silently
     /// never match).
     fn check_registry_can_be_signed(registry: &CircuitVerificationKeyRegistry) -> StdResult<()> {
-        for (index, entry) in registry.entries.iter().enumerate() {
-            if registry.entries[..index]
-                .iter()
-                .any(|listed| listed.digest == entry.digest)
-            {
+        let mut digests = HashSet::new();
+        for entry in &registry.entries {
+            if !digests.insert(entry.digest) {
                 return Err(anyhow!(
                     "The circuit verification key '{}' has several entries",
                     entry.digest
                 ));
             }
-        }
-        for entry in &registry.entries {
             if entry.status == CircuitVerificationKeyStatus::Allowed
                 && let Some(end_epoch) = entry.end_epoch
                 && entry.start_epoch > end_epoch
