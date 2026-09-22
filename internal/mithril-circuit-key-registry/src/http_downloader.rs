@@ -1,8 +1,10 @@
 //! Bounded HTTP download of the documents involved in the circuit verification key registry
 //! retrieval.
 
+use std::error::Error;
+
 use anyhow::{Context, anyhow};
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 
 use mithril_common::StdResult;
 
@@ -97,15 +99,25 @@ impl BoundedHttpDownloader {
             ));
         }
         Self::check_size_limit(url, response.content_length().unwrap_or_default())?;
-        let mut body = Vec::new();
-        let mut chunks = response.bytes_stream();
-        while let Some(chunk) = chunks.next().await {
-            let chunk = chunk.with_context(|| format!("Failed to read the response of '{url}'"))?;
-            Self::check_size_limit(url, (body.len() + chunk.len()) as u64)?;
-            body.extend_from_slice(&chunk);
-        }
+        let body = Self::read_body_within_size_limit(url, response.bytes_stream()).await?;
 
         String::from_utf8(body).with_context(|| format!("The response of '{url}' is not UTF-8"))
+    }
+
+    /// Read the body chunks of the response of the URL, failing as soon as the bytes read exceed
+    /// [DOWNLOAD_MAX_BODY_SIZE_IN_BYTES].
+    async fn read_body_within_size_limit<B: AsRef<[u8]>, E: Error + Send + Sync + 'static>(
+        url: &str,
+        mut chunks: impl Stream<Item = Result<B, E>> + Unpin,
+    ) -> StdResult<Vec<u8>> {
+        let mut body = Vec::new();
+        while let Some(chunk) = chunks.next().await {
+            let chunk = chunk.with_context(|| format!("Failed to read the response of '{url}'"))?;
+            Self::check_size_limit(url, (body.len() + chunk.as_ref().len()) as u64)?;
+            body.extend_from_slice(chunk.as_ref());
+        }
+
+        Ok(body)
     }
 
     /// Fail when the response size exceeds [DOWNLOAD_MAX_BODY_SIZE_IN_BYTES].
@@ -135,6 +147,7 @@ impl BoundedHttpDownloader {
 
 #[cfg(all(test, not(target_family = "wasm")))]
 mod tests {
+    use futures::stream;
     use httpmock::{Method, MockServer};
 
     use super::*;
@@ -174,7 +187,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fails_on_a_response_exceeding_the_body_size_limit() {
+    async fn fails_on_a_response_declaring_a_length_exceeding_the_body_size_limit() {
         let server = MockServer::start();
         server.mock(|when, then| {
             when.method(Method::GET).path("/document");
@@ -187,6 +200,33 @@ mod tests {
             .download_with_retry(&server.url("/document"))
             .await
             .expect_err("an oversized response must fail the download");
+    }
+
+    #[tokio::test]
+    async fn reads_the_body_chunks_within_the_size_limit() {
+        let chunks =
+            stream::iter([Ok::<_, reqwest::Error>(b"the ".to_vec()), Ok(b"document".to_vec())]);
+
+        let body = BoundedHttpDownloader::read_body_within_size_limit(
+            "https://example.com/document",
+            chunks,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(b"the document".to_vec(), body);
+    }
+
+    #[tokio::test]
+    async fn fails_on_body_chunks_exceeding_the_size_limit_after_the_first_one() {
+        let chunks = stream::iter([
+            Ok::<_, reqwest::Error>(vec![b' '; DOWNLOAD_MAX_BODY_SIZE_IN_BYTES as usize]),
+            Ok(vec![b' ']),
+        ]);
+
+        BoundedHttpDownloader::read_body_within_size_limit("https://example.com/document", chunks)
+            .await
+            .expect_err("body chunks exceeding the size limit must fail the download");
     }
 
     #[tokio::test]
