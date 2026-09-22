@@ -16,6 +16,9 @@
           "genesis": {
             "verification-key": {
               "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/genesis.vkey"
+            },
+            "dual-verification-key": {
+              "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/genesis-dual.vkey"
             }
           },
           "era-reader": {
@@ -53,6 +56,9 @@
           "genesis": {
             "verification-key": {
               "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-preprod/genesis.vkey"
+            },
+            "dual-verification-key": {
+              "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-preprod/genesis-dual.vkey"
             }
           },
           "era-reader": {
@@ -90,6 +96,9 @@
           "genesis": {
             "verification-key": {
               "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/pre-release-preview/genesis.vkey"
+            },
+            "dual-verification-key": {
+              "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/pre-release-preview/genesis-dual.vkey"
             }
           },
           "era-reader": {
@@ -118,6 +127,9 @@
           "genesis": {
             "verification-key": {
               "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/genesis.vkey"
+            },
+            "dual-verification-key": {
+              "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/genesis-dual.vkey"
             }
           },
           "era-reader": {
