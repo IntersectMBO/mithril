@@ -35,10 +35,10 @@
 //! ```
 //!
 //! Expect about three and a half seconds and roughly 1.3 GB of peak memory, measured on an Apple M4
-//! Max with 16 cores and 48 GB of memory. The circuit keys are generated on each run, because the
-//! example's parameters are sized so it can be run at all and its keys are therefore not the
-//! production ones the key cache recognises. Verification is cheap by comparison and does not need
-//! the SRS: the KZG verifier parameters derived from the trusted setup are embedded in the crate.
+//! Max with 16 cores and 48 GB of memory. The first run derives the circuit keys of the example's
+//! parameters and caches them under the same `mithril-circuit` folder as the SRS, and later runs
+//! load them from there. Verification is cheap by comparison and does not need the SRS: the KZG
+//! verifier parameters derived from the trusted setup are embedded in the crate.
 //!
 //! The proof system is described at
 //! <https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/non-recursive-snark>.

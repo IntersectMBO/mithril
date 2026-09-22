@@ -42,9 +42,9 @@
 //!
 //! Expect roughly four and a half minutes and about 12 GB of peak memory, measured on an Apple M4
 //! Max with 16 cores and 48 GB of memory. That measurement had memory to spare; a machine with less
-//! than the peak installed will page, and take correspondingly longer. Every aggregation generates
-//! the circuit keys afresh, because the example's parameters are sized so it can be run at all and
-//! its keys are therefore not the production ones the key cache recognises.
+//! than the peak installed will page, and take correspondingly longer. The first run derives the
+//! circuit keys of the example's parameters and caches them under the same `mithril-circuit` folder
+//! as the SRS, and later runs load them from there.
 //!
 //! The signer seed below is published with this source and is therefore compromised. It is fixed
 //! only so that a run this expensive behaves the same way every time, rather than depending on which
