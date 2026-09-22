@@ -333,6 +333,7 @@ impl CircuitKeyRegistryTools {
             version: INITIAL_REGISTRY_VERSION,
             entries: Self::bootstrap_entries(&Self::compute_bootstrap_digests(
                 protocol_parameters,
+                CircuitVerificationKeyDigests::compute,
             )?),
         };
 
@@ -343,15 +344,18 @@ impl CircuitKeyRegistryTools {
         )
     }
 
-    /// Compute the named circuit verification key digests of each protocol parameter set, or of
-    /// the production parameters when none is given.
+    /// Compute with the given function the named circuit verification key digests of each
+    /// protocol parameter set, or of the production parameters when none is given.
     fn compute_bootstrap_digests(
         protocol_parameters: &[ProtocolParameters],
+        compute_digests: impl Fn(
+            Option<&ProtocolParameters>,
+        ) -> StdResult<CircuitVerificationKeyDigests>,
     ) -> StdResult<Vec<(String, CircuitVerificationKeyDigests)>> {
         if protocol_parameters.is_empty() {
             return Ok(vec![(
                 "certificate-circuit".to_string(),
-                CircuitVerificationKeyDigests::compute(None)?,
+                compute_digests(None)?,
             )]);
         }
 
@@ -360,7 +364,7 @@ impl CircuitKeyRegistryTools {
             .map(|parameters| {
                 Ok((
                     format!("certificate-circuit k={} m={}", parameters.k, parameters.m),
-                    CircuitVerificationKeyDigests::compute(Some(parameters))?,
+                    compute_digests(Some(parameters))?,
                 ))
             })
             .collect()
@@ -1347,19 +1351,55 @@ mod tests {
     mod bootstrap {
         use super::*;
 
+        fn digests(certificate_circuit_byte: u8) -> CircuitVerificationKeyDigests {
+            CircuitVerificationKeyDigests {
+                certificate_circuit: hex::encode([certificate_circuit_byte; 32]).parse().unwrap(),
+                ivc_circuit: hex::encode([9; 32]).parse().unwrap(),
+            }
+        }
+
         fn named_digests(
             name: &str,
             certificate_circuit_byte: u8,
         ) -> (String, CircuitVerificationKeyDigests) {
-            (
-                name.to_string(),
-                CircuitVerificationKeyDigests {
-                    certificate_circuit: hex::encode([certificate_circuit_byte; 32])
-                        .parse()
-                        .unwrap(),
-                    ivc_circuit: hex::encode([9; 32]).parse().unwrap(),
-                },
+            (name.to_string(), digests(certificate_circuit_byte))
+        }
+
+        fn digests_from_k(
+            protocol_parameters: Option<&ProtocolParameters>,
+        ) -> StdResult<CircuitVerificationKeyDigests> {
+            Ok(digests(
+                protocol_parameters.map_or(0, |parameters| parameters.k as u8),
+            ))
+        }
+
+        #[test]
+        fn digests_of_each_protocol_parameter_set_are_computed_from_it_and_named_after_its_k_and_m()
+        {
+            let computed = CircuitKeyRegistryTools::compute_bootstrap_digests(
+                &[
+                    ProtocolParameters::new(5, 9, 0.5),
+                    ProtocolParameters::new(7, 10, 0.5),
+                ],
+                digests_from_k,
             )
+            .unwrap();
+
+            assert_eq!(
+                vec![
+                    named_digests("certificate-circuit k=5 m=9", 5),
+                    named_digests("certificate-circuit k=7 m=10", 7),
+                ],
+                computed
+            );
+        }
+
+        #[test]
+        fn digests_without_protocol_parameters_are_the_production_ones() {
+            let computed =
+                CircuitKeyRegistryTools::compute_bootstrap_digests(&[], digests_from_k).unwrap();
+
+            assert_eq!(vec![named_digests("certificate-circuit", 0)], computed);
         }
 
         #[test]
