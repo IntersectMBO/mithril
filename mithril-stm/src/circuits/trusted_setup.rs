@@ -73,14 +73,15 @@ impl TrustedSetupDownloader for NoTrustedSetupDownload {
 pub struct TrustedSetupProvider {
     /// Path of the local SRS folder
     local_srs_folder_path: PathBuf,
-    /// Expected hash of the downloaded SRS file
-    srs_expected_hash: String,
+    /// Expected hash of the SRS file, absent only for the unsafe SRS of the tests and benchmarks,
+    /// which is never verified
+    srs_expected_hash: Option<String>,
     /// Downloader of the SRS file when it is not present locally
     downloader: Arc<dyn TrustedSetupDownloader>,
 }
 
 impl TrustedSetupProvider {
-    /// Create a new TrustedSetupProvider
+    /// Create a new TrustedSetupProvider verifying the SRS file against `srs_expected_hash`
     pub fn new<P: Into<PathBuf>, S: Into<String>>(
         local_srs_folder_path: P,
         srs_expected_hash: S,
@@ -88,7 +89,7 @@ impl TrustedSetupProvider {
     ) -> Self {
         Self {
             local_srs_folder_path: local_srs_folder_path.into().join(MITHRIL_CIRCUIT_SRS_FOLDER),
-            srs_expected_hash: srs_expected_hash.into(),
+            srs_expected_hash: Some(srs_expected_hash.into()),
             downloader,
         }
     }
@@ -120,13 +121,16 @@ impl TrustedSetupProvider {
         Ok(hex::encode(hasher.finalize()))
     }
 
-    /// Checks SHA256 hash of the given bytes against the stored expected value.
+    /// Checks SHA256 hash of the given bytes against the expected value, when there is one.
     fn verify_bytes_sha256_hash(&self, srs_bytes: &[u8]) -> StmResult<()> {
+        let Some(expected_hash) = &self.srs_expected_hash else {
+            return Ok(());
+        };
         let recomputed_hash = Self::compute_hash(srs_bytes);
 
-        if self.srs_expected_hash != recomputed_hash {
+        if expected_hash != &recomputed_hash {
             return Err(TrustedSetupError::VerifyHashFail {
-                expected: self.srs_expected_hash.clone(),
+                expected: expected_hash.clone(),
                 computed: recomputed_hash,
             }
             .into());
@@ -164,10 +168,10 @@ impl TrustedSetupProvider {
         Ok(())
     }
 
-    /// Whether the cached SRS file is present and matches the expected hash, a provider with no
-    /// expected hash keeping whatever is cached. A cached file whose hash does not match is
-    /// removed so that a download replaces it, and a file that cannot be read or removed
-    /// surfaces its error rather than being discarded or read as it is.
+    /// Whether the cached SRS file is present and matches the expected hash, the unverified
+    /// provider of the tests and benchmarks keeping whatever is cached. A cached file whose hash
+    /// does not match is removed so that a download replaces it, and a file that cannot be read or
+    /// removed surfaces its error rather than being discarded or read as it is.
     fn is_srs_file_cached_with_expected_hash(&self) -> StmResult<bool> {
         let srs_file_path = self.local_srs_folder_path.join(MITHRIL_CIRCUIT_SRS_FILENAME);
         let srs_file = match File::open(&srs_file_path) {
@@ -179,13 +183,13 @@ impl TrustedSetupProvider {
                 });
             }
         };
-        if self.srs_expected_hash.is_empty() {
+        let Some(expected_hash) = &self.srs_expected_hash else {
             return Ok(true);
-        }
+        };
 
         let computed_hash = Self::compute_file_hash(srs_file)
             .with_context(|| format!("Failed to hash the cached SRS file at {srs_file_path:?}."))?;
-        if computed_hash == self.srs_expected_hash {
+        if &computed_hash == expected_hash {
             return Ok(true);
         }
 
@@ -244,8 +248,21 @@ pub(crate) const UNSAFE_SRS_SEED: u64 = 42;
 
 #[cfg(any(test, feature = "benchmark-internals"))]
 impl TrustedSetupProvider {
+    /// Provider of an SRS that is never verified against a hash, for the unsafe SRS of the tests
+    /// and benchmarks only.
+    pub(crate) fn without_hash_verification<P: Into<PathBuf>>(
+        local_srs_folder_path: P,
+        downloader: Arc<dyn TrustedSetupDownloader>,
+    ) -> Self {
+        Self {
+            local_srs_folder_path: local_srs_folder_path.into().join(MITHRIL_CIRCUIT_SRS_FOLDER),
+            srs_expected_hash: None,
+            downloader,
+        }
+    }
+
     /// Builds a `TrustedSetupProvider` backed by a freshly generated unsafe SRS of degree `k`, written
-    /// to `base_dir/degree-{k}/srs/srs-parameters` with empty hash as it should never be checked.
+    /// to `base_dir/degree-{k}/srs/srs-parameters` and never verified against a hash.
     /// For tests and benchmarks only.
     pub(crate) fn with_unsafe_srs(base_dir: &std::path::Path, k: u32) -> Self {
         let degree_k_dir = base_dir.join(format!("degree-{k}"));
@@ -253,7 +270,7 @@ impl TrustedSetupProvider {
         let srs_file = srs_dir.join(MITHRIL_CIRCUIT_SRS_FILENAME);
 
         if srs_file.exists() {
-            return Self::new(degree_k_dir, "", Arc::new(NoTrustedSetupDownload));
+            return Self::without_hash_verification(degree_k_dir, Arc::new(NoTrustedSetupDownload));
         }
 
         let srs = ParamsKZG::<Bls12>::unsafe_setup(k, ChaCha20Rng::seed_from_u64(UNSAFE_SRS_SEED));
@@ -278,8 +295,7 @@ impl TrustedSetupProvider {
 
         std::fs::rename(temp_path, srs_file).unwrap();
 
-        // No hash needed for the test srs
-        Self::new(degree_k_dir, "", Arc::new(NoTrustedSetupDownload))
+        Self::without_hash_verification(degree_k_dir, Arc::new(NoTrustedSetupDownload))
     }
 }
 
@@ -444,15 +460,48 @@ mod tests {
     }
 
     #[test]
-    fn existing_file_on_disk_is_kept_unverified_when_no_hash_is_expected() {
+    fn existing_file_on_disk_is_kept_when_hash_verification_is_disabled() {
         let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
         let srs_file = cache_srs_file_content(temp_dir.path(), b"unsafe srs");
 
-        let result = TrustedSetupProvider::new(temp_dir.path(), "", downloader_never_called())
-            .ensure_verified_srs_file_is_cached();
+        let result = TrustedSetupProvider::without_hash_verification(
+            temp_dir.path(),
+            downloader_never_called(),
+        )
+        .ensure_verified_srs_file_is_cached();
 
         assert!(result.is_ok());
         assert_eq!(b"unsafe srs".to_vec(), std::fs::read(&srs_file).unwrap());
+    }
+
+    #[test]
+    fn downloaded_file_is_stored_when_hash_verification_is_disabled() {
+        let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
+        let srs_file = temp_dir.path().join("srs").join(MITHRIL_CIRCUIT_SRS_FILENAME);
+
+        let result = TrustedSetupProvider::without_hash_verification(
+            temp_dir.path(),
+            downloader_serving(b"unsafe srs"),
+        )
+        .ensure_verified_srs_file_is_cached();
+
+        assert!(result.is_ok());
+        assert_eq!(b"unsafe srs".to_vec(), std::fs::read(&srs_file).unwrap());
+    }
+
+    #[test]
+    fn an_empty_expected_hash_is_verified_like_any_other() {
+        let temp_dir = tempfile::tempdir_in("/tmp").unwrap();
+        let srs_file = cache_srs_file_content(temp_dir.path(), b"unsafe srs");
+
+        let result = TrustedSetupProvider::new(temp_dir.path(), "", downloader_failing())
+            .ensure_verified_srs_file_is_cached();
+
+        assert!(result.is_err());
+        assert!(
+            !srs_file.exists(),
+            "a cached file not matching the expected hash must be removed"
+        );
     }
 
     #[test]

@@ -558,8 +558,11 @@ impl IvcBenchEnv {
     /// same downsized end state, with no network dependency. Precondition: a prior `measure_srs_cold_start`
     /// (or any generation) has populated `cache_dir`.
     pub fn measure_srs_warm_start(cache_dir: &Path) -> StmResult<ParamsKZG<Bls12>> {
-        let mut srs = TrustedSetupProvider::new(cache_dir, "", Arc::new(NoTrustedSetupDownload))
-            .get_trusted_setup_parameters()?;
+        let mut srs = TrustedSetupProvider::without_hash_verification(
+            cache_dir,
+            Arc::new(NoTrustedSetupDownload),
+        )
+        .get_trusted_setup_parameters()?;
         srs.downsize(RECURSIVE_CIRCUIT_DEGREE);
         Ok(srs)
     }
