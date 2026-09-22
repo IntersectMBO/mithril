@@ -5,6 +5,7 @@ use std::error::Error;
 
 use anyhow::{Context, anyhow};
 use futures::{Stream, StreamExt};
+use reqwest::Url;
 
 use mithril_common::StdResult;
 
@@ -24,7 +25,11 @@ const DOWNLOAD_TIMEOUT_IN_SECONDS: u64 = 10;
 /// HTTP downloader bounding the request duration and the response size, and retrying failed
 /// attempts.
 pub struct BoundedHttpDownloader {
+    /// HTTP client of the downloads.
     client: reqwest::Client,
+
+    /// Whether a response served over plain HTTP is refused.
+    https_only: bool,
 }
 
 impl BoundedHttpDownloader {
@@ -51,16 +56,17 @@ impl BoundedHttpDownloader {
             .build()
             .with_context(|| "Failed to build the HTTP client of the registry downloader")?;
 
-        Ok(Self { client })
+        Ok(Self { client, https_only })
     }
 
     /// Build a downloader relying on the browser to bound the request duration, as the request
-    /// timeout builder is not available on WASM, and on the HTTPS registry URL required by the
-    /// retriever, as the HTTPS only builder is not available either.
+    /// timeout builder is not available on WASM, and refusing a response served over plain HTTP,
+    /// as the HTTPS only builder is not available either.
     #[cfg(target_family = "wasm")]
     pub fn new() -> StdResult<Self> {
         Ok(Self {
             client: reqwest::Client::new(),
+            https_only: true,
         })
     }
 
@@ -92,6 +98,9 @@ impl BoundedHttpDownloader {
             .send()
             .await
             .with_context(|| format!("Failed to download '{url}'"))?;
+        if self.https_only {
+            Self::check_response_url_is_https(url, response.url())?;
+        }
         if !response.status().is_success() {
             return Err(anyhow!(
                 "Failed to download '{url}': status {}",
@@ -118,6 +127,18 @@ impl BoundedHttpDownloader {
         }
 
         Ok(body)
+    }
+
+    /// Fail when the response was served over plain HTTP, so a redirect cannot downgrade a
+    /// download where the client cannot restrict the scheme itself.
+    fn check_response_url_is_https(url: &str, response_url: &Url) -> StdResult<()> {
+        if response_url.scheme() != "https" {
+            return Err(anyhow!(
+                "Failed to download '{url}': the response served from '{response_url}' is not over HTTPS"
+            ));
+        }
+
+        Ok(())
     }
 
     /// Fail when the response size exceeds [DOWNLOAD_MAX_BODY_SIZE_IN_BYTES].
@@ -184,6 +205,24 @@ mod tests {
             .expect_err("a download over plain HTTP must be refused");
 
         assert_eq!(0, document.calls());
+    }
+
+    #[test]
+    fn accepts_a_response_served_over_https() {
+        BoundedHttpDownloader::check_response_url_is_https(
+            "https://example.com/document",
+            &Url::parse("https://example.com/redirected-document").unwrap(),
+        )
+        .expect("a response served over HTTPS must be accepted");
+    }
+
+    #[test]
+    fn refuses_a_response_served_over_plain_http() {
+        BoundedHttpDownloader::check_response_url_is_https(
+            "https://example.com/document",
+            &Url::parse("http://example.com/redirected-document").unwrap(),
+        )
+        .expect_err("a response served over plain HTTP must be refused");
     }
 
     #[tokio::test]
