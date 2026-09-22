@@ -618,6 +618,17 @@ mod tests {
             );
         }
 
+        #[test]
+        fn a_cache_is_superseded_by_a_newer_version_or_by_its_registry_verified_again() {
+            let cache =
+                VerifiedRegistryCache::verified(registry_allowing_at_version(2, &[digest(1)]), 10);
+
+            assert!(cache.is_superseded_by(&registry_allowing_at_version(3, &[digest(1)])));
+            assert!(cache.is_superseded_by(&registry_allowing_at_version(2, &[digest(1)])));
+            assert!(!cache.is_superseded_by(&registry_allowing_at_version(2, &[digest(2)])));
+            assert!(!cache.is_superseded_by(&registry_allowing_at_version(1, &[digest(1)])));
+        }
+
         #[tokio::test]
         async fn check_refreshes_the_registry_after_the_cache_time_to_live_expires() {
             let genesis_signer = genesis_signer();
