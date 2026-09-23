@@ -459,7 +459,7 @@ mod tests {
     use mithril_common::{
         AggregateSignatureType,
         crypto_helper::ProtocolMultiSignature,
-        entities::{CardanoDbBeacon, ProtocolMessagePartKey, TimePoint},
+        entities::{CardanoDbBeacon, ProtocolMessagePartKey, SupportedEra, TimePoint},
         temp_dir,
         test::{
             builder::{MithrilFixture, MithrilFixtureBuilder},
@@ -839,9 +839,17 @@ mod tests {
             concatenation_certificate_hash: String,
         }
 
-        async fn create_certificate_after_a_concatenation_certificate(
+        struct PreparedCertification {
+            certifier_service: MithrilCertifierService,
+            signed_entity_type: SignedEntityType,
+            genesis_hash: String,
+            concatenation_certificate_hash: String,
+        }
+
+        async fn prepare_certification_after_a_concatenation_certificate(
             aggregate_signature_type: AggregateSignatureType,
-        ) -> CreatedCertificate {
+            mithril_era: SupportedEra,
+        ) -> PreparedCertification {
             let beacon = CardanoDbBeacon::new(3, 1);
             let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
             let mut protocol_message = ProtocolMessage::new();
@@ -876,8 +884,11 @@ mod tests {
                 .await
                 .unwrap();
 
-            let genesis_certificate =
-                fixture.create_genesis_certificate(certifier_service.network, beacon.epoch - 1);
+            let genesis_certificate = fixture.create_genesis_certificate_for_era(
+                certifier_service.network,
+                beacon.epoch - 1,
+                mithril_era,
+            );
             let concatenation_certificate = Certificate {
                 hash: "concatenation_certificate".to_string(),
                 previous_hash: genesis_certificate.hash.clone(),
@@ -892,16 +903,35 @@ mod tests {
                     .unwrap();
             }
 
-            let certificate = certifier_service
-                .create_certificate(&signed_entity_type)
+            PreparedCertification {
+                certifier_service,
+                signed_entity_type,
+                genesis_hash: genesis_certificate.hash,
+                concatenation_certificate_hash: concatenation_certificate.hash,
+            }
+        }
+
+        async fn create_certificate_after_a_concatenation_certificate(
+            aggregate_signature_type: AggregateSignatureType,
+            mithril_era: SupportedEra,
+        ) -> CreatedCertificate {
+            let prepared = prepare_certification_after_a_concatenation_certificate(
+                aggregate_signature_type,
+                mithril_era,
+            )
+            .await;
+
+            let certificate = prepared
+                .certifier_service
+                .create_certificate(&prepared.signed_entity_type)
                 .await
                 .unwrap()
                 .expect("A certificate should have been created");
 
             CreatedCertificate {
                 certificate,
-                genesis_hash: genesis_certificate.hash,
-                concatenation_certificate_hash: concatenation_certificate.hash,
+                genesis_hash: prepared.genesis_hash,
+                concatenation_certificate_hash: prepared.concatenation_certificate_hash,
             }
         }
 
@@ -909,6 +939,7 @@ mod tests {
         async fn chains_to_the_most_recent_master_certificate_for_concatenation() {
             let created = create_certificate_after_a_concatenation_certificate(
                 AggregateSignatureType::Concatenation,
+                SupportedEra::Pythagoras,
             )
             .await;
 
@@ -924,10 +955,36 @@ mod tests {
          {
             let created = create_certificate_after_a_concatenation_certificate(
                 AggregateSignatureType::IvcSnark,
+                SupportedEra::Lagrange,
             )
             .await;
 
             assert_eq!(created.genesis_hash, created.certificate.previous_hash);
+        }
+
+        #[cfg(feature = "future_snark")]
+        #[tokio::test]
+        async fn fails_to_find_a_parent_certificate_for_ivc_snark_after_a_legacy_genesis_certificate()
+         {
+            let prepared = prepare_certification_after_a_concatenation_certificate(
+                AggregateSignatureType::IvcSnark,
+                SupportedEra::Pythagoras,
+            )
+            .await;
+
+            let error = prepared
+                .certifier_service
+                .create_certificate(&prepared.signed_entity_type)
+                .await
+                .expect_err("Certificate creation should fail without a compatible parent");
+
+            assert!(
+                matches!(
+                    error.downcast_ref::<Box<CertifierServiceError>>().map(Box::as_ref),
+                    Some(CertifierServiceError::NoParentCertificateFound)
+                ),
+                "Expected CertifierServiceError::NoParentCertificateFound, got: '{error:?}'"
+            );
         }
     }
 

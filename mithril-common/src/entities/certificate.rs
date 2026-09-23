@@ -203,11 +203,20 @@ impl Certificate {
 
     /// Tell if a certificate created with the given aggregate signature type can be chained to
     /// this certificate.
+    ///
+    /// The recursion of a chain certifying signature verifies the genesis certificate with its
+    /// Schnorr signature, which a legacy genesis certificate lacks, so only a dual genesis
+    /// certificate can base such a chain.
     pub fn has_compatible_aggregate_signature(
         &self,
         aggregate_signature_type: AggregateSignatureType,
     ) -> bool {
-        aggregate_signature_type.can_chain_to(self.signature.aggregate_signature_type())
+        match &self.signature {
+            CertificateSignature::GenesisSignature(_) => {
+                !aggregate_signature_type.certifies_full_certificate_chain()
+            }
+            _ => aggregate_signature_type.can_chain_to(self.signature.aggregate_signature_type()),
+        }
     }
 
     /// Return true if the certificate is chaining into itself (meaning that its hash and previous
@@ -776,8 +785,7 @@ mod tests {
 
         #[cfg(feature = "future_snark")]
         #[test]
-        fn only_a_genesis_certificate_is_compatible_with_ivc_snark_among_concatenation_certificates()
-         {
+        fn only_a_dual_genesis_certificate_is_compatible_with_ivc_snark() {
             let ed_signature: GenesisEd25519Signature =
                 fake_keys::genesis_signature()[0].try_into().unwrap();
             let mut rng = ChaCha20Rng::from_seed([3u8; 32]);
@@ -790,7 +798,8 @@ mod tests {
             let concatenation_certificate = fake_data::certificate("certificate");
 
             assert!(
-                legacy_genesis.has_compatible_aggregate_signature(AggregateSignatureType::IvcSnark)
+                !legacy_genesis
+                    .has_compatible_aggregate_signature(AggregateSignatureType::IvcSnark)
             );
             assert!(
                 dual_genesis.has_compatible_aggregate_signature(AggregateSignatureType::IvcSnark)

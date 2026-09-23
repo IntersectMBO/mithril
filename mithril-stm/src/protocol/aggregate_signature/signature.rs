@@ -103,6 +103,9 @@ impl AggregateSignatureType {
     /// An aggregate signature that certifies the full certificate chain is recursively built from
     /// the genesis certificate, so it can only be chained to a genesis certificate or to an
     /// aggregate signature of the same type.
+    ///
+    /// The genesis signature is not checked here: the caller must also ensure that the genesis
+    /// certificate can base the recursion (e.g. a dual genesis signature for the IVC proof system).
     pub fn can_chain_to(&self, previous: Option<AggregateSignatureType>) -> bool {
         !self.certifies_full_certificate_chain()
             || previous.is_none_or(|previous_type| previous_type == *self)
