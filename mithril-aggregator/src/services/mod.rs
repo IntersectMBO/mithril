@@ -26,6 +26,8 @@ mod signed_entity;
 mod signer_registration;
 mod snapshotter;
 mod stake_distribution;
+#[cfg(feature = "future_snark")]
+mod trusted_setup_downloader;
 mod upkeep;
 mod usage_reporter;
 
@@ -45,5 +47,7 @@ pub use signed_entity::*;
 pub use signer_registration::*;
 pub use snapshotter::*;
 pub use stake_distribution::*;
+#[cfg(feature = "future_snark")]
+pub use trusted_setup_downloader::*;
 pub use upkeep::*;
 pub use usage_reporter::*;

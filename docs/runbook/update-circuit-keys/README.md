@@ -26,16 +26,16 @@ Reviewers:
 - Reviews the update of the key values (golden and production)
 - Run the tests for the integrity of the production keys
 
-Commands to run the integrity tests:
+Commands to run the integrity tests, once the [production SRS is downloaded](#download-of-the-production-srs):
 
 ```bash
-cargo test -p mithril-stm --features future_snark,rustls --release integrity_test_for_non_recursive_production_key -- --ignored
+cargo test -p mithril-stm --features future_snark --release integrity_test_for_non_recursive_production_key -- --ignored
 ```
 
 and
 
 ```bash
-cargo test -p mithril-stm --features future_snark,rustls --release integrity_test_for_recursive_production_key -- --ignored
+cargo test -p mithril-stm --features future_snark --release integrity_test_for_recursive_production_key -- --ignored
 ```
 
 Release manager:
@@ -43,22 +43,46 @@ Release manager:
 - Prepares the release of this update
 - Schedule the re-genesis of the certificate chain
 
+## Download of the production SRS
+
+The integrity tests and the regeneration of the production keys derive the keys from the production SRS,
+which the library reads from its cache and never downloads.
+Download it once beforehand (about 800 MB) and check its hash:
+
+```bash
+SRS_FOLDER="${TMPDIR:-/tmp}/mithril-circuit/srs"
+SRS_HASH="e8ad5eed936d657a0fb59d2a55ba19f81a3083bb3554ef88f464f5377e9b2c2f"
+mkdir -p "$SRS_FOLDER"
+curl -fL --proto '=https' --proto-redir '=https' https://srs.midnight.network/midnight-srs-2p22 -o "$SRS_FOLDER/srs-parameters.download"
+if echo "$SRS_HASH  $SRS_FOLDER/srs-parameters.download" | sha256sum -c; then
+  mv "$SRS_FOLDER/srs-parameters.download" "$SRS_FOLDER/srs-parameters"
+else
+  rm -f "$SRS_FOLDER/srs-parameters.download"
+  echo "The SRS download failed or its hash does not match, no SRS was placed in $SRS_FOLDER" >&2
+  exit 1
+fi
+```
+
+The download lands on a temporary name and is moved into place only once its hash matches,
+so an interrupted or failed transfer never leaves a file the library would read.
+On macOS, `sha256sum -c` is `shasum -a 256 -c`.
+
 ## Update of the golden value
 
 The author needs to update the golden value of the verification keys in the golden test in `mithril-stm/src/circuits/halo2/tests/golden/mod.rs` and `mithril-stm/src/circuits/halo2_ivc/tests/golden/mod.rs`. The failing tests (in red) need to be updated by changing the golden value used (in the golden files) to turn them green again.
 
 ## Update of the production circuit verification key
 
-To update the production circuit verification keys, one needs to run the following commands:
+To update the production circuit verification keys, one needs to run the following commands, once the [production SRS is downloaded](#download-of-the-production-srs):
 
 ```bash
-cargo test -p mithril-stm --features future_snark,rustls --release write_non_recursive_circuit_verification_key_for_production_to_file -- --ignored
+cargo test -p mithril-stm --features future_snark --release write_non_recursive_circuit_verification_key_for_production_to_file -- --ignored
 ```
 
 and
 
 ```bash
-cargo test -p mithril-stm --features future_snark,rustls --release write_recursive_circuit_verification_key_for_production_to_file -- --ignored
+cargo test -p mithril-stm --features future_snark --release write_recursive_circuit_verification_key_for_production_to_file -- --ignored
 ```
 
 that will update the files holding the values of the production keys, `mithril-stm/src/circuits/halo2/non_recursive_circuit_verification_key_for_production.bin` and `mithril-stm/src/circuits/halo2_ivc/recursive_circuit_verification_key_for_production.bin`.

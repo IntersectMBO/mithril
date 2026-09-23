@@ -1,6 +1,6 @@
 [package]
 name = "mithril-aggregator"
-version = "0.10.7"
+version = "0.10.8"
 description = "A Mithril Aggregator server"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -11,9 +11,11 @@ repository = { workspace = true }
 
 [features]
 default = ["rustls"]
-rustls = ["mithril-common/rustls", "reqwest/rustls"]
+rustls = ["reqwest/rustls"]
 
-future_snark = ["mithril-common/future_snark", "dep:ciborium"]
+# The SRS download needs a TLS backend, which the removal of the `mithril-stm` TLS features no
+# longer enforces anywhere else.
+future_snark = ["mithril-common/future_snark", "dep:ciborium", "dep:rand_core", "rustls"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -43,6 +45,7 @@ mithril-signed-entity-preloader = { path = "../internal/signed-entity/mithril-si
 mithril-ticker = { path = "../internal/mithril-ticker" }
 paste = "1.0.15"
 percent-encoding = "2.3.2"
+rand_core = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = "1.12.4"
 reqwest = { workspace = true, features = ["charset", "http2", "system-proxy", "gzip", "zstd", "deflate", "brotli"] }
@@ -78,6 +81,7 @@ mithril-common = { path = "../mithril-common", features = ["allow_skip_signer_ce
 mockall = { workspace = true }
 slog-scope = "4.4.1"
 slog-term = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 warp = { workspace = true, features = ["test"] }
 
 [[bench]]

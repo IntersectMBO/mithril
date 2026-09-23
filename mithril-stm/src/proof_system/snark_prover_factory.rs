@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use crate::{
     MERKLE_TREE_DEPTH_FOR_SNARK, MembershipDigest, Parameters, StmResult,
+    circuits::trusted_setup::TrustedSetupProvider,
     proof_system::{
         SnarkAggregateSignatureProver, SnarkProver, SnarkProverSetupReuse,
         halo2_ivc_snark::{IvcChainProver, IvcProver},
@@ -25,7 +26,12 @@ pub(crate) trait SnarkProverFactory<D: MembershipDigest>: Debug {
     fn ivc_chain_prover(&self, parameters: &Parameters) -> StmResult<Box<dyn IvcChainProver<D>>>;
 }
 
-/// Production factory: `SnarkProver<OsRng>` and `IvcProver<OsRng>` over the trusted setup.
+/// Production factory: `SnarkProver<OsRng>` and `IvcProver<OsRng>` over the cached trusted setup.
+///
+/// The SRS is never downloaded here: an aggregation runs on a runtime thread, so a proving node
+/// materializes its setups beforehand through
+/// [`SnarkProverSetupWarmer`](super::snark_setup_warmer::SnarkProverSetupWarmer), and a setup
+/// missing from both the process cache and the local SRS cache is an error.
 #[derive(Debug)]
 pub(crate) struct NonDeterministicSnarkProverFactory {
     /// Whether the setups handed to the provers are reused across aggregations.
@@ -44,15 +50,19 @@ impl<D: MembershipDigest> SnarkProverFactory<D> for NonDeterministicSnarkProverF
         &self,
         parameters: &Parameters,
     ) -> StmResult<Box<dyn SnarkAggregateSignatureProver<D>>> {
-        let setup = self
-            .setup_reuse
-            .certificate_setup(parameters, MERKLE_TREE_DEPTH_FOR_SNARK)?;
+        let setup = self.setup_reuse.certificate_setup(
+            parameters,
+            MERKLE_TREE_DEPTH_FOR_SNARK,
+            &TrustedSetupProvider::default(),
+        )?;
 
         Ok(Box::new(SnarkProver::new_non_deterministic(setup)))
     }
 
     fn ivc_chain_prover(&self, parameters: &Parameters) -> StmResult<Box<dyn IvcChainProver<D>>> {
-        let setup = self.setup_reuse.ivc_setup(parameters)?;
+        let setup = self
+            .setup_reuse
+            .ivc_setup(parameters, &TrustedSetupProvider::default())?;
 
         Ok(Box::new(IvcProver::new_non_deterministic(setup)))
     }

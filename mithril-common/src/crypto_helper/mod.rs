@@ -30,7 +30,10 @@ pub use mithril_merkle_tree::{
     MKTreeLeafPosition, MKTreeNode, MKTreeStoreInMemory, MKTreeStorer,
 };
 #[cfg(feature = "future_snark")]
-pub use mithril_stm::SnarkProverSetupWarmer;
+pub use mithril_stm::{
+    MIDNIGHT_SRS_URL_K22, NoTrustedSetupDownload, SnarkProverSetupWarmer, TrustedSetupDownloader,
+    TrustedSetupError, TrustedSetupProvider,
+};
 pub use types::*;
 
 /// The current protocol version

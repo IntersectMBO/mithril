@@ -551,9 +551,12 @@ mod tests {
         use super::*;
         use crate::{
             AggregateSignature, AggregateVerificationKey, AncillaryVerifierData, Clerk,
-            circuits::halo2::{
-                NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
-                keys::NonRecursiveCircuitVerifyingKey,
+            circuits::{
+                halo2::{
+                    NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+                    keys::NonRecursiveCircuitVerifyingKey,
+                },
+                trusted_setup::TrustedSetupProvider,
             },
             codec::TryFromBytes,
             proof_system::{AggregateVerificationKeyForSnark, SnarkVerifierSetup},
@@ -608,7 +611,12 @@ mod tests {
             let message = vec![1u8; 32];
             let signatures: Vec<SingleSignature> =
                 signers.into_iter().map(|s| s.sign(&message).unwrap()).collect();
-            let setup = SnarkProverSetup::try_new(&params, MERKLE_TREE_DEPTH_FOR_SNARK).unwrap();
+            let setup = SnarkProverSetup::try_new(
+                &params,
+                MERKLE_TREE_DEPTH_FOR_SNARK,
+                &TrustedSetupProvider::default(),
+            )
+            .unwrap();
             let mut prover = SnarkProver::new_non_deterministic(Arc::new(setup));
 
             let proof: SnarkProof<MithrilMembershipDigest> =

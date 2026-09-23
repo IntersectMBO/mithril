@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.21 (09-21-2026)
+
+### Changed
+
+- Moved the SRS download out of the library behind the `TrustedSetupDownloader` trait, implemented by the proving node and handed to `SnarkProverSetupWarmer` through a `TrustedSetupProvider`. The provers only read the SRS from the local cache, `NoTrustedSetupDownload` standing in where nothing downloads it, so the lazy proving path never blocks a runtime thread.
+- Verified the cached SRS against the pinned hash before every load: a cached file whose hash does not match is discarded and downloaded again, and a file the filesystem refuses to read or remove fails the load instead of being read unverified.
+
+### Removed
+
+- Removed the `reqwest` dependency and the `rustls` and `native-tls` features: `future_snark` no longer requires a TLS backend. The SRS is downloaded by the node, or manually as documented in the README.
+
 ## 0.12.20 (09-21-2026)
 
 ### Changed
