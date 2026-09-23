@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use slog::{Discard, Logger, o};
+
 use crate::{
     MERKLE_TREE_DEPTH_FOR_SNARK, MembershipDigest, Parameters, StmResult,
     circuits::trusted_setup::TrustedSetupProvider,
@@ -36,12 +38,24 @@ pub(crate) trait SnarkProverFactory<D: MembershipDigest>: Debug {
 pub(crate) struct NonDeterministicSnarkProverFactory {
     /// Whether the setups handed to the provers are reused across aggregations.
     setup_reuse: SnarkProverSetupReuse,
+    /// Logger handed to the provers for their proving step durations.
+    logger: Logger,
 }
 
 impl NonDeterministicSnarkProverFactory {
     /// Factory resolving the setups it hands to the provers through `setup_reuse`.
     pub(crate) fn new(setup_reuse: SnarkProverSetupReuse) -> Self {
-        Self { setup_reuse }
+        Self {
+            setup_reuse,
+            logger: Logger::root(Discard, o!()),
+        }
+    }
+
+    /// Hands `logger` to the provers for their proving step durations, which are discarded by
+    /// default.
+    pub(crate) fn with_logger(mut self, logger: Logger) -> Self {
+        self.logger = logger;
+        self
     }
 }
 
@@ -56,7 +70,9 @@ impl<D: MembershipDigest> SnarkProverFactory<D> for NonDeterministicSnarkProverF
             &TrustedSetupProvider::default(),
         )?;
 
-        Ok(Box::new(SnarkProver::new_non_deterministic(setup)))
+        Ok(Box::new(
+            SnarkProver::new_non_deterministic(setup).with_logger(self.logger.clone()),
+        ))
     }
 
     fn ivc_chain_prover(&self, parameters: &Parameters) -> StmResult<Box<dyn IvcChainProver<D>>> {
@@ -64,6 +80,8 @@ impl<D: MembershipDigest> SnarkProverFactory<D> for NonDeterministicSnarkProverF
             .setup_reuse
             .ivc_setup(parameters, &TrustedSetupProvider::default())?;
 
-        Ok(Box::new(IvcProver::new_non_deterministic(setup)))
+        Ok(Box::new(
+            IvcProver::new_non_deterministic(setup).with_logger(self.logger.clone()),
+        ))
     }
 }
