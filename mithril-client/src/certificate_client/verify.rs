@@ -60,6 +60,26 @@ pub struct MithrilCertificateVerifier {
     logger: Logger,
 }
 
+/// A certificate of the chain, qualified by where it was retrieved from.
+#[derive(Debug, PartialEq)]
+enum RetrievedCertificate {
+    /// The certificate was downloaded from the aggregator.
+    FromAggregator(Certificate),
+    /// The certificate is the one committed to the cache under its hash.
+    #[cfg(feature = "unstable")]
+    FromCache(Certificate),
+}
+
+impl From<RetrievedCertificate> for Certificate {
+    fn from(retrieved_certificate: RetrievedCertificate) -> Self {
+        match retrieved_certificate {
+            RetrievedCertificate::FromAggregator(certificate) => certificate,
+            #[cfg(feature = "unstable")]
+            RetrievedCertificate::FromCache(certificate) => certificate,
+        }
+    }
+}
+
 impl MithrilCertificateVerifier {
     /// Constructs a new `MithrilCertificateVerifier`.
     pub fn new(
@@ -109,7 +129,7 @@ impl MithrilCertificateVerifier {
         &self,
         certificate_chain_validation_id: &str,
         certificate: Certificate,
-    ) -> MithrilResult<Option<Certificate>> {
+    ) -> MithrilResult<Option<RetrievedCertificate>> {
         let certificate_hash = certificate.hash.clone();
         let previous_certificate = self.internal_verifier.verify_certificate(&certificate).await?;
         #[cfg(not(feature = "unstable"))]
@@ -156,7 +176,27 @@ impl MithrilCertificateVerifier {
 
         self.feedback_sender.send_event(event).await;
 
-        Ok(previous_certificate)
+        match previous_certificate {
+            None => Ok(None),
+            Some(previous_certificate) => Ok(Some(
+                self.locate_previous_certificate(previous_certificate).await,
+            )),
+        }
+    }
+
+    /// A previous certificate is trusted from the cache only when it is the certificate committed
+    /// under its hash, so that a certificate downloaded from the aggregator under a cached hash is
+    /// never trusted.
+    async fn locate_previous_certificate(
+        &self,
+        previous_certificate: Certificate,
+    ) -> RetrievedCertificate {
+        #[cfg(feature = "unstable")]
+        if self.matches_committed_certificate(&previous_certificate).await {
+            return RetrievedCertificate::FromCache(previous_certificate);
+        }
+
+        RetrievedCertificate::FromAggregator(previous_certificate)
     }
 
     /// Since the cache is only committed once the whole chain is validated, a certificate whose hash
@@ -200,14 +240,11 @@ impl CertificateVerifier for MithrilCertificateVerifier {
             .await;
 
         let mut current_certificate: Option<Certificate> = Some(certificate.clone().try_into()?);
-        loop {
-            match current_certificate {
-                None => break,
-                Some(next) => {
-                    current_certificate =
-                        self.verify(&certificate_chain_validation_id, next).await?
-                }
-            }
+        while let Some(next) = current_certificate {
+            current_certificate = self
+                .verify(&certificate_chain_validation_id, next)
+                .await?
+                .map(Certificate::from);
         }
 
         #[cfg(feature = "unstable")]
@@ -437,13 +474,17 @@ mod tests {
 
     #[cfg(feature = "unstable")]
     mod cache {
+        use anyhow::anyhow;
         use chrono::TimeDelta;
         use std::collections::HashSet;
 
         use mithril_common::test::builder::CertificateChainingMethod;
+        use mithril_common::test::mock_extensions::MockBuilder;
 
-        use crate::certificate_client::MockCertificateAggregatorRequest;
         use crate::certificate_client::verify_cache::MemoryCertificateVerifierCache;
+        use crate::certificate_client::{
+            MockCertificateAggregatorRequest, MockCertificateVerifierCache,
+        };
         use crate::test_utils::TestLogger;
 
         use super::*;
@@ -590,6 +631,136 @@ mod tests {
             assert!(
                 parent.is_none(),
                 "Expected no certificate to verify, got: {parent:?}",
+            );
+        }
+
+        #[tokio::test]
+        async fn verify_returns_previous_certificate_from_aggregator_when_not_in_cache() {
+            let chain = CertificateChainBuilder::new()
+                .with_total_certificates(2)
+                .with_certificates_per_epoch(1)
+                .build();
+            let certificate = chain.first().unwrap();
+            let genesis_certificate = chain.last().unwrap();
+
+            let cache = Arc::new(MemoryCertificateVerifierCache::new(TimeDelta::hours(1)));
+            let verifier = build_verifier_with_cache(
+                |mock| mock.expect_certificate_chain(vec![genesis_certificate.clone()]),
+                chain.genesis_verifier.to_ed25519_verification_key(),
+                cache,
+            );
+
+            let previous = verifier
+                .verify("chain_validation_id", certificate.clone())
+                .await
+                .unwrap();
+
+            assert_eq!(
+                Some(RetrievedCertificate::FromAggregator(
+                    genesis_certificate.clone()
+                )),
+                previous
+            );
+        }
+
+        #[tokio::test]
+        async fn verify_returns_previous_certificate_from_cache_when_committed_to_cache() {
+            let chain = CertificateChainBuilder::new()
+                .with_total_certificates(2)
+                .with_certificates_per_epoch(1)
+                .build();
+            let certificate = chain.first().unwrap();
+            let genesis_certificate = chain.last().unwrap();
+
+            let cache = Arc::new(
+                MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                    .with_items_from_chain([genesis_certificate]),
+            );
+            let verifier = build_verifier_with_cache(
+                |_mock| {},
+                chain.genesis_verifier.to_ed25519_verification_key(),
+                cache,
+            );
+
+            let previous = verifier
+                .verify("chain_validation_id", certificate.clone())
+                .await
+                .unwrap();
+
+            assert_eq!(
+                Some(RetrievedCertificate::FromCache(genesis_certificate.clone())),
+                previous
+            );
+        }
+
+        #[tokio::test]
+        async fn verify_returns_previous_certificate_from_aggregator_when_committed_certificate_content_differs()
+         {
+            let chain = CertificateChainBuilder::new()
+                .with_total_certificates(2)
+                .with_certificates_per_epoch(1)
+                .build();
+            let certificate = chain.first().unwrap();
+            let genesis_certificate = chain.last().unwrap();
+            let tampered_genesis_certificate = Certificate {
+                signed_message: "tampered".to_string(),
+                ..genesis_certificate.clone()
+            };
+
+            let cache = Arc::new(
+                MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                    .with_items_from_chain([&tampered_genesis_certificate]),
+            );
+            let verifier = build_verifier_with_cache(
+                |mock| mock.expect_certificate_chain(vec![genesis_certificate.clone()]),
+                chain.genesis_verifier.to_ed25519_verification_key(),
+                cache,
+            );
+
+            let previous = verifier
+                .verify("chain_validation_id", certificate.clone())
+                .await
+                .unwrap();
+
+            assert_eq!(
+                Some(RetrievedCertificate::FromAggregator(
+                    genesis_certificate.clone()
+                )),
+                previous
+            );
+        }
+
+        #[tokio::test]
+        async fn verify_returns_previous_certificate_from_aggregator_when_the_cache_fails() {
+            let chain = CertificateChainBuilder::new()
+                .with_total_certificates(2)
+                .with_certificates_per_epoch(1)
+                .build();
+            let certificate = chain.first().unwrap();
+            let genesis_certificate = chain.last().unwrap();
+
+            let cache = MockBuilder::<MockCertificateVerifierCache>::configure(|mock| {
+                mock.expect_get_certificate_by_hash()
+                    .returning(|_| Err(anyhow!("cache failed")));
+                mock.expect_stage_certificate()
+                    .returning(|_, _| Err(anyhow!("cache failed")));
+            });
+            let verifier = build_verifier_with_cache(
+                |mock| mock.expect_certificate_chain(vec![genesis_certificate.clone()]),
+                chain.genesis_verifier.to_ed25519_verification_key(),
+                cache,
+            );
+
+            let previous = verifier
+                .verify("chain_validation_id", certificate.clone())
+                .await
+                .unwrap();
+
+            assert_eq!(
+                Some(RetrievedCertificate::FromAggregator(
+                    genesis_certificate.clone()
+                )),
+                previous
             );
         }
 
