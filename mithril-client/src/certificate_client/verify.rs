@@ -112,6 +112,10 @@ impl MithrilCertificateVerifier {
     ) -> MithrilResult<Option<Certificate>> {
         let certificate_hash = certificate.hash.clone();
         let previous_certificate = self.internal_verifier.verify_certificate(&certificate).await?;
+        #[cfg(not(feature = "unstable"))]
+        let certificate_fetched_from_cache = false;
+        #[cfg(feature = "unstable")]
+        let certificate_fetched_from_cache = self.matches_committed_certificate(&certificate).await;
 
         #[cfg(feature = "unstable")]
         if let Some(cache) = self.verifier_cache.as_ref() {
@@ -138,26 +142,6 @@ impl MithrilCertificateVerifier {
 
         trace!(self.logger, "Certificate validated"; "hash" => &certificate_hash);
 
-        #[cfg(not(feature = "unstable"))]
-        let certificate_fetched_from_cache = false;
-        // Since the cache is only committed after the chain is fully validated, this means that
-        // checking existence of a certificate in the cache is equivalent to check that the cache
-        // was used to fetch a certificate.
-        #[cfg(feature = "unstable")]
-        let certificate_fetched_from_cache = match self.verifier_cache.as_ref() {
-            Some(cache) => match cache.certificate_exist(&certificate_hash).await {
-                Ok(exist) => exist,
-                Err(err) => {
-                    warn!(
-                        self.logger, "Failed to check certificate existence in cache";
-                        "hash" => &certificate_hash, "error" => ?err
-                    );
-                    false
-                }
-            },
-            None => false,
-        };
-
         let event = if certificate_fetched_from_cache {
             MithrilEvent::CertificateFetchedFromCache {
                 certificate_hash: certificate_hash.clone(),
@@ -173,6 +157,31 @@ impl MithrilCertificateVerifier {
         self.feedback_sender.send_event(event).await;
 
         Ok(previous_certificate)
+    }
+
+    /// Since the cache is only committed once the whole chain is validated, a certificate whose hash
+    /// binds its content and equal to the one committed under its hash was verified within a valid
+    /// chain and served by the cache.
+    #[cfg(feature = "unstable")]
+    async fn matches_committed_certificate(&self, certificate: &Certificate) -> bool {
+        let Some(cache) = self.verifier_cache.as_ref() else {
+            return false;
+        };
+
+        match cache.get_certificate_by_hash(&certificate.hash).await {
+            Ok(committed_certificate) => committed_certificate.is_some_and(|committed| {
+                CachedCertificateRetriever::matches_hash(certificate, &committed.hash)
+                    && MithrilCertificate::try_from(certificate.clone())
+                        .is_ok_and(|certificate| certificate == committed)
+            }),
+            Err(err) => {
+                warn!(
+                    self.logger, "Failed to retrieve certificate from cache";
+                    "hash" => &certificate.hash, "error" => ?err
+                );
+                false
+            }
+        }
     }
 }
 

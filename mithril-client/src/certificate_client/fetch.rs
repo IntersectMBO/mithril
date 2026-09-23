@@ -91,6 +91,15 @@ impl CachedCertificateRetriever {
             logger: logger.new_with_component_name::<Self>(),
         }
     }
+
+    /// Whether a cached certificate carries the requested hash and this hash binds its content,
+    /// which a corrupt or tampered cache entry fails.
+    pub(super) fn matches_hash(certificate: &Certificate, certificate_hash: &str) -> bool {
+        certificate.hash == certificate_hash
+            && certificate
+                .try_compute_hash()
+                .is_ok_and(|computed_hash| computed_hash == certificate.hash)
+    }
 }
 
 #[cfg(feature = "unstable")]
@@ -104,14 +113,14 @@ impl CertificateRetriever for CachedCertificateRetriever {
         let certificate = match self.cache.get_certificate_by_hash(certificate_hash).await {
             Ok(None) => None,
             Ok(Some(message)) => match Certificate::try_from(message) {
-                Ok(certificate) if certificate.hash == certificate_hash => Some(certificate),
-                Ok(certificate) => {
+                Ok(certificate) if !Self::matches_hash(&certificate, certificate_hash) => {
                     slog::warn!(
-                        self.logger, "Cached certificate hash does not match requested hash, it may have been tampered with";
+                        self.logger, "Cached certificate does not match the requested hash, it may have been tampered with";
                         "certificate_hash" => certificate_hash, "cached_certificate" => ?certificate,
                     );
                     None
                 }
+                Ok(certificate) => Some(certificate),
                 Err(err) => {
                     slog::warn!(
                         self.logger, "Failed to convert cached certificate to entity";
@@ -250,9 +259,15 @@ mod tests {
 
         use super::*;
 
+        fn certificate_with_consistent_hash() -> Certificate {
+            let mut certificate = fake_data::certificate("hash");
+            certificate.hash = certificate.try_compute_hash().unwrap();
+            certificate
+        }
+
         #[tokio::test]
         async fn returns_cached_certificate_without_calling_the_inner_retriever() {
-            let cached = fake_data::certificate("hash");
+            let cached = certificate_with_consistent_hash();
             let cache = Arc::new(
                 MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
                     .with_items_from_chain([&cached]),
@@ -335,6 +350,29 @@ mod tests {
                         ..certificate.clone().try_into().unwrap()
                     },
                 ]),
+            );
+            let mut mock = MockCertificateAggregatorRequest::new();
+            mock.expect_certificate_chain(vec![certificate.clone()]);
+            let inner = InternalCertificateRetriever::new(Arc::new(mock));
+
+            let retriever =
+                CachedCertificateRetriever::new(Arc::new(inner), cache, TestLogger::stdout());
+            let result = retriever.get_certificate_details(&certificate.hash).await.unwrap();
+
+            assert_eq!(result, certificate);
+        }
+
+        #[tokio::test]
+        async fn falls_back_to_inner_retriever_if_cached_certificate_content_does_not_match_its_hash()
+         {
+            let certificate = certificate_with_consistent_hash();
+            let tampered_certificate = Certificate {
+                signed_message: "tampered".to_string(),
+                ..certificate.clone()
+            };
+            let cache = Arc::new(
+                MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                    .with_items_from_chain([&tampered_certificate]),
             );
             let mut mock = MockCertificateAggregatorRequest::new();
             mock.expect_certificate_chain(vec![certificate.clone()]);
