@@ -310,9 +310,7 @@ mod tests {
             let signature = initializer
                 .create_proof_of_bound_possession(prefix, &mut rng)
                 .expect("Proof of Bound Possession creation should not fail")
-                .expect(
-                    "Initializer::new always creates a schnorr key when future_snark is enabled",
-                );
+                .expect("Initializer::new always creates a schnorr key when snark is enabled");
 
             initializer
                 .schnorr_verification_key

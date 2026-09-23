@@ -617,7 +617,7 @@ mod tests {
                 pub stake: Stake,
             }
 
-            fn golden_message_until_future_snark() -> SignerWithStakeMessagePartUntilFutureSnark {
+            fn golden_message_until_snark() -> SignerWithStakeMessagePartUntilFutureSnark {
                 let signer_message_part = golden_signer_message_part_with_json_hex_encoding();
 
                 SignerWithStakeMessagePartUntilFutureSnark {
@@ -657,16 +657,16 @@ mod tests {
                 let message: SignerWithStakeMessagePartUntilFutureSnark =
                     serde_json::from_str(&current_json).unwrap();
 
-                assert_eq!(golden_message_until_future_snark(), message);
+                assert_eq!(golden_message_until_snark(), message);
             }
 
             #[test]
             fn a_message_without_snark_fields_still_deserializes_into_the_current_shape() {
-                let until_future_snark_json =
-                    serde_json::to_string(&golden_message_until_future_snark()).unwrap();
+                let until_snark_json =
+                    serde_json::to_string(&golden_message_until_snark()).unwrap();
 
                 let message: SignerWithStakeMessagePart =
-                    serde_json::from_str(&until_future_snark_json).unwrap();
+                    serde_json::from_str(&until_snark_json).unwrap();
 
                 let expected_message = SignerWithStakeMessagePart {
                     verification_key_for_snark: None,
@@ -705,7 +705,7 @@ mod tests {
                 pub kes_evolutions: Option<KesEvolutions>,
             }
 
-            fn golden_message_until_future_snark() -> SignerMessagePartUntilFutureSnark {
+            fn golden_message_until_snark() -> SignerMessagePartUntilFutureSnark {
                 let signer_message_part = golden_signer_message_part_with_json_hex_encoding();
 
                 SignerMessagePartUntilFutureSnark {
@@ -735,16 +735,15 @@ mod tests {
                 let message: SignerMessagePartUntilFutureSnark =
                     serde_json::from_str(&current_json).unwrap();
 
-                assert_eq!(golden_message_until_future_snark(), message);
+                assert_eq!(golden_message_until_snark(), message);
             }
 
             #[test]
             fn a_message_without_snark_fields_still_deserializes_into_the_current_shape() {
-                let until_future_snark_json =
-                    serde_json::to_string(&golden_message_until_future_snark()).unwrap();
+                let until_snark_json =
+                    serde_json::to_string(&golden_message_until_snark()).unwrap();
 
-                let message: SignerMessagePart =
-                    serde_json::from_str(&until_future_snark_json).unwrap();
+                let message: SignerMessagePart = serde_json::from_str(&until_snark_json).unwrap();
 
                 let expected_message = SignerMessagePart {
                     verification_key_for_snark: None,

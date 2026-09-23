@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, sync::Arc, time::Instant};
 
 use anyhow::Context;
 use midnight_circuits::hash::poseidon::PoseidonState;
@@ -11,6 +11,7 @@ use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
+use slog::{Discard, Logger, info, o};
 
 use crate::{
     MembershipDigest, Parameters, SingleSignature, StmResult,
@@ -168,6 +169,15 @@ impl<D: MembershipDigest> SnarkProof<D> {
 pub struct SnarkProver<R: RngCore + CryptoRng> {
     setup: Arc<SnarkProverSetup>,
     rng: R,
+    logger: Logger,
+}
+
+impl<R: RngCore + CryptoRng> SnarkProver<R> {
+    /// Logs the duration of the proving steps with `logger`, which discards them by default.
+    pub fn with_logger(mut self, logger: Logger) -> Self {
+        self.logger = logger.new(o!("src" => "SnarkProver"));
+        self
+    }
 }
 
 impl SnarkProver<rand_core::OsRng> {
@@ -179,6 +189,7 @@ impl SnarkProver<rand_core::OsRng> {
         Self {
             setup,
             rng: rand_core::OsRng,
+            logger: Logger::root(Discard, o!()),
         }
     }
 }
@@ -190,6 +201,7 @@ impl SnarkProver<ChaCha20Rng> {
         Ok(Self {
             setup: Arc::new(setup),
             rng: ChaCha20Rng::from_seed(seed),
+            logger: Logger::root(Discard, o!()),
         })
     }
 
@@ -222,12 +234,15 @@ impl<D: MembershipDigest, R: RngCore + CryptoRng> SnarkAggregateSignatureProver<
         signatures: &[SingleSignature],
         message: &[u8],
     ) -> StmResult<SnarkProof<D>> {
+        let start = Instant::now();
         let snark_prover_input =
             SnarkProverInput::prepare_prover_input::<D>(clerk, signatures, message)
                 .with_context(|| "Failed to prepare SNARK prover input")?;
         let instance = snark_prover_input.get_instance();
         let witness = snark_prover_input.into_witness();
+        info!(self.logger, "Certificate prover input prepared"; "duration_ms" => start.elapsed().as_millis());
 
+        let start = Instant::now();
         let circuit_proof = zk::prove::<CertificateCircuit, PoseidonState<CircuitBase>>(
             &self.setup.srs,
             self.setup.proving_key.midnight_pk(),
@@ -237,6 +252,7 @@ impl<D: MembershipDigest, R: RngCore + CryptoRng> SnarkAggregateSignatureProver<
             &mut self.rng,
         )
         .with_context(|| "SNARK proof generation failed")?;
+        info!(self.logger, "Certificate circuit proof generated"; "duration_ms" => start.elapsed().as_millis());
 
         Ok(SnarkProof {
             circuit_proof,
