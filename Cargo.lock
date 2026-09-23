@@ -4214,7 +4214,7 @@ dependencies = [
 
 [[package]]
 name = "mithril-aggregator"
-version = "0.10.8"
+version = "0.10.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4411,7 +4411,7 @@ dependencies = [
 
 [[package]]
 name = "mithril-circuit-key-registry"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4537,7 +4537,7 @@ dependencies = [
 
 [[package]]
 name = "mithril-common"
-version = "0.7.23"
+version = "0.7.24"
 dependencies = [
  "anyhow",
  "async-trait",
