@@ -9,9 +9,9 @@ use mithril_common::entities::Certificate;
 #[cfg(feature = "unstable")]
 use mithril_common::logging::LoggerExtensions;
 
-#[cfg(feature = "unstable")]
-use crate::certificate_client::CertificateVerifierCache;
 use crate::certificate_client::{CertificateAggregatorRequest, CertificateClient};
+#[cfg(feature = "unstable")]
+use crate::certificate_client::{CertificateVerifierCache, CertificateVerifierCacheSpace};
 use crate::{MithrilCertificate, MithrilCertificateListItem, MithrilResult};
 
 #[inline]
@@ -75,6 +75,7 @@ impl CertificateRetriever for InternalCertificateRetriever {
 pub(super) struct CachedCertificateRetriever {
     inner: Arc<dyn CertificateRetriever>,
     cache: Arc<dyn CertificateVerifierCache>,
+    space: CertificateVerifierCacheSpace,
     logger: Logger,
 }
 
@@ -83,11 +84,13 @@ impl CachedCertificateRetriever {
     pub(super) fn new(
         inner: Arc<dyn CertificateRetriever>,
         cache: Arc<dyn CertificateVerifierCache>,
+        space: CertificateVerifierCacheSpace,
         logger: Logger,
     ) -> Self {
         Self {
             inner,
             cache,
+            space,
             logger: logger.new_with_component_name::<Self>(),
         }
     }
@@ -110,7 +113,11 @@ impl CertificateRetriever for CachedCertificateRetriever {
         &self,
         certificate_hash: &str,
     ) -> Result<Certificate, CertificateRetrieverError> {
-        let certificate = match self.cache.get_certificate_by_hash(certificate_hash).await {
+        let certificate = match self
+            .cache
+            .get_certificate_by_hash(&self.space, certificate_hash)
+            .await
+        {
             Ok(None) => None,
             Ok(Some(message)) => match Certificate::try_from(message) {
                 Ok(certificate) if !Self::matches_hash(&certificate, certificate_hash) => {
@@ -249,6 +256,7 @@ mod tests {
     mod cached_retriever {
         use chrono::TimeDelta;
 
+        use mithril_common::crypto_helper::{GenesisEd25519Signer, GenesisSigner};
         use mithril_common::test::mock_extensions::MockBuilder;
 
         use crate::certificate_client::{
@@ -258,6 +266,12 @@ mod tests {
         use crate::test_utils::TestLogger;
 
         use super::*;
+
+        fn space() -> CertificateVerifierCacheSpace {
+            CertificateVerifierCacheSpace::from_genesis_verifier(
+                &GenesisSigner::create_deterministic_signer().create_verifier(),
+            )
+        }
 
         fn certificate_with_consistent_hash() -> Certificate {
             let mut certificate = fake_data::certificate("hash");
@@ -270,17 +284,49 @@ mod tests {
             let cached = certificate_with_consistent_hash();
             let cache = Arc::new(
                 MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
-                    .with_items_from_chain([&cached]),
+                    .with_items_from_chain(&space(), [&cached]),
             );
             let inner = InternalCertificateRetriever::new(Arc::new(
                 MockCertificateAggregatorRequest::new(),
             ));
 
-            let retriever =
-                CachedCertificateRetriever::new(Arc::new(inner), cache, TestLogger::stdout());
+            let retriever = CachedCertificateRetriever::new(
+                Arc::new(inner),
+                cache,
+                space(),
+                TestLogger::stdout(),
+            );
             let result = retriever.get_certificate_details(&cached.hash).await.unwrap();
 
             assert_eq!(result, cached);
+        }
+
+        #[tokio::test]
+        async fn falls_back_to_inner_retriever_if_certificate_is_cached_in_another_space() {
+            let certificate = certificate_with_consistent_hash();
+            let other_space = CertificateVerifierCacheSpace::from_genesis_verifier(
+                &GenesisSigner::from_ed25519(
+                    GenesisEd25519Signer::create_non_deterministic_signer(),
+                )
+                .create_verifier(),
+            );
+            let cache = Arc::new(
+                MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                    .with_items_from_chain(&other_space, [&certificate]),
+            );
+            let mut mock = MockCertificateAggregatorRequest::new();
+            mock.expect_certificate_chain(vec![certificate.clone()]);
+            let inner = InternalCertificateRetriever::new(Arc::new(mock));
+
+            let retriever = CachedCertificateRetriever::new(
+                Arc::new(inner),
+                cache,
+                space(),
+                TestLogger::stdout(),
+            );
+            let result = retriever.get_certificate_details(&certificate.hash).await.unwrap();
+
+            assert_eq!(result, certificate);
         }
 
         #[tokio::test]
@@ -291,8 +337,12 @@ mod tests {
             mock.expect_certificate_chain(vec![certificate.clone()]);
             let inner = InternalCertificateRetriever::new(Arc::new(mock));
 
-            let retriever =
-                CachedCertificateRetriever::new(Arc::new(inner), cache, TestLogger::stdout());
+            let retriever = CachedCertificateRetriever::new(
+                Arc::new(inner),
+                cache,
+                space(),
+                TestLogger::stdout(),
+            );
             let result = retriever.get_certificate_details(&certificate.hash).await.unwrap();
 
             assert_eq!(result, certificate);
@@ -303,15 +353,19 @@ mod tests {
             let certificate = fake_data::certificate("hash");
             let cache = MockBuilder::<MockCertificateVerifierCache>::configure(|m| {
                 m.expect_get_certificate_by_hash()
-                    .returning(|_| Err(anyhow!("cache failed")));
+                    .returning(|_, _| Err(anyhow!("cache failed")));
             });
 
             let mut mock = MockCertificateAggregatorRequest::new();
             mock.expect_certificate_chain(vec![certificate.clone()]);
             let inner = InternalCertificateRetriever::new(Arc::new(mock));
 
-            let retriever =
-                CachedCertificateRetriever::new(Arc::new(inner), cache, TestLogger::stdout());
+            let retriever = CachedCertificateRetriever::new(
+                Arc::new(inner),
+                cache,
+                space(),
+                TestLogger::stdout(),
+            );
             let result = retriever.get_certificate_details(&certificate.hash).await.unwrap();
 
             assert_eq!(result, certificate);
@@ -326,15 +380,19 @@ mod tests {
             };
             let cache = MockBuilder::<MockCertificateVerifierCache>::configure(|m| {
                 m.expect_get_certificate_by_hash()
-                    .return_once(move |_| Ok(Some(tampered_certificate)));
+                    .return_once(move |_, _| Ok(Some(tampered_certificate)));
             });
 
             let mut mock = MockCertificateAggregatorRequest::new();
             mock.expect_certificate_chain(vec![certificate.clone()]);
             let inner = InternalCertificateRetriever::new(Arc::new(mock));
 
-            let retriever =
-                CachedCertificateRetriever::new(Arc::new(inner), cache, TestLogger::stdout());
+            let retriever = CachedCertificateRetriever::new(
+                Arc::new(inner),
+                cache,
+                space(),
+                TestLogger::stdout(),
+            );
             let result = retriever.get_certificate_details(&certificate.hash).await.unwrap();
 
             assert_eq!(result, certificate);
@@ -344,19 +402,24 @@ mod tests {
         async fn falls_back_to_inner_if_cached_certificate_could_not_be_converted_to_entity() {
             let certificate = fake_data::certificate("hash");
             let cache = Arc::new(
-                MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items([
-                    MithrilCertificate {
+                MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items(
+                    &space(),
+                    [MithrilCertificate {
                         aggregate_verification_key: "invalid_key".to_string(),
                         ..certificate.clone().try_into().unwrap()
-                    },
-                ]),
+                    }],
+                ),
             );
             let mut mock = MockCertificateAggregatorRequest::new();
             mock.expect_certificate_chain(vec![certificate.clone()]);
             let inner = InternalCertificateRetriever::new(Arc::new(mock));
 
-            let retriever =
-                CachedCertificateRetriever::new(Arc::new(inner), cache, TestLogger::stdout());
+            let retriever = CachedCertificateRetriever::new(
+                Arc::new(inner),
+                cache,
+                space(),
+                TestLogger::stdout(),
+            );
             let result = retriever.get_certificate_details(&certificate.hash).await.unwrap();
 
             assert_eq!(result, certificate);
@@ -372,14 +435,18 @@ mod tests {
             };
             let cache = Arc::new(
                 MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
-                    .with_items_from_chain([&tampered_certificate]),
+                    .with_items_from_chain(&space(), [&tampered_certificate]),
             );
             let mut mock = MockCertificateAggregatorRequest::new();
             mock.expect_certificate_chain(vec![certificate.clone()]);
             let inner = InternalCertificateRetriever::new(Arc::new(mock));
 
-            let retriever =
-                CachedCertificateRetriever::new(Arc::new(inner), cache, TestLogger::stdout());
+            let retriever = CachedCertificateRetriever::new(
+                Arc::new(inner),
+                cache,
+                space(),
+                TestLogger::stdout(),
+            );
             let result = retriever.get_certificate_details(&certificate.hash).await.unwrap();
 
             assert_eq!(result, certificate);

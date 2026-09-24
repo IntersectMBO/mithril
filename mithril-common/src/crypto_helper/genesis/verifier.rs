@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use anyhow::anyhow;
+use sha2::{Digest, Sha256};
 
 use crate::StdResult;
 #[cfg(feature = "future_snark")]
@@ -14,6 +15,11 @@ use crate::crypto_helper::{
 use crate::crypto_helper::{
     GenesisEd25519Signature, GenesisEd25519VerificationKey, GenesisEd25519Verifier, GenesisSigner,
 };
+use crate::entities::HexEncodedDigest;
+
+/// Domain and version tag prepended to the genesis verification key before computing its fingerprint.
+const GENESIS_VERIFICATION_KEY_FINGERPRINT_TAG: &[u8] =
+    b"mithril-genesis-verification-key-fingerprint-v1";
 
 /// First hex character of the legacy single-Ed25519 file (`5` from the JSON `[` array opener).
 pub const LEGACY_FIRST_HEX_CHAR: u8 = b'5';
@@ -122,6 +128,21 @@ impl GenesisVerifier {
     #[cfg(feature = "future_snark")]
     pub fn to_schnorr_verification_key(&self) -> Option<GenesisSchnorrVerificationKey> {
         self.schnorr.as_ref().map(|schnorr| schnorr.to_verification_key())
+    }
+
+    /// Compute the fingerprint of the genesis verification key: the hex encoded SHA-256 of the
+    /// domain and version tag, the Ed25519 verification key, and the Schnorr verification key when
+    /// present.
+    pub fn compute_fingerprint(&self) -> HexEncodedDigest {
+        let mut hasher = Sha256::new();
+        hasher.update(GENESIS_VERIFICATION_KEY_FINGERPRINT_TAG);
+        hasher.update(self.to_ed25519_verification_key().as_bytes());
+        #[cfg(feature = "future_snark")]
+        if let Some(schnorr_verification_key) = self.to_schnorr_verification_key() {
+            hasher.update(schnorr_verification_key.to_bytes());
+        }
+
+        hex::encode(hasher.finalize())
     }
 
     /// Derive the matching dual verification-key bundle, suitable for serialisation to disk by the
@@ -236,6 +257,72 @@ mod tests {
         verifier
             .verify_ed25519(b"tampered-message", &signature)
             .expect_err("tampered message must be rejected");
+    }
+
+    mod compute_fingerprint {
+        use super::*;
+
+        #[test]
+        fn is_the_same_for_the_same_verification_key() {
+            let verifier = GenesisVerifier::from_ed25519(deterministic_signer().verification_key());
+            let same_verifier =
+                GenesisVerifier::from_ed25519(deterministic_signer().verification_key());
+
+            assert_eq!(
+                verifier.compute_fingerprint(),
+                same_verifier.compute_fingerprint()
+            );
+        }
+
+        #[test]
+        fn differs_for_different_verification_keys() {
+            let verifier = GenesisVerifier::from_ed25519(deterministic_signer().verification_key());
+            let other_verifier = GenesisVerifier::from_ed25519(
+                GenesisEd25519Signer::create_non_deterministic_signer().verification_key(),
+            );
+
+            assert_ne!(
+                verifier.compute_fingerprint(),
+                other_verifier.compute_fingerprint()
+            );
+        }
+
+        #[test]
+        fn is_the_sha256_of_the_tag_followed_by_the_ed25519_verification_key() {
+            let verification_key = deterministic_signer().verification_key();
+            let verifier = GenesisVerifier::from_ed25519(verification_key);
+            let expected_fingerprint = hex::encode(
+                Sha256::new()
+                    .chain_update(GENESIS_VERIFICATION_KEY_FINGERPRINT_TAG)
+                    .chain_update(verification_key.as_bytes())
+                    .finalize(),
+            );
+
+            assert_eq!(expected_fingerprint, verifier.compute_fingerprint());
+        }
+
+        #[test]
+        fn is_a_hex_encoded_sha256_digest() {
+            let verifier = GenesisVerifier::from_ed25519(deterministic_signer().verification_key());
+
+            let fingerprint = verifier.compute_fingerprint();
+
+            assert_eq!(64, fingerprint.len());
+            assert!(fingerprint.chars().all(|c| c.is_ascii_hexdigit()));
+        }
+
+        #[cfg(feature = "future_snark")]
+        #[test]
+        fn differs_between_a_dual_and_a_legacy_verification_key() {
+            let dual_verifier = GenesisSigner::create_deterministic_signer().create_verifier();
+            let legacy_verifier =
+                GenesisVerifier::from_ed25519(dual_verifier.to_ed25519_verification_key());
+
+            assert_ne!(
+                dual_verifier.compute_fingerprint(),
+                legacy_verifier.compute_fingerprint()
+            );
+        }
     }
 
     #[cfg(feature = "future_snark")]
