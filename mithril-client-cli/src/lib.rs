@@ -9,11 +9,13 @@
 //!
 //!   You can find more information on how it works reading the [documentation website](https://mithril.network/doc/mithril/mithril-network/client).
 
+mod certificate_chain_cache;
 mod command_context;
 pub mod commands;
 mod configuration;
 mod utils;
 
+pub use certificate_chain_cache::*;
 pub use command_context::*;
 pub use configuration::*;
 /// Error Clap

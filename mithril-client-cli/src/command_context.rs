@@ -7,6 +7,7 @@ use mithril_client::{
     AggregatorDiscoveryType, ClientBuilder, GenesisVerificationKey, MithrilResult,
 };
 
+use crate::certificate_chain_cache::CertificateChainCacheConfiguration;
 use crate::configuration::ConfigParameters;
 use crate::utils::ForcedEraFetcher;
 
@@ -16,6 +17,7 @@ pub struct CommandContext {
     unstable_enabled: bool,
     json: bool,
     logger: Logger,
+    certificate_chain_cache: CertificateChainCacheConfiguration,
 }
 
 impl CommandContext {
@@ -31,7 +33,17 @@ impl CommandContext {
             unstable_enabled,
             json,
             logger,
+            certificate_chain_cache: CertificateChainCacheConfiguration::default(),
         }
+    }
+
+    /// Set the certificate chain cache configuration
+    pub fn with_certificate_chain_cache(
+        mut self,
+        certificate_chain_cache: CertificateChainCacheConfiguration,
+    ) -> Self {
+        self.certificate_chain_cache = certificate_chain_cache;
+        self
     }
 
     /// Check if unstable commands are enabled
@@ -76,9 +88,33 @@ impl CommandContext {
         &self.logger
     }
 
-    /// Set up a mithril client builder with the configured parameters.
+    /// Get the certificate chain cache configuration
+    pub fn certificate_chain_cache(&self) -> &CertificateChainCacheConfiguration {
+        &self.certificate_chain_cache
+    }
+
+    /// Set up a mithril client builder with the configured parameters and the certificate chain
+    /// cache, if enabled.
     pub fn setup_mithril_client_builder(&self) -> MithrilResult<ClientBuilder> {
-        self.setup_mithril_client_builder_internal(None)
+        let builder = self.setup_mithril_client_builder_internal(None)?;
+        self.add_certificate_chain_cache(builder)
+    }
+
+    /// Add the certificate chain cache to the given client builder, if enabled.
+    ///
+    /// The cache directory is prepared first, so only the commands that verify a certificate
+    /// chain should call it.
+    pub fn add_certificate_chain_cache(
+        &self,
+        builder: ClientBuilder,
+    ) -> MithrilResult<ClientBuilder> {
+        match self.certificate_chain_cache.verifier_cache() {
+            Some((cache, mode)) => {
+                self.certificate_chain_cache.prepare_directory()?;
+                Ok(builder.with_certificate_verifier_cache(Some(cache), mode))
+            }
+            None => Ok(builder),
+        }
     }
 
     /// Set up a mithril client builder with the configured parameters, but with a dummy genesis verification key.
@@ -136,7 +172,10 @@ impl CommandContext {
 mod tests {
     use slog::o;
     use std::collections::HashMap;
+    use std::fs;
+    use std::path::{Path, PathBuf};
 
+    use crate::certificate_chain_cache::CertificateChainCacheMode;
     use crate::configuration::{ConfigError, ConfigSource};
 
     use super::*;
@@ -202,5 +241,101 @@ mod tests {
             context.config_parameters_mut().get("key"),
             Some("value".to_string())
         );
+    }
+
+    mod certificate_chain_cache {
+        use mithril_common::temp_dir_create;
+
+        use super::*;
+
+        fn context_with_certificate_chain_cache(
+            cache_enabled: bool,
+            cache_directory: PathBuf,
+        ) -> CommandContext {
+            let config_parameters = ConfigParameters::new(HashMap::from([
+                (
+                    "aggregator_endpoint".to_string(),
+                    "http://localhost:8080/aggregator".to_string(),
+                ),
+                (
+                    "genesis_verification_key".to_string(),
+                    "genesis_verification_key".to_string(),
+                ),
+            ]));
+
+            CommandContext::new(
+                config_parameters,
+                true,
+                true,
+                Logger::root(slog::Discard, o!()),
+            )
+            .with_certificate_chain_cache(CertificateChainCacheConfiguration {
+                enabled: cache_enabled,
+                mode: CertificateChainCacheMode::EarlyStopVerification,
+                directory: cache_directory,
+            })
+        }
+
+        fn has_marker_file(cache_directory: &Path) -> bool {
+            cache_directory
+                .join(CertificateChainCacheConfiguration::MARKER_FILE_NAME)
+                .is_file()
+        }
+
+        #[test]
+        fn setup_client_builder_prepares_the_cache_directory_if_cache_enabled() {
+            let cache_directory = temp_dir_create!().join("cache");
+            let context = context_with_certificate_chain_cache(true, cache_directory.clone());
+
+            context.setup_mithril_client_builder().unwrap();
+
+            assert!(has_marker_file(&cache_directory));
+        }
+
+        #[test]
+        fn setup_client_builder_fails_if_cache_enabled_in_a_foreign_directory() {
+            let cache_directory = temp_dir_create!();
+            fs::write(cache_directory.join("data.txt"), "content").unwrap();
+            let context = context_with_certificate_chain_cache(true, cache_directory);
+
+            let result = context.setup_mithril_client_builder();
+
+            assert!(result.is_err(), "Expected Err, got Ok");
+        }
+
+        #[test]
+        fn setup_client_builder_does_not_touch_the_cache_directory_if_cache_disabled() {
+            let cache_directory = temp_dir_create!().join("cache");
+            let context = context_with_certificate_chain_cache(false, cache_directory.clone());
+
+            context.setup_mithril_client_builder().unwrap();
+
+            assert!(!cache_directory.exists());
+        }
+
+        #[test]
+        fn setup_client_builder_with_fallback_genesis_key_does_not_touch_the_cache_directory() {
+            let cache_directory = temp_dir_create!().join("cache");
+            let context = context_with_certificate_chain_cache(true, cache_directory.clone());
+
+            context
+                .setup_mithril_client_builder_with_fallback_genesis_key()
+                .unwrap();
+
+            assert!(!cache_directory.exists());
+        }
+
+        #[test]
+        fn add_certificate_chain_cache_prepares_the_cache_directory_if_cache_enabled() {
+            let cache_directory = temp_dir_create!().join("cache");
+            let context = context_with_certificate_chain_cache(true, cache_directory.clone());
+            let builder = context
+                .setup_mithril_client_builder_with_fallback_genesis_key()
+                .unwrap();
+
+            context.add_certificate_chain_cache(builder).unwrap();
+
+            assert!(has_marker_file(&cache_directory));
+        }
     }
 }

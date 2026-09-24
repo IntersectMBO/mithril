@@ -53,8 +53,10 @@ impl CardanoTransactionsCertifyCommand {
 
         match self.backend {
             CardanoTransactionCommandsBackend::V1 => {
+                let client_builder =
+                    context.setup_mithril_client_builder_with_fallback_genesis_key()?;
                 let client = context
-                    .setup_mithril_client_builder_with_fallback_genesis_key()?
+                    .add_certificate_chain_cache(client_builder)?
                     .with_capabilities(SignedEntityTypeDiscriminants::CardanoTransactions.into())
                     .add_feedback_receiver(feedback_receiver)
                     .build()?;
@@ -72,8 +74,10 @@ impl CardanoTransactionsCertifyCommand {
                     "cardano-transaction certify <tx1>,<tx2>,...,<txn> --backend v2",
                     None,
                 )?;
+                let client_builder =
+                    context.setup_mithril_client_builder_with_fallback_genesis_key()?;
                 let client = context
-                    .setup_mithril_client_builder_with_fallback_genesis_key()?
+                    .add_certificate_chain_cache(client_builder)?
                     .with_capabilities(
                         SignedEntityTypeDiscriminants::CardanoBlocksTransactions.into(),
                     )
