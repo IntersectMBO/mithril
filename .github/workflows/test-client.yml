@@ -262,6 +262,35 @@ jobs:
         working-directory: ./bin
         run: ./mithril-client ${{ needs.prepare.outputs.debug_level }} --origin-tag CI cardano-stake-distribution download $CARDANO_STAKE_DISTRIBUTION_HASH
 
+      - name: Cardano Stake Distribution / download & restore latest with an empty certificate chain cache in full verification mode
+        if: needs.prepare.outputs.cardano_stake_distribution_enabled == 'true'
+        shell: bash
+        working-directory: ./bin
+        run: |
+          ./mithril-client ${{ needs.prepare.outputs.debug_level }} --origin-tag CI --unstable --use-certificate-chain-cache --certificate-chain-cache-mode FullVerification cardano-stake-distribution download $CARDANO_STAKE_DISTRIBUTION_HASH
+          ls certificate-chain-cache/committed/*/*.json > /dev/null
+
+      - name: Cardano Stake Distribution / download & restore latest with a filled certificate chain cache in full verification mode
+        if: needs.prepare.outputs.cardano_stake_distribution_enabled == 'true'
+        shell: bash
+        working-directory: ./bin
+        run: ./mithril-client ${{ needs.prepare.outputs.debug_level }} --origin-tag CI --unstable --use-certificate-chain-cache --certificate-chain-cache-mode FullVerification cardano-stake-distribution download $CARDANO_STAKE_DISTRIBUTION_HASH
+
+      - name: Cardano Stake Distribution / download & restore latest with a filled certificate chain cache in early stop verification mode
+        if: needs.prepare.outputs.cardano_stake_distribution_enabled == 'true'
+        shell: bash
+        working-directory: ./bin
+        run: ./mithril-client ${{ needs.prepare.outputs.debug_level }} --origin-tag CI --unstable --use-certificate-chain-cache --certificate-chain-cache-mode EarlyStopVerification cardano-stake-distribution download $CARDANO_STAKE_DISTRIBUTION_HASH
+
+      - name: Cardano Stake Distribution / reset the certificate chain cache
+        if: needs.prepare.outputs.cardano_stake_distribution_enabled == 'true'
+        shell: bash
+        working-directory: ./bin
+        run: |
+          ./mithril-client ${{ needs.prepare.outputs.debug_level }} --unstable tools cache reset
+          test ! -d certificate-chain-cache/committed
+          test ! -d certificate-chain-cache/staged
+
       - name: Cardano Database V2 Snapshot / list and get last hash
         if: needs.prepare.outputs.cardano_database_v2_enabled == 'true'
         shell: bash
