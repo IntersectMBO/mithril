@@ -15,7 +15,7 @@ use crate::{
 /// Derive the non-recursive circuit verification key from the production SRS and the given
 /// protocol parameters. Used by
 /// [`write_non_recursive_circuit_verification_key_for_production_to_file`] to regenerate
-/// `non_recursive_circuit_verification_key_for_production.bin` when the circuit changes.
+/// `non_recursive_circuit_verification_key_for_production.vkey` when the circuit changes.
 fn compute_non_recursive_circuit_verification_key(
     params: &Parameters,
     merkle_tree_depth: u32,
@@ -47,7 +47,7 @@ pub fn write_non_recursive_circuit_verification_key_for_production_to_file() {
     .unwrap();
 
     std::fs::write(
-        "src/circuits/halo2/non_recursive_circuit_verification_key_for_production.bin",
+        "src/circuits/halo2/non_recursive_circuit_verification_key_for_production.vkey",
         verification_key,
     )
     .unwrap();

@@ -19,7 +19,7 @@ use crate::{
 
 /// Derive the recursive circuit verification key from the production SRS and the hardcoded
 /// non-recursive VK. Used by [`write_recursive_circuit_verification_key_for_production_to_file`]
-/// to regenerate `recursive_circuit_verification_key_for_production.bin` when the circuit changes.
+/// to regenerate `recursive_circuit_verification_key_for_production.vkey` when the circuit changes.
 fn compute_recursive_circuit_verification_key() -> StmResult<Vec<u8>> {
     let shared_srs_degree = RECURSIVE_CIRCUIT_DEGREE;
     let srs = TrustedSetupProvider::default().get_trusted_setup_parameters()?;
@@ -55,7 +55,7 @@ pub fn write_recursive_circuit_verification_key_for_production_to_file() {
     let verification_key = compute_recursive_circuit_verification_key().unwrap();
 
     std::fs::write(
-        "src/circuits/halo2_ivc/recursive_circuit_verification_key_for_production.bin",
+        "src/circuits/halo2_ivc/recursive_circuit_verification_key_for_production.vkey",
         verification_key,
     )
     .unwrap();
