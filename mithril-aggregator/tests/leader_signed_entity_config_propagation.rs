@@ -82,7 +82,7 @@ async fn leader_signed_entity_config_propagation() {
     let fixture = MithrilFixtureBuilder::default()
         .with_signers(10)
         .with_protocol_parameters(protocol_parameters.clone())
-        .build_at_epoch(Epoch(2));
+        .build();
 
     tester.init_state_from_fixture(&fixture).await.unwrap();
 
@@ -165,14 +165,7 @@ async fn avoid_epoch_gap_in_upcoming_epoch(
     cycle!(tester, "signing");
 
     comment!("{actual_epoch:?} - register signers");
-    let fixture_for_registration = MithrilFixtureBuilder::default()
-        .with_signers(fixture.signers_with_stake().len())
-        .with_protocol_parameters(fixture.protocol_parameters())
-        .build_at_epoch(actual_epoch.offset_to_recording_epoch());
-    tester
-        .register_signers(&fixture_for_registration.signers_fixture())
-        .await
-        .unwrap();
+    tester.register_signers(&fixture.signers_fixture()).await.unwrap();
     comment!(
         "{actual_epoch:?} - Make a certificate to keep the state machine running without epoch gap"
     );

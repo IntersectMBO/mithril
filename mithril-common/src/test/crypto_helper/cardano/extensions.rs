@@ -12,7 +12,7 @@ use crate::crypto_helper::{CodecParseError, ProtocolParameters, SerDeShelleyFile
 #[cfg(feature = "future_snark")]
 use crate::{
     StdResult,
-    crypto_helper::{KesPeriod, KesSigner},
+    crypto_helper::{KesPeriod, KesSigner, ProtocolOpCert},
     entities::Epoch,
 };
 
@@ -36,6 +36,17 @@ pub trait ProtocolInitializerTestExtension {
     ) -> StdResult<Self>
     where
         Self: Sized;
+
+    /// `TEST ONLY` - Recreate the Proof of Bound Possession of the SNARK signing key for the
+    /// given stake and epoch, keeping the keys.
+    #[cfg(feature = "future_snark")]
+    fn rebind_proof_of_bound_possession_for_snark<R: RngCore + CryptoRng>(
+        &mut self,
+        stake: Stake,
+        epoch: Epoch,
+        operational_certificate: &ProtocolOpCert,
+        rng: &mut R,
+    ) -> StdResult<()>;
 }
 
 /// Extension trait adding test-only file export utilities to any type implementing [SerDeShelleyFileFormat].

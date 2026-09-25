@@ -16,7 +16,7 @@ pub struct SignerRegistrationRound {
     pub epoch: Epoch,
 
     /// Stake distribution
-    pub(super) stake_distribution: StakeDistribution,
+    pub stake_distribution: StakeDistribution,
 }
 
 #[cfg(test)]

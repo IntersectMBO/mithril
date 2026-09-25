@@ -61,10 +61,10 @@ async fn create_certificate_with_buffered_signatures() {
     .await;
 
     comment!("create signers & declare stake distribution");
-    let fixture_builder = MithrilFixtureBuilder::default()
+    let fixture = MithrilFixtureBuilder::default()
         .with_signers(10)
-        .with_protocol_parameters(protocol_parameters.clone());
-    let fixture = fixture_builder.build_at_epoch(Epoch(2));
+        .with_protocol_parameters(protocol_parameters.clone())
+        .build();
 
     tester.init_state_from_fixture(&fixture).await.unwrap();
 
@@ -99,11 +99,7 @@ async fn create_certificate_with_buffered_signatures() {
     cycle!(tester, "signing");
 
     comment!("register signers");
-    let fixture_at_epoch_3 = fixture_builder.build_at_epoch(Epoch(3));
-    tester
-        .register_signers(&fixture_at_epoch_3.signers_fixture())
-        .await
-        .unwrap();
+    tester.register_signers(&fixture.signers_fixture()).await.unwrap();
 
     comment!(
         "Using buffered signatures, the state machine should issue a certificate for the MithrilStakeDistribution"

@@ -277,31 +277,18 @@ impl RuntimeTester {
         self.chain_observer.set_signers(fixture.signers_with_stake()).await;
 
         // Init the stores needed for a genesis certificate
-        let time_point = self.observer.current_time_point().await;
-        #[cfg(feature = "future_snark")]
-        {
-            let signers_count = fixture.signers_with_stake().len();
-            let protocol_parameters = fixture.protocol_parameters();
-            let current_retrieval_epoch =
-                time_point.epoch.offset_to_signer_retrieval_epoch().unwrap();
-            let fixture_with_signers_and_parameters = MithrilFixtureBuilder::default()
-                .with_signers(signers_count)
-                .with_protocol_parameters(protocol_parameters);
-            let current_fixture =
-                fixture_with_signers_and_parameters.build_at_epoch(current_retrieval_epoch);
-            let next_fixture = fixture_with_signers_and_parameters.build_at_epoch(time_point.epoch);
-            self.dependencies
-                .init_state_from_fixtures_for_genesis(
-                    &current_fixture,
-                    &next_fixture,
-                    time_point.epoch,
-                )
-                .await;
-        }
-        #[cfg(not(feature = "future_snark"))]
+        let next_aggregation_epoch = self.observer.current_time_point().await.epoch;
+        let current_fixture =
+            fixture.bound_to_epoch(next_aggregation_epoch.offset_to_signer_retrieval_epoch()?);
+        let next_fixture = fixture.bound_to_epoch(next_aggregation_epoch);
         self.dependencies
-            .init_state_from_fixture_for_genesis(fixture, time_point.epoch)
+            .init_state_from_fixtures_for_genesis(
+                &current_fixture,
+                &next_fixture,
+                next_aggregation_epoch,
+            )
             .await;
+
         Ok(())
     }
 
@@ -462,20 +449,23 @@ impl RuntimeTester {
 
     /// Register the given signers in the registerer
     pub async fn register_signers(&mut self, signers: &[SignerFixture]) -> StdResult<()> {
-        let registration_epoch = self
-            .chain_observer
-            .current_time_point
-            .read()
+        let registration_round = self
+            .dependencies
+            .signer_registerer
+            .get_current_round()
             .await
-            .as_ref()
-            .unwrap()
-            .epoch
-            .offset_to_recording_epoch();
-        for signer_with_stake in signers.iter().map(|f| &f.signer_with_stake) {
+            .ok_or(anyhow!("A signer registration round should be opened"))?;
+        for signer in signers {
+            let party_id = signer.party_id();
+            let stake = *registration_round.stake_distribution.get(&party_id).ok_or(anyhow!(
+                "Party '{party_id}' has no stake in the signer registration round"
+            ))?;
+            let signer_with_stake =
+                signer.bound_to(registration_round.epoch, stake).signer_with_stake;
             match self
                 .dependencies
                 .signer_registerer
-                .register_signer(registration_epoch, &signer_with_stake.to_owned().into())
+                .register_signer(registration_round.epoch, &signer_with_stake.into())
                 .await
             {
                 Ok(_) | Err(SignerRegistrationError::ExistingSigner(_)) => {}

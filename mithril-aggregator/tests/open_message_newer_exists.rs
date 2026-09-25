@@ -56,7 +56,7 @@ async fn open_message_newer_exists() {
     let fixture = MithrilFixtureBuilder::default()
         .with_signers(10)
         .with_protocol_parameters(protocol_parameters.clone())
-        .build_at_epoch(Epoch(2));
+        .build();
 
     tester.init_state_from_fixture(&fixture).await.unwrap();
 

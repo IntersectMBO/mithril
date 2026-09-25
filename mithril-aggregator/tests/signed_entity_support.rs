@@ -80,7 +80,7 @@ async fn follower_can_cycle_to_ready_to_signing_with_unknown_and_discontinued_si
     let fixture = MithrilFixtureBuilder::default()
         .with_signers(10)
         .with_protocol_parameters(protocol_parameters.clone())
-        .build_at_epoch(Epoch(2));
+        .build();
     let signers = fixture.signers_fixture();
 
     leader_tester.init_state_from_fixture(&fixture).await.unwrap();

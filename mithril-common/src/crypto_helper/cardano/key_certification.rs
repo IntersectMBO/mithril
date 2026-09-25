@@ -594,6 +594,28 @@ mod test_extensions {
                 rng,
             )
         }
+
+        #[cfg(feature = "future_snark")]
+        fn rebind_proof_of_bound_possession_for_snark<R: RngCore + CryptoRng>(
+            &mut self,
+            stake: Stake,
+            epoch: Epoch,
+            operational_certificate: &ProtocolOpCert,
+            rng: &mut R,
+        ) -> StdResult<()> {
+            let proof_of_bound_possession_prefix = ProofOfBoundPossessionPrefix::new(
+                stake,
+                epoch,
+                operational_certificate.compute_protocol_party_id_as_bytes(),
+            );
+            self.proof_of_bound_possession_for_snark =
+                self.stm_initializer.create_proof_of_bound_possession(
+                    &proof_of_bound_possession_prefix.to_prefix_bytes(),
+                    rng,
+                )?;
+
+            Ok(())
+        }
     }
 }
 
@@ -603,6 +625,8 @@ mod test {
     use crate::crypto_helper::{OpCert, SerDeShelleyFileFormat};
     #[cfg(feature = "future_snark")]
     use crate::test::builder::MithrilFixtureBuilder;
+    #[cfg(feature = "future_snark")]
+    use crate::test::crypto_helper::ProtocolInitializerTestExtension;
     use crate::test::crypto_helper::{
         KesCryptographicMaterialForTest, KesPartyIndexForTest, create_kes_cryptographic_material,
     };
@@ -923,5 +947,75 @@ mod test {
     fn golden_initializer_deserialization() {
         let _: StmInitializerWrapper = serde_json::from_str(GOLDEN_STM_INITIALIZER_WRAPPER_JSON)
             .expect("Deserializing a StmInitializerWrapper should not fail");
+    }
+
+    #[cfg(feature = "future_snark")]
+    #[test]
+    fn rebind_proof_of_bound_possession_for_snark_binds_the_proof_to_the_given_stake_and_epoch() {
+        let params = Parameters {
+            m: 5,
+            k: 5,
+            phi_f: 1.0,
+        };
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let KesCryptographicMaterialForTest {
+            party_id,
+            operational_certificate_file,
+            kes_secret_key_file,
+        } = create_kes_cryptographic_material(
+            1 as KesPartyIndexForTest,
+            KesPeriod(0),
+            "rebind_proof_of_bound_possession_for_snark",
+        );
+        let operational_certificate: ProtocolOpCert =
+            OpCert::from_file(operational_certificate_file.clone())
+                .expect("opcert deserialization should not fail")
+                .into();
+        let mut initializer = StmInitializerWrapper::setup(
+            params,
+            Some(Arc::new(KesSignerStandard::new(
+                kes_secret_key_file,
+                operational_certificate_file,
+            ))),
+            Some(KesPeriod(0)),
+            10,
+            Epoch(1),
+            &mut rng,
+        )
+        .unwrap();
+        let register = |stake: Stake, epoch: Epoch, initializer: &StmInitializerWrapper| {
+            let mut key_registration = KeyRegWrapper::init(&vec![(party_id.clone(), stake)], epoch);
+            key_registration.register(SignerRegistrationParameters {
+                party_id: None,
+                operational_certificate: Some(operational_certificate.clone()),
+                verification_key_signature_for_concatenation: initializer
+                    .verification_key_signature_for_concatenation(),
+                kes_evolutions: Some(KesEvolutions(0)),
+                verification_key_for_concatenation: initializer
+                    .verification_key_for_concatenation()
+                    .into(),
+                verification_key_for_snark: initializer
+                    .verification_key_for_snark()
+                    .map(Into::into),
+                verification_key_signature_for_snark: initializer
+                    .verification_key_signature_for_snark(),
+                proof_of_bound_possession_for_snark: initializer
+                    .proof_of_bound_possession_for_snark(),
+            })
+        };
+
+        initializer
+            .rebind_proof_of_bound_possession_for_snark(
+                20,
+                Epoch(7),
+                &operational_certificate,
+                &mut rng,
+            )
+            .unwrap();
+
+        register(20, Epoch(7), &initializer)
+            .expect("the rebound proof should verify for the new stake and epoch");
+        register(10, Epoch(1), &initializer)
+            .expect_err("the rebound proof should not verify for the previous stake and epoch");
     }
 }
