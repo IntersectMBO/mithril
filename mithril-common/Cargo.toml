@@ -1,6 +1,6 @@
 [package]
 name = "mithril-common"
-version = "0.7.23"
+version = "0.7.24"
 description = "Common types, interfaces, and utilities for Mithril nodes."
 authors = { workspace = true }
 edition = { workspace = true }

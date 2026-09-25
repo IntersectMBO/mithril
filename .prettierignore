@@ -6,6 +6,7 @@ mithril-explorer/out/
 mithril-explorer/.next/
 mithril-explorer/explorer/
 mithril-infra/assets/docker/cardano/
+mithril-infra/configuration/*/circuit-verification-key-registry.json
 mithril-test-lab/cardano-devnet/artifacts/
 mithril-test-lab/mithril-end-to-end/monitor/config/grafana/provisioning/dashboards/*.json
 mithril-test-lab/mithril-aggregator-fake/default_data/

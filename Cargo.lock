@@ -4214,7 +4214,7 @@ dependencies = [
 
 [[package]]
 name = "mithril-aggregator"
-version = "0.10.8"
+version = "0.10.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4236,6 +4236,7 @@ dependencies = [
  "mithril-api-spec",
  "mithril-cardano-node-chain",
  "mithril-cardano-node-internal-database",
+ "mithril-circuit-key-registry",
  "mithril-cli-helper",
  "mithril-common",
  "mithril-dmq",
@@ -4409,6 +4410,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "mithril-circuit-key-registry"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "futures",
+ "hex",
+ "httpmock",
+ "mithril-common",
+ "mockall",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.4",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "slog",
+ "slog-async",
+ "slog-term",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "mithril-cli-helper"
 version = "0.0.9"
 dependencies = [
@@ -4512,7 +4537,7 @@ dependencies = [
 
 [[package]]
 name = "mithril-common"
-version = "0.7.23"
+version = "0.7.24"
 dependencies = [
  "anyhow",
  "async-trait",

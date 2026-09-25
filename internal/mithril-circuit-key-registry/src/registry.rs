@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use thiserror::Error;
 
-use mithril_stm::CircuitVerificationKeyDigest;
-
-use crate::StdResult;
-use crate::crypto_helper::{GenesisEd25519Signature, GenesisSigner, GenesisVerifier};
-use crate::entities::Epoch;
+use mithril_common::StdResult;
+use mithril_common::crypto_helper::{
+    CircuitVerificationKeyDigest, GenesisEd25519Signature, GenesisSigner, GenesisVerifier,
+};
+use mithril_common::entities::Epoch;
 
 /// Errors raised when checking circuit verification key digests against a
 /// [CircuitVerificationKeyRegistry].
@@ -70,18 +70,19 @@ impl Display for CircuitVerificationKeyRejection {
     }
 }
 
-/// Status of a circuit verification key entry over its epoch range.
+/// Status of a circuit verification key entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CircuitVerificationKeyStatus {
     /// The key may certify certificates whose epoch falls in the entry's range.
     Allowed,
 
-    /// Certificates produced with this key in the entry's range must be rejected.
+    /// The key is rejected for every epoch.
     Revoked,
 }
 
-/// One statement about a circuit verification key, valid over an inclusive epoch range.
+/// The single statement about a circuit verification key: allowed over an inclusive epoch
+/// range, or revoked.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CircuitVerificationKeyEntry {
     /// Digest of the circuit verification key the statement is about.
@@ -90,13 +91,14 @@ pub struct CircuitVerificationKeyEntry {
     /// Human readable label of the circuit, e.g. "certificate-circuit v2".
     pub name: String,
 
-    /// Whether the key is allowed or revoked over the entry's range.
+    /// Whether the key is allowed over the entry's range or revoked.
     pub status: CircuitVerificationKeyStatus,
 
     /// First epoch (inclusive) covered by the statement.
     pub start_epoch: Epoch,
 
-    /// Last epoch (inclusive) covered by the statement, open-ended when absent.
+    /// Last epoch (inclusive) covered by an allowed entry, open-ended when absent, or the
+    /// revocation epoch of a revoked entry.
     pub end_epoch: Option<Epoch>,
 
     /// Audit trail, e.g. the reason of a revocation.
@@ -113,26 +115,27 @@ impl CircuitVerificationKeyEntry {
 /// Registry of the circuit verification keys trusted for SNARK certificates.
 ///
 /// The registry is scoped by the genesis key that signs it: each network publishes its own
-/// registry, signed with its own genesis key. A digest absent from the registry is rejected
-/// (whitelist semantics); a revoked entry rejects the epochs it covers even when an allowed
-/// entry also covers them (revocation wins).
+/// registry, signed with its own genesis key. It holds one entry per circuit verification key
+/// digest: a digest absent from the registry is rejected (whitelist semantics), an allowed entry
+/// accepts the epochs it covers, and a revoked entry rejects every epoch. A digest listed
+/// several times is rejected as soon as one of its entries is revoked.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CircuitVerificationKeyRegistry {
     /// Monotonically increasing registry version, used for rollback protection.
     pub version: u64,
 
-    /// Statements about the circuit verification keys.
+    /// One statement per circuit verification key.
     pub entries: Vec<CircuitVerificationKeyEntry>,
 }
 
 impl CircuitVerificationKeyRegistry {
-    /// Check that every digest is whitelisted and not revoked for the given epoch, reporting
-    /// every rejected digest at once.
+    /// Check that every digest is allowed for the given epoch, reporting every rejected digest
+    /// at once.
     ///
-    /// A digest is rejected as [Revoked](CircuitVerificationKeyRejectionReason::Revoked) when
-    /// any revoked entry covers the epoch, and as
-    /// [NotWhitelisted](CircuitVerificationKeyRejectionReason::NotWhitelisted) when no allowed
-    /// entry covers it.
+    /// A digest is rejected as [Revoked](CircuitVerificationKeyRejectionReason::Revoked) when its
+    /// entry is revoked, and as
+    /// [NotWhitelisted](CircuitVerificationKeyRejectionReason::NotWhitelisted) when it has no
+    /// entry or its allowed entry does not cover the epoch.
     pub fn check(
         &self,
         digests: &[CircuitVerificationKeyDigest],
@@ -150,23 +153,20 @@ impl CircuitVerificationKeyRegistry {
         }
     }
 
-    /// Find why the digest is rejected for the epoch, if it is: revocation wins over an allowed
-    /// entry covering the same epoch.
+    /// Find why the digest is rejected for the epoch, if it is: a revoked entry of the digest
+    /// wins over any allowed one, so a malformed registry listing a digest twice cannot certify
+    /// a revoked key.
     fn find_digest_rejection(
         &self,
         digest: &CircuitVerificationKeyDigest,
         epoch: Epoch,
     ) -> Option<CircuitVerificationKeyRejection> {
-        let is_revoked = self.has_covering_entry_with_status(
-            digest,
-            epoch,
-            CircuitVerificationKeyStatus::Revoked,
-        );
-        let is_allowed = self.has_covering_entry_with_status(
-            digest,
-            epoch,
-            CircuitVerificationKeyStatus::Allowed,
-        );
+        let entries: Vec<&CircuitVerificationKeyEntry> =
+            self.entries.iter().filter(|entry| entry.digest == *digest).collect();
+        let is_revoked = entries
+            .iter()
+            .any(|entry| entry.status == CircuitVerificationKeyStatus::Revoked);
+        let is_allowed = entries.iter().any(|entry| entry.covers(epoch));
         let reason = match (is_revoked, is_allowed) {
             (true, _) => Some(CircuitVerificationKeyRejectionReason::Revoked),
             (false, false) => Some(CircuitVerificationKeyRejectionReason::NotWhitelisted),
@@ -177,18 +177,6 @@ impl CircuitVerificationKeyRegistry {
             digest: *digest,
             reason,
         })
-    }
-
-    /// Whether an entry with the given status covers the digest for the epoch.
-    fn has_covering_entry_with_status(
-        &self,
-        digest: &CircuitVerificationKeyDigest,
-        epoch: Epoch,
-        status: CircuitVerificationKeyStatus,
-    ) -> bool {
-        self.entries
-            .iter()
-            .any(|entry| entry.digest == *digest && entry.covers(epoch) && entry.status == status)
     }
 }
 
@@ -219,11 +207,24 @@ impl SignedCircuitVerificationKeyRegistry {
         registry: CircuitVerificationKeyRegistry,
         genesis_signer: &GenesisSigner,
     ) -> StdResult<Self> {
-        let registry_json = serde_json::to_string_pretty(&registry)?;
-        let signature = genesis_signer.ed25519.sign(&Self::signable_bytes(&registry_json));
+        Self::try_new_from_json(serde_json::to_string_pretty(&registry)?, genesis_signer)
+    }
+
+    /// Sign the exact registry JSON with the Ed25519 half of the genesis signer.
+    ///
+    /// A tool that edits a published registry signs the JSON document it edited rather than a
+    /// re-serialization of the parsed registry, so the fields added by a future schema version
+    /// are not silently stripped from the re-signed registry. The whitespace surrounding the
+    /// document (e.g. the final newline of a file) is not part of the signed bytes.
+    pub fn try_new_from_json(
+        registry_json: String,
+        genesis_signer: &GenesisSigner,
+    ) -> StdResult<Self> {
+        let registry = RawValue::from_string(registry_json)?;
+        let signature = genesis_signer.ed25519.sign(&Self::signable_bytes(registry.get()));
 
         Ok(Self {
-            registry: RawValue::from_string(registry_json)?,
+            registry,
             signature,
         })
     }
@@ -233,10 +234,20 @@ impl SignedCircuitVerificationKeyRegistry {
         &self,
         genesis_verifier: &GenesisVerifier,
     ) -> StdResult<CircuitVerificationKeyRegistry> {
+        Ok(serde_json::from_str(
+            self.verify_to_json(genesis_verifier)?,
+        )?)
+    }
+
+    /// Verify the genesis signature and return the exact registry JSON bytes it covers.
+    ///
+    /// A tool that edits a published registry starts from these bytes rather than from the parsed
+    /// registry, so the fields added by a future schema version survive the edit.
+    pub fn verify_to_json(&self, genesis_verifier: &GenesisVerifier) -> StdResult<&str> {
         genesis_verifier
             .verify_ed25519(&Self::signable_bytes(self.registry.get()), &self.signature)?;
 
-        Ok(serde_json::from_str(self.registry.get())?)
+        Ok(self.registry.get())
     }
 
     /// Parse the registry without verifying its signature, for displaying or testing purposes
@@ -273,7 +284,7 @@ mod tests {
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
 
-    use crate::crypto_helper::GenesisEd25519Signer;
+    use mithril_common::crypto_helper::GenesisEd25519Signer;
 
     use super::*;
 
@@ -404,18 +415,47 @@ mod tests {
         }
 
         #[test]
-        fn revocation_wins_over_an_allowed_entry_covering_the_same_epoch() {
+        fn rejects_a_revoked_key_for_every_epoch() {
+            let registry = registry(vec![entry(
+                digest(1),
+                CircuitVerificationKeyStatus::Revoked,
+                10,
+                Some(250),
+            )]);
+
+            for epoch in [Epoch(5), Epoch(100), Epoch(300)] {
+                let error = registry.check(&[digest(1)], epoch).unwrap_err();
+
+                assert_eq!(
+                    CircuitVerificationKeyRegistryError::Rejected {
+                        epoch,
+                        rejections: vec![rejection(
+                            digest(1),
+                            CircuitVerificationKeyRejectionReason::Revoked
+                        )],
+                    },
+                    error
+                );
+            }
+        }
+
+        #[test]
+        fn rejects_a_digest_listed_as_allowed_and_revoked() {
             let registry = registry(vec![
                 entry(digest(1), CircuitVerificationKeyStatus::Allowed, 10, None),
-                entry(digest(1), CircuitVerificationKeyStatus::Revoked, 250, None),
+                entry(
+                    digest(1),
+                    CircuitVerificationKeyStatus::Revoked,
+                    10,
+                    Some(20),
+                ),
             ]);
 
-            registry.check(&[digest(1)], Epoch(249)).unwrap();
-            let error = registry.check(&[digest(1)], Epoch(250)).unwrap_err();
+            let error = registry.check(&[digest(1)], Epoch(15)).unwrap_err();
 
             assert_eq!(
                 CircuitVerificationKeyRegistryError::Rejected {
-                    epoch: Epoch(250),
+                    epoch: Epoch(15),
                     rejections: vec![rejection(
                         digest(1),
                         CircuitVerificationKeyRejectionReason::Revoked
@@ -496,6 +536,26 @@ mod tests {
                     None,
                 )]),
                 verified_registry
+            );
+        }
+
+        #[test]
+        fn signed_registry_json_surrounded_by_whitespace_verifies() {
+            let genesis_signer =
+                GenesisSigner::from_ed25519(GenesisEd25519Signer::create_deterministic_signer());
+            let registry_json = format!(
+                "{}\n",
+                serde_json::to_string_pretty(&registry(vec![])).unwrap()
+            );
+
+            let signed_registry = SignedCircuitVerificationKeyRegistry::try_new_from_json(
+                registry_json,
+                &genesis_signer,
+            )
+            .unwrap();
+
+            signed_registry.verify(&genesis_signer.create_verifier()).expect(
+                "the signature must cover the registry JSON without its surrounding whitespace",
             );
         }
 
