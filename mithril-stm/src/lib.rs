@@ -108,10 +108,12 @@ pub type StmError = anyhow::Error;
 pub type StmResult<T> = anyhow::Result<T, StmError>;
 
 #[cfg(feature = "future_snark")]
-// TODO: remove this allow dead_code directive when function is called or future_snark is activated
-#[allow(dead_code)]
 /// Target value type used in the lottery for snark proof system
 pub type LotteryTargetValue = crate::signature_scheme::BaseFieldElement;
+
+#[cfg(feature = "future_snark")]
+/// Prefix bytes of a proof of bound possession for signing key
+pub type ProofOfBoundPossessionPrefixBytes = [u8; 32];
 
 /// Trait defining the different hash types for different proof systems.
 pub trait MembershipDigest: Clone {

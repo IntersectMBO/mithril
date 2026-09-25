@@ -5,7 +5,9 @@ use mithril_stm::{
     SingleSignature, VerificationKeyProofOfPossessionForConcatenation,
 };
 #[cfg(feature = "future_snark")]
-use mithril_stm::{AggregateVerificationKeyForSnark, VerificationKeyForSnark};
+use mithril_stm::{
+    AggregateVerificationKeyForSnark, StandardSchnorrSignature, VerificationKeyForSnark,
+};
 
 use crate::StdResult;
 use crate::crypto_helper::{
@@ -52,6 +54,11 @@ pub type ProtocolAggregateVerificationKeyForConcatenation =
 #[cfg(feature = "future_snark")]
 pub type ProtocolAggregateVerificationKeyForSnark =
     ProtocolKey<AggregateVerificationKeyForSnark<ProtocolMembershipDigest>>;
+
+/// Wrapper of [MithrilStm:StandardSchnorrSignature](type@StandardSchnorrSignature) to add
+/// serialization utilities.
+#[cfg(feature = "future_snark")]
+pub type ProtocolSignerProofOfBoundPossessionForSnark = ProtocolKey<StandardSchnorrSignature>;
 
 /// Wrapper of [MKProof] to add serialization utilities.
 pub type ProtocolMkProof = ProtocolKey<MKMapProof<BlockRange>>;
@@ -110,5 +117,5 @@ impl_codec_and_type_conversions_for_protocol_key!(
 
 #[cfg(feature = "future_snark")]
 impl_codec_and_type_conversions_for_protocol_key!(
-    bytes_hex_codec => AggregateVerificationKeyForSnark<ProtocolMembershipDigest>
+    bytes_hex_codec => AggregateVerificationKeyForSnark<ProtocolMembershipDigest>, StandardSchnorrSignature
 );

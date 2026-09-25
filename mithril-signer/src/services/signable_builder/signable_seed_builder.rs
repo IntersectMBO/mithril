@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use mithril_common::{
     StdResult,
     crypto_helper::{ProtocolAggregateVerificationKeyForConcatenation, ProtocolInitializer},
-    entities::{ProtocolMessagePartValue, ProtocolParameters, SignerWithStake},
+    entities::{Epoch, ProtocolMessagePartValue, ProtocolParameters, SignerWithStake},
     protocol::SignerBuilder,
     signable_builder::SignableSeedBuilder,
 };
@@ -42,10 +42,12 @@ impl SignerSignableSeedBuilder {
         &self,
         protocol_initializer: ProtocolInitializer,
         signers_with_stake: &[SignerWithStake],
+        epoch: Epoch,
     ) -> StdResult<String> {
         let signer_builder = SignerBuilder::new(
             signers_with_stake,
             &protocol_initializer.get_protocol_parameters().into(),
+            epoch,
         )
         .with_context(|| "SignerSignableSeedBuilder can not compute aggregate verification key")?;
 
@@ -66,10 +68,12 @@ impl SignerSignableSeedBuilder {
         &self,
         protocol_initializer: ProtocolInitializer,
         signers_with_stake: &[SignerWithStake],
+        epoch: Epoch,
     ) -> StdResult<Option<String>> {
         let signer_builder = SignerBuilder::new(
             signers_with_stake,
             &protocol_initializer.get_protocol_parameters().into(),
+            epoch,
         )
         .with_context(
             || "SignerSignableSeedBuilder can not compute SNARK aggregate verification key",
@@ -106,7 +110,7 @@ impl SignableSeedBuilder for SignerSignableSeedBuilder {
             })?;
         let next_signers_with_stake = epoch_service.next_signers_with_stake().await?;
         let next_aggregate_verification_key =
-            self.compute_encode_avk(next_protocol_initializer, &next_signers_with_stake)?;
+            self.compute_encode_avk(next_protocol_initializer, &next_signers_with_stake, epoch)?;
 
         Ok(next_aggregate_verification_key)
     }
@@ -134,8 +138,11 @@ impl SignableSeedBuilder for SignerSignableSeedBuilder {
                     )
                 })?;
             let next_signers_with_stake = epoch_service.next_signers_with_stake().await?;
-            let next_snark_aggregate_verification_key =
-                self.compute_encode_snark_avk(next_protocol_initializer, &next_signers_with_stake)?;
+            let next_snark_aggregate_verification_key = self.compute_encode_snark_avk(
+                next_protocol_initializer,
+                &next_signers_with_stake,
+                epoch,
+            )?;
 
             Ok(next_snark_aggregate_verification_key)
         }
@@ -208,7 +215,7 @@ mod tests {
     #[tokio::test]
     async fn test_compute_next_aggregate_verification_key_protocol_message_value() {
         let epoch = Epoch(5);
-        let next_fixture = MithrilFixtureBuilder::default().with_signers(4).build();
+        let next_fixture = MithrilFixtureBuilder::default().with_signers(4).build_at_epoch(epoch);
         let protocol_initializer = next_fixture.signers_fixture()[0].protocol_initializer.clone();
         let next_signers_with_stake = next_fixture.signers_with_stake();
         let mut mock_container = MockDependencyInjector::new();
@@ -300,7 +307,8 @@ mod tests {
         #[tokio::test]
         async fn returns_snark_avk_during_lagrange_era() {
             let epoch = Epoch(5);
-            let next_fixture = MithrilFixtureBuilder::default().with_signers(4).build();
+            let next_fixture =
+                MithrilFixtureBuilder::default().with_signers(4).build_at_epoch(epoch);
             let protocol_initializer =
                 next_fixture.signers_fixture()[0].protocol_initializer.clone();
             let next_signers_with_stake = next_fixture.signers_with_stake();

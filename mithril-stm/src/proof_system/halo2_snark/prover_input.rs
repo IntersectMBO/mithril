@@ -127,7 +127,8 @@ impl SnarkProverInput {
     /// The returned vector is sorted by lottery index (guaranteed by `BTreeMap` iteration order of
     /// `unique_index_signature_map`).
     ///
-    /// Returns an error if a Merkle path cannot be converted to the circuit representation, or
+    /// Returns an error if a Merkle path cannot be converted to the circuit representation,
+    /// if the entry has a snark key but no snark index in the index mapping, or
     /// if any witness entry cannot be assembled (missing signer data or SNARK signature).
     fn create_witness<D: MembershipDigest>(
         unique_index_signature_map: BTreeMap<LotteryIndex, SingleSignature>,
@@ -145,8 +146,9 @@ impl SnarkProverInput {
                     Ok(None) => continue,
                     Err(_) => continue,
                 };
+
                 let merkle_path = merkle_tree.compute_merkle_tree_path_fixed_length(
-                    sig.signer_index as usize,
+                    clerk.get_signer_index_in_snark_merkle_tree(sig.signer_index)? as usize,
                     MERKLE_TREE_DEPTH_FOR_SNARK,
                 );
                 let merkle_path_circuit: Halo2MerklePath = Halo2MerklePath::try_from(&merkle_path)?;
@@ -194,8 +196,11 @@ mod tests {
 
     use crate::{
         AggregationError, Initializer, KeyRegistration, MithrilMembershipDigest, Parameters,
-        Signer, SingleSignature,
-        proof_system::{SnarkClerk, halo2_snark::build_snark_message},
+        Signer, SingleSignature, SnarkProof, SnarkVerifierData, Stake, StmResult,
+        proof_system::{
+            SnarkAggregateSignatureProver, SnarkClerk, SnarkProver, SnarkProverSetup,
+            halo2_snark::{MERKLE_TREE_DEPTH_FOR_SNARK, build_snark_message},
+        },
     };
 
     use super::SnarkProverInput;
@@ -231,6 +236,91 @@ mod tests {
             .iter()
             .filter_map(|signer| signer.create_single_signature(message).ok())
             .collect()
+    }
+
+    fn setup_mixed_signers_and_clerk(
+        params: Parameters,
+        concat_only_stakes: &[Stake],
+        snark_stakes: &[Stake],
+        rng: &mut ChaCha20Rng,
+    ) -> (Vec<Signer<D>>, SnarkClerk) {
+        let mut key_reg = KeyRegistration::initialize();
+        let mut initializers = Vec::with_capacity(concat_only_stakes.len() + snark_stakes.len());
+
+        for &stake in concat_only_stakes {
+            let mut init = Initializer::new(params, stake, rng);
+            init.strip_snark_keys();
+            key_reg.register_by_entry(&init.clone().try_into().unwrap()).unwrap();
+            initializers.push(init);
+        }
+        for &stake in snark_stakes {
+            let init = Initializer::new(params, stake, rng);
+            key_reg.register_by_entry(&init.clone().try_into().unwrap()).unwrap();
+            initializers.push(init);
+        }
+
+        let closed_reg = key_reg.close_registration(&params).unwrap();
+        let signers: Vec<Signer<D>> = initializers
+            .into_iter()
+            .map(|init| init.try_create_signer::<D>(&closed_reg).unwrap())
+            .collect();
+
+        let first_snark_signer = signers
+            .iter()
+            .find(|s| s.get_schnorr_verification_key().is_some())
+            .expect("at least one SNARK-holding signer is required to build a clerk");
+        let clerk = SnarkClerk::new_clerk_from_signer(first_snark_signer);
+
+        (signers, clerk)
+    }
+
+    /// Runs the real SNARK circuit (not just the STM-level Merkle check) over a mixed registry
+    /// of concat-only and SNARK-holding signers, submitting every signer's signature at once.
+    ///
+    /// Confirms end to end that `create_witness` opening each signer's own leaf at its correct
+    /// SNARK-local position produces a witness the real circuit accepts: the resulting proof
+    /// verifies against the aggregate verification key and message.
+    #[test]
+    fn aggregating_signatures_from_a_mixed_registry_produces_a_verifiable_snark_proof() {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let params = Parameters {
+            m: 50,
+            k: 2,
+            phi_f: 1.0,
+        };
+
+        let (signers, clerk) =
+            setup_mixed_signers_and_clerk(params, &[1, 7, 8, 9, 10], &[1, 2, 3, 4], &mut rng);
+        let message = [0u8; 32];
+        let signatures: Vec<SingleSignature> = signers
+            .iter()
+            .map(|s| {
+                s.create_single_signature(&message)
+                    .expect("phi_f = 1.0 guarantees a winning lottery index")
+            })
+            .collect();
+
+        let snark_setup =
+            SnarkProverSetup::build_for_test(&params, MERKLE_TREE_DEPTH_FOR_SNARK).unwrap();
+        let mut prover = SnarkProver::try_new_deterministic([0u8; 32], snark_setup).unwrap();
+
+        let result: StmResult<SnarkProof<D>> =
+            prover.aggregate_signatures(&clerk, &signatures, &message);
+        let proof =
+            result.expect("proof generation should succeed over a correctly-indexed witness");
+
+        let avk = clerk.compute_aggregate_verification_key_for_snark::<D>();
+        let verifier_data = SnarkVerifierData::new(
+            SnarkAggregateSignatureProver::<D>::verifying_key(&prover).clone(),
+        );
+        let verification_result =
+            proof.verify(&message, &avk, &verifier_data, &prover.verifier_params());
+
+        assert!(
+            verification_result.is_ok(),
+            "a proof built from a witness whose Merkle path correctly opens each signer's own \
+             leaf should verify, got: {verification_result:?}"
+        );
     }
 
     #[test]

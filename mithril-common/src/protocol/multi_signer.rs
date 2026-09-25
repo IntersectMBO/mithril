@@ -122,7 +122,7 @@ mod test {
 
     use crate::{
         crypto_helper::ProtocolAggregationError,
-        entities::{ProtocolMessage, ProtocolMessagePartKey, ProtocolParameters},
+        entities::{Epoch, ProtocolMessage, ProtocolMessagePartKey, ProtocolParameters},
         protocol::SignerBuilder,
         test::{
             builder::{MithrilFixture, MithrilFixtureBuilder, StakeDistributionGenerationMethod},
@@ -136,6 +136,7 @@ mod test {
         SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
+            Epoch::default(),
         )
         .unwrap()
         .build_multi_signer()

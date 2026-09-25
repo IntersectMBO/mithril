@@ -171,6 +171,8 @@ mod tests {
                 verification_key_for_snark: None,
                 #[cfg(feature = "future_snark")]
                 verification_key_signature_for_snark: None,
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: None,
             })
             .collect()
     }
@@ -203,6 +205,7 @@ mod tests {
                     29,
                     9497629046,
                     '2023-08-12T00:03:51.236860002+00:00',
+                    null,
                     null,
                     null
                 );
@@ -259,6 +262,8 @@ mod tests {
                     verification_key_for_snark: None,
                     #[cfg(feature = "future_snark")]
                     verification_key_signature_for_snark: None,
+                    #[cfg(feature = "future_snark")]
+                    proof_of_bound_possession_for_snark: None,
                 },
             )
             .await
@@ -290,6 +295,8 @@ mod tests {
                     verification_key_for_snark: None,
                     #[cfg(feature = "future_snark")]
                     verification_key_signature_for_snark: None,
+                    #[cfg(feature = "future_snark")]
+                    proof_of_bound_possession_for_snark: None,
                 },
             )
             .await
@@ -309,6 +316,8 @@ mod tests {
                 verification_key_for_snark: None,
                 #[cfg(feature = "future_snark")]
                 verification_key_signature_for_snark: None,
+                #[cfg(feature = "future_snark")]
+                proof_of_bound_possession_for_snark: None,
             }),
             res,
         );

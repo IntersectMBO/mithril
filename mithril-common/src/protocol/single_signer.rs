@@ -51,7 +51,7 @@ mod test {
 
     use crate::{
         crypto_helper::{KesSigner, KesSignerStandard},
-        entities::ProtocolMessage,
+        entities::{Epoch, ProtocolMessage},
         protocol::SignerBuilder,
         test::builder::MithrilFixtureBuilder,
     };
@@ -69,6 +69,7 @@ mod test {
         let (single_signer, _) = SignerBuilder::new(
             &fixture.signers_with_stake(),
             &fixture.protocol_parameters(),
+            Epoch::default(),
         )
         .unwrap()
         .build_test_single_signer(signer.signer_with_stake.clone(), kes_signer)

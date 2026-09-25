@@ -14,8 +14,11 @@ pub type ProtocolVersion<'a> = &'a str;
 /// Alias of [MithrilStm:MithrilMembershipDigest](struct@mithril_stm::MithrilMembershipDigest).
 pub type ProtocolMembershipDigest = MithrilMembershipDigest;
 
-/// The id of a mithril party.
+/// The id of a Mithril party.
 pub type ProtocolPartyId = String;
+
+/// The raw hash of a Mithril party id.
+pub type ProtocolPartyIdBytes = [u8; 28];
 
 /// Alias of [MithrilStm:Stake](type@mithril_stm::Stake).
 pub type ProtocolStake = Stake;

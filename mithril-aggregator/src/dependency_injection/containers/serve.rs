@@ -153,27 +153,83 @@ impl ServeCommandDependenciesContainer {
 
     /// `TEST METHOD ONLY`
     ///
+    /// Like [Self::init_state_from_fixture], but backs the "current" and "next" signer sets with
+    /// two different fixtures. Needed when their Proof of Bound Possession signatures must be
+    /// created at different epochs (the current retrieval epoch vs. the next retrieval epoch),
+    /// since a single fixture only carries one PoBP epoch.
+    #[cfg(feature = "future_snark")]
+    pub async fn init_state_from_fixtures(
+        &self,
+        current_fixture: &MithrilFixture,
+        next_fixture: &MithrilFixture,
+        next_aggregation_epoch: Epoch,
+    ) {
+        let current_retrieval_epoch =
+            next_aggregation_epoch.offset_to_signer_retrieval_epoch().unwrap();
+        self.fill_verification_key_store(
+            current_retrieval_epoch,
+            &current_fixture.signers_with_stake(),
+        )
+        .await;
+        self.fill_stakes_store(
+            current_retrieval_epoch,
+            current_fixture.signers_with_stake(),
+        )
+        .await;
+
+        self.fill_verification_key_store(
+            next_aggregation_epoch,
+            &next_fixture.signers_with_stake(),
+        )
+        .await;
+        self.fill_stakes_store(next_aggregation_epoch, next_fixture.signers_with_stake())
+            .await;
+
+        let recording_epoch = next_aggregation_epoch.offset_to_recording_epoch();
+        self.fill_verification_key_store(recording_epoch, &next_fixture.signers_with_stake())
+            .await;
+        self.fill_stakes_store(recording_epoch, next_fixture.signers_with_stake())
+            .await;
+    }
+
+    /// `TEST METHOD ONLY`
+    ///
     /// Fill the stores of this container in a way to simulate an aggregator state ready to sign a
-    /// genesis certificate using the data from a precomputed fixture.
+    /// genesis certificate, backing the "current" and "next" signer sets with two fixtures whose
+    /// Proofs of Bound Possession are bound to the current retrieval epoch and to the next
+    /// aggregation epoch.
     ///
     /// Data will be inserted in the given `next_aggregation_epoch`, the current aggregation epoch
     /// (`next_aggregation_epoch - 1`).
     ///
     /// Note: `epoch_settings` store must have data for the inserted epochs, this should be done
     /// automatically when building the [ServeCommandDependenciesContainer] by `handle_discrepancies_at_startup`
-    pub async fn init_state_from_fixture_for_genesis(
+    pub async fn init_state_from_fixtures_for_genesis(
         &self,
-        fixture: &MithrilFixture,
+        current_fixture: &MithrilFixture,
+        next_fixture: &MithrilFixture,
         next_aggregation_epoch: Epoch,
     ) {
-        self.init_state_from_fixture_internal(
-            fixture,
-            [
-                next_aggregation_epoch.offset_to_signer_retrieval_epoch().unwrap(),
-                next_aggregation_epoch,
-            ],
+        let current_retrieval_epoch =
+            next_aggregation_epoch.offset_to_signer_retrieval_epoch().unwrap();
+        self.fill_verification_key_store(
+            current_retrieval_epoch,
+            &current_fixture.signers_with_stake(),
         )
-        .await
+        .await;
+        self.fill_stakes_store(
+            current_retrieval_epoch,
+            current_fixture.signers_with_stake(),
+        )
+        .await;
+
+        self.fill_verification_key_store(
+            next_aggregation_epoch,
+            &next_fixture.signers_with_stake(),
+        )
+        .await;
+        self.fill_stakes_store(next_aggregation_epoch, next_fixture.signers_with_stake())
+            .await;
     }
 
     async fn init_state_from_fixture_internal<const N: usize>(

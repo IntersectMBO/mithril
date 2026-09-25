@@ -51,6 +51,12 @@ pub enum RegisterError {
     /// Total stake of the key registration is zero.
     #[error("Cannot run the protocol if total stake is zero.")]
     ZeroTotalStake,
+
+    /// Internal registration error: a SNARK verification key was marked as registered
+    /// without a matching entry in `registration_entries`.
+    #[cfg(feature = "future_snark")]
+    #[error("Internal error: SNARK key registration is inconsistent.")]
+    SnarkKeyRegistrationInconsistent,
 }
 
 /// Errors which are due to an error in the protocol.

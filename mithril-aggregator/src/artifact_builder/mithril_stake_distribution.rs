@@ -45,13 +45,13 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
-    use super::*;
-
     use crate::{entities::AggregatorEpochSettings, services::FakeEpochServiceBuilder};
+
+    use super::*;
 
     #[tokio::test]
     async fn should_compute_valid_artifact() {
-        let signers_with_stake = fake_data::signers_with_stakes(5);
+        let signers_with_stake = fake_data::signers_with_stakes_at_epoch(5, Epoch(1));
         let certificate = fake_data::certificate("certificate-123".to_string());
         let epoch_settings = AggregatorEpochSettings {
             protocol_parameters: fake_data::protocol_parameters(),

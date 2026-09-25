@@ -168,7 +168,7 @@ mod tests {
     #[tokio::test]
     async fn status_route_ok_200() {
         let mut dependency_manager = initialize_dependencies!().await;
-        let fixture = MithrilFixtureBuilder::default().build();
+        let fixture = MithrilFixtureBuilder::default().build_at_epoch(Epoch(5));
         let epoch_service = FakeEpochService::from_fixture(Epoch(5), &fixture);
         dependency_manager.epoch_service = Arc::new(RwLock::new(epoch_service));
 
@@ -257,8 +257,14 @@ mod tests {
         let total_signers = 5;
         let total_next_signers = 4;
         let epoch_service = FakeEpochServiceBuilder {
-            current_signers_with_stake: fake_data::signers_with_stakes(total_signers),
-            next_signers_with_stake: fake_data::signers_with_stakes(total_next_signers),
+            current_signers_with_stake: fake_data::signers_with_stakes_at_epoch(
+                total_signers,
+                Epoch(3),
+            ),
+            next_signers_with_stake: fake_data::signers_with_stakes_at_epoch(
+                total_next_signers,
+                Epoch(3),
+            ),
             ..FakeEpochServiceBuilder::dummy(Epoch(3))
         }
         .build();
@@ -274,8 +280,8 @@ mod tests {
 
     #[tokio::test]
     async fn retrieves_correct_total_stakes_from_epoch_service() {
-        let current_signers_with_stake = fake_data::signers_with_stakes(4);
-        let next_signers_with_stake = fake_data::signers_with_stakes(7);
+        let current_signers_with_stake = fake_data::signers_with_stakes_at_epoch(4, Epoch(3));
+        let next_signers_with_stake = fake_data::signers_with_stakes_at_epoch(7, Epoch(3));
         let total_stakes_signers: Stake = current_signers_with_stake.iter().map(|s| s.stake).sum();
         let total_next_stakes_signers: Stake =
             next_signers_with_stake.iter().map(|s| s.stake).sum();

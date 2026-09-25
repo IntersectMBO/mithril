@@ -7,7 +7,6 @@ use mithril_cardano_node_internal_database::test::{DummyCardanoDb, DummyCardanoD
 use mithril_common::{
     StdResult,
     entities::{Epoch, ProtocolParameters},
-    test::builder::MithrilFixture,
 };
 
 use mithril_end_to_end::{
@@ -49,12 +48,10 @@ async fn main() -> StdResult<()> {
 
     reporter.start("stress bootstrap");
     info!(">> Creation of the Signer Key Registrations payloads");
-    let signers_fixture =
-        payload_builder::generate_signer_data(opts.num_signers, protocol_parameters);
-
     let aggregator = aggregator_helpers::bootstrap_aggregator(
         &aggregator_parameters,
-        &signers_fixture,
+        opts.num_signers,
+        protocol_parameters.clone(),
         &mut current_epoch,
     )
     .await?;
@@ -64,7 +61,8 @@ async fn main() -> StdResult<()> {
     let mut scenario_parameters = ScenarioParameters {
         aggregator,
         aggregator_parameters,
-        signers_fixture,
+        num_signers: opts.num_signers,
+        protocol_parameters,
         cardano_db,
         reporter,
     };
@@ -113,7 +111,8 @@ async fn main() -> StdResult<()> {
 struct ScenarioParameters {
     aggregator: Aggregator,
     aggregator_parameters: AggregatorParameters,
-    signers_fixture: MithrilFixture,
+    num_signers: usize,
+    protocol_parameters: ProtocolParameters,
     cardano_db: DummyCardanoDb,
     reporter: Reporter,
 }
@@ -155,19 +154,29 @@ async fn main_scenario(
     )
     .await?;
 
+    // A signer's Proof of Bound Possession (when applicable) is only valid for the epoch it was
+    // registered for, so the fixture is rebuilt (same party ids and keys, fresh PoBP) for this
+    // round's registration epoch rather than reused from a previous round.
+    let registration_epoch = current_epoch + 1;
+    let signers_fixture = payload_builder::generate_signer_data(
+        parameters.num_signers,
+        parameters.protocol_parameters.clone(),
+        registration_epoch,
+    );
+
     info!(">> Send the Signer Key Registrations payloads");
     parameters.reporter.start("signers registration");
     fake_signer::try_register_signer_until_registration_round_is_open(
         &parameters.aggregator,
-        &parameters.signers_fixture.signers()[0],
-        current_epoch + 1,
+        &signers_fixture.signers()[0],
+        registration_epoch,
         Duration::from_secs(60),
     )
     .await?;
     let errors = fake_signer::register_signers_to_aggregator(
         &parameters.aggregator,
-        &parameters.signers_fixture.signers()[1..],
-        current_epoch + 1,
+        &signers_fixture.signers()[1..],
+        registration_epoch,
     )
     .await?;
     parameters.reporter.stop();
@@ -177,7 +186,7 @@ async fn main_scenario(
     let mithril_stake_distribution_signatures =
         payload_builder::compute_mithril_stake_distribution_signatures(
             current_epoch,
-            &parameters.signers_fixture,
+            &signers_fixture,
             Duration::from_secs(180),
         )
         .await
@@ -219,7 +228,7 @@ async fn main_scenario(
         payload_builder::compute_immutable_files_signatures(
             &parameters.cardano_db,
             current_epoch,
-            &parameters.signers_fixture,
+            &signers_fixture,
             Duration::from_secs(180),
         )
         .await

@@ -16,7 +16,7 @@ pub struct SignerRegistrationRound {
     pub epoch: Epoch,
 
     /// Stake distribution
-    pub(super) stake_distribution: StakeDistribution,
+    pub stake_distribution: StakeDistribution,
 }
 
 #[cfg(test)]
@@ -87,6 +87,7 @@ pub trait SignerRegistrationVerifier: Send + Sync {
         &self,
         signer: &Signer,
         stake_distribution: &StakeDistribution,
+        epoch: Epoch,
     ) -> StdResult<SignerWithStake>;
 }
 

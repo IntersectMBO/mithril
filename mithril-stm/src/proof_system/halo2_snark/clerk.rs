@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::anyhow;
 use sha2::{Digest, Sha256};
@@ -29,6 +29,9 @@ pub struct SnarkClerk {
     pub(crate) closed_key_registration: ClosedKeyRegistration,
     /// Protocol parameters
     pub(crate) parameters: Parameters,
+    /// A mapping between the signer index in the list of all signers
+    /// and their index in the reduced list of signers with SNARK keys.
+    concatenation_to_snark_index_mapping: HashMap<SignerIndex, SignerIndex>,
 }
 
 impl SnarkClerk {
@@ -37,17 +40,24 @@ impl SnarkClerk {
         parameters: &Parameters,
         closed_key_registration: &ClosedKeyRegistration,
     ) -> Self {
+        let concatenation_to_snark_index_mapping =
+            closed_key_registration.compute_concatenation_to_snark_index_mapping();
         Self {
             parameters: *parameters,
             closed_key_registration: closed_key_registration.clone(),
+            concatenation_to_snark_index_mapping,
         }
     }
 
     /// Create a `SnarkClerk` by extracting the parameters and closed key registration from `Signer`
     pub fn new_clerk_from_signer<D: MembershipDigest>(signer: &Signer<D>) -> Self {
+        let closed_key_registration = signer.closed_key_registration.clone();
+        let concatenation_to_snark_index_mapping =
+            closed_key_registration.compute_concatenation_to_snark_index_mapping();
         Self {
             parameters: signer.parameters,
-            closed_key_registration: signer.closed_key_registration.clone(),
+            closed_key_registration,
+            concatenation_to_snark_index_mapping,
         }
     }
 
@@ -61,12 +71,25 @@ impl SnarkClerk {
     /// Look up and convert the registration entry for a signer into its SNARK representation.
     pub fn get_snark_registration_entry(
         &self,
-        signer_index: LotteryIndex,
+        signer_index: SignerIndex,
     ) -> StmResult<Option<RegistrationEntryForSnark>> {
         let closed_registration_entry = self
             .closed_key_registration
             .get_registration_entry_for_index(&signer_index)?;
         Ok(closed_registration_entry.into())
+    }
+
+    /// Returns the snark index given a concatenation index.
+    /// Uses the `concatenation_to_snark_index_mapping` mapping to get the signer index
+    /// in the snark merkle tree.
+    pub(crate) fn get_signer_index_in_snark_merkle_tree(
+        &self,
+        concatenation_index: SignerIndex,
+    ) -> StmResult<SignerIndex> {
+        self.concatenation_to_snark_index_mapping
+            .get(&concatenation_index)
+            .copied()
+            .ok_or(AggregationError::MissingSnarkIndexMapping(concatenation_index).into())
     }
 
     /// Select exactly `k` winning lottery indices and resolve contested indices.

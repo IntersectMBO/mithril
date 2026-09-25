@@ -1,3 +1,5 @@
+#[cfg(feature = "future_snark")]
+use rand_core::OsRng;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -35,6 +37,7 @@ pub struct MithrilFixture {
     protocol_parameters: ProtocolParameters,
     signers: Vec<SignerFixture>,
     stake_distribution: ProtocolStakeDistribution,
+    epoch: Epoch,
 }
 
 /// A signer fixture, containing a [signer entity][SignerWithStake] with its
@@ -71,6 +74,45 @@ impl SignerFixture {
             protocol_signer,
             ..self
         })
+    }
+}
+
+#[cfg(feature = "future_snark")]
+impl SignerFixture {
+    /// Recreate this signer's Proof of Bound Possession for the given epoch and stake, keeping
+    /// its keys.
+    pub fn bound_to(&self, epoch: Epoch, stake: Stake) -> Self {
+        let Some(operational_certificate) = &self.signer_with_stake.operational_certificate else {
+            return self.clone();
+        };
+        let mut protocol_initializer = self.protocol_initializer.clone();
+        protocol_initializer
+            .rebind_proof_of_bound_possession_for_snark(
+                stake,
+                epoch,
+                operational_certificate,
+                &mut OsRng,
+            )
+            .expect("rebinding the proof of bound possession should not fail");
+        let signer_with_stake = SignerWithStake {
+            proof_of_bound_possession_for_snark: protocol_initializer
+                .proof_of_bound_possession_for_snark(),
+            ..self.signer_with_stake.clone()
+        };
+
+        Self {
+            signer_with_stake,
+            protocol_initializer,
+            ..self.clone()
+        }
+    }
+}
+
+#[cfg(not(feature = "future_snark"))]
+impl SignerFixture {
+    /// Without the SNARK proof system a signer carries no proof to rebind.
+    pub fn bound_to(&self, _epoch: Epoch, _stake: Stake) -> Self {
+        self.clone()
     }
 }
 
@@ -111,11 +153,13 @@ impl MithrilFixture {
         protocol_parameters: ProtocolParameters,
         signers: Vec<SignerFixture>,
         stake_distribution: ProtocolStakeDistribution,
+        epoch: Epoch,
     ) -> Self {
         Self {
             protocol_parameters,
             signers,
             stake_distribution,
+            epoch,
         }
     }
 
@@ -184,9 +228,13 @@ impl MithrilFixture {
 
     /// Compute the Aggregate Verification Key for this fixture.
     pub fn compute_aggregate_verification_key(&self) -> ProtocolAggregateVerificationKey {
-        SignerBuilder::new(&self.signers_with_stake(), &self.protocol_parameters)
-            .unwrap()
-            .compute_aggregate_verification_key()
+        SignerBuilder::new(
+            &self.signers_with_stake(),
+            &self.protocol_parameters,
+            self.epoch,
+        )
+        .unwrap()
+        .compute_aggregate_verification_key()
     }
 
     /// Compute the Aggregate Verification Key for concatenation for this fixture.
@@ -222,6 +270,19 @@ impl MithrilFixture {
     pub fn compute_and_encode_snark_aggregate_verification_key(&self) -> Option<String> {
         self.compute_snark_aggregate_verification_key()
             .map(|avk| avk.to_bytes_hex().unwrap())
+    }
+
+    /// Recreate every signer's Proof of Bound Possession for the given epoch, keeping their keys.
+    pub fn bound_to_epoch(&self, epoch: Epoch) -> Self {
+        Self {
+            signers: self
+                .signers
+                .iter()
+                .map(|signer| signer.bound_to(epoch, signer.signer_with_stake.stake))
+                .collect(),
+            epoch,
+            ..self.clone()
+        }
     }
 
     /// Create a genesis certificate using the fixture signers for the given beacon
@@ -371,5 +432,100 @@ impl SignerFixture {
     /// Get the path to this signer operational certificate
     pub fn operational_certificate_path(&self) -> Option<&Path> {
         self.operational_certificate_path.as_deref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test::builder::MithrilFixtureBuilder;
+
+    use super::*;
+
+    #[test]
+    fn bound_to_epoch_keeps_the_keys_and_the_stakes() {
+        let fixture = MithrilFixtureBuilder::default()
+            .with_signers(3)
+            .build_at_epoch(Epoch(1));
+
+        let rebound_fixture = fixture.bound_to_epoch(Epoch(3));
+
+        assert_eq!(
+            fixture.stake_distribution(),
+            rebound_fixture.stake_distribution()
+        );
+        assert_eq!(
+            fixture.compute_and_encode_concatenation_aggregate_verification_key(),
+            rebound_fixture.compute_and_encode_concatenation_aggregate_verification_key()
+        );
+        #[cfg(feature = "future_snark")]
+        assert_eq!(
+            fixture.compute_and_encode_snark_aggregate_verification_key(),
+            rebound_fixture.compute_and_encode_snark_aggregate_verification_key()
+        );
+    }
+
+    #[cfg(feature = "future_snark")]
+    #[test]
+    fn bound_to_epoch_rebinds_the_proofs_of_bound_possession_to_the_epoch() {
+        let fixture = MithrilFixtureBuilder::default()
+            .with_signers(3)
+            .build_at_epoch(Epoch(1));
+
+        let rebound_fixture = fixture.bound_to_epoch(Epoch(3));
+
+        SignerBuilder::new(
+            &rebound_fixture.signers_with_stake(),
+            &fixture.protocol_parameters(),
+            Epoch(3),
+        )
+        .expect("the rebound proofs should verify at the new epoch");
+        SignerBuilder::new(
+            &rebound_fixture.signers_with_stake(),
+            &fixture.protocol_parameters(),
+            Epoch(1),
+        )
+        .expect_err("the rebound proofs should not verify at the previous epoch");
+    }
+
+    #[cfg(feature = "future_snark")]
+    #[test]
+    fn bound_to_rebinds_the_proof_of_bound_possession_to_the_epoch_and_stake() {
+        let fixture = MithrilFixtureBuilder::default()
+            .with_signers(1)
+            .build_at_epoch(Epoch(1));
+        let signer = fixture.signers_fixture().remove(0);
+        let new_stake = signer.signer_with_stake.stake + 999;
+        let signers_with_new_stake = |signer: &SignerFixture| {
+            vec![SignerWithStake {
+                stake: new_stake,
+                ..signer.signer_with_stake.clone()
+            }]
+        };
+
+        let rebound_signer = signer.bound_to(Epoch(3), new_stake);
+
+        SignerBuilder::new(
+            &signers_with_new_stake(&rebound_signer),
+            &fixture.protocol_parameters(),
+            Epoch(3),
+        )
+        .expect("the rebound proof should verify for the new epoch and stake");
+        SignerBuilder::new(
+            &signers_with_new_stake(&signer),
+            &fixture.protocol_parameters(),
+            Epoch(3),
+        )
+        .expect_err("the original proof should not verify for the new epoch and stake");
+    }
+
+    #[cfg(not(feature = "future_snark"))]
+    #[test]
+    fn bound_to_keeps_the_signer_unchanged() {
+        let fixture = MithrilFixtureBuilder::default().with_signers(1).build();
+        let signer = fixture.signers_fixture().remove(0);
+
+        let rebound_signer = signer.bound_to(Epoch(3), signer.signer_with_stake.stake + 999);
+
+        assert_eq!(signer.signer_with_stake, rebound_signer.signer_with_stake);
     }
 }

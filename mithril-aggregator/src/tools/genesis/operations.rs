@@ -108,10 +108,13 @@ impl GenesisTools {
             .await?
             .with_context(|| format!("Missing signers for epoch {genesis_avk_epoch}"))?;
 
-        let protocol_multi_signer =
-            SignerBuilder::new(&genesis_signers, &genesis_protocol_parameters)
-                .with_context(|| "Could not build a multi signer to compute the genesis avk")?
-                .build_multi_signer();
+        let protocol_multi_signer = SignerBuilder::new(
+            &genesis_signers,
+            &genesis_protocol_parameters,
+            genesis_avk_epoch,
+        )
+        .with_context(|| "Could not build a multi signer to compute the genesis avk")?
+        .build_multi_signer();
         let genesis_avk = protocol_multi_signer.compute_aggregate_verification_key();
 
         let configuration = GenesisToolsConfiguration {
