@@ -102,7 +102,7 @@ fn recursive_step_output_asset_proof_and_accumulator_are_valid() {
 fn genesis_benchmark_fixture_is_deterministic_and_valid() {
     // Guards the additive genesis benchmark fixture: the committed bytes must match the
     // deterministic generator output, be internally consistent, and carry a valid genesis
-    // signature. Fails loudly if the committed `.bin` drifts from the deterministic generator.
+    // signature. Fails loudly if the committed `.asset` drifts from the deterministic generator.
     // Builds fresh on purpose: a drift guard must not read the fixture cache it is guarding.
     let setup = build_asset_generation_setup_from_scratch();
     let fixture =

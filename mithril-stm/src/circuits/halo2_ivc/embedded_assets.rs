@@ -599,7 +599,7 @@ const GENESIS_BENCHMARK_FIXTURE_LEN: usize = 32 + 64 + 64 + PREIMAGE_SIZE;
 
 /// Loads the embedded genesis benchmark fixture compiled into the binary.
 ///
-/// Rejects any committed `.bin` whose length differs from the fixed layout, so trailing
+/// Rejects any committed `.asset` whose length differs from the fixed layout, so trailing
 /// bytes or truncation fail loudly rather than decoding a partially-correct fixture.
 pub(crate) fn load_embedded_genesis_benchmark_fixture() -> StmResult<GenesisBenchmarkFixture> {
     if GENESIS_BENCHMARK_FIXTURE_ASSET_BYTES.len() != GENESIS_BENCHMARK_FIXTURE_LEN {
