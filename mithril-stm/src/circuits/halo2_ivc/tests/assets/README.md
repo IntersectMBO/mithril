@@ -29,25 +29,29 @@ git restore mithril-stm/src/circuits/halo2_ivc/tests/assets
 
 The current asset set is:
 
-- `verification_context.bin` — static verifier-side context (verifying key, global inputs, fixed bases, SRS)
-- `recursive_chain_state.bin` — chain checkpoint after several recursive steps
-- `genesis_step_output.bin` — output of the genesis base-case step
-- `same_epoch_step_output.bin` — output of a same-epoch recursive step
-- `recursive_step_output.bin` — output of a next-epoch recursive step
-- `first_step_cert.bin` — first certificate produced from the genesis-base-case next-state; used to test the first real certificate step after the internal genesis IVC step (`step_counter == 1`)
-- `recursive_step_output_accumulator_bytes.bin` — raw serialized accumulator extracted from `recursive_step_output.bin`; golden anchor for the encoding stability test
-- `golden_recursive_circuit_verification_key.bin` — golden anchor for recursive circuit VK stability
+- `verification_context.asset` — static verifier-side context (verifying key, global inputs, fixed bases, SRS)
+- `recursive_chain_state.asset` — chain checkpoint after several recursive steps
+- `genesis_step_output.asset` — output of the genesis base-case step
+- `same_epoch_step_output.asset` — output of a same-epoch recursive step
+- `recursive_step_output.asset` — output of a next-epoch recursive step
+- `first_step_cert.asset` — first certificate produced from the genesis-base-case next-state; used to test the first real certificate step after the internal genesis IVC step (`step_counter == 1`)
+- `genesis_benchmark_fixture.asset` — genesis proving inputs (raw genesis message, genesis verification key, genesis signature, protocol-message preimage) the IVC benchmarks use to build a `Global` and run a genesis proving step
+- `recursive_step_output_accumulator_bytes.asset` — raw serialized accumulator extracted from `recursive_step_output.asset`; golden anchor for the encoding stability test
+- `recursive_proof_accumulator_bytes.asset` — raw serialized accumulator obtained by verifying the IVC proof of `recursive_chain_state.asset`; golden anchor for the encoding stability test
+- `golden_recursive_circuit_verification_key.asset` — golden anchor for recursive circuit VK stability
 
 ## Dependency Order
 
-1. `golden_recursive_circuit_verification_key.bin` — no dependencies
-2. `verification_context.bin` — no dependencies
-3. `genesis_step_output.bin` — no dependencies
-4. `recursive_chain_state.bin` — no dependencies
-5. `first_step_cert.bin` — no dependencies
-6. `same_epoch_step_output.bin` — depends on `recursive_chain_state.bin`
-7. `recursive_step_output.bin` — depends on `recursive_chain_state.bin`
-8. `recursive_step_output_accumulator_bytes.bin` — depends on `recursive_step_output.bin`
+1. `golden_recursive_circuit_verification_key.asset` — no dependencies
+2. `verification_context.asset` — no dependencies
+3. `genesis_step_output.asset` — no dependencies
+4. `recursive_chain_state.asset` — no dependencies
+5. `first_step_cert.asset` — no dependencies
+6. `genesis_benchmark_fixture.asset` — no dependencies
+7. `same_epoch_step_output.asset` — depends on `recursive_chain_state.asset`
+8. `recursive_step_output.asset` — depends on `recursive_chain_state.asset`
+9. `recursive_step_output_accumulator_bytes.asset` — depends on `recursive_step_output.asset`
+10. `recursive_proof_accumulator_bytes.asset` — depends on `verification_context.asset` and `recursive_chain_state.asset`
 
 ## Generation Model
 
@@ -76,6 +80,7 @@ cargo test -p mithril-stm --features future_snark --release generate_recursive_c
 cargo test -p mithril-stm --features future_snark --release generate_same_epoch_step_output_only -- --ignored --nocapture
 cargo test -p mithril-stm --features future_snark --release generate_recursive_step_output_only -- --ignored --nocapture
 cargo test -p mithril-stm --features future_snark --release generate_first_step_cert_only -- --ignored --nocapture
+cargo test -p mithril-stm --features future_snark --release generate_genesis_benchmark_fixture_only -- --ignored --nocapture
 cargo test -p mithril-stm --features future_snark --release generate_recursive_step_output_accumulator_bytes_only -- --ignored --nocapture
 cargo test -p mithril-stm --features future_snark --release generate_recursive_proof_accumulator_bytes_only -- --ignored --nocapture
 ```
@@ -85,7 +90,7 @@ manual workflow dominated by real proof generation.
 
 ## Source Constants To Update
 
-Regenerating the binaries is only half the work. Four constants are pinned in source and are not
+Regenerating the assets is only half the work. Four constants are pinned in source and are not
 written by any generator.
 
 | Constant                                  | File                                             | Test that computes it                                  | Computed value appears |

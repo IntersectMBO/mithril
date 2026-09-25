@@ -19,7 +19,7 @@ mod golden_verification_key_test {
     // - phi_f: 0.2,
     // - merkle_tree_depth: 3
     const GOLDEN_NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY: &[u8] =
-        include_bytes!("assets/golden_non_recursive_verification_key.bin");
+        include_bytes!("assets/golden_non_recursive_verification_key.asset");
 
     fn golden_value_non_recursive_circuit() -> Vec<u8> {
         let params = Parameters {

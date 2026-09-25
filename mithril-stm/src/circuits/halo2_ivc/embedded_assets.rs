@@ -198,19 +198,19 @@ impl GenesisBenchmarkFixture {
 }
 
 const RECURSIVE_CHAIN_STATE_ASSET_BYTES: &[u8] =
-    include_bytes!("tests/assets/recursive_chain_state.bin");
+    include_bytes!("tests/assets/recursive_chain_state.asset");
 const VERIFICATION_CONTEXT_ASSET_BYTES: &[u8] =
-    include_bytes!("tests/assets/verification_context.bin");
+    include_bytes!("tests/assets/verification_context.asset");
 const NEXT_EPOCH_STEP_OUTPUT_ASSET_BYTES: &[u8] =
-    include_bytes!("tests/assets/recursive_step_output.bin");
+    include_bytes!("tests/assets/recursive_step_output.asset");
 const GENESIS_STEP_OUTPUT_ASSET_BYTES: &[u8] =
-    include_bytes!("tests/assets/genesis_step_output.bin");
+    include_bytes!("tests/assets/genesis_step_output.asset");
 const FOLLOWING_CERTIFICATE_IN_EPOCH_ASSET_BYTES: &[u8] =
-    include_bytes!("tests/assets/same_epoch_step_output.bin");
+    include_bytes!("tests/assets/same_epoch_step_output.asset");
 const FIRST_CERTIFICATE_IN_EPOCH_ASSET_BYTES: &[u8] =
-    include_bytes!("tests/assets/first_step_cert.bin");
+    include_bytes!("tests/assets/first_step_cert.asset");
 const GENESIS_BENCHMARK_FIXTURE_ASSET_BYTES: &[u8] =
-    include_bytes!("tests/assets/genesis_benchmark_fixture.bin");
+    include_bytes!("tests/assets/genesis_benchmark_fixture.asset");
 
 /// Opens a committed golden asset for buffered reading.
 fn open_asset_file(path: &Path) -> StmResult<BufReader<File>> {
@@ -599,7 +599,7 @@ const GENESIS_BENCHMARK_FIXTURE_LEN: usize = 32 + 64 + 64 + PREIMAGE_SIZE;
 
 /// Loads the embedded genesis benchmark fixture compiled into the binary.
 ///
-/// Rejects any committed `.bin` whose length differs from the fixed layout, so trailing
+/// Rejects any committed `.asset` whose length differs from the fixed layout, so trailing
 /// bytes or truncation fail loudly rather than decoding a partially-correct fixture.
 pub(crate) fn load_embedded_genesis_benchmark_fixture() -> StmResult<GenesisBenchmarkFixture> {
     if GENESIS_BENCHMARK_FIXTURE_ASSET_BYTES.len() != GENESIS_BENCHMARK_FIXTURE_LEN {

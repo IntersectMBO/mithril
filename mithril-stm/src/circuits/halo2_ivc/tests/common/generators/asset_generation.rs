@@ -871,15 +871,22 @@ pub(crate) fn generate_genesis_benchmark_fixture_asset(
 // they rewrite binary files rather than asserting behavior.
 //
 // Committed assets:
-//   verification_context.bin               — VKs, combined fixed bases, verifier params
-//   recursive_chain_state.bin              — chain checkpoint: Poseidon IVC proof, state, folded accumulator
-//   recursive_step_output.bin              — next-epoch step: IVC proof, next_state, next_accumulator, certificate proof
-//   genesis_step_output.bin                — genesis step output
-//   same_epoch_step_output.bin             — same-epoch step output
-//   recursive_step_output_accumulator_bytes.bin — raw serialized bytes of recursive_step_output.next_accumulator
+//   verification_context.asset             — VKs, combined fixed bases, verifier params
+//   recursive_chain_state.asset            — chain checkpoint: Poseidon IVC proof, state, folded accumulator
+//   recursive_step_output.asset            — next-epoch step: IVC proof, next_state, next_accumulator, certificate proof
+//   genesis_step_output.asset              — genesis step output
+//   same_epoch_step_output.asset           — same-epoch step output
+//   first_step_cert.asset                  — first certificate step after the genesis step (step_counter == 1)
+//   genesis_benchmark_fixture.asset        — genesis proving inputs for the benchmarks: message, key, signature, preimage
+//   recursive_step_output_accumulator_bytes.asset — raw serialized bytes of recursive_step_output.next_accumulator
 //                                            (golden anchor for the encoding stability test; derived from
-//                                             recursive_step_output.bin, regenerate with
+//                                             recursive_step_output.asset, regenerate with
 //                                             generate_recursive_step_output_accumulator_bytes_only)
+//   recursive_proof_accumulator_bytes.asset — raw serialized bytes of the accumulator from verifying the
+//                                            recursive_chain_state IVC proof (golden anchor for the encoding
+//                                            stability test; derived from verification_context.asset and
+//                                            recursive_chain_state.asset, regenerate with
+//                                            generate_recursive_proof_accumulator_bytes_only)
 #[test]
 #[ignore]
 fn generate_verification_context_only() {
@@ -967,7 +974,7 @@ fn generate_recursive_step_output_accumulator_bytes_only() {
         .expect("accumulator serialization should succeed");
     let path = AssetPaths::default()
         .recursive_step_output
-        .with_file_name("recursive_step_output_accumulator_bytes.bin");
+        .with_file_name("recursive_step_output_accumulator_bytes.asset");
     std::fs::write(&path, &bytes)
         .unwrap_or_else(|e| panic!("failed to write accumulator bytes to {path:?}: {e}"));
     println!("wrote {} bytes to {path:?}", bytes.len());
@@ -988,7 +995,7 @@ fn generate_recursive_proof_accumulator_bytes_only() {
         .expect("accumulator serialization should succeed");
     let path = AssetPaths::default()
         .verification_context
-        .with_file_name("recursive_proof_accumulator_bytes.bin");
+        .with_file_name("recursive_proof_accumulator_bytes.asset");
     std::fs::write(&path, &bytes)
         .unwrap_or_else(|e| panic!("failed to write accumulator bytes to {path:?}: {e}"));
     println!("wrote {} bytes to {path:?}", bytes.len());

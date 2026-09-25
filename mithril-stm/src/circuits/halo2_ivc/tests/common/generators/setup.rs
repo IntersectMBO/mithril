@@ -72,13 +72,13 @@ impl AssetPaths {
     /// Builds the committed asset paths rooted at `base_dir`.
     pub(super) fn new(base_dir: PathBuf) -> Self {
         Self {
-            recursive_chain_state: base_dir.join("recursive_chain_state.bin"),
-            verification_context: base_dir.join("verification_context.bin"),
-            recursive_step_output: base_dir.join("recursive_step_output.bin"),
-            genesis_step_output: base_dir.join("genesis_step_output.bin"),
-            same_epoch_step_output: base_dir.join("same_epoch_step_output.bin"),
-            first_step_cert: base_dir.join("first_step_cert.bin"),
-            genesis_benchmark_fixture: base_dir.join("genesis_benchmark_fixture.bin"),
+            recursive_chain_state: base_dir.join("recursive_chain_state.asset"),
+            verification_context: base_dir.join("verification_context.asset"),
+            recursive_step_output: base_dir.join("recursive_step_output.asset"),
+            genesis_step_output: base_dir.join("genesis_step_output.asset"),
+            same_epoch_step_output: base_dir.join("same_epoch_step_output.asset"),
+            first_step_cert: base_dir.join("first_step_cert.asset"),
+            genesis_benchmark_fixture: base_dir.join("genesis_benchmark_fixture.asset"),
         }
     }
 }

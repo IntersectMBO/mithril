@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.22 (09-25-2026)
+
+### Changed
+
+- Renamed the circuit test assets from `.bin` to `.asset` and the two production circuit verification keys from `.bin` to `.vkey`, so that each extension says what the file holds. The production keys are byte-identical, so circuit identity is unchanged and no re-genesis is needed.
+- Regenerated the recursive circuit test assets with the documented commands, to check the generators under the new names. The assets without a proof are byte-identical; the proof-bearing assets and the stored combiner challenge changed.
+
+### Added
+
+- Documented the three test assets missing from the asset documentation, and the regeneration command of the genesis benchmark fixture.
+
 ## 0.12.21 (09-21-2026)
 
 ### Changed
