@@ -54,7 +54,8 @@ fn write_golden_recursive_circuit_verification_key_asset(path: &Path) {
 #[test]
 #[ignore]
 fn generate_golden_recursive_circuit_verification_key_only() {
-    let output_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/circuits/halo2_ivc/tests/assets/golden_recursive_circuit_verification_key.bin");
+    let output_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "src/circuits/halo2_ivc/tests/assets/golden_recursive_circuit_verification_key.asset",
+    );
     write_golden_recursive_circuit_verification_key_asset(&output_path);
 }

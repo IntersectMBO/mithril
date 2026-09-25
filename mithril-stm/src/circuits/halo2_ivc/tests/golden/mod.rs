@@ -11,7 +11,7 @@ mod golden_verification_key_test {
     // This key is generated with an unsafe SRS generated on the fly
     // used to also generate a non-recursive verification key
     const GOLDEN_RECURSIVE_CIRCUIT_VERIFICATION_KEY: &[u8] =
-        include_bytes!("../assets/golden_recursive_circuit_verification_key.bin");
+        include_bytes!("../assets/golden_recursive_circuit_verification_key.asset");
 
     mod slow {
         use super::*;

@@ -73,7 +73,7 @@ fn folded_accumulator_serialized_bytes_are_stable() {
         .expect("accumulator serialization should succeed");
 
     let expected_bytes =
-        include_bytes!("../assets/recursive_step_output_accumulator_bytes.bin").as_slice();
+        include_bytes!("../assets/recursive_step_output_accumulator_bytes.asset").as_slice();
 
     assert_eq!(
         bytes.as_slice(),
@@ -183,7 +183,7 @@ fn recursive_proof_accumulator_serialized_bytes_are_stable() {
         .expect("accumulator serialization should succeed");
 
     let expected_bytes =
-        include_bytes!("../assets/recursive_proof_accumulator_bytes.bin").as_slice();
+        include_bytes!("../assets/recursive_proof_accumulator_bytes.asset").as_slice();
 
     assert_eq!(
         bytes.as_slice(),

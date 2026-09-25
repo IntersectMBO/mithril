@@ -967,7 +967,7 @@ fn generate_recursive_step_output_accumulator_bytes_only() {
         .expect("accumulator serialization should succeed");
     let path = AssetPaths::default()
         .recursive_step_output
-        .with_file_name("recursive_step_output_accumulator_bytes.bin");
+        .with_file_name("recursive_step_output_accumulator_bytes.asset");
     std::fs::write(&path, &bytes)
         .unwrap_or_else(|e| panic!("failed to write accumulator bytes to {path:?}: {e}"));
     println!("wrote {} bytes to {path:?}", bytes.len());
@@ -988,7 +988,7 @@ fn generate_recursive_proof_accumulator_bytes_only() {
         .expect("accumulator serialization should succeed");
     let path = AssetPaths::default()
         .verification_context
-        .with_file_name("recursive_proof_accumulator_bytes.bin");
+        .with_file_name("recursive_proof_accumulator_bytes.asset");
     std::fs::write(&path, &bytes)
         .unwrap_or_else(|e| panic!("failed to write accumulator bytes to {path:?}: {e}"));
     println!("wrote {} bytes to {path:?}", bytes.len());
