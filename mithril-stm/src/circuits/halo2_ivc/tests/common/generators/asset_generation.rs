@@ -876,10 +876,17 @@ pub(crate) fn generate_genesis_benchmark_fixture_asset(
 //   recursive_step_output.asset            — next-epoch step: IVC proof, next_state, next_accumulator, certificate proof
 //   genesis_step_output.asset              — genesis step output
 //   same_epoch_step_output.asset           — same-epoch step output
+//   first_step_cert.asset                  — first certificate step after the genesis step (step_counter == 1)
+//   genesis_benchmark_fixture.asset        — genesis proving inputs for the benchmarks: message, key, signature, preimage
 //   recursive_step_output_accumulator_bytes.asset — raw serialized bytes of recursive_step_output.next_accumulator
 //                                            (golden anchor for the encoding stability test; derived from
 //                                             recursive_step_output.asset, regenerate with
 //                                             generate_recursive_step_output_accumulator_bytes_only)
+//   recursive_proof_accumulator_bytes.asset — raw serialized bytes of the accumulator from verifying the
+//                                            recursive_chain_state IVC proof (golden anchor for the encoding
+//                                            stability test; derived from verification_context.asset and
+//                                            recursive_chain_state.asset, regenerate with
+//                                            generate_recursive_proof_accumulator_bytes_only)
 #[test]
 #[ignore]
 fn generate_verification_context_only() {
