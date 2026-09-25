@@ -20,7 +20,10 @@ use mithril_client_cli::commands::{
     cardano_transaction::CardanoTransactionCommands,
     mithril_stake_distribution::MithrilStakeDistributionCommands, tools::ToolsCommands,
 };
-use mithril_client_cli::{ClapError, CommandContext, ConfigParameters};
+use mithril_client_cli::{
+    CertificateChainCacheConfiguration, CertificateChainCacheMode, ClapError, CommandContext,
+    ConfigParameters,
+};
 
 enum LogOutputType {
     StdErr,
@@ -99,6 +102,29 @@ pub struct Args {
     #[clap(long, global = true)]
     #[example = "`pythagoras`"]
     era: Option<String>,
+
+    /// Use the certificate chain cache to verify the certificate chain (unstable)
+    #[clap(long, global = true)]
+    use_certificate_chain_cache: bool,
+
+    /// Verification mode of the certificate chain when the cache is used (unstable)
+    #[clap(
+        long,
+        global = true,
+        value_enum,
+        default_value_t = CertificateChainCacheMode::default(),
+        requires = "use_certificate_chain_cache"
+    )]
+    certificate_chain_cache_mode: CertificateChainCacheMode,
+
+    /// Directory of the certificate chain cache, requires --use-certificate-chain-cache (unstable)
+    #[clap(
+        long,
+        global = true,
+        default_value = CertificateChainCacheConfiguration::DEFAULT_DIRECTORY,
+        requires = "use_certificate_chain_cache"
+    )]
+    certificate_chain_cache_path: PathBuf,
 }
 
 impl Args {
@@ -107,9 +133,26 @@ impl Args {
         debug!(root_logger, "Run Mode: {}", self.run_mode);
 
         let config_parameters = self.config_parameters(&root_logger)?;
-        let context = CommandContext::new(config_parameters, self.unstable, self.json, root_logger);
+        let context = CommandContext::new(config_parameters, self.unstable, self.json, root_logger)
+            .with_certificate_chain_cache(self.certificate_chain_cache_configuration()?);
 
         self.command.execute(context).await
+    }
+
+    fn certificate_chain_cache_configuration(
+        &self,
+    ) -> MithrilResult<CertificateChainCacheConfiguration> {
+        if self.use_certificate_chain_cache && !self.unstable {
+            return Err(anyhow!(
+                "The \"--use-certificate-chain-cache\" option is only accepted using the --unstable flag."
+            ));
+        }
+
+        Ok(CertificateChainCacheConfiguration {
+            enabled: self.use_certificate_chain_cache,
+            mode: self.certificate_chain_cache_mode,
+            directory: self.certificate_chain_cache_path.clone(),
+        })
     }
 
     fn print_and_log_version(&self, root_logger: &Logger) {
@@ -279,4 +322,73 @@ async fn main() -> MithrilResult<()> {
     let logger = args.build_logger()?;
 
     args.execute(logger).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(arguments: &[&str]) -> Result<Args, ClapError> {
+        let command = ["mithril-client"]
+            .iter()
+            .chain(arguments)
+            .chain(["cardano-stake-distribution", "list"].iter());
+        Args::try_parse_from(command)
+    }
+
+    #[test]
+    fn certificate_chain_cache_is_disabled_by_default() {
+        let args = parse(&[]).unwrap();
+
+        assert_eq!(
+            CertificateChainCacheConfiguration::default(),
+            args.certificate_chain_cache_configuration().unwrap()
+        );
+    }
+
+    #[test]
+    fn certificate_chain_cache_configuration_is_read_from_the_options() {
+        let args = parse(&[
+            "--unstable",
+            "--use-certificate-chain-cache",
+            "--certificate-chain-cache-mode",
+            "EarlyStopVerification",
+            "--certificate-chain-cache-path",
+            "/path/to/cache",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            CertificateChainCacheConfiguration {
+                enabled: true,
+                mode: CertificateChainCacheMode::EarlyStopVerification,
+                directory: PathBuf::from("/path/to/cache"),
+            },
+            args.certificate_chain_cache_configuration().unwrap()
+        );
+    }
+
+    #[test]
+    fn certificate_chain_cache_requires_unstable() {
+        let args = parse(&["--use-certificate-chain-cache"]).unwrap();
+
+        args.certificate_chain_cache_configuration()
+            .expect_err("The cache should require the unstable flag");
+    }
+
+    #[test]
+    fn certificate_chain_cache_mode_requires_the_cache_to_be_used() {
+        parse(&[
+            "--unstable",
+            "--certificate-chain-cache-mode",
+            "EarlyStopVerification",
+        ])
+        .expect_err("The cache mode should require the cache to be used");
+    }
+
+    #[test]
+    fn certificate_chain_cache_path_requires_the_cache_to_be_used() {
+        parse(&["--unstable", "--certificate-chain-cache-path", "/path/to/cache"])
+            .expect_err("The cache path should require the cache to be used");
+    }
 }

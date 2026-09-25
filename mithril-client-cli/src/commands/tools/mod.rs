@@ -1,12 +1,14 @@
 //! Tools commands
 //!
 //! Provides utility subcommands such as converting restored InMemory UTxO-HD ledger snapshot
-//! to different flavors (Legacy, LMDB).
+//! to different flavors (Legacy, LMDB) or resetting the certificate chain cache.
 
 mod aggregator_discovery;
+mod cache;
 mod utxo_hd;
 
 pub use aggregator_discovery::*;
+pub use cache::*;
 pub use utxo_hd::*;
 
 use clap::Subcommand;
@@ -25,6 +27,9 @@ pub enum ToolsCommands {
     /// Aggregator discovery command (unstable)
     #[clap(name = "discover-aggregator")]
     AggregatorDiscovery(AggregatorDiscoveryCommand),
+    /// Cache related commands (unstable)
+    #[clap(subcommand)]
+    Cache(CacheCommands),
 }
 
 impl ToolsCommands {
@@ -34,6 +39,11 @@ impl ToolsCommands {
             Self::UTxOHD(cmd) => cmd.execute(context).await,
             Self::AggregatorDiscovery(cmd) => {
                 context.require_unstable("tools discover-aggregator", Some("release-mainnet"))?;
+
+                cmd.execute(context).await
+            }
+            Self::Cache(cmd) => {
+                context.require_unstable("tools cache", Some("reset"))?;
 
                 cmd.execute(context).await
             }
