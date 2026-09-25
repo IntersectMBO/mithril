@@ -20,6 +20,8 @@ use mithril_aggregator_discovery::{
     CapableAggregatorDiscoverer, HttpConfigAggregatorDiscoverer, RequiredAggregatorCapabilities,
     ShuffleAggregatorDiscoverer,
 };
+#[cfg(feature = "future_snark")]
+use mithril_circuit_key_registry::CircuitVerificationKeyRegistryRetriever;
 use mithril_common::{MITHRIL_CLIENT_TYPE_HEADER, MITHRIL_ORIGIN_TAG_HEADER};
 
 use crate::MithrilResult;
@@ -35,6 +37,8 @@ use crate::certificate_client::{
 };
 #[cfg(feature = "unstable")]
 use crate::certificate_client::{CertificateVerifierCache, CertificateVerifierCacheMode};
+#[cfg(feature = "future_snark")]
+use crate::circuit_key_registry::RemoteCircuitVerificationKeyRegistryRetriever;
 #[cfg(not(target_family = "wasm"))]
 use crate::common::MithrilNetwork;
 use crate::era::{EraFetcher, MithrilEraClient};
@@ -230,6 +234,8 @@ pub struct ClientBuilder {
     certificate_verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
     #[cfg(feature = "unstable")]
     certificate_verifier_cache_mode: Option<CertificateVerifierCacheMode>,
+    #[cfg(feature = "future_snark")]
+    circuit_key_registry_retriever: Option<Arc<dyn CircuitVerificationKeyRegistryRetriever>>,
     era_fetcher: Option<Arc<dyn EraFetcher>>,
     logger: Option<Logger>,
     feedback_receivers: Vec<Arc<dyn FeedbackReceiver>>,
@@ -285,6 +291,8 @@ impl ClientBuilder {
             certificate_verifier_cache: None,
             #[cfg(feature = "unstable")]
             certificate_verifier_cache_mode: None,
+            #[cfg(feature = "future_snark")]
+            circuit_key_registry_retriever: None,
             era_fetcher: None,
             logger: None,
             feedback_receivers: vec![],
@@ -345,13 +353,22 @@ impl ClientBuilder {
 
         let feedback_sender = FeedbackSender::new(&self.feedback_receivers);
 
-        let aggregator_client = Arc::new(self.build_aggregator_client(logger.clone())?);
+        let aggregator_endpoint = self.resolve_aggregator_endpoint()?;
+        let aggregator_client =
+            Arc::new(self.build_aggregator_client(aggregator_endpoint.clone(), logger.clone())?);
 
         let mithril_era_client = match self.era_fetcher {
             None => Arc::new(MithrilEraClient::new(aggregator_client.clone())),
             Some(era_fetcher) => Arc::new(MithrilEraClient::new(era_fetcher)),
         };
 
+        #[cfg(feature = "future_snark")]
+        let circuit_key_registry_retriever = match self.circuit_key_registry_retriever {
+            Some(circuit_key_registry_retriever) => circuit_key_registry_retriever,
+            None => Arc::new(RemoteCircuitVerificationKeyRegistryRetriever::new(
+                aggregator_endpoint.clone(),
+            )?),
+        };
         let certificate_verifier = match self.certificate_verifier {
             None => Arc::new(
                 MithrilCertificateVerifier::new(
@@ -362,6 +379,8 @@ impl ClientBuilder {
                     self.certificate_verifier_cache,
                     #[cfg(feature = "unstable")]
                     self.certificate_verifier_cache_mode.unwrap_or_default(),
+                    #[cfg(feature = "future_snark")]
+                    circuit_key_registry_retriever,
                     logger.clone(),
                 )
                 .with_context(|| "Building certificate verifier failed")?,
@@ -513,16 +532,24 @@ impl ClientBuilder {
         ))
     }
 
-    fn build_aggregator_client(&self, logger: Logger) -> MithrilResult<AggregatorHttpClient> {
-        let aggregator_endpoint = match self.aggregator_discovery {
-            AggregatorDiscoveryType::Url(ref url) => url.clone(),
+    /// Resolve the aggregator endpoint from the configured URL or through discovery.
+    fn resolve_aggregator_endpoint(&self) -> MithrilResult<String> {
+        match self.aggregator_discovery {
+            AggregatorDiscoveryType::Url(ref url) => Ok(url.clone()),
             #[cfg(not(target_family = "wasm"))]
-            AggregatorDiscoveryType::Automatic(ref network) => self
+            AggregatorDiscoveryType::Automatic(ref network) => Ok(self
                 .discover_aggregator(network)?
                 .next()
                 .with_context(|| "No aggregator was available through discovery")?
-                .into(),
-        };
+                .into()),
+        }
+    }
+
+    fn build_aggregator_client(
+        &self,
+        aggregator_endpoint: String,
+        logger: Logger,
+    ) -> MithrilResult<AggregatorHttpClient> {
         let headers = self.compute_http_headers();
 
         AggregatorHttpClient::builder(aggregator_endpoint)
@@ -576,6 +603,18 @@ impl ClientBuilder {
             self.certificate_verifier_cache_mode = Some(mode);
             self
         }
+    }
+
+    /// Set a custom registry retriever for the circuit verification key registry check on
+    /// certificate verification, replacing the default one resolving the registry of the
+    /// client's network from the published networks configuration.
+    #[cfg(feature = "future_snark")]
+    pub fn with_circuit_verification_key_registry_retriever(
+        mut self,
+        circuit_key_registry_retriever: Arc<dyn CircuitVerificationKeyRegistryRetriever>,
+    ) -> ClientBuilder {
+        self.circuit_key_registry_retriever = Some(circuit_key_registry_retriever);
+        self
     }
 
     cfg_fs! {

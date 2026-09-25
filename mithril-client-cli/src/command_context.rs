@@ -1,8 +1,12 @@
 use anyhow::anyhow;
 use slog::Logger;
+#[cfg(feature = "future_snark")]
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
+#[cfg(feature = "future_snark")]
+use mithril_client::circuit_key_registry::FileCircuitVerificationKeyRegistryRetriever;
 use mithril_client::{
     AggregatorDiscoveryType, ClientBuilder, GenesisVerificationKey, MithrilResult,
 };
@@ -128,6 +132,17 @@ impl CommandContext {
             builder = builder.with_era_fetcher(Arc::new(ForcedEraFetcher::new(era.to_string())));
         }
 
+        #[cfg(feature = "future_snark")]
+        if let Some(registry_path) = params.get("circuit_verification_key_registry_path") {
+            self.require_unstable(
+                "--circuit-verification-key-registry-path <path>",
+                Some("cardano-db download latest"),
+            )?;
+            builder = builder.with_circuit_verification_key_registry_retriever(Arc::new(
+                FileCircuitVerificationKeyRegistryRetriever::new(PathBuf::from(registry_path)),
+            ));
+        }
+
         Ok(builder)
     }
 }
@@ -167,6 +182,46 @@ mod tests {
 
         let result = context.require_unstable("test", None);
         assert!(result.is_err(), "Expected Err, got {result:?}");
+    }
+
+    #[cfg(feature = "future_snark")]
+    mod circuit_verification_key_registry_path {
+        use super::*;
+
+        fn context_with_registry_path(unstable_enabled: bool) -> CommandContext {
+            CommandContext::new(
+                ConfigParameters::build(&[
+                    (
+                        "aggregator_endpoint",
+                        "https://aggregator.example/aggregator",
+                    ),
+                    ("genesis_verification_key", "whatever"),
+                    (
+                        "circuit_verification_key_registry_path",
+                        "./circuit-verification-key-registry.json",
+                    ),
+                ]),
+                unstable_enabled,
+                true,
+                Logger::root(slog::Discard, o!()),
+            )
+        }
+
+        #[test]
+        fn is_refused_without_the_unstable_flag() {
+            context_with_registry_path(false)
+                .setup_mithril_client_builder()
+                .map(|_| ())
+                .expect_err("the registry path must require the unstable flag");
+        }
+
+        #[test]
+        fn is_accepted_with_the_unstable_flag() {
+            context_with_registry_path(true)
+                .setup_mithril_client_builder()
+                .map(|_| ())
+                .expect("the registry path must be accepted with the unstable flag");
+        }
     }
 
     #[test]

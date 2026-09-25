@@ -19,6 +19,12 @@ use mithril_common::{
     logging::LoggerExtensions,
 };
 
+#[cfg(feature = "future_snark")]
+use mithril_circuit_key_registry::{
+    CachedCircuitVerificationKeyCertifier, CircuitVerificationKeyRegistryRetriever,
+    MithrilCircuitVerificationKeyCertifier,
+};
+
 use crate::certificate_client::fetch::InternalCertificateRetriever;
 use crate::certificate_client::{
     CertificateAggregatorRequest, CertificateClient, CertificateVerifier,
@@ -68,6 +74,9 @@ impl MithrilCertificateVerifier {
         feedback_sender: FeedbackSender,
         #[cfg(feature = "unstable")] verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
         #[cfg(feature = "unstable")] cache_mode: CertificateVerifierCacheMode,
+        #[cfg(feature = "future_snark")] circuit_key_registry_retriever: Arc<
+            dyn CircuitVerificationKeyRegistryRetriever,
+        >,
         logger: Logger,
     ) -> MithrilResult<MithrilCertificateVerifier> {
         let logger = logger.new_with_component_name::<Self>();
@@ -91,7 +100,15 @@ impl MithrilCertificateVerifier {
         let internal_verifier = Arc::new(CommonMithrilCertificateVerifier::new(
             logger.clone(),
             certificate_retriever,
-            genesis_verifier,
+            genesis_verifier.clone(),
+            #[cfg(feature = "future_snark")]
+            Arc::new(CachedCircuitVerificationKeyCertifier::new(
+                Arc::new(MithrilCircuitVerificationKeyCertifier::new(
+                    circuit_key_registry_retriever,
+                    genesis_verifier,
+                )),
+                logger.clone(),
+            )),
         ));
 
         Ok(Self {
@@ -225,6 +242,8 @@ impl CertificateVerifier for MithrilCertificateVerifier {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "future_snark")]
+    use mithril_circuit_key_registry::test::double::FakeCircuitVerificationKeyRegistryRetriever;
     use mithril_common::test::builder::CertificateChainBuilder;
 
     use crate::certificate_client::tests_utils::CertificateClientTestBuilder;
@@ -318,6 +337,8 @@ mod tests {
             None,
             #[cfg(feature = "unstable")]
             CertificateVerifierCacheMode::default(),
+            #[cfg(feature = "future_snark")]
+            Arc::new(FakeCircuitVerificationKeyRegistryRetriever::that_fails()),
             TestLogger::stdout(),
         )
         .map(|_| ())
@@ -454,6 +475,8 @@ mod tests {
                 FeedbackSender::new(&[]),
                 Some(cache),
                 CertificateVerifierCacheMode::FullVerification,
+                #[cfg(feature = "future_snark")]
+                Arc::new(FakeCircuitVerificationKeyRegistryRetriever::that_fails()),
                 TestLogger::stdout(),
             )
             .unwrap()
