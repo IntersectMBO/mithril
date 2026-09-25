@@ -29,6 +29,9 @@ pub trait RemoteCertificateRetriever: Sync + Send {
 
     /// Get genesis certificate
     async fn get_genesis_certificate_details(&self) -> StdResult<Option<Certificate>>;
+
+    /// Get the certificate with the given hash
+    async fn get_certificate_details(&self, hash: &str) -> StdResult<Option<Certificate>>;
 }
 
 /// Define how to store the synchronized certificate and retrieve details about the actual local chain

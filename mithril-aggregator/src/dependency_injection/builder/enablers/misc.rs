@@ -61,6 +61,20 @@ impl DependenciesBuilder {
         get_dependency!(self.message_service)
     }
 
+    async fn build_aggregator_client(
+        &mut self,
+        endpoint: &str,
+        client_name: &str,
+    ) -> Result<Arc<AggregatorHttpClient>> {
+        let aggregator_client = AggregatorHttpClient::builder(endpoint)
+            .with_api_version_provider(self.get_api_version_provider().await?)
+            .with_timeout(Duration::from_secs(30))
+            .with_logger(self.root_logger.new_with_name(client_name))
+            .build()?;
+
+        Ok(Arc::new(aggregator_client))
+    }
+
     /// Builds an [AggregatorHttpClient]
     pub async fn build_leader_aggregator_client(&mut self) -> Result<Arc<AggregatorHttpClient>> {
         let leader_aggregator_endpoint = self
@@ -68,18 +82,34 @@ impl DependenciesBuilder {
             .leader_aggregator_endpoint()
             .with_context(|| "Leader Aggregator endpoint is mandatory for follower Aggregator")?;
 
-        let aggregator_client = AggregatorHttpClient::builder(&leader_aggregator_endpoint)
-            .with_api_version_provider(self.get_api_version_provider().await?)
-            .with_timeout(Duration::from_secs(30))
-            .with_logger(self.root_logger.new_with_name("LeaderAggregatorClient"))
-            .build()?;
-
-        Ok(Arc::new(aggregator_client))
+        self.build_aggregator_client(&leader_aggregator_endpoint, "LeaderAggregatorClient")
+            .await
     }
 
     /// Returns a leader [AggregatorHttpClient]
     pub async fn get_leader_aggregator_client(&mut self) -> Result<Arc<AggregatorHttpClient>> {
         get_dependency!(self.leader_aggregator_client)
+    }
+
+    /// Builds an [AggregatorHttpClient] for the certificate chain, which is the leader one when
+    /// no dedicated endpoint is configured
+    pub async fn build_certificate_chain_aggregator_client(
+        &mut self,
+    ) -> Result<Arc<AggregatorHttpClient>> {
+        match self.configuration.certificate_chain_aggregator_endpoint() {
+            Some(endpoint) => {
+                self.build_aggregator_client(&endpoint, "CertificateChainAggregatorClient")
+                    .await
+            }
+            None => self.get_leader_aggregator_client().await,
+        }
+    }
+
+    /// Returns a certificate chain [AggregatorHttpClient]
+    pub async fn get_certificate_chain_aggregator_client(
+        &mut self,
+    ) -> Result<Arc<AggregatorHttpClient>> {
+        get_dependency!(self.certificate_chain_aggregator_client)
     }
 
     /// Builds a [SignatureConsumer]

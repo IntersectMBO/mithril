@@ -295,9 +295,12 @@ impl CertifierService for MithrilCertifierService {
             return Err(CertifierServiceError::Expired(signed_entity_type.clone()).into());
         }
 
+        let aggregate_signature_type = self.multi_signer.aggregate_signature_type();
         let parent_certificate = self
             .certificate_repository
-            .get_master_certificate_for_epoch::<Certificate>(open_message.epoch)
+            .get_master_certificate_for_epoch_matching(open_message.epoch, |certificate| {
+                certificate.has_compatible_aggregate_signature(aggregate_signature_type)
+            })
             .await
             .with_context(|| {
                 format!(
@@ -454,17 +457,20 @@ mod tests {
 
     use mithril_cardano_node_chain::test::double::FakeChainObserver;
     use mithril_common::{
-        entities::{CardanoDbBeacon, ProtocolMessagePartKey, TimePoint},
+        AggregateSignatureType,
+        crypto_helper::ProtocolMultiSignature,
+        entities::{CardanoDbBeacon, ProtocolMessagePartKey, SupportedEra, TimePoint},
         temp_dir,
         test::{
             builder::{MithrilFixture, MithrilFixtureBuilder},
-            double::{Dummy, fake_data},
+            double::{Dummy, fake_data, fake_keys},
         },
     };
 
     use crate::{
         ServeCommandConfiguration, dependency_injection::DependenciesBuilder,
         multi_signer::MockMultiSigner, services::FakeEpochService, test::TestLogger,
+        test::double::mocks::MockCertificateVerifier,
     };
 
     use super::*;
@@ -824,6 +830,164 @@ mod tests {
         assert!(!latest_certificates.is_empty());
     }
 
+    mod parent_certificate_selection {
+        use super::*;
+
+        struct CreatedCertificate {
+            certificate: Certificate,
+            genesis_hash: String,
+            concatenation_certificate_hash: String,
+        }
+
+        struct PreparedCertification {
+            certifier_service: MithrilCertifierService,
+            signed_entity_type: SignedEntityType,
+            genesis_hash: String,
+            concatenation_certificate_hash: String,
+        }
+
+        async fn prepare_certification_after_a_concatenation_certificate(
+            aggregate_signature_type: AggregateSignatureType,
+            mithril_era: SupportedEra,
+        ) -> PreparedCertification {
+            let beacon = CardanoDbBeacon::new(3, 1);
+            let signed_entity_type = SignedEntityType::CardanoDatabase(beacon.clone());
+            let mut protocol_message = ProtocolMessage::new();
+            protocol_message
+                .set_message_part(ProtocolMessagePartKey::CurrentEpoch, "3".to_string());
+            let fixture = MithrilFixtureBuilder::default().with_signers(3).build();
+            let mut certifier_service =
+                setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
+            let multi_signature: ProtocolMultiSignature =
+                fake_keys::multi_signature()[0].try_into().unwrap();
+            let mut mock_multi_signer = MockMultiSigner::new();
+            mock_multi_signer
+                .expect_aggregate_signature_type()
+                .return_const(aggregate_signature_type);
+            mock_multi_signer
+                .expect_create_multi_signature()
+                .return_once(move |_, _| {
+                    Ok(Some(MultiSignatureWithAncillaryData {
+                        multi_signature,
+                        ancillary_prover_data: None,
+                        ancillary_verifier_data: None,
+                    }))
+                });
+            certifier_service.multi_signer = Arc::new(mock_multi_signer);
+            let mut mock_certificate_verifier = MockCertificateVerifier::new();
+            mock_certificate_verifier
+                .expect_verify_certificate()
+                .returning(|_| Ok(None));
+            certifier_service.certificate_verifier = Arc::new(mock_certificate_verifier);
+            certifier_service
+                .create_open_message(&signed_entity_type, &protocol_message)
+                .await
+                .unwrap();
+
+            let genesis_certificate = fixture.create_genesis_certificate_for_era(
+                certifier_service.network,
+                beacon.epoch - 1,
+                mithril_era,
+            );
+            let concatenation_certificate = Certificate {
+                hash: "concatenation_certificate".to_string(),
+                previous_hash: genesis_certificate.hash.clone(),
+                epoch: beacon.epoch,
+                ..fake_data::certificate("concatenation_certificate")
+            };
+            for certificate in [&genesis_certificate, &concatenation_certificate] {
+                certifier_service
+                    .certificate_repository
+                    .create_certificate(certificate.clone())
+                    .await
+                    .unwrap();
+            }
+
+            PreparedCertification {
+                certifier_service,
+                signed_entity_type,
+                genesis_hash: genesis_certificate.hash,
+                concatenation_certificate_hash: concatenation_certificate.hash,
+            }
+        }
+
+        async fn create_certificate_after_a_concatenation_certificate(
+            aggregate_signature_type: AggregateSignatureType,
+            mithril_era: SupportedEra,
+        ) -> CreatedCertificate {
+            let prepared = prepare_certification_after_a_concatenation_certificate(
+                aggregate_signature_type,
+                mithril_era,
+            )
+            .await;
+
+            let certificate = prepared
+                .certifier_service
+                .create_certificate(&prepared.signed_entity_type)
+                .await
+                .unwrap()
+                .expect("A certificate should have been created");
+
+            CreatedCertificate {
+                certificate,
+                genesis_hash: prepared.genesis_hash,
+                concatenation_certificate_hash: prepared.concatenation_certificate_hash,
+            }
+        }
+
+        #[tokio::test]
+        async fn chains_to_the_most_recent_master_certificate_for_concatenation() {
+            let created = create_certificate_after_a_concatenation_certificate(
+                AggregateSignatureType::Concatenation,
+                SupportedEra::Pythagoras,
+            )
+            .await;
+
+            assert_eq!(
+                created.concatenation_certificate_hash,
+                created.certificate.previous_hash
+            );
+        }
+
+        #[cfg(feature = "future_snark")]
+        #[tokio::test]
+        async fn chains_to_the_genesis_certificate_rather_than_a_concatenation_certificate_for_ivc_snark()
+         {
+            let created = create_certificate_after_a_concatenation_certificate(
+                AggregateSignatureType::IvcSnark,
+                SupportedEra::Lagrange,
+            )
+            .await;
+
+            assert_eq!(created.genesis_hash, created.certificate.previous_hash);
+        }
+
+        #[cfg(feature = "future_snark")]
+        #[tokio::test]
+        async fn fails_to_find_a_parent_certificate_for_ivc_snark_after_a_legacy_genesis_certificate()
+         {
+            let prepared = prepare_certification_after_a_concatenation_certificate(
+                AggregateSignatureType::IvcSnark,
+                SupportedEra::Pythagoras,
+            )
+            .await;
+
+            let error = prepared
+                .certifier_service
+                .create_certificate(&prepared.signed_entity_type)
+                .await
+                .expect_err("Certificate creation should fail without a compatible parent");
+
+            assert!(
+                matches!(
+                    error.downcast_ref::<Box<CertifierServiceError>>().map(Box::as_ref),
+                    Some(CertifierServiceError::NoParentCertificateFound)
+                ),
+                "Expected CertifierServiceError::NoParentCertificateFound, got: '{error:?}'"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn should_not_create_certificate_for_open_message_not_created() {
         let beacon = CardanoDbBeacon::new(1, 1);
@@ -874,6 +1038,9 @@ mod tests {
     #[tokio::test]
     async fn should_not_create_certificate_when_no_multi_signature_produced() {
         let mut mock_multi_signer = MockMultiSigner::new();
+        mock_multi_signer
+            .expect_aggregate_signature_type()
+            .return_const(AggregateSignatureType::Concatenation);
         mock_multi_signer
             .expect_create_multi_signature()
             .return_once(move |_, _| Ok(None));

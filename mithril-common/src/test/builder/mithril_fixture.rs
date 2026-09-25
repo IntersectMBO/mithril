@@ -230,10 +230,20 @@ impl MithrilFixture {
         network: T,
         epoch: Epoch,
     ) -> Certificate {
+        self.create_genesis_certificate_for_era(network, epoch, SupportedEra::Pythagoras)
+    }
+
+    /// Create a genesis certificate of the given Mithril era using the fixture signers for the
+    /// given beacon, a Lagrange era yielding a dual signed genesis certificate
+    pub fn create_genesis_certificate_for_era<T: Into<String>>(
+        &self,
+        network: T,
+        epoch: Epoch,
+        mithril_era: SupportedEra,
+    ) -> Certificate {
         let genesis_avk = self.compute_aggregate_verification_key();
         let genesis_signer = GenesisSigner::create_deterministic_signer();
         let genesis_producer = CertificateGenesisProducer::new();
-        let mithril_era = SupportedEra::Pythagoras;
         let genesis_protocol_message = genesis_producer
             .create_genesis_protocol_message(
                 &self.protocol_parameters,

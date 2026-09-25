@@ -12,6 +12,8 @@
 //!    - if valid, store it in an in-memory FIFO list
 //!    - if invalid, abort with an `Err`
 //! 3. Repeat step 2. with each parent of the certificate until the genesis certificate is reached
+//!    - a certificate whose aggregate signature certifies the full certificate chain stops the
+//!      verification early, its parent is then fetched from the remote source
 //! 4. Store the fetched certificates in the database, from genesis to latest, for each certificate:
 //!    - if it exists in the database, it is replaced
 //!    - if it doesn't exist, it is inserted
@@ -33,7 +35,7 @@ use mithril_common::entities::{Certificate, Epoch, SignedEntityType};
 use mithril_common::logging::LoggerExtensions;
 
 use crate::EpochSettingsStorer;
-use crate::entities::{CertificateEpochGap, OpenMessage};
+use crate::entities::{CertificateEpochGap, OpenMessage, RemoteParentCertificateError};
 
 use super::{
     CertificateChainSynchronizer, OpenMessageStorer, RemoteCertificateRetriever,
@@ -125,8 +127,7 @@ impl MithrilCertificateChainSynchronizer {
 
         loop {
             let parent_certificate = self
-                .certificate_verifier
-                .verify_certificate(&certificate)
+                .verify_certificate_and_retrieve_parent(&certificate)
                 .await
                 .with_context(
                     || format!("Failed to verify certificate: `{}`", certificate.hash,),
@@ -150,6 +151,45 @@ impl MithrilCertificateChainSynchronizer {
         }
 
         Ok(validated_certificates.into())
+    }
+
+    /// Verify a certificate and return its parent, `None` for a genesis certificate only.
+    ///
+    /// A certificate whose aggregate signature certifies the full certificate chain stops the
+    /// verification early: its parent is then retrieved from the remote source so that the
+    /// synchronized certificate chain remains contiguous down to the genesis certificate.
+    async fn verify_certificate_and_retrieve_parent(
+        &self,
+        certificate: &Certificate,
+    ) -> StdResult<Option<Certificate>> {
+        match self.certificate_verifier.verify_certificate(certificate).await? {
+            Some(parent_certificate) => Ok(Some(parent_certificate)),
+            None if certificate.is_genesis() => Ok(None),
+            None => self.retrieve_parent_certificate(certificate).await.map(Some),
+        }
+    }
+
+    /// Retrieve from the remote source the parent of a certificate that is not a genesis certificate.
+    async fn retrieve_parent_certificate(
+        &self,
+        certificate: &Certificate,
+    ) -> StdResult<Certificate> {
+        let parent_certificate = self
+            .remote_certificate_retriever
+            .get_certificate_details(&certificate.previous_hash)
+            .await?
+            .ok_or_else(|| {
+                RemoteParentCertificateError::NotFound(certificate.previous_hash.clone())
+            })?;
+        if parent_certificate.hash != certificate.previous_hash {
+            return Err(RemoteParentCertificateError::Unexpected {
+                requested_hash: certificate.previous_hash.clone(),
+                returned_hash: parent_certificate.hash,
+            }
+            .into());
+        }
+
+        Ok(parent_certificate)
     }
 
     async fn store_certificate_chain(&self, certificate_chain: Vec<Certificate>) -> StdResult<()> {
@@ -624,6 +664,159 @@ mod tests {
                     .collect::<Vec<_>>(),
                 vec!["genesis".to_string(), "hash1".to_string(), "hash2".to_string()]
             );
+        }
+
+        mod certificate_stopping_verification_early {
+            use super::*;
+
+            fn chain_stopping_verification_early() -> [Certificate; 3] {
+                let base_certificate = fake_data::certificate("whatever");
+                [
+                    Certificate {
+                        epoch: Epoch(2),
+                        ..fake_data::genesis_certificate("genesis")
+                    },
+                    Certificate {
+                        epoch: Epoch(3),
+                        hash: "hash1".to_string(),
+                        previous_hash: "genesis".to_string(),
+                        ..base_certificate.clone()
+                    },
+                    Certificate {
+                        epoch: Epoch(4),
+                        hash: "hash2".to_string(),
+                        previous_hash: "hash1".to_string(),
+                        ..base_certificate
+                    },
+                ]
+            }
+
+            #[tokio::test]
+            async fn retrieve_parent_from_remote_source_when_a_certificate_stops_verification_early()
+             {
+                let chain = chain_stopping_verification_early();
+                let synchronizer = MithrilCertificateChainSynchronizer {
+                    certificate_verifier: MockBuilder::<MockCertificateVerifier>::configure(
+                        |mock| {
+                            mock.expect_verify_certificate()
+                                .with(eq(chain[2].clone()))
+                                .return_once(move |_| Ok(None));
+                            let genesis = chain[0].clone();
+                            mock.expect_verify_certificate()
+                                .with(eq(chain[1].clone()))
+                                .return_once(move |_| Ok(Some(genesis)));
+                            mock.expect_verify_certificate()
+                                .with(eq(chain[0].clone()))
+                                .return_once(move |_| Ok(None));
+                        },
+                    ),
+                    remote_certificate_retriever:
+                        MockBuilder::<MockRemoteCertificateRetriever>::configure(|mock| {
+                            let parent = chain[1].clone();
+                            mock.expect_get_certificate_details()
+                                .with(eq("hash1".to_string()))
+                                .return_once(move |_| Ok(Some(parent)));
+                        }),
+                    ..MithrilCertificateChainSynchronizer::default_for_test()
+                };
+
+                let remote_certificate_chain = synchronizer
+                    .retrieve_and_validate_remote_certificate_chain(chain[2].clone())
+                    .await
+                    .unwrap();
+
+                assert_eq!(
+                    remote_certificate_chain
+                        .into_iter()
+                        .map(|c| c.hash)
+                        .collect::<Vec<_>>(),
+                    vec!["genesis".to_string(), "hash1".to_string(), "hash2".to_string()]
+                );
+            }
+
+            #[tokio::test]
+            async fn abort_with_error_if_the_remote_source_does_not_have_the_parent_certificate() {
+                let chain = chain_stopping_verification_early();
+                let synchronizer = MithrilCertificateChainSynchronizer {
+                    certificate_verifier: MockBuilder::<MockCertificateVerifier>::configure(
+                        |mock| {
+                            mock.expect_verify_certificate().return_once(move |_| Ok(None));
+                        },
+                    ),
+                    remote_certificate_retriever:
+                        MockBuilder::<MockRemoteCertificateRetriever>::configure(|mock| {
+                            mock.expect_get_certificate_details().return_once(move |_| Ok(None));
+                        }),
+                    ..MithrilCertificateChainSynchronizer::default_for_test()
+                };
+
+                let error = synchronizer
+                    .retrieve_and_validate_remote_certificate_chain(chain[2].clone())
+                    .await
+                    .expect_err("Expected an error but was:");
+
+                assert_eq!(
+                    Some(&RemoteParentCertificateError::NotFound("hash1".to_string())),
+                    error.downcast_ref::<RemoteParentCertificateError>()
+                );
+            }
+
+            #[tokio::test]
+            async fn abort_with_error_if_the_remote_source_returns_another_certificate_than_the_parent()
+             {
+                let chain = chain_stopping_verification_early();
+                let synchronizer = MithrilCertificateChainSynchronizer {
+                    certificate_verifier: MockBuilder::<MockCertificateVerifier>::configure(
+                        |mock| {
+                            mock.expect_verify_certificate().return_once(move |_| Ok(None));
+                        },
+                    ),
+                    remote_certificate_retriever:
+                        MockBuilder::<MockRemoteCertificateRetriever>::configure(|mock| {
+                            let unexpected_certificate = chain[0].clone();
+                            mock.expect_get_certificate_details()
+                                .return_once(move |_| Ok(Some(unexpected_certificate)));
+                        }),
+                    ..MithrilCertificateChainSynchronizer::default_for_test()
+                };
+
+                let error = synchronizer
+                    .retrieve_and_validate_remote_certificate_chain(chain[2].clone())
+                    .await
+                    .expect_err("Expected an error but was:");
+
+                assert_eq!(
+                    Some(&RemoteParentCertificateError::Unexpected {
+                        requested_hash: "hash1".to_string(),
+                        returned_hash: "genesis".to_string(),
+                    }),
+                    error.downcast_ref::<RemoteParentCertificateError>()
+                );
+            }
+
+            #[tokio::test]
+            async fn stop_the_retrieval_on_a_genesis_certificate_without_retrieving_its_parent() {
+                let genesis = fake_data::genesis_certificate("genesis");
+                let synchronizer = MithrilCertificateChainSynchronizer {
+                    certificate_verifier: MockBuilder::<MockCertificateVerifier>::configure(
+                        |mock| {
+                            mock.expect_verify_certificate().return_once(move |_| Ok(None));
+                        },
+                    ),
+                    remote_certificate_retriever:
+                        MockBuilder::<MockRemoteCertificateRetriever>::configure(|mock| {
+                            mock.expect_get_certificate_details().never();
+                        }),
+                    ..MithrilCertificateChainSynchronizer::default_for_test()
+                };
+
+                let remote_certificate_chain = synchronizer
+                    .retrieve_and_validate_remote_certificate_chain(genesis.clone())
+                    .await
+                    .unwrap();
+
+                assert_eq!(vec![genesis], remote_certificate_chain);
+            }
         }
     }
 

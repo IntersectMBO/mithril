@@ -316,6 +316,15 @@ pub trait ConfigurationSource {
         panic!("leader_aggregator_endpoint is not implemented.");
     }
 
+    /// Certificate chain aggregator endpoint
+    ///
+    /// This is the endpoint of the aggregator that will be used to synchronize the certificate
+    /// chain when the aggregator is running in a follower mode.
+    /// If this is not set or empty, the leader aggregator endpoint is used.
+    fn certificate_chain_aggregator_endpoint(&self) -> Option<String> {
+        panic!("certificate_chain_aggregator_endpoint is not implemented.");
+    }
+
     /// Custom origin tag of client request added to the whitelist (comma
     /// separated list).
     fn custom_origin_tag_white_list(&self) -> Option<String> {
@@ -648,6 +657,14 @@ pub struct ServeCommandConfiguration {
     /// If this is not set, the aggregator will run in a leader mode.
     pub leader_aggregator_endpoint: Option<String>,
 
+    /// Certificate chain aggregator endpoint
+    ///
+    /// This is the endpoint of the aggregator that will be used to synchronize the certificate
+    /// chain when the aggregator is running in a follower mode.
+    /// If this is not set or empty, the leader aggregator endpoint is used.
+    #[example = "`https://aggregator.pre-release-preview.api.mithril.network/aggregator`"]
+    pub certificate_chain_aggregator_endpoint: Option<String>,
+
     /// Custom origin tag of client request added to the whitelist (comma
     /// separated list).
     pub custom_origin_tag_white_list: Option<String>,
@@ -832,6 +849,7 @@ impl ServeCommandConfiguration {
             metrics_server_port: 9090,
             persist_usage_report_interval_in_seconds: 10,
             leader_aggregator_endpoint: None,
+            certificate_chain_aggregator_endpoint: None,
             custom_origin_tag_white_list: None,
             aggregate_signature_type: AggregateSignatureType::Concatenation,
             signature_processor_wait_delay_on_error_ms: 5000,
@@ -1034,6 +1052,12 @@ impl ConfigurationSource for ServeCommandConfiguration {
 
     fn leader_aggregator_endpoint(&self) -> Option<String> {
         self.leader_aggregator_endpoint.clone()
+    }
+
+    fn certificate_chain_aggregator_endpoint(&self) -> Option<String> {
+        self.certificate_chain_aggregator_endpoint
+            .clone()
+            .filter(|endpoint| !endpoint.is_empty())
     }
 
     fn custom_origin_tag_white_list(&self) -> Option<String> {
@@ -1424,6 +1448,29 @@ mod test {
         };
 
         assert!(!config.is_follower_aggregator());
+    }
+
+    #[test]
+    fn certificate_chain_aggregator_endpoint_returns_the_configured_value() {
+        let config = ServeCommandConfiguration {
+            certificate_chain_aggregator_endpoint: Some("https://chain.aggregator".to_string()),
+            ..ServeCommandConfiguration::new_sample(temp_dir!())
+        };
+
+        assert_eq!(
+            Some("https://chain.aggregator".to_string()),
+            config.certificate_chain_aggregator_endpoint()
+        );
+    }
+
+    #[test]
+    fn certificate_chain_aggregator_endpoint_treats_an_empty_value_as_not_set() {
+        let config = ServeCommandConfiguration {
+            certificate_chain_aggregator_endpoint: Some(String::new()),
+            ..ServeCommandConfiguration::new_sample(temp_dir!())
+        };
+
+        assert_eq!(None, config.certificate_chain_aggregator_endpoint());
     }
 
     #[test]

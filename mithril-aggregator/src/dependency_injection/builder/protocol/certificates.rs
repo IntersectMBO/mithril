@@ -133,15 +133,16 @@ impl DependenciesBuilder {
     ) -> Result<Arc<dyn CertificateChainSynchronizer>> {
         let synchronizer: Arc<dyn CertificateChainSynchronizer> =
             if self.configuration.is_follower_aggregator() {
-                let leader_aggregator_client = self.get_leader_aggregator_client().await?;
+                let certificate_chain_aggregator_client =
+                    self.get_certificate_chain_aggregator_client().await?;
                 let verifier = Arc::new(MithrilCertificateVerifier::new(
                     self.root_logger(),
-                    leader_aggregator_client.clone(),
+                    certificate_chain_aggregator_client.clone(),
                     self.get_genesis_verifier().await?,
                 ));
 
                 Arc::new(MithrilCertificateChainSynchronizer::new(
-                    leader_aggregator_client,
+                    certificate_chain_aggregator_client,
                     self.get_certificate_repository().await?,
                     verifier,
                     self.get_open_message_repository().await?,
