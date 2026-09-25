@@ -3,7 +3,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
-use crate::certificate_client::CertificateVerifierCache;
+use crate::certificate_client::{CertificateVerifierCache, CertificateVerifierCacheSpace};
 use crate::{MithrilCertificate, MithrilResult};
 
 pub type CertificateHash = str;
@@ -14,9 +14,11 @@ const DEFAULT_STAGING_BATCH_TTL: TimeDelta = TimeDelta::minutes(15);
 pub struct MemoryCertificateVerifierCache {
     expiration_delay: TimeDelta,
     staging_expiration_delay: TimeDelta,
-    committed: RwLock<HashMap<String, CachedCertificate>>,
+    committed: RwLock<HashMap<CertificateVerifierCacheSpace, CommittedSpace>>,
     staged: RwLock<HashMap<String, StagedBatch>>,
 }
+
+type CommittedSpace = HashMap<String, CachedCertificate>;
 
 #[derive(Debug, PartialEq, Clone)]
 struct CachedCertificate {
@@ -60,14 +62,14 @@ impl MemoryCertificateVerifierCache {
         self
     }
 
-    /// Get the number of elements in the cache
+    /// Get the number of elements in the cache, across all the spaces
     pub async fn len(&self) -> usize {
-        self.committed.read().await.len()
+        self.committed.read().await.values().map(HashMap::len).sum()
     }
 
     /// Return true if the cache is empty
     pub async fn is_empty(&self) -> bool {
-        self.committed.read().await.is_empty()
+        self.len().await == 0
     }
 
     fn sweep_expired_batches(staged: &mut HashMap<String, StagedBatch>) {
@@ -75,9 +77,28 @@ impl MemoryCertificateVerifierCache {
         staged.retain(|_, batch| batch.batch_expire_at >= now);
     }
 
-    fn sweep_expired_committed(committed: &mut HashMap<String, CachedCertificate>) {
+    fn sweep_expired_committed(
+        committed: &mut HashMap<CertificateVerifierCacheSpace, CommittedSpace>,
+    ) {
         let now = Utc::now();
-        committed.retain(|_, cached| cached.expire_at >= now);
+        committed.retain(|_, committed_space| {
+            committed_space.retain(|_, cached| cached.expire_at >= now);
+            !committed_space.is_empty()
+        });
+    }
+
+    async fn get_unexpired_committed_certificate(
+        &self,
+        space: &CertificateVerifierCacheSpace,
+        certificate_hash: &CertificateHash,
+    ) -> Option<MithrilCertificate> {
+        self.committed
+            .read()
+            .await
+            .get(space)
+            .and_then(|committed_space| committed_space.get(certificate_hash))
+            .filter(|cached| cached.expire_at >= Utc::now())
+            .map(|cached| cached.certificate.clone())
     }
 }
 
@@ -112,6 +133,7 @@ impl CertificateVerifierCache for MemoryCertificateVerifierCache {
 
     async fn commit_staged_certificates(
         &self,
+        space: &CertificateVerifierCacheSpace,
         certificate_chain_validation_id: &str,
     ) -> MithrilResult<()> {
         let mut staged = self.staged.write().await;
@@ -122,9 +144,10 @@ impl CertificateVerifierCache for MemoryCertificateVerifierCache {
 
         if let Some(batch) = staged.remove(certificate_chain_validation_id) {
             let certificates_expire_at = Utc::now() + self.expiration_delay;
+            let committed_space = committed.entry(space.clone()).or_default();
 
             for (hash, cert) in batch.certificates {
-                committed.insert(hash, CachedCertificate::new(cert, certificates_expire_at));
+                committed_space.insert(hash, CachedCertificate::new(cert, certificates_expire_at));
             }
         }
 
@@ -133,20 +156,23 @@ impl CertificateVerifierCache for MemoryCertificateVerifierCache {
 
     async fn get_certificate_by_hash(
         &self,
+        space: &CertificateVerifierCacheSpace,
         certificate_hash: &CertificateHash,
     ) -> MithrilResult<Option<MithrilCertificate>> {
-        let cache = self.committed.read().await;
-        Ok(cache
-            .get(certificate_hash)
-            .filter(|cached| cached.expire_at >= Utc::now())
-            .map(|cached| cached.certificate.clone()))
+        Ok(self
+            .get_unexpired_committed_certificate(space, certificate_hash)
+            .await)
     }
 
-    async fn certificate_exist(&self, certificate_hash: &str) -> MithrilResult<bool> {
-        let cache = self.committed.read().await;
-        Ok(cache
-            .get(certificate_hash)
-            .is_some_and(|cached| cached.expire_at >= Utc::now()))
+    async fn certificate_exist(
+        &self,
+        space: &CertificateVerifierCacheSpace,
+        certificate_hash: &str,
+    ) -> MithrilResult<bool> {
+        Ok(self
+            .get_unexpired_committed_certificate(space, certificate_hash)
+            .await
+            .is_some())
     }
 
     async fn reset(&self) -> MithrilResult<()> {
@@ -165,40 +191,55 @@ pub(crate) mod test_tools {
     use super::*;
 
     impl MemoryCertificateVerifierCache {
-        /// `Test only` Populate the cache with the given certificates
-        pub(crate) fn with_items<T>(mut self, chain: T) -> Self
+        /// `Test only` Populate the given space of the cache with the given certificates
+        pub(crate) fn with_items<T>(
+            mut self,
+            space: &CertificateVerifierCacheSpace,
+            chain: T,
+        ) -> Self
         where
             T: IntoIterator<Item = MithrilCertificate>,
         {
             let expire_at = Utc::now() + self.expiration_delay;
-            self.committed = RwLock::new(
-                chain
-                    .into_iter()
-                    .map(|cert| {
-                        (
-                            cert.hash.clone(),
-                            CachedCertificate::new(cert.clone(), expire_at),
-                        )
-                    })
-                    .collect(),
-            );
+            let committed_space = chain
+                .into_iter()
+                .map(|cert| {
+                    (
+                        cert.hash.clone(),
+                        CachedCertificate::new(cert.clone(), expire_at),
+                    )
+                })
+                .collect();
+            self.committed.get_mut().insert(space.clone(), committed_space);
             self
         }
 
-        /// `Test only` Populate the cache with the given certificates
-        pub(crate) fn with_items_from_chain<'a, T>(self, chain: T) -> Self
+        /// `Test only` Populate the given space of the cache with the given certificates
+        pub(crate) fn with_items_from_chain<'a, T>(
+            self,
+            space: &CertificateVerifierCacheSpace,
+            chain: T,
+        ) -> Self
         where
             T: IntoIterator<Item = &'a Certificate>,
         {
-            self.with_items(chain.into_iter().map(|cert| cert.clone().try_into().unwrap()))
+            self.with_items(
+                space,
+                chain.into_iter().map(|cert| cert.clone().try_into().unwrap()),
+            )
         }
 
-        /// `Test only` Return the content of the cache (without the expiration date)
-        pub(crate) async fn content(&self) -> HashMap<String, MithrilCertificate> {
+        /// `Test only` Return the content of the given space of the cache (without the expiration date)
+        pub(crate) async fn content(
+            &self,
+            space: &CertificateVerifierCacheSpace,
+        ) -> HashMap<String, MithrilCertificate> {
             self.committed
                 .read()
                 .await
-                .clone()
+                .get(space)
+                .cloned()
+                .unwrap_or_default()
                 .into_iter()
                 .map(|(k, v)| (k, v.certificate))
                 .collect()
@@ -214,11 +255,16 @@ pub(crate) mod test_tools {
         /// panic if the key is not found
         pub(crate) async fn overwrite_expiration_date(
             &self,
+            space: &CertificateVerifierCacheSpace,
             certificate_hash: &CertificateHash,
             expire_at: DateTime<Utc>,
         ) {
             let mut cache = self.committed.write().await;
-            cache.get_mut(certificate_hash).expect("Key not found").expire_at = expire_at;
+            cache
+                .get_mut(space)
+                .and_then(|committed_space| committed_space.get_mut(certificate_hash))
+                .expect("Key not found")
+                .expire_at = expire_at;
         }
 
         /// `Test only` Overwrite the expiration date of a staged batch.
@@ -239,9 +285,15 @@ pub(crate) mod test_tools {
         /// `Test only` Get the cached value for the given certificate hash
         pub(super) async fn get_cached_value(
             &self,
+            space: &CertificateVerifierCacheSpace,
             certificate_hash: &CertificateHash,
         ) -> Option<CachedCertificate> {
-            self.committed.read().await.get(certificate_hash).cloned()
+            self.committed
+                .read()
+                .await
+                .get(space)
+                .and_then(|committed_space| committed_space.get(certificate_hash))
+                .cloned()
         }
 
         /// `Test only` Get the cached value for the given certificate hash
@@ -264,9 +316,23 @@ pub(crate) mod test_tools {
 mod tests {
     use std::collections::HashSet;
 
+    use mithril_common::crypto_helper::{GenesisEd25519Signer, GenesisSigner};
     use mithril_common::test::double::Dummy;
 
     use super::*;
+
+    fn space() -> CertificateVerifierCacheSpace {
+        CertificateVerifierCacheSpace::from_genesis_verifier(
+            &GenesisSigner::create_deterministic_signer().create_verifier(),
+        )
+    }
+
+    fn other_space() -> CertificateVerifierCacheSpace {
+        CertificateVerifierCacheSpace::from_genesis_verifier(
+            &GenesisSigner::from_ed25519(GenesisEd25519Signer::create_non_deterministic_signer())
+                .create_verifier(),
+        )
+    }
 
     fn dummy_certificate(hash: &str, previous_hash: &str) -> MithrilCertificate {
         MithrilCertificate {
@@ -282,15 +348,15 @@ mod tests {
             dummy_certificate("first", "first_parent"),
             dummy_certificate("second", "second_parent"),
         ];
-        let cache =
-            MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items(chain.clone());
+        let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+            .with_items(&space(), chain.clone());
 
         assert_eq!(
             chain
                 .into_iter()
                 .map(|c| (c.hash.clone(), c))
                 .collect::<HashMap<String, MithrilCertificate>>(),
-            cache.content().await
+            cache.content(&space()).await
         );
     }
 
@@ -305,7 +371,10 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(None, cache.get_certificate_by_hash("hash").await.unwrap());
+            assert_eq!(
+                None,
+                cache.get_certificate_by_hash(&space(), "hash").await.unwrap()
+            );
         }
 
         #[tokio::test]
@@ -315,11 +384,14 @@ mod tests {
                 .stage_certificate("chain_validation_id", dummy_certificate("hash", "parent"))
                 .await
                 .unwrap();
-            cache.commit_staged_certificates("chain_validation_id").await.unwrap();
+            cache
+                .commit_staged_certificates(&space(), "chain_validation_id")
+                .await
+                .unwrap();
 
             assert_eq!(
                 Some(dummy_certificate("hash", "parent")),
-                cache.get_certificate_by_hash("hash").await.unwrap()
+                cache.get_certificate_by_hash(&space(), "hash").await.unwrap()
             );
         }
 
@@ -334,17 +406,32 @@ mod tests {
                 .stage_certificate("chain_id_b", dummy_certificate("hash_b", "parent"))
                 .await
                 .unwrap();
-            cache.commit_staged_certificates("chain_id_a").await.unwrap();
+            cache
+                .commit_staged_certificates(&space(), "chain_id_a")
+                .await
+                .unwrap();
 
-            assert!(cache.get_certificate_by_hash("hash_a").await.unwrap().is_some());
-            assert_eq!(None, cache.get_certificate_by_hash("hash_b").await.unwrap());
+            assert!(
+                cache
+                    .get_certificate_by_hash(&space(), "hash_a")
+                    .await
+                    .unwrap()
+                    .is_some()
+            );
+            assert_eq!(
+                None,
+                cache.get_certificate_by_hash(&space(), "hash_b").await.unwrap()
+            );
         }
 
         #[tokio::test]
         async fn committing_an_unknown_id_is_a_no_op_not_an_error() {
             let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1));
 
-            cache.commit_staged_certificates("never_staged").await.unwrap();
+            cache
+                .commit_staged_certificates(&space(), "never_staged")
+                .await
+                .unwrap();
         }
 
         #[tokio::test]
@@ -354,9 +441,15 @@ mod tests {
                 .stage_certificate("chain_validation_id", dummy_certificate("hash", "parent"))
                 .await
                 .unwrap();
-            cache.commit_staged_certificates("chain_validation_id").await.unwrap();
+            cache
+                .commit_staged_certificates(&space(), "chain_validation_id")
+                .await
+                .unwrap();
 
-            cache.commit_staged_certificates("chain_validation_id").await.unwrap(); // must not panic or error
+            cache
+                .commit_staged_certificates(&space(), "chain_validation_id")
+                .await
+                .unwrap(); // must not panic or error
         }
 
         #[tokio::test]
@@ -368,9 +461,15 @@ mod tests {
                 .await
                 .unwrap();
 
-            cache.commit_staged_certificates("chain_validation_id").await.unwrap();
+            cache
+                .commit_staged_certificates(&space(), "chain_validation_id")
+                .await
+                .unwrap();
 
-            assert_eq!(None, cache.get_certificate_by_hash("hash").await.unwrap());
+            assert_eq!(
+                None,
+                cache.get_certificate_by_hash(&space(), "hash").await.unwrap()
+            );
         }
 
         #[tokio::test]
@@ -382,10 +481,13 @@ mod tests {
                 .stage_certificate("chain_validation_id", dummy_certificate("hash", "parent"))
                 .await
                 .unwrap();
-            cache.commit_staged_certificates("chain_validation_id").await.unwrap();
+            cache
+                .commit_staged_certificates(&space(), "chain_validation_id")
+                .await
+                .unwrap();
 
             let cached = cache
-                .get_cached_value("hash")
+                .get_cached_value(&space(), "hash")
                 .await
                 .expect("Cache should have been populated");
 
@@ -396,10 +498,13 @@ mod tests {
 
         #[tokio::test]
         async fn commiting_new_hash_push_new_key_at_end_and_dont_alter_existing_values() {
-            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items([
-                dummy_certificate("existing_hash", "existing_parent"),
-                dummy_certificate("another_hash", "another_parent"),
-            ]);
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items(
+                &space(),
+                [
+                    dummy_certificate("existing_hash", "existing_parent"),
+                    dummy_certificate("another_hash", "another_parent"),
+                ],
+            );
             cache
                 .stage_certificate(
                     "chain_validation_id",
@@ -407,7 +512,10 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            cache.commit_staged_certificates("chain_validation_id").await.unwrap();
+            cache
+                .commit_staged_certificates(&space(), "chain_validation_id")
+                .await
+                .unwrap();
 
             assert_eq!(
                 HashMap::from([
@@ -424,7 +532,7 @@ mod tests {
                         dummy_certificate("new_hash", "new_parent")
                     ),
                 ]),
-                cache.content().await
+                cache.content(&space()).await
             );
         }
 
@@ -440,22 +548,25 @@ mod tests {
                 ..before_update.clone()
             };
             let cache = MemoryCertificateVerifierCache::new(expiration_delay)
-                .with_items([before_update, unaltered.clone()]);
+                .with_items(&space(), [before_update, unaltered.clone()]);
 
-            let initial_value = cache.get_cached_value("hash").await.unwrap();
+            let initial_value = cache.get_cached_value(&space(), "hash").await.unwrap();
 
             cache
                 .stage_certificate("chain_validation_id", expected.clone())
                 .await
                 .unwrap();
-            cache.commit_staged_certificates("chain_validation_id").await.unwrap();
+            cache
+                .commit_staged_certificates(&space(), "chain_validation_id")
+                .await
+                .unwrap();
 
-            let updated_value = cache.get_cached_value("hash").await.unwrap();
+            let updated_value = cache.get_cached_value(&space(), "hash").await.unwrap();
 
             assert_eq!(2, cache.len().await);
             assert_eq!(
                 Some(expected),
-                cache.get_certificate_by_hash("hash").await.unwrap(),
+                cache.get_certificate_by_hash(&space(), "hash").await.unwrap(),
                 "Existing but not updated value should not have been altered"
             );
             assert_ne!(initial_value, updated_value);
@@ -485,7 +596,10 @@ mod tests {
 
             assert_eq!(3, cache.staged_batch_ids().await.len());
 
-            cache.commit_staged_certificates("to_commit_id").await.unwrap();
+            cache
+                .commit_staged_certificates(&space(), "to_commit_id")
+                .await
+                .unwrap();
 
             assert_eq!(
                 HashSet::from(["remaining_id".to_string()]),
@@ -495,24 +609,27 @@ mod tests {
 
         #[tokio::test]
         async fn committing_certificates_sweeps_away_expired_committed_certificates() {
-            let cache = MemoryCertificateVerifierCache::new(TimeDelta::zero()).with_items([
-                dummy_certificate("expired_hash", "parent"),
-                dummy_certificate("new_hash", "parent"),
-            ]);
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::zero()).with_items(
+                &space(),
+                [
+                    dummy_certificate("expired_hash", "parent"),
+                    dummy_certificate("new_hash", "parent"),
+                ],
+            );
             cache
-                .overwrite_expiration_date("new_hash", Utc::now() + TimeDelta::hours(1))
+                .overwrite_expiration_date(&space(), "new_hash", Utc::now() + TimeDelta::hours(1))
                 .await;
 
-            assert_eq!(2, cache.content().await.len());
+            assert_eq!(2, cache.content(&space()).await.len());
 
-            cache.commit_staged_certificates("second_id").await.unwrap();
+            cache.commit_staged_certificates(&space(), "second_id").await.unwrap();
 
             assert_eq!(
                 HashMap::from([(
                     "new_hash".to_string(),
                     dummy_certificate("new_hash", "parent")
                 )]),
-                cache.content().await
+                cache.content(&space()).await
             );
         }
 
@@ -541,15 +658,18 @@ mod tests {
 
         #[tokio::test]
         async fn staging_a_new_batch_sweeps_away_expired_committed_certificates() {
-            let cache = MemoryCertificateVerifierCache::new(TimeDelta::zero()).with_items([
-                dummy_certificate("expired_hash", "parent"),
-                dummy_certificate("new_hash", "parent"),
-            ]);
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::zero()).with_items(
+                &space(),
+                [
+                    dummy_certificate("expired_hash", "parent"),
+                    dummy_certificate("new_hash", "parent"),
+                ],
+            );
             cache
-                .overwrite_expiration_date("new_hash", Utc::now() + TimeDelta::hours(1))
+                .overwrite_expiration_date(&space(), "new_hash", Utc::now() + TimeDelta::hours(1))
                 .await;
 
-            assert_eq!(2, cache.content().await.len());
+            assert_eq!(2, cache.content(&space()).await.len());
 
             cache
                 .stage_certificate("new_batch", dummy_certificate("hash2", "parent2"))
@@ -561,7 +681,7 @@ mod tests {
                     "new_hash".to_string(),
                     dummy_certificate("new_hash", "parent")
                 )]),
-                cache.content().await
+                cache.content(&space()).await
             );
         }
 
@@ -600,39 +720,45 @@ mod tests {
         #[tokio::test]
         async fn get_previous_hash_when_key_exists() {
             let expected = dummy_certificate("hash", "parent");
-            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items([
-                expected.clone(),
-                dummy_certificate("another_hash", "another_parent"),
-            ]);
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items(
+                &space(),
+                [expected.clone(), dummy_certificate("another_hash", "another_parent")],
+            );
 
             assert_eq!(
                 Some(expected),
-                cache.get_certificate_by_hash("hash").await.unwrap()
+                cache.get_certificate_by_hash(&space(), "hash").await.unwrap()
             );
         }
 
         #[tokio::test]
         async fn get_previous_hash_return_none_if_not_found() {
-            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items([
-                dummy_certificate("hash", "parent"),
-                dummy_certificate("another_hash", "another_parent"),
-            ]);
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items(
+                &space(),
+                [
+                    dummy_certificate("hash", "parent"),
+                    dummy_certificate("another_hash", "another_parent"),
+                ],
+            );
 
             assert_eq!(
                 None,
-                cache.get_certificate_by_hash("not_found").await.unwrap()
+                cache.get_certificate_by_hash(&space(), "not_found").await.unwrap()
             );
         }
 
         #[tokio::test]
         async fn get_expired_previous_hash_return_none() {
             let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
-                .with_items([dummy_certificate("hash", "parent")]);
+                .with_items(&space(), [dummy_certificate("hash", "parent")]);
             cache
-                .overwrite_expiration_date("hash", Utc::now() - TimeDelta::days(5))
+                .overwrite_expiration_date(&space(), "hash", Utc::now() - TimeDelta::days(5))
                 .await;
 
-            assert_eq!(None, cache.get_certificate_by_hash("hash").await.unwrap());
+            assert_eq!(
+                None,
+                cache.get_certificate_by_hash(&space(), "hash").await.unwrap()
+            );
         }
     }
 
@@ -642,26 +768,26 @@ mod tests {
         #[tokio::test]
         async fn returns_false_for_a_hash_never_committed() {
             let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1));
-            assert!(!cache.certificate_exist("hash").await.unwrap());
+            assert!(!cache.certificate_exist(&space(), "hash").await.unwrap());
         }
 
         #[tokio::test]
         async fn returns_true_for_a_committed_hash() {
             let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
-                .with_items([dummy_certificate("hash", "parent")]);
+                .with_items(&space(), [dummy_certificate("hash", "parent")]);
 
-            assert!(cache.certificate_exist("hash").await.unwrap());
+            assert!(cache.certificate_exist(&space(), "hash").await.unwrap());
         }
 
         #[tokio::test]
         async fn returns_false_for_an_expired_committed_entry() {
             let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
-                .with_items([dummy_certificate("hash", "parent")]);
+                .with_items(&space(), [dummy_certificate("hash", "parent")]);
             cache
-                .overwrite_expiration_date("hash", Utc::now() - TimeDelta::days(1))
+                .overwrite_expiration_date(&space(), "hash", Utc::now() - TimeDelta::days(1))
                 .await;
 
-            assert!(!cache.certificate_exist("hash").await.unwrap());
+            assert!(!cache.certificate_exist(&space(), "hash").await.unwrap());
         }
 
         #[tokio::test]
@@ -672,7 +798,95 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert!(!cache.certificate_exist("hash").await.unwrap());
+            assert!(!cache.certificate_exist(&space(), "hash").await.unwrap());
+        }
+    }
+
+    mod spaces {
+        use super::*;
+
+        #[tokio::test]
+        async fn populating_a_space_keeps_the_other_spaces() {
+            let other_space = other_space();
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                .with_items(&space(), [dummy_certificate("hash", "parent")])
+                .with_items(&other_space, [dummy_certificate("other_hash", "parent")]);
+
+            assert!(cache.certificate_exist(&space(), "hash").await.unwrap());
+            assert!(cache.certificate_exist(&other_space, "other_hash").await.unwrap());
+        }
+
+        #[tokio::test]
+        async fn certificate_committed_in_a_space_is_not_retrievable_from_another_space() {
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1));
+            cache
+                .stage_certificate("chain_validation_id", dummy_certificate("hash", "parent"))
+                .await
+                .unwrap();
+            cache
+                .commit_staged_certificates(&space(), "chain_validation_id")
+                .await
+                .unwrap();
+
+            assert_eq!(
+                None,
+                cache.get_certificate_by_hash(&other_space(), "hash").await.unwrap()
+            );
+            assert!(!cache.certificate_exist(&other_space(), "hash").await.unwrap());
+        }
+
+        #[tokio::test]
+        async fn same_hash_committed_in_two_spaces_is_retrieved_per_space() {
+            let certificate = dummy_certificate("hash", "parent");
+            let other_certificate = dummy_certificate("hash", "other_parent");
+            let other_space = other_space();
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1));
+            cache
+                .stage_certificate("chain_id_a", certificate.clone())
+                .await
+                .unwrap();
+            cache
+                .commit_staged_certificates(&space(), "chain_id_a")
+                .await
+                .unwrap();
+            cache
+                .stage_certificate("chain_id_b", other_certificate.clone())
+                .await
+                .unwrap();
+            cache
+                .commit_staged_certificates(&other_space, "chain_id_b")
+                .await
+                .unwrap();
+
+            assert_eq!(
+                Some(certificate),
+                cache.get_certificate_by_hash(&space(), "hash").await.unwrap()
+            );
+            assert_eq!(
+                Some(other_certificate),
+                cache.get_certificate_by_hash(&other_space, "hash").await.unwrap()
+            );
+            assert_eq!(2, cache.len().await);
+        }
+
+        #[tokio::test]
+        async fn sweeping_expired_certificates_drops_the_emptied_spaces() {
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                .with_items(&space(), [dummy_certificate("expired_hash", "parent")]);
+            cache
+                .overwrite_expiration_date(
+                    &space(),
+                    "expired_hash",
+                    Utc::now() - TimeDelta::hours(1),
+                )
+                .await;
+
+            cache
+                .commit_staged_certificates(&other_space(), "never_staged")
+                .await
+                .unwrap();
+
+            assert!(cache.committed.read().await.is_empty());
         }
     }
 
@@ -685,21 +899,43 @@ mod tests {
 
             cache.reset().await.unwrap();
 
-            assert_eq!(HashMap::new(), cache.content().await);
+            assert_eq!(HashMap::new(), cache.content(&space()).await);
         }
 
         #[tokio::test]
         async fn reset_clears_committed_data() {
-            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items([
-                dummy_certificate("hash", "parent"),
-                dummy_certificate("another_hash", "another_parent"),
-            ]);
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1)).with_items(
+                &space(),
+                [
+                    dummy_certificate("hash", "parent"),
+                    dummy_certificate("another_hash", "another_parent"),
+                ],
+            );
 
-            assert_eq!(2, cache.content().await.len());
+            assert_eq!(2, cache.content(&space()).await.len());
 
             cache.reset().await.unwrap();
 
-            assert_eq!(HashMap::new(), cache.content().await);
+            assert_eq!(HashMap::new(), cache.content(&space()).await);
+        }
+
+        #[tokio::test]
+        async fn reset_clears_committed_data_of_all_spaces() {
+            let other_space = other_space();
+            let cache = MemoryCertificateVerifierCache::new(TimeDelta::hours(1))
+                .with_items(&space(), [dummy_certificate("hash", "parent")]);
+            cache
+                .stage_certificate("chain_id", dummy_certificate("another_hash", "parent"))
+                .await
+                .unwrap();
+            cache
+                .commit_staged_certificates(&other_space, "chain_id")
+                .await
+                .unwrap();
+
+            cache.reset().await.unwrap();
+
+            assert!(cache.is_empty().await);
         }
 
         #[tokio::test]
