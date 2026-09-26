@@ -1,10 +1,12 @@
 use std::marker::PhantomData;
 #[cfg(feature = "future_snark")]
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use anyhow::Context;
 #[cfg(feature = "future_snark")]
 use anyhow::anyhow;
+#[cfg(feature = "future_snark")]
+use slog::{Discard, Logger, info, o};
 
 #[cfg(all(feature = "future_snark", test))]
 use crate::proof_system::{MockIvcOffCircuitChecker, MockSnarkProverFactory};
@@ -45,6 +47,9 @@ pub struct Clerk<D: MembershipDigest> {
     snark_prover_factory: Arc<dyn SnarkProverFactory<D> + Send + Sync>,
     #[cfg(feature = "future_snark")]
     ivc_off_circuit_checker: Arc<dyn IvcOffCircuitChecker<D> + Send + Sync>,
+    /// Logger of the IVC SNARK aggregation step durations
+    #[cfg(feature = "future_snark")]
+    logger: Logger,
     phantom_data: PhantomData<D>,
 }
 
@@ -64,6 +69,8 @@ impl<D: MembershipDigest> Clerk<D> {
             )),
             #[cfg(feature = "future_snark")]
             ivc_off_circuit_checker: Arc::new(MithrilIvcOffCircuitChecker),
+            #[cfg(feature = "future_snark")]
+            logger: Logger::root(Discard, o!()),
             phantom_data: PhantomData,
         }
     }
@@ -88,6 +95,8 @@ impl<D: MembershipDigest> Clerk<D> {
             )),
             #[cfg(feature = "future_snark")]
             ivc_off_circuit_checker: Arc::new(MithrilIvcOffCircuitChecker),
+            #[cfg(feature = "future_snark")]
+            logger: Logger::root(Discard, o!()),
             phantom_data: PhantomData,
         }
     }
@@ -110,6 +119,20 @@ impl<D: MembershipDigest> Clerk<D> {
             ivc_off_circuit_checker: Arc::new(ivc_off_circuit_checker),
             ..Self::new_clerk_from_signer(signer)
         }
+    }
+
+    /// Logs the duration of the IVC SNARK aggregation steps with `logger`, which discards them by
+    /// default.
+    ///
+    /// The SNARK proofs are then created by the production provers, which log their own steps.
+    #[cfg(feature = "future_snark")]
+    pub fn with_logger(mut self, logger: Logger) -> Self {
+        self.snark_prover_factory = Arc::new(
+            NonDeterministicSnarkProverFactory::new(SnarkProverSetupReuse::Enabled)
+                .with_logger(logger.clone()),
+        );
+        self.logger = logger.new(o!("src" => "Clerk"));
+        self
     }
 
     /// Aggregate a set of signatures with a given proof type.
@@ -156,13 +179,24 @@ impl<D: MembershipDigest> Clerk<D> {
                     .get_snark_clerk()
                     .ok_or_else(|| anyhow!(AggregateSignatureError::MissingSnarkClerk))?;
 
+                let aggregation_start = Instant::now();
+                let start = Instant::now();
                 self.ivc_off_circuit_checker.off_circuit_check(
                     msg,
                     &snark_clerk.compute_aggregate_verification_key_for_snark::<D>(),
                     &ancillary_input,
                 )?;
+                info!(self.logger, "IVC off-circuit check completed"; "duration_ms" => start.elapsed().as_millis());
 
-                self.aggregate_signatures_for_ivc_snark(snark_clerk, sigs, msg, ancillary_input)
+                let aggregation = self.aggregate_signatures_for_ivc_snark(
+                    snark_clerk,
+                    sigs,
+                    msg,
+                    ancillary_input,
+                )?;
+                info!(self.logger, "IVC SNARK aggregate signature created"; "duration_ms" => aggregation_start.elapsed().as_millis());
+
+                Ok(aggregation)
             }
         }
     }
@@ -201,10 +235,13 @@ impl<D: MembershipDigest> Clerk<D> {
         msg: &[u8],
         ancillary_input: AncillaryProofInput,
     ) -> StmResult<(AggregateSignature<D>, AncillaryProofOutput)> {
+        let start = Instant::now();
         let mut snark_prover = self
             .snark_prover_factory
             .snark_aggregate_signature_prover(&snark_clerk.parameters)?;
+        info!(self.logger, "Certificate prover setup retrieved"; "duration_ms" => start.elapsed().as_millis());
 
+        let start = Instant::now();
         let certificate_verifying_key = snark_prover.verifying_key().clone();
         let certificate_proof = snark_prover
             .aggregate_signatures(snark_clerk, sigs, msg)
@@ -215,8 +252,13 @@ impl<D: MembershipDigest> Clerk<D> {
                 )
             })?;
         drop(snark_prover);
+        info!(self.logger, "Certificate proof created"; "duration_ms" => start.elapsed().as_millis());
 
+        let start = Instant::now();
         let mut ivc_prover = self.snark_prover_factory.ivc_chain_prover(&snark_clerk.parameters)?;
+        info!(self.logger, "IVC prover setup retrieved"; "duration_ms" => start.elapsed().as_millis());
+
+        let start = Instant::now();
         let step_bundle = IvcChainStepBundle::try_new(
             certificate_proof,
             msg,
@@ -225,8 +267,12 @@ impl<D: MembershipDigest> Clerk<D> {
             &certificate_verifying_key,
             ivc_prover.verifying_key(),
         )?;
+        info!(self.logger, "IVC chain step bundle prepared"; "duration_ms" => start.elapsed().as_millis());
         let genesis_protocol_message_hash = step_bundle.global.genesis_message;
+
+        let start = Instant::now();
         let (ivc_proof, next_rolling_state) = ivc_prover.advance_chain(step_bundle)?;
+        info!(self.logger, "IVC chain advanced"; "duration_ms" => start.elapsed().as_millis());
         let verifier_data = IvcVerifierData::new(
             genesis_protocol_message_hash,
             certificate_verifying_key,
@@ -294,10 +340,11 @@ impl<D: MembershipDigest> Clerk<D> {
 #[cfg(test)]
 mod tests {
 
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use anyhow::anyhow;
     use midnight_proofs::transcript::Blake2b256;
+    use slog::{Drain, Logger, Never, OwnedKVList, Record, o};
 
     use crate::{
         AggregateSignature, AggregateSignatureError, AggregateSignatureType, AggregationError,
@@ -882,6 +929,50 @@ mod tests {
         assert_eq!(
             verifier_data.to_bytes().unwrap(),
             expected.to_bytes().unwrap()
+        );
+    }
+
+    /// Drain keeping the message of every record it receives.
+    #[derive(Clone, Default)]
+    struct MessageCollector(Arc<Mutex<Vec<String>>>);
+
+    impl MessageCollector {
+        fn messages(&self) -> Vec<String> {
+            self.0.lock().unwrap().clone()
+        }
+    }
+
+    impl Drain for MessageCollector {
+        type Ok = ();
+        type Err = Never;
+
+        fn log(&self, record: &Record, _values: &OwnedKVList) -> Result<(), Never> {
+            self.0.lock().unwrap().push(record.msg().to_string());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn ivc_aggregation_logs_the_duration_of_each_step() {
+        let signer = setup_single_party(PARAMS);
+        let collector = MessageCollector::default();
+        let mut clerk = MockProverFactory::new().build_clerk(&signer);
+        clerk.logger = Logger::root(collector.clone(), o!());
+
+        aggregate_ivc_with_dummy_message(clerk, build_ancillary_input(None))
+            .expect("aggregation with mocked provers should succeed");
+
+        assert_eq!(
+            vec![
+                "IVC off-circuit check completed",
+                "Certificate prover setup retrieved",
+                "Certificate proof created",
+                "IVC prover setup retrieved",
+                "IVC chain step bundle prepared",
+                "IVC chain advanced",
+                "IVC SNARK aggregate signature created",
+            ],
+            collector.messages()
         );
     }
 

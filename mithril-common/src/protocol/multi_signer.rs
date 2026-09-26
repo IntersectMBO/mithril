@@ -1,5 +1,7 @@
 use anyhow::Context;
 use mithril_stm::{AggregateSignatureType, AncillaryProofInput, Parameters};
+#[cfg(feature = "future_snark")]
+use slog::Logger;
 
 use crate::{
     StdResult,
@@ -37,6 +39,13 @@ impl MultiSigner {
             protocol_clerk,
             protocol_parameters,
         }
+    }
+
+    /// Logs the duration of the IVC SNARK aggregation steps with `logger`
+    #[cfg(feature = "future_snark")]
+    pub fn with_logger(mut self, logger: Logger) -> Self {
+        self.protocol_clerk = self.protocol_clerk.with_logger(logger);
+        self
     }
 
     /// Aggregate the given single signatures into a multi-signature

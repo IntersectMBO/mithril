@@ -425,6 +425,8 @@ impl EpochService for MithrilEpochService {
         )
         .with_context(|| "Epoch service failed to build protocol multi signer")?
         .build_multi_signer();
+        #[cfg(feature = "future_snark")]
+        let protocol_multi_signer = protocol_multi_signer.with_logger(self.logger.clone());
 
         let next_protocol_multi_signer = SignerBuilder::new(
             &data.next_signers_with_stake,
