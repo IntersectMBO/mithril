@@ -9,7 +9,7 @@ import TabItem from '@theme/TabItem';
 
 Here is an updated list of all **Mithril networks**, including their configurations and current statuses:
 
-> Last update: 09/16/2026
+> Last update: 09/22/2026
 
 <Tabs>
   <TabItem value="mainnet" label="Mainnet" default>
@@ -105,7 +105,8 @@ This network is only for the developers of the Mithril Core team.
 | **DMQ bootstrap peers**                            | `34.38.152.55:6161`,`34.38.152.55:11001`,`34.38.152.55:11002`,`34.38.152.55:11003`                                                                                                                                                                                                 |
 | **DMQ status**                                     | Beta 🟢                                                                                                                                                                                                                                                                            |
 | **Aggregator endpoint**                            | `https://aggregator.testing-preview.api.mithril.network/aggregator` [:arrow_upper_right:](https://aggregator.testing-preview.api.mithril.network/aggregator)                                                                                                                       |
-| **Genesis verification key**                       | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/genesis.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/genesis.vkey)                 |
+| **Genesis verification key (Legacy)**              | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/genesis.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/genesis.vkey)                 |
+| **genesis verification key (Dual)**                | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/genesis-dual.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/genesis-dual.vkey)       |
 | **Era reader adapter type**                        | `cardano-chain`                                                                                                                                                                                                                                                                    |
 | **Era reader address**                             | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/era.addr` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/era.addr)                         |
 | **Era reader verification key**                    | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/era.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/era.vkey)                         |
