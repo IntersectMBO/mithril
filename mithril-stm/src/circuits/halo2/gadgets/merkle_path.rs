@@ -22,6 +22,8 @@ pub(crate) struct MerklePathInputs<'a> {
     pub(crate) merkle_positions: &'a [AssignedBit<CircuitBase>],
     /// Expected Merkle tree depth, used for error reporting on empty paths.    
     pub(crate) merkle_tree_depth: u32,
+    /// Assigned tag preceding the leaf inputs in the leaf hash.
+    pub(crate) leaf_domain_separation_tag: &'a AssignedNative<CircuitBase>,
 }
 
 /// Verifies that the assigned Merkle path opens the witness leaf to the public commitment.
@@ -35,6 +37,7 @@ pub(crate) fn verify_merkle_path(
     let leaf = std_lib.poseidon(
         layouter,
         &[
+            inputs.leaf_domain_separation_tag.clone(),
             verification_key_x.clone(),
             verification_key_y.clone(),
             inputs.lottery_target_value.clone(),
@@ -124,6 +127,7 @@ mod tests {
     };
     use crate::circuits::halo2::types::{CircuitBase, CircuitBaseField};
     use crate::circuits::halo2::witness::{CircuitWitnessEntry, MerkleTreeCommitment};
+    use crate::signature_scheme::DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF;
 
     use super::{MerklePathInputs, verify_merkle_path};
 
@@ -183,6 +187,11 @@ mod tests {
                 .map(|position| std_lib.convert(layouter, position))
                 .collect::<Result<Vec<_>, Error>>()?;
 
+            let leaf_domain_separation_tag = std_lib.assign_fixed(
+                layouter,
+                CircuitBase::from(DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF),
+            )?;
+
             verify_merkle_path(
                 std_lib,
                 layouter,
@@ -193,6 +202,7 @@ mod tests {
                     merkle_siblings: &merkle_siblings,
                     merkle_positions: &merkle_positions,
                     merkle_tree_depth: TEST_MERKLE_TREE_DEPTH as u32,
+                    leaf_domain_separation_tag: &leaf_domain_separation_tag,
                 },
             )
         }
@@ -254,6 +264,11 @@ mod tests {
                 .map(|position| std_lib.convert(layouter, position))
                 .collect::<Result<Vec<_>, Error>>()?;
 
+            let leaf_domain_separation_tag = std_lib.assign_fixed(
+                layouter,
+                CircuitBase::from(DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF),
+            )?;
+
             verify_merkle_path(
                 std_lib,
                 layouter,
@@ -264,6 +279,7 @@ mod tests {
                     merkle_siblings: &merkle_siblings,
                     merkle_positions: &merkle_positions,
                     merkle_tree_depth: TEST_MERKLE_TREE_DEPTH as u32,
+                    leaf_domain_separation_tag: &leaf_domain_separation_tag,
                 },
             )
         }

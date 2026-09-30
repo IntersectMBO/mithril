@@ -40,7 +40,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTree<D, L> {
         let mut nodes = vec![vec![0u8]; num_nodes];
 
         for i in 0..leaves.len() {
-            nodes[num_nodes - n + i] = D::digest(leaves[i].as_bytes_for_merkle_tree()).to_vec();
+            nodes[num_nodes - n + i] = leaves[i].compute_hash::<D>();
         }
 
         let z = D::digest([0u8]).to_vec();
@@ -55,7 +55,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTree<D, L> {
             } else {
                 &z
             };
-            nodes[i] = D::new().chain_update(left).chain_update(right).finalize().to_vec();
+            nodes[i] = Self::compute_hash_from_child_nodes(left, right);
         }
 
         Self {
@@ -194,6 +194,11 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTree<D, L> {
         }
 
         path
+    }
+
+    /// Digest of an internal node from its two children, without any domain separation tag.
+    pub(crate) fn compute_hash_from_child_nodes(left: &[u8], right: &[u8]) -> Vec<u8> {
+        D::new().chain_update(left).chain_update(right).finalize().to_vec()
     }
 }
 
@@ -454,8 +459,11 @@ mod tests {
         use midnight_curves::Fq;
 
         use crate::{
-            VerificationKeyForSnark, membership_commitment::MerkleTreeSnarkLeaf,
-            signature_scheme::BaseFieldElement,
+            VerificationKeyForSnark,
+            membership_commitment::MerkleTreeSnarkLeaf,
+            signature_scheme::{
+                BaseFieldElement, DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF, compute_poseidon_digest,
+            },
         };
 
         use super::*;
@@ -468,6 +476,37 @@ mod tests {
                 .zip(0u64..)
                 .map(|(key, stake)| MerkleTreeSnarkLeaf(key, BaseFieldElement(Fq::from(stake))))
                 .collect()
+        }
+
+        /// The field elements the Poseidon digest reads from `bytes`, one per 32-byte chunk.
+        fn field_elements(bytes: &[u8]) -> Vec<BaseFieldElement> {
+            bytes
+                .chunks(32)
+                .map(|chunk| BaseFieldElement::from_bytes(chunk).unwrap())
+                .collect()
+        }
+
+        // Pinned against the Poseidon inputs themselves, so a change to the shared hashing helpers
+        // cannot drop or reorder a tag unnoticed.
+        #[test]
+        fn snark_leaf_hashes_are_tagged_and_node_hashes_are_not() {
+            let leaves = make_leaves(2);
+            let tree = MerkleTree::<SnarkHash, MerkleTreeSnarkLeaf>::new(&leaves);
+
+            let leaf_hashes: Vec<Vec<u8>> = leaves
+                .iter()
+                .map(|leaf| {
+                    let mut inputs = vec![DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF];
+                    inputs.extend(field_elements(&leaf.as_bytes_for_merkle_tree()));
+                    compute_poseidon_digest(&inputs).to_bytes().to_vec()
+                })
+                .collect();
+            let mut root_inputs = field_elements(&leaf_hashes[0]);
+            root_inputs.extend(field_elements(&leaf_hashes[1]));
+            let root = compute_poseidon_digest(&root_inputs).to_bytes().to_vec();
+
+            assert_eq!(tree.nodes[1..], leaf_hashes[..]);
+            assert_eq!(tree.nodes[0], root);
         }
 
         #[test]
