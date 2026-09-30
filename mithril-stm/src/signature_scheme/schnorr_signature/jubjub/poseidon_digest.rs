@@ -41,6 +41,26 @@ pub(crate) const DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST: BaseFiel
         0,
     ]));
 
+/// Domain Separation Tag (DST) for the Poseidon hash of a leaf of the SNARK registration Merkle
+/// tree, so a leaf hash never coincides with an internal node hash, whatever their input counts.
+pub(crate) const DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF: BaseFieldElement =
+    BaseFieldElement(JubjubBase::from_raw([
+        0x4D54_4C46_5F44_5354, // "MTLF_DST" (ASCII), little-endian u64
+        0,
+        0,
+        0,
+    ]));
+
+/// Domain Separation Tag (DST) for the Poseidon hash of an internal node of the SNARK registration
+/// Merkle tree.
+pub(crate) const DOMAIN_SEPARATION_TAG_MERKLE_TREE_NODE: BaseFieldElement =
+    BaseFieldElement(JubjubBase::from_raw([
+        0x4D54_4E44_5F44_5354, // "MTND_DST" (ASCII), little-endian u64
+        0,
+        0,
+        0,
+    ]));
+
 /// Computes a Poseidon digest over the provided base field elements.
 /// Returns a base field element as the digest.
 pub(crate) fn compute_poseidon_digest(input: &[BaseFieldElement]) -> BaseFieldElement {
@@ -53,6 +73,7 @@ pub(crate) fn compute_poseidon_digest(input: &[BaseFieldElement]) -> BaseFieldEl
 mod test {
     use super::{
         DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST, DOMAIN_SEPARATION_TAG_LOTTERY,
+        DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF, DOMAIN_SEPARATION_TAG_MERKLE_TREE_NODE,
         DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE, DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE,
     };
 
@@ -63,6 +84,8 @@ mod test {
             DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE,
             DOMAIN_SEPARATION_TAG_LOTTERY,
             DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST,
+            DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF,
+            DOMAIN_SEPARATION_TAG_MERKLE_TREE_NODE,
         ];
 
         for (index, tag) in tags.iter().enumerate() {

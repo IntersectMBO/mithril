@@ -3,6 +3,10 @@ use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "snark")]
+use crate::signature_scheme::{
+    DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF, DOMAIN_SEPARATION_TAG_MERKLE_TREE_NODE,
+};
+#[cfg(feature = "snark")]
 use crate::{LotteryTargetValue, VerificationKeyForSnark};
 
 use crate::{Stake, VerificationKeyForConcatenation};
@@ -21,6 +25,18 @@ use super::MerkleTreeError;
 pub trait MerkleTreeLeaf: Clone + Send + Sync + Copy {
     /// Converts the Merkle tree leaf to a bytes representation used internally by the Merkle tree
     fn as_bytes_for_merkle_tree(&self) -> Vec<u8>;
+
+    /// Bytes hashed before a leaf, separating leaf hashes from internal node hashes. Empty by
+    /// default, which keeps the hash input to the leaf bytes alone.
+    fn leaf_domain_separation_tag() -> Vec<u8> {
+        Vec::new()
+    }
+
+    /// Bytes hashed before the two children of an internal node. Empty by default, which keeps the
+    /// hash input to the concatenated children alone.
+    fn node_domain_separation_tag() -> Vec<u8> {
+        Vec::new()
+    }
 }
 
 /// The values that are committed in the Merkle Tree for `ConcatenationProof`.
@@ -93,6 +109,14 @@ pub struct MerkleTreeSnarkLeaf(pub VerificationKeyForSnark, pub LotteryTargetVal
 impl MerkleTreeLeaf for MerkleTreeSnarkLeaf {
     fn as_bytes_for_merkle_tree(&self) -> Vec<u8> {
         self.to_bytes()
+    }
+
+    fn leaf_domain_separation_tag() -> Vec<u8> {
+        DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF.to_bytes().to_vec()
+    }
+
+    fn node_domain_separation_tag() -> Vec<u8> {
+        DOMAIN_SEPARATION_TAG_MERKLE_TREE_NODE.to_bytes().to_vec()
     }
 }
 

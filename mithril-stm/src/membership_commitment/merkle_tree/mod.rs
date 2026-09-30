@@ -12,6 +12,27 @@ pub use leaf::*;
 pub use path::*;
 pub use tree::*;
 
+use digest::Digest;
+
+/// Digest of a leaf, preceded by its leaf type's leaf tag.
+fn hash_leaf<D: Digest, L: MerkleTreeLeaf>(leaf: &L) -> Vec<u8> {
+    D::new()
+        .chain_update(L::leaf_domain_separation_tag())
+        .chain_update(leaf.as_bytes_for_merkle_tree())
+        .finalize()
+        .to_vec()
+}
+
+/// Digest of an internal node from its two children, preceded by the leaf type's node tag.
+fn hash_node<D: Digest, L: MerkleTreeLeaf>(left: &[u8], right: &[u8]) -> Vec<u8> {
+    D::new()
+        .chain_update(L::node_domain_separation_tag())
+        .chain_update(left)
+        .chain_update(right)
+        .finalize()
+        .to_vec()
+}
+
 // ---------------------------------------------------------------------
 // Heap Helpers
 // ---------------------------------------------------------------------

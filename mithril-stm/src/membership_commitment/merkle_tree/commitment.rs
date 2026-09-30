@@ -11,7 +11,9 @@ use crate::codec;
 // TODO: remove this allow dead_code directive when function is called or snark is activated
 #[allow(dead_code)]
 use super::MerklePath;
-use super::{MerkleBatchPath, MerkleTreeError, MerkleTreeLeaf, parent, sibling};
+use super::{
+    MerkleBatchPath, MerkleTreeError, MerkleTreeLeaf, hash_leaf, hash_node, parent, sibling,
+};
 
 #[cfg(feature = "snark")]
 // TODO: remove this allow dead_code directive when function is called or snark is activated
@@ -54,12 +56,12 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeCommitment<D, L> {
     {
         let mut idx = proof.index;
 
-        let mut h = D::digest(val.as_bytes_for_merkle_tree()).to_vec();
+        let mut h = hash_leaf::<D, L>(val);
         for p in &proof.values {
             if (idx & 0b1) == 0 {
-                h = D::new().chain_update(h).chain_update(p).finalize().to_vec();
+                h = hash_node::<D, L>(&h, p);
             } else {
-                h = D::new().chain_update(p).chain_update(h).finalize().to_vec();
+                h = hash_node::<D, L>(p, &h);
             }
             idx >>= 1;
         }
@@ -202,10 +204,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeBatchCommitment<D, L>
             .ok_or(MerkleTreeError::SerializationError)
             .with_context(|| "The ordered indices list is empty.")?;
         // First we need to hash the leave values
-        let mut leaves: Vec<Vec<u8>> = batch_val
-            .iter()
-            .map(|val| D::digest(val.as_bytes_for_merkle_tree()).to_vec())
-            .collect();
+        let mut leaves: Vec<Vec<u8>> = batch_val.iter().map(hash_leaf::<D, L>).collect();
 
         let mut values = proof.values.clone();
 
@@ -217,50 +216,32 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeBatchCommitment<D, L>
             while i < ordered_indices.len() {
                 new_indices.push(parent(ordered_indices[i]));
                 if ordered_indices[i] & 1 == 0 {
-                    new_hashes.push(
-                        D::new()
-                            .chain(
-                                values
-                                    .first()
-                                    .ok_or(MerkleTreeError::SerializationError)
-                                    .with_context(|| {
-                                        format!("Could not verify leave membership from batch path for idx = {} and ordered_indices[{}]", idx, i)
-                                    })?,
-                            )
-                            .chain(&leaves[i])
-                            .finalize()
-                            .to_vec(),
-                    );
+                    let left_sibling = values
+                        .first()
+                        .ok_or(MerkleTreeError::SerializationError)
+                        .with_context(|| {
+                            format!("Could not verify leave membership from batch path for idx = {} and ordered_indices[{}]", idx, i)
+                        })?;
+                    new_hashes.push(hash_node::<D, L>(left_sibling, &leaves[i]));
                     values.remove(0);
                 } else {
                     let sibling = sibling(ordered_indices[i]);
                     if i < ordered_indices.len() - 1 && ordered_indices[i + 1] == sibling {
-                        new_hashes.push(
-                            D::new().chain(&leaves[i]).chain(&leaves[i + 1]).finalize().to_vec(),
-                        );
+                        new_hashes.push(hash_node::<D, L>(&leaves[i], &leaves[i + 1]));
                         i += 1;
                     } else if sibling < nr_nodes {
-                        new_hashes.push(
-                            D::new()
-                                .chain(&leaves[i])
-                                .chain(
-                                    values
-                                        .first()
-                                        .ok_or(MerkleTreeError::SerializationError)
-                                        .with_context(|| {
-                                            format!(
-                                                "Could not verify leave membership from batch path for idx = {} where sibling < nr_nodes", idx
-                                            )
-                                        })?,
+                        let right_sibling = values
+                            .first()
+                            .ok_or(MerkleTreeError::SerializationError)
+                            .with_context(|| {
+                                format!(
+                                    "Could not verify leave membership from batch path for idx = {} where sibling < nr_nodes", idx
                                 )
-                                .finalize()
-                                .to_vec(),
-                        );
+                            })?;
+                        new_hashes.push(hash_node::<D, L>(&leaves[i], right_sibling));
                         values.remove(0);
                     } else {
-                        new_hashes.push(
-                            D::new().chain(&leaves[i]).chain(D::digest([0u8])).finalize().to_vec(),
-                        );
+                        new_hashes.push(hash_node::<D, L>(&leaves[i], &D::digest([0u8])));
                     }
                 }
                 i += 1;
