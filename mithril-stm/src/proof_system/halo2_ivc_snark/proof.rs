@@ -1805,4 +1805,78 @@ mod tests {
             assert_eq!(r.to_bytes_le(), GOLDEN_R);
         }
     }
+
+    mod genesis_bootstrap_input_conversion {
+        use super::super::IvcGenesisBootstrapInput;
+        use crate::{AncillaryGenesisData, circuits::halo2_ivc::PREIMAGE_SIZE};
+
+        fn varied_bytes(len: usize) -> Vec<u8> {
+            (0..len).map(|i| i as u8).collect()
+        }
+
+        // Only the preimage is varied, so the round-trip assertion has something to bite on.
+        fn genesis_data_with_preimage_len(preimage_len: usize) -> AncillaryGenesisData {
+            let dummy = AncillaryGenesisData::dummy();
+
+            AncillaryGenesisData::new(
+                varied_bytes(preimage_len),
+                Some(*dummy.genesis_schnorr_signature().expect("dummy carries a signature")),
+                Some(*dummy.genesis_schnorr_verification_key().expect("dummy carries a key")),
+            )
+        }
+
+        #[test]
+        fn try_from_carries_signature_and_preimage_unchanged() {
+            let genesis_data = genesis_data_with_preimage_len(PREIMAGE_SIZE);
+            let signature = *genesis_data
+                .genesis_schnorr_signature()
+                .expect("fixture carries a genesis signature");
+            let preimage = genesis_data.genesis_message_preimage().as_bytes().to_vec();
+
+            let bootstrap = IvcGenesisBootstrapInput::try_from(&genesis_data)
+                .expect("valid genesis data should convert");
+
+            assert_eq!(
+                bootstrap.genesis_signature, signature,
+                "the converted bootstrap input must carry the same Schnorr signature"
+            );
+            assert_eq!(
+                bootstrap.genesis_protocol_message_preimage.0.as_slice(),
+                preimage.as_slice(),
+                "the converted bootstrap input must carry the same message preimage"
+            );
+        }
+
+        #[test]
+        fn try_from_rejects_absent_genesis_signature() {
+            let genesis_data = AncillaryGenesisData::new(varied_bytes(PREIMAGE_SIZE), None, None);
+
+            let err = IvcGenesisBootstrapInput::try_from(&genesis_data)
+                .expect_err("absent genesis signature must be rejected");
+
+            assert!(
+                err.downcast_ref::<std::array::TryFromSliceError>().is_none(),
+                "a missing signature must not surface as a slice conversion failure, got: {err:?}"
+            );
+            assert_eq!(
+                err.root_cause().to_string(),
+                "Missing genesis Schnorr signature.",
+                "the error must identify the absent signature, got: {err}"
+            );
+        }
+
+        #[test]
+        fn try_from_rejects_wrong_sized_preimage() {
+            for bad_len in [0usize, 1, PREIMAGE_SIZE - 1, PREIMAGE_SIZE + 1] {
+                let genesis_data = genesis_data_with_preimage_len(bad_len);
+
+                let err = IvcGenesisBootstrapInput::try_from(&genesis_data).unwrap_err();
+
+                assert!(
+                    err.downcast_ref::<std::array::TryFromSliceError>().is_some(),
+                    "a {bad_len}-byte preimage must fail as a slice-to-array conversion, got: {err}"
+                );
+            }
+        }
+    }
 }

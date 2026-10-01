@@ -220,7 +220,9 @@ impl IvcVerifierData {
 mod tests {
     use super::*;
     use crate::circuits::halo2::NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
-    use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION;
+    use crate::circuits::halo2_ivc::{
+        RECURSIVE_CIRCUIT_DEGREE, RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
+    };
     use crate::{
         BaseFieldElement,
         circuits::{
@@ -377,5 +379,138 @@ mod tests {
         };
         let bytes = crate::codec::to_cbor_bytes(&valid).expect("the mirror should encode");
         IvcVerifierData::from_bytes(&bytes).expect("the real recursive key should decode");
+    }
+
+    fn embedded_ivc_verifier_setup() -> IvcVerifierSetup {
+        let context = load_embedded_verification_context_asset()
+            .expect("verification context asset should load");
+        IvcVerifierSetup::from_parts(
+            IvcVerifierSetup::read_embedded_params()
+                .expect("embedded verifier params should deserialize"),
+            context.recursive_verifying_key.clone(),
+            context.combined_fixed_bases,
+        )
+    }
+
+    #[test]
+    fn ivc_verifier_setup_accessors_return_the_stored_parts() {
+        let context = load_embedded_verification_context_asset()
+            .expect("verification context asset should load");
+        let setup = embedded_ivc_verifier_setup();
+
+        // Compared serialized: `ParamsVerifierKZG` has no `PartialEq`, and a params accessor
+        // handing back a default or empty value still encodes to something.
+        let mut verifier_params_bytes = vec![];
+        setup
+            .verifier_params()
+            .write(&mut verifier_params_bytes, SerdeFormat::RawBytesUnchecked)
+            .expect("the returned verifier params should serialize");
+        assert_eq!(
+            verifier_params_bytes.as_slice(),
+            &KZG_VERIFIER_PARAMS[..],
+            "the params accessor must return the embedded KZG verifier params"
+        );
+        assert_eq!(
+            setup.ivc_verifying_key().midnight_vk().vk().transcript_repr(),
+            context.recursive_verifying_key.midnight_vk().vk().transcript_repr(),
+            "the key accessor must return the very key the setup was built from"
+        );
+        assert_eq!(
+            setup.ivc_verifying_key().circuit_degree(),
+            RECURSIVE_CIRCUIT_DEGREE,
+            "the returned key must be the recursive one, not some other circuit's"
+        );
+        assert_eq!(
+            setup.combined_fixed_bases(),
+            &context.combined_fixed_bases,
+            "the fixed-base accessor must return the map the setup was built from"
+        );
+    }
+
+    #[test]
+    fn ivc_verifier_data_accessors_return_the_stored_parts() {
+        let context = load_embedded_verification_context_asset()
+            .expect("verification context asset should load");
+        let genesis_message = MessageHash::from_field(
+            BaseFieldElement::from_raw(&[0x3c; 32])
+                .expect("from_raw applies modulus reduction and cannot fail")
+                .0,
+        );
+        let expected_certificate_transcript =
+            context.certificate_verifying_key.midnight_vk().vk().transcript_repr();
+        let expected_ivc_transcript =
+            context.recursive_verifying_key.midnight_vk().vk().transcript_repr();
+
+        let verifier_data = IvcVerifierData::new(
+            genesis_message,
+            context.certificate_verifying_key,
+            context.recursive_verifying_key,
+        );
+
+        assert_eq!(verifier_data.genesis_message(), genesis_message);
+        assert_eq!(
+            verifier_data
+                .certificate_circuit_verification_key()
+                .midnight_vk()
+                .vk()
+                .transcript_repr(),
+            expected_certificate_transcript,
+            "the certificate accessor must return the certificate key, not the recursive one"
+        );
+        // By transcript, not by degree: any recursive key of the expected degree would pass a
+        // `circuit_degree()` check, so a key swapped in at construction would go unnoticed.
+        assert_eq!(
+            verifier_data
+                .ivc_circuit_verification_key()
+                .midnight_vk()
+                .vk()
+                .transcript_repr(),
+            expected_ivc_transcript,
+            "the IVC accessor must return the very key the data was built from"
+        );
+    }
+
+    mod slow {
+        use crate::Parameters;
+        use crate::proof_system::halo2_ivc_snark::prover_setup::IvcProverSetup;
+
+        use super::*;
+
+        #[test]
+        fn from_ivc_setup_carries_the_prover_setup_key_and_fixed_bases() {
+            let parameters = Parameters {
+                k: 3,
+                m: 10,
+                phi_f: 0.2,
+            };
+            let ivc_setup = IvcProverSetup::build_for_test(&parameters, 4)
+                .expect("IvcProverSetup::build_for_test should succeed");
+
+            let setup = IvcVerifierSetup::from_ivc_setup(&ivc_setup)
+                .expect("from_ivc_setup should succeed with a built prover setup");
+
+            // The params assertion is the point: this path reads the embedded constant, not
+            // the test SRS the prover setup was built from.
+            let mut verifier_params_bytes = vec![];
+            setup
+                .verifier_params()
+                .write(&mut verifier_params_bytes, SerdeFormat::RawBytesUnchecked)
+                .expect("the returned verifier params should serialize");
+            assert_eq!(
+                verifier_params_bytes.as_slice(),
+                &KZG_VERIFIER_PARAMS[..],
+                "from_ivc_setup must use the embedded params, not the prover setup's test SRS"
+            );
+            assert_eq!(
+                setup.ivc_verifying_key().midnight_vk().vk().transcript_repr(),
+                ivc_setup.ivc_verifying_key.midnight_vk().vk().transcript_repr(),
+                "from_ivc_setup must reuse the prover setup's recursive key, not rebuild one"
+            );
+            assert_eq!(
+                setup.combined_fixed_bases(),
+                &ivc_setup.combined_fixed_bases,
+                "from_ivc_setup must reuse the prover setup's precomputed fixed bases"
+            );
+        }
     }
 }

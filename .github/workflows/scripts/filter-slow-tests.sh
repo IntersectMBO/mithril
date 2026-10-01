@@ -98,6 +98,7 @@ readonly -a SLOW_MITHRIL_STM_TESTS=(
   "mithril-stm/src/proof_system/halo2_ivc_snark/prover_input_helpers.rs#proof_system::halo2_ivc_snark::proof::"
   "mithril-stm/src/proof_system/halo2_ivc_snark/prover_setup.rs#proof_system::halo2_ivc_snark::prover_setup::"
   "mithril-stm/src/proof_system/halo2_ivc_snark/rolling_state.rs#proof_system::halo2_ivc_snark::proof::"
+  "mithril-stm/src/proof_system/halo2_ivc_snark/verifier_setup.rs#proof_system::halo2_ivc_snark::verifier_setup::"
   "mithril-stm/src/proof_system/halo2_snark#proof_system::halo2_snark::"
   "mithril-stm/src/signature_scheme/bls_multi_signature#signature_scheme::bls_multi_signature::"
 )
