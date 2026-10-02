@@ -1,6 +1,6 @@
 [package]
 name = "mithril-aggregator-client"
-version = "0.2.4"
+version = "0.3.0"
 description = "Client to request data from a Mithril Aggregator"
 authors.workspace = true
 documentation.workspace = true
