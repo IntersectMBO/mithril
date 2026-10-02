@@ -1,8 +1,8 @@
 # Mithril code owners
 
 # Default owners (repository maintainers)
-*                              @jpraynaud @Alenar @turmelclem
+*                              @jpraynaud @Alenar @turmelclem @damrobi
 
 # Cryptography: Stake-based Threshold Multisignatures
-/mithril-stm/                  @jpraynaud @curiecrypt @hjeljeli32 @damrobi
+/mithril-stm/                  @jpraynaud @damrobi
 
