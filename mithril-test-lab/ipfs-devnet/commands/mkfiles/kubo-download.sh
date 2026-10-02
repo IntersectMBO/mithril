@@ -167,7 +167,11 @@ done
 check_requirements "awk" "curl" "shasum" "tar"
 
 readonly DOWNLOAD_DIR=${DOWNLOAD_DIR:-"."} OUTPUT_DIR=${OUTPUT_DIR:-"."}
-readonly KUBO_VERSION=${KUBO_VERSION:-$(find_last_released_version)}
+
+if [[ -z "$KUBO_VERSION" ]]; then
+  KUBO_VERSION=$(find_last_released_version)
+fi
+readonly KUBO_VERSION
 
 create_dir_if_not_exist "$OUTPUT_DIR"
 
