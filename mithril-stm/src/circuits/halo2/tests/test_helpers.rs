@@ -86,15 +86,32 @@ pub(crate) fn sample_valid_circuit_witness_entry(
     MerkleTreeCommitment,
     SignedMessageWithoutPrefix,
 )> {
+    sample_valid_circuit_witness_entry_for_tree_size(
+        1 << TEST_MERKLE_TREE_DEPTH,
+        merkle_path_length,
+    )
+}
+
+/// Builds one valid circuit witness entry, for the first leaf of a tree with `number_of_leaves`
+/// identical leaves.
+pub(crate) fn sample_valid_circuit_witness_entry_for_tree_size(
+    number_of_leaves: usize,
+    merkle_path_length: u32,
+) -> Result<(
+    CircuitWitnessEntry,
+    MerkleTreeCommitment,
+    SignedMessageWithoutPrefix,
+)> {
     let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
     let signing_key = SchnorrSigningKey::generate(&mut rng);
     let verification_key = SchnorrVerificationKey::new_from_signing_key(signing_key.clone());
     let circuit_lottery_target_value = -CircuitLotteryTargetValue::ONE;
     let stm_lottery_target_value: LotteryTargetValue = circuit_lottery_target_value.into();
     let leaf = StmMerkleTreeSnarkLeaf(verification_key, stm_lottery_target_value);
-    let stm_tree = StmMerkleTree::<MidnightPoseidonDigest, StmMerkleTreeSnarkLeaf>::new(
-        &vec![leaf; 1 << TEST_MERKLE_TREE_DEPTH],
-    );
+    let stm_tree = StmMerkleTree::<MidnightPoseidonDigest, StmMerkleTreeSnarkLeaf>::new(&vec![
+            leaf;
+            number_of_leaves
+        ]);
     let merkle_tree_commitment: MerkleTreeCommitment =
         BaseFieldElement::from_bytes(stm_tree.to_merkle_tree_commitment().root.as_slice())?.into();
     let message = SignedMessageWithoutPrefix::from(42u64);
