@@ -100,15 +100,18 @@ download_bin_archive_from() {
 
   if [[ -f "$archive_path" ]]; then
     echo ">> Archive already exists, verifying checksum: ${archive_path}" >&2
-  else
-    echo ">> Downloading ${BIN_NAME} from ${target_url}..." >&2
-    if ! fetch --output "$archive_path" "$target_url"; then
-      rm -f "$archive_path"
-      return 1
-    fi
+    verify_checksum "$expected_checksum" "$archive_path" && return 0
+    echo ">> Discarding the archive with an invalid checksum: ${archive_path}" >&2
+    rm -f "$archive_path"
   fi
 
-  verify_checksum "$expected_checksum" "$archive_path"
+  echo ">> Downloading ${BIN_NAME} from ${target_url}..." >&2
+  if fetch --output "$archive_path" "$target_url" && verify_checksum "$expected_checksum" "$archive_path"; then
+    return 0
+  fi
+
+  rm -f "$archive_path"
+  return 1
 }
 
 download_bin_archive() {
@@ -141,8 +144,8 @@ verify_checksum() {
   actual_checksum=$(shasum -a 512 "$file_to_check" | awk '{ print $1 }')
 
   if [[ "$actual_checksum" != "$expected_checksum" ]]; then
-    rm -f "$file_to_check"
-    error_exit "Checksum verification failed for '${file_to_check}'."
+    echo "Checksum verification failed for: ${file_to_check}" >&2
+    return 1
   fi
 
   echo "Checksum verified for: ${file_to_check}" >&2
