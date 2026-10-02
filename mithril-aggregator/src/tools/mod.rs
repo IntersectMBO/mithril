@@ -3,6 +3,7 @@ mod certificates_hash_migrator;
 mod circuit_key_registry;
 mod era;
 mod genesis;
+mod keypair;
 pub mod kubo_rpc_client;
 mod protocol_configuration;
 pub mod signer_importer;
@@ -17,6 +18,7 @@ pub use era::EraTools;
 #[cfg(feature = "snark")]
 pub use genesis::GenesisSignedPayload;
 pub use genesis::GenesisTools;
+pub use keypair::KeypairTools;
 pub use protocol_configuration::{HumanReadableProtocolConfiguration, ProtocolConfigurationTools};
 pub use single_signature_authenticator::*;
 pub use vacuum_tracker::VacuumTracker;

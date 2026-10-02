@@ -15,6 +15,7 @@ use crate::{
     dependency_injection::DependenciesBuilder,
     extract_all,
     tools::CertificatesHashMigrator,
+    tools::KeypairTools,
 };
 
 #[derive(Debug, Clone, Deserialize, Documenter)]
@@ -39,7 +40,7 @@ impl ConfigurationSource for ToolsCommandConfiguration {
 pub struct ToolsCommand {
     /// commands
     #[clap(subcommand)]
-    pub genesis_subcommand: ToolsSubCommand,
+    pub subcommand: ToolsSubCommand,
 }
 
 impl ToolsCommand {
@@ -48,7 +49,7 @@ impl ToolsCommand {
         root_logger: Logger,
         config_builder: ConfigBuilder<DefaultState>,
     ) -> StdResult<()> {
-        self.genesis_subcommand.execute(root_logger, config_builder).await
+        self.subcommand.execute(root_logger, config_builder).await
     }
 
     pub fn extract_config(command_path: String) -> HashMap<String, StructDoc> {
@@ -56,6 +57,7 @@ impl ToolsCommand {
             command_path,
             ToolsSubCommand,
             RecomputeCertificatesHash = { RecomputeCertificatesHashCommand },
+            GenerateKeypair = { GenerateKeypairCommand },
         )
     }
 }
@@ -69,6 +71,40 @@ pub enum ToolsSubCommand {
     /// Since it will modify the aggregator sqlite database it's strongly recommended to backup it
     /// before running this command.
     RecomputeCertificatesHash(RecomputeCertificatesHashCommand),
+
+    /// Generate a new keypair
+    GenerateKeypair(GenerateKeypairCommand),
+}
+
+/// List of commands to generate a new keypair
+#[derive(Parser, Debug, Clone)]
+pub struct GenerateKeypairCommand {
+    /// Keypair type
+    #[clap(subcommand)]
+    pub subcommand: GenerateKeypairSubCommand,
+}
+
+/// Keypair type subcommands.
+#[derive(Debug, Clone, Subcommand)]
+pub enum GenerateKeypairSubCommand {
+    /// Generate an Ed25519 keypair
+    Ed25519(Ed25519SubCommand),
+}
+
+impl GenerateKeypairCommand {
+    pub async fn execute(&self, root_logger: Logger) -> StdResult<()> {
+        match &self.subcommand {
+            GenerateKeypairSubCommand::Ed25519(cmd) => cmd.execute(root_logger).await,
+        }
+    }
+
+    pub fn extract_config(command_path: String) -> HashMap<String, StructDoc> {
+        extract_all!(
+            command_path,
+            GenerateKeypairSubCommand,
+            Ed25519 = { Ed25519SubCommand },
+        )
+    }
 }
 
 impl ToolsSubCommand {
@@ -79,6 +115,7 @@ impl ToolsSubCommand {
     ) -> StdResult<()> {
         match self {
             Self::RecomputeCertificatesHash(cmd) => cmd.execute(root_logger, config_builder).await,
+            Self::GenerateKeypair(cmd) => cmd.execute(root_logger).await,
         }
     }
 }
@@ -134,6 +171,32 @@ impl RecomputeCertificatesHashCommand {
     }
 }
 
+/// Ed25519 keypair generation command.
+#[derive(clap::Args, Debug, Clone)]
+pub struct Ed25519SubCommand {
+    /// Target path for the generated keypair
+    #[clap(long)]
+    target_path: PathBuf,
+}
+
+impl Ed25519SubCommand {
+    pub async fn execute(&self, root_logger: Logger) -> StdResult<()> {
+        debug!(root_logger, "GENERATE KEYPAIR ED25519 command");
+        println!(
+            "tools generate keypair ed25519 to {}",
+            self.target_path.display()
+        );
+        KeypairTools::create_and_save_ed25519_keypair(&self.target_path)
+            .with_context(|| "tools: keypair generation error")?;
+
+        Ok(())
+    }
+
+    pub fn extract_config(_command_path: String) -> HashMap<String, StructDoc> {
+        HashMap::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -156,5 +219,43 @@ mod tests {
             .create_tools_command_container()
             .await
             .expect("Expected container creation to succeed without panicking");
+    }
+
+    mod generate_keypair_subcommand {
+        use mithril_common::temp_dir_create;
+
+        use super::*;
+
+        #[test]
+        fn generate_keypair_subcommand_parses_target_path() {
+            let cmd = ToolsCommand::try_parse_from([
+                "tools",
+                "generate-keypair",
+                "ed25519",
+                "--target-path",
+                "/tmp/keys",
+            ])
+            .expect("CLI parse should succeed");
+            assert!(matches!(
+                cmd.subcommand,
+                ToolsSubCommand::GenerateKeypair(GenerateKeypairCommand {
+                    subcommand: GenerateKeypairSubCommand::Ed25519(_)
+                })
+            ));
+        }
+
+        #[tokio::test]
+        async fn generate_ed25519_keypair_subcommand_writes_key_files() {
+            let target = temp_dir_create!();
+            let cmd = Ed25519SubCommand {
+                target_path: target.clone(),
+            };
+
+            cmd.execute(TestLogger::stdout())
+                .await
+                .expect("generate-keypair ed25519 should succeed");
+            assert!(target.join("ed25519_keypair.sk").exists());
+            assert!(target.join("ed25519_keypair.vk").exists());
+        }
     }
 }
