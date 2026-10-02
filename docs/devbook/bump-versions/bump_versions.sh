@@ -56,6 +56,10 @@ readonly BENCHMARK_VERSION_FILE=mithril-test-lab/benchmark/aggregator-prover/VER
 declare BENCHMARK_UPDATE=""
 declare BENCHMARK_UPDATE_MESSAGE=""
 
+readonly IPFS_DEVNET_VERSION_FILE=mithril-test-lab/ipfs-devnet/VERSION
+declare IPFS_DEVNET_UPDATE=""
+declare IPFS_DEVNET_UPDATE_MESSAGE=""
+
 readonly DEFAULT_DIFF_REF="origin/main"
 readonly RESOURCES_TO_CHECK="(src/|tests/|benches/|Cargo.toml)"
 
@@ -228,6 +232,11 @@ then
     update_plain_version_file $DRY_RUN "$BENCHMARK_VERSION_FILE" "BENCHMARK"
 fi
 
+if [ "$(echo "${FILES_MODIFY[@]}" | grep -c "^mithril-test-lab/ipfs-devnet/.*\.sh$")" -gt 0 ]
+then
+    update_plain_version_file $DRY_RUN "$IPFS_DEVNET_VERSION_FILE" "IPFS_DEVNET"
+fi
+
 
 if [ true = $DRY_RUN ]
 then
@@ -264,7 +273,7 @@ else
     UPDATED_PACKAGE_JSONS="\n${UPDATED_PACKAGE_JSONS}"
   fi
 
-  COMMIT_MESSAGE=$(echo -e "chore: upgrade crate versions${OPEN_API_UPDATE_MESSAGE}${INFRA_UPDATE_MESSAGE}${DEVNET_UPDATE_MESSAGE}${BENCHMARK_UPDATE_MESSAGE}\n${UPDATED_CRATES}${UPDATED_PACKAGE_JSONS}${OPEN_API_UPDATE}${INFRA_UPDATE}${DEVNET_UPDATE}${BENCHMARK_UPDATE}")
+  COMMIT_MESSAGE=$(echo -e "chore: upgrade crate versions${OPEN_API_UPDATE_MESSAGE}${INFRA_UPDATE_MESSAGE}${DEVNET_UPDATE_MESSAGE}${BENCHMARK_UPDATE_MESSAGE}${IPFS_DEVNET_UPDATE_MESSAGE}\n${UPDATED_CRATES}${UPDATED_PACKAGE_JSONS}${OPEN_API_UPDATE}${INFRA_UPDATE}${DEVNET_UPDATE}${BENCHMARK_UPDATE}${IPFS_DEVNET_UPDATE}")
 
   echo -e "$COMMIT_MESSAGE"
 
@@ -273,7 +282,7 @@ else
     git add --update $OPEN_API_FILE Cargo.lock ./*/Cargo.toml ./mithril-test-lab/*/Cargo.toml examples/*/Cargo.toml
     git add --update ./internal/*/Cargo.toml ./internal/cardano-node/*/Cargo.toml ./internal/signed-entity/*/Cargo.toml ./internal/tests/*/Cargo.toml
     git add --update ./*/package.json ./*/package-lock.json mithril-client-wasm/ci-test/package-lock.json examples/*/package.json examples/*/package-lock.json
-    git add --update $INFRA_VERSION_FILE $DEVNET_VERSION_FILE $BENCHMARK_VERSION_FILE
+    git add --update $INFRA_VERSION_FILE $DEVNET_VERSION_FILE $BENCHMARK_VERSION_FILE $IPFS_DEVNET_VERSION_FILE
     git commit -m "$COMMIT_MESSAGE"
   fi
 fi

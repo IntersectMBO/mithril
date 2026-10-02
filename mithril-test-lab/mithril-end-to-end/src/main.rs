@@ -559,24 +559,8 @@ impl App {
             .await?;
         }
 
-        let devnet = Devnet::bootstrap(&DevnetBootstrapArgs {
-            devnet_scripts_dir: args.cardano_devnet.devnet_scripts_directory,
-            artifacts_target_dir: work_dir.join("devnet"),
-            number_of_pool_nodes: args.network_topology.number_of_signers,
-            number_of_full_nodes: args.network_topology.number_of_aggregators,
-            cardano_slot_length: args.cardano_devnet.cardano_slot_length,
-            cardano_epoch_length: args.cardano_devnet.cardano_epoch_length,
-            cardano_node_version: args.cardano_devnet.cardano_node_version.to_owned(),
-            dmq_node_version: args.network_topology.dmq_node_version.clone(),
-            cardano_hard_fork_latest_era_at_epoch: args
-                .cardano_devnet
-                .cardano_hard_fork_latest_era_at_epoch,
-            skip_cardano_bin_download: args.cardano_devnet.skip_cardano_bin_download,
-            cardano_binary_url: args.cardano_devnet.cardano_binary_url.clone(),
-        })
-        .await?;
-        *self.devnet.lock().await = Some(devnet.clone());
-
+        // Bootstrapped before the Cardano devnet, whose genesis start time is computed at bootstrap:
+        // a slow Kubo download in between would start the Cardano nodes past it.
         let ipfs_devnet = if args.network_topology.use_ipfs {
             let (mode, swarm_target_dir) =
                 if let Some(swarm_dir) = args.network_topology.ipfs_devnet_to_attach {
@@ -599,6 +583,24 @@ impl App {
             None
         };
         *self.ipfs_devnet.lock().await = ipfs_devnet.clone();
+
+        let devnet = Devnet::bootstrap(&DevnetBootstrapArgs {
+            devnet_scripts_dir: args.cardano_devnet.devnet_scripts_directory,
+            artifacts_target_dir: work_dir.join("devnet"),
+            number_of_pool_nodes: args.network_topology.number_of_signers,
+            number_of_full_nodes: args.network_topology.number_of_aggregators,
+            cardano_slot_length: args.cardano_devnet.cardano_slot_length,
+            cardano_epoch_length: args.cardano_devnet.cardano_epoch_length,
+            cardano_node_version: args.cardano_devnet.cardano_node_version.to_owned(),
+            dmq_node_version: args.network_topology.dmq_node_version.clone(),
+            cardano_hard_fork_latest_era_at_epoch: args
+                .cardano_devnet
+                .cardano_hard_fork_latest_era_at_epoch,
+            skip_cardano_bin_download: args.cardano_devnet.skip_cardano_bin_download,
+            cardano_binary_url: args.cardano_devnet.cardano_binary_url.clone(),
+        })
+        .await?;
+        *self.devnet.lock().await = Some(devnet.clone());
 
         let infrastructure = Arc::new(
             MithrilInfrastructure::start(
