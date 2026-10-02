@@ -1,6 +1,6 @@
 //! `IvcProver` and `IvcProof`: the proving-session handle and its emitted IVC proof.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, sync::Arc, time::Instant};
 
 use anyhow::{Context, anyhow};
 use ff::FromUniformBytes;
@@ -27,6 +27,7 @@ use midnight_proofs::{
 use midnight_zk_stdlib::MidnightCircuit;
 use rand_core::{CryptoRng, OsRng, RngCore};
 use serde::{Deserialize, Serialize};
+use slog::{Discard, Logger, info, o};
 
 use crate::circuits::halo2_ivc::RECURSIVE_CIRCUIT_DEGREE;
 use crate::{
@@ -61,6 +62,8 @@ pub(crate) struct IvcProver<R: RngCore + CryptoRng> {
     pub(crate) ivc_setup: Arc<IvcProverSetup>,
     /// Randomness source used during proof generation.
     pub(crate) rng: R,
+    /// Logger of the proving step durations.
+    pub(crate) logger: Logger,
 }
 
 /// Bootstrap input for the first [`IvcProver::prove`] call in an IVC chain.
@@ -432,6 +435,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
 
         // Prepare the witness, next state, and folded next accumulator.
         // prepare() borrows snark_proof; snark_proof is still owned afterward.
+        let start = Instant::now();
         let prover_input = IvcProverInput::prepare(
             &snark_proof,
             message,
@@ -441,6 +445,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
             effective_rolling_state,
             &self.ivc_setup.prover_input_verification_context(),
         )?;
+        info!(self.logger, "IVC prover input prepared"; "duration_ms" => start.elapsed().as_millis());
 
         let certificate_proof_bytes = snark_proof.into_circuit_proof_bytes();
 
@@ -471,6 +476,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
             prover_input.transition_type,
             Some(IvcTransitionType::NextEpoch)
         ) {
+            let start = Instant::now();
             let poseidon_bytes = IvcProof::<PoseidonState<CircuitBase>>::prove_with_transcript(
                 &self.ivc_setup.srs,
                 &self.ivc_setup.ivc_proving_key,
@@ -479,6 +485,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
                 &public_inputs,
                 &mut self.rng,
             )?;
+            info!(self.logger, "IVC Poseidon proof generated"; "duration_ms" => start.elapsed().as_millis());
             Some(IvcRollingState::new(
                 prover_input.next_state.clone(),
                 IvcProofBytes::new(poseidon_bytes),
@@ -489,6 +496,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
             None
         };
 
+        let start = Instant::now();
         let blake2b_bytes = IvcProof::<Blake2b256>::prove_with_transcript(
             &self.ivc_setup.srs,
             &self.ivc_setup.ivc_proving_key,
@@ -497,6 +505,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
             &public_inputs,
             &mut self.rng,
         )?;
+        info!(self.logger, "IVC Blake2b proof generated"; "duration_ms" => start.elapsed().as_millis());
         let proof = IvcProof::new(
             IvcProofBytes::new(blake2b_bytes),
             prover_input.next_state,
@@ -517,6 +526,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
         global: &Global,
         bootstrap: &IvcGenesisBootstrapInput,
     ) -> StmResult<IvcRollingState> {
+        let start = Instant::now();
         let combined_fixed_base_names: Vec<String> =
             self.ivc_setup.combined_fixed_bases.keys().cloned().collect();
         let genesis_rolling_state =
@@ -556,6 +566,7 @@ impl<R: RngCore + CryptoRng> IvcProver<R> {
             &genesis_public_inputs,
             &mut self.rng,
         )?;
+        info!(self.logger, "IVC genesis step computed"; "duration_ms" => start.elapsed().as_millis());
 
         Ok(IvcRollingState::new(
             genesis_prover_input.next_state,
@@ -572,7 +583,16 @@ impl IvcProver<OsRng> {
         Self {
             ivc_setup,
             rng: OsRng,
+            logger: Logger::root(Discard, o!()),
         }
+    }
+}
+
+impl<R: RngCore + CryptoRng> IvcProver<R> {
+    /// Logs the duration of the proving steps with `logger`, which discards them by default.
+    pub(crate) fn with_logger(mut self, logger: Logger) -> Self {
+        self.logger = logger.new(o!("src" => "IvcProver"));
+        self
     }
 }
 
@@ -1539,7 +1559,6 @@ mod tests {
         use std::time::Instant;
 
         use midnight_circuits::hash::poseidon::PoseidonState;
-        use rand_core::OsRng;
 
         use crate::{
             AggregateVerificationKeyForSnark, MithrilMembershipDigest, Parameters, SnarkProof,
@@ -1678,10 +1697,7 @@ mod tests {
             let snark_proof = wrap_snark_proof(first_step.certificate_proof.clone().into_vec());
             let epoch1_preimage = ProtocolMessagePreimage::new(first_step.message_preimage);
 
-            let mut prover = IvcProver {
-                ivc_setup: Arc::clone(&ctx.ivc_setup),
-                rng: OsRng,
-            };
+            let mut prover = IvcProver::new_non_deterministic(Arc::clone(&ctx.ivc_setup));
 
             let (blake2b_proof, rolling) = prover
                 .prove(
@@ -1743,10 +1759,7 @@ mod tests {
             let snark_proof = wrap_snark_proof(step.certificate_proof.clone().into_vec());
             let preimage = ProtocolMessagePreimage::new(step.message_preimage);
 
-            let mut prover = IvcProver {
-                ivc_setup: Arc::clone(&ctx.ivc_setup),
-                rng: OsRng,
-            };
+            let mut prover = IvcProver::new_non_deterministic(Arc::clone(&ctx.ivc_setup));
             let (blake2b_proof, rolling) = prover
                 .prove(
                     snark_proof,

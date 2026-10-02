@@ -56,6 +56,7 @@ snark = [
     "dep:rand",
     "dep:sha2",
     "dep:rand_chacha",
+    "dep:slog",
 ]
 num-integer-backend = ["dep:num-bigint", "dep:num-integer", "dep:num-rational", "dep:num-traits"]
 rug-backend = ["dep:rug"]
@@ -73,7 +74,7 @@ hex = { workspace = true }
 # Pin `midnight` crates. Updates must be done following this runbook: `<repository_root>/docs/runbook/update-circuit-keys`
 midnight-circuits = { version = "=7.2.2", optional = true }
 midnight-curves = { version = "=0.3.1", optional = true }
-midnight-proofs = { version = "=0.8.1", optional = true }
+midnight-proofs = { version = "=0.8.3", optional = true }
 midnight-zk-stdlib = { version = "=2.3.3", optional = true }
 num-bigint = { version = "0.4.6", optional = true }
 num-integer = { version = "0.1", optional = true }
@@ -85,6 +86,7 @@ rayon = { workspace = true }
 serde = { workspace = true }
 serde_bytes = "0.11.19"
 sha2 = { version = "0.10.9", optional = true }
+slog = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 [target.'cfg(any(target_family = "wasm", target_env = "musl", windows))'.dependencies]
