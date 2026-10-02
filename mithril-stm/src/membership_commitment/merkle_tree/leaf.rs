@@ -3,9 +3,7 @@ use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "snark")]
-use crate::signature_scheme::{
-    DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF, DOMAIN_SEPARATION_TAG_MERKLE_TREE_NODE,
-};
+use crate::signature_scheme::DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF;
 #[cfg(feature = "snark")]
 use crate::{LotteryTargetValue, VerificationKeyForSnark};
 
@@ -29,12 +27,6 @@ pub trait MerkleTreeLeaf: Clone + Send + Sync + Copy {
     /// Bytes hashed before a leaf, separating leaf hashes from internal node hashes. Empty by
     /// default, which keeps the hash input to the leaf bytes alone.
     fn leaf_domain_separation_tag() -> Vec<u8> {
-        Vec::new()
-    }
-
-    /// Bytes hashed before the two children of an internal node. Empty by default, which keeps the
-    /// hash input to the concatenated children alone.
-    fn node_domain_separation_tag() -> Vec<u8> {
         Vec::new()
     }
 }
@@ -113,10 +105,6 @@ impl MerkleTreeLeaf for MerkleTreeSnarkLeaf {
 
     fn leaf_domain_separation_tag() -> Vec<u8> {
         DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF.to_bytes().to_vec()
-    }
-
-    fn node_domain_separation_tag() -> Vec<u8> {
-        DOMAIN_SEPARATION_TAG_MERKLE_TREE_NODE.to_bytes().to_vec()
     }
 }
 

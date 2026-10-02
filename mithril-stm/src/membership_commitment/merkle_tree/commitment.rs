@@ -59,9 +59,9 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeCommitment<D, L> {
         let mut h = hash_leaf::<D, L>(val);
         for p in &proof.values {
             if (idx & 0b1) == 0 {
-                h = hash_node::<D, L>(&h, p);
+                h = hash_node::<D>(&h, p);
             } else {
-                h = hash_node::<D, L>(p, &h);
+                h = hash_node::<D>(p, &h);
             }
             idx >>= 1;
         }
@@ -222,12 +222,12 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeBatchCommitment<D, L>
                         .with_context(|| {
                             format!("Could not verify leave membership from batch path for idx = {} and ordered_indices[{}]", idx, i)
                         })?;
-                    new_hashes.push(hash_node::<D, L>(left_sibling, &leaves[i]));
+                    new_hashes.push(hash_node::<D>(left_sibling, &leaves[i]));
                     values.remove(0);
                 } else {
                     let sibling = sibling(ordered_indices[i]);
                     if i < ordered_indices.len() - 1 && ordered_indices[i + 1] == sibling {
-                        new_hashes.push(hash_node::<D, L>(&leaves[i], &leaves[i + 1]));
+                        new_hashes.push(hash_node::<D>(&leaves[i], &leaves[i + 1]));
                         i += 1;
                     } else if sibling < nr_nodes {
                         let right_sibling = values
@@ -238,10 +238,10 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeBatchCommitment<D, L>
                                     "Could not verify leave membership from batch path for idx = {} where sibling < nr_nodes", idx
                                 )
                             })?;
-                        new_hashes.push(hash_node::<D, L>(&leaves[i], right_sibling));
+                        new_hashes.push(hash_node::<D>(&leaves[i], right_sibling));
                         values.remove(0);
                     } else {
-                        new_hashes.push(hash_node::<D, L>(&leaves[i], &D::digest([0u8])));
+                        new_hashes.push(hash_node::<D>(&leaves[i], &D::digest([0u8])));
                     }
                 }
                 i += 1;

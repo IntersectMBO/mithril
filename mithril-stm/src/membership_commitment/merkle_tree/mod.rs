@@ -23,14 +23,9 @@ fn hash_leaf<D: Digest, L: MerkleTreeLeaf>(leaf: &L) -> Vec<u8> {
         .to_vec()
 }
 
-/// Digest of an internal node from its two children, preceded by the leaf type's node tag.
-fn hash_node<D: Digest, L: MerkleTreeLeaf>(left: &[u8], right: &[u8]) -> Vec<u8> {
-    D::new()
-        .chain_update(L::node_domain_separation_tag())
-        .chain_update(left)
-        .chain_update(right)
-        .finalize()
-        .to_vec()
+/// Digest of an internal node from its two children, without any domain separation tag.
+fn hash_node<D: Digest>(left: &[u8], right: &[u8]) -> Vec<u8> {
+    D::new().chain_update(left).chain_update(right).finalize().to_vec()
 }
 
 // ---------------------------------------------------------------------

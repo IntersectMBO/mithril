@@ -55,7 +55,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTree<D, L> {
             } else {
                 &z
             };
-            nodes[i] = hash_node::<D, L>(left, right);
+            nodes[i] = hash_node::<D>(left, right);
         }
 
         Self {
@@ -457,8 +457,7 @@ mod tests {
             VerificationKeyForSnark,
             membership_commitment::MerkleTreeSnarkLeaf,
             signature_scheme::{
-                BaseFieldElement, DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF,
-                DOMAIN_SEPARATION_TAG_MERKLE_TREE_NODE, compute_poseidon_digest,
+                BaseFieldElement, DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF, compute_poseidon_digest,
             },
         };
 
@@ -485,7 +484,7 @@ mod tests {
         // Pinned against the Poseidon inputs themselves, so a change to the shared hashing helpers
         // cannot drop or reorder a tag unnoticed.
         #[test]
-        fn snark_leaf_and_node_hashes_are_the_tagged_poseidon_of_their_inputs() {
+        fn snark_leaf_hashes_are_tagged_and_node_hashes_are_not() {
             let leaves = make_leaves(2);
             let tree = MerkleTree::<SnarkHash, MerkleTreeSnarkLeaf>::new(&leaves);
 
@@ -497,8 +496,7 @@ mod tests {
                     compute_poseidon_digest(&inputs).to_bytes().to_vec()
                 })
                 .collect();
-            let mut root_inputs = vec![DOMAIN_SEPARATION_TAG_MERKLE_TREE_NODE];
-            root_inputs.extend(field_elements(&leaf_hashes[0]));
+            let mut root_inputs = field_elements(&leaf_hashes[0]);
             root_inputs.extend(field_elements(&leaf_hashes[1]));
             let root = compute_poseidon_digest(&root_inputs).to_bytes().to_vec();
 

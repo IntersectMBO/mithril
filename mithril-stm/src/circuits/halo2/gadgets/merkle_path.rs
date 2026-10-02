@@ -24,8 +24,6 @@ pub(crate) struct MerklePathInputs<'a> {
     pub(crate) merkle_tree_depth: u32,
     /// Assigned tag preceding the leaf inputs in the leaf hash.
     pub(crate) leaf_domain_separation_tag: &'a AssignedNative<CircuitBase>,
-    /// Assigned tag preceding the two children in every internal node hash.
-    pub(crate) node_domain_separation_tag: &'a AssignedNative<CircuitBase>,
 }
 
 /// Verifies that the assigned Merkle path opens the witness leaf to the public commitment.
@@ -94,10 +92,7 @@ pub(crate) fn verify_merkle_path(
     )?;
     let first_left = std_lib.select(layouter, first_position, &leaf, first_sibling)?;
     let first_right = std_lib.select(layouter, first_position, first_sibling, &leaf)?;
-    let first_node = std_lib.poseidon(
-        layouter,
-        &[inputs.node_domain_separation_tag.clone(), first_left, first_right],
-    )?;
+    let first_node = std_lib.poseidon(layouter, &[first_left, first_right])?;
 
     let root = inputs
         .merkle_siblings
@@ -107,10 +102,7 @@ pub(crate) fn verify_merkle_path(
         .try_fold(first_node, |acc, (x, pos)| {
             let left = std_lib.select(layouter, pos, &acc, x)?;
             let right = std_lib.select(layouter, pos, x, &acc)?;
-            let current_node = std_lib.poseidon(
-                layouter,
-                &[inputs.node_domain_separation_tag.clone(), left, right],
-            )?;
+            let current_node = std_lib.poseidon(layouter, &[left, right])?;
 
             let is_zero = std_lib.is_zero(layouter, x)?;
             std_lib.select(layouter, &is_zero, &acc, &current_node)
@@ -135,9 +127,7 @@ mod tests {
     };
     use crate::circuits::halo2::types::{CircuitBase, CircuitBaseField};
     use crate::circuits::halo2::witness::{CircuitWitnessEntry, MerkleTreeCommitment};
-    use crate::signature_scheme::{
-        DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF, DOMAIN_SEPARATION_TAG_MERKLE_TREE_NODE,
-    };
+    use crate::signature_scheme::DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF;
 
     use super::{MerklePathInputs, verify_merkle_path};
 
@@ -201,10 +191,6 @@ mod tests {
                 layouter,
                 CircuitBase::from(DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF),
             )?;
-            let node_domain_separation_tag = std_lib.assign_fixed(
-                layouter,
-                CircuitBase::from(DOMAIN_SEPARATION_TAG_MERKLE_TREE_NODE),
-            )?;
 
             verify_merkle_path(
                 std_lib,
@@ -217,7 +203,6 @@ mod tests {
                     merkle_positions: &merkle_positions,
                     merkle_tree_depth: TEST_MERKLE_TREE_DEPTH as u32,
                     leaf_domain_separation_tag: &leaf_domain_separation_tag,
-                    node_domain_separation_tag: &node_domain_separation_tag,
                 },
             )
         }
@@ -283,10 +268,6 @@ mod tests {
                 layouter,
                 CircuitBase::from(DOMAIN_SEPARATION_TAG_MERKLE_TREE_LEAF),
             )?;
-            let node_domain_separation_tag = std_lib.assign_fixed(
-                layouter,
-                CircuitBase::from(DOMAIN_SEPARATION_TAG_MERKLE_TREE_NODE),
-            )?;
 
             verify_merkle_path(
                 std_lib,
@@ -299,7 +280,6 @@ mod tests {
                     merkle_positions: &merkle_positions,
                     merkle_tree_depth: TEST_MERKLE_TREE_DEPTH as u32,
                     leaf_domain_separation_tag: &leaf_domain_separation_tag,
-                    node_domain_separation_tag: &node_domain_separation_tag,
                 },
             )
         }
