@@ -25,7 +25,7 @@ cat >> payment-mithril.sh <<EOF
 set -e
 
 # Set default payment iterations value
-if [ -z "${PAYMENT_ITERATIONS}" ]; then 
+if [ -z "\${PAYMENT_ITERATIONS}" ]; then 
   PAYMENT_ITERATIONS=3
 fi
 
