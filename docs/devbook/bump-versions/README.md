@@ -1,10 +1,21 @@
-# Bump the crates, js packages, and openapi versions before merging a pull request
+# Bump the project versions before merging a pull request
 
 ## Introduction
 
-This devbook provides a script that allows to automatically bump the crates, js packages, and Open API versions in the project.
+This devbook provides a script that allows to automatically bump the versions of the crates, js packages,
+Open API specification and plain version files in the project.
 
-Only the crates, js packages, and Open API specifications with changes on the branch compared to `origin/main` are bumped.
+Only the resources with changes on the branch compared to `origin/main` are bumped:
+
+| Resource                                               | Bumped when a change is detected in                             |
+| ------------------------------------------------------ | --------------------------------------------------------------- |
+| Crates                                                 | `src/`, `tests/`, `benches/` or `Cargo.toml` of the crate       |
+| JS packages                                            | The directory of the package                                    |
+| `openapi.yaml`                                         | The file itself                                                 |
+| `mithril-infra/assets/infra.version`                   | `*.tf` files of `mithril-infra/`                                |
+| `mithril-test-lab/cardano-devnet/VERSION`              | `*.sh` files of `mithril-test-lab/cardano-devnet/`              |
+| `mithril-test-lab/benchmark/aggregator-prover/VERSION` | `*.sh` files of `mithril-test-lab/benchmark/aggregator-prover/` |
+| `mithril-test-lab/ipfs-devnet/VERSION`                 | `*.sh` files of `mithril-test-lab/ipfs-devnet/`                 |
 
 ## Prerequisites
 
@@ -34,7 +45,7 @@ Just run the script without argument, by default no changes are made to the proj
 >
 > This means that running the script more than once will bump the versions again.
 
-Run the script with the `--run` argument to bump the crates, js packages, and openapi versions.
+Run the script with the `--run` argument to bump the versions.
 
 The script will output a preformatted commit message that can be used to create a commit when it completes.
 
