@@ -13,7 +13,7 @@ This is the process for storing Mithril activation eras markers on the Cardano c
 - A running Cardano node running locally on the network you are targeting
 - A running Mithril Aggregator node
 - The era activation marker Cardano payment keypairs of your Mithril network
-- The era activation marker secret key of your Mithril network
+- The era activation marker secret key of your Mithril network (you can generate one by running the aggregator command `tools generate-keypair ed25519 --target-path <KEYPAIR_DIRECTORY>` if none exists for the target environment)
 
 ## Setup
 
