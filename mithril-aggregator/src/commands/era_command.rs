@@ -45,7 +45,7 @@ pub enum EraSubCommand {
     /// Era tx datum generate command.
     GenerateTxDatum(GenerateTxDatumEraSubCommand),
 
-    /// Era keypair generation command.
+    /// Deprecated, use `tools generate-keypair ed25519` instead
     GenerateKeypair(GenerateKeypairEraSubCommand),
 }
 
@@ -134,7 +134,7 @@ impl GenerateTxDatumEraSubCommand {
     }
 }
 
-/// Era keypair generation command.
+/// [Deprecated] Era keypair generation command.
 #[derive(Parser, Debug, Clone)]
 pub struct GenerateKeypairEraSubCommand {
     /// Target path for the generated keypair
@@ -144,6 +144,9 @@ pub struct GenerateKeypairEraSubCommand {
 
 impl GenerateKeypairEraSubCommand {
     pub async fn execute(&self, root_logger: Logger) -> StdResult<()> {
+        println!(
+            "Era keypair generation is deprecated and will be removed in future versions. Please use the `tools generate-keypair ed25519` command instead."
+        );
         debug!(root_logger, "GENERATE KEYPAIR ERA command");
         println!("Era generate keypair to {}", self.target_path.display());
 
