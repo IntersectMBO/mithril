@@ -21,7 +21,6 @@ use midnight_proofs::{
 };
 use midnight_zk_stdlib::MidnightVK;
 
-use crate::StmResult;
 use crate::circuits::halo2::keys::NonRecursiveCircuitVerifyingKey;
 use crate::circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey;
 use crate::circuits::halo2_ivc::{
@@ -34,6 +33,7 @@ use crate::circuits::halo2_ivc::{
     },
 };
 use crate::signature_scheme::{SchnorrVerificationKey, StandardSchnorrSignature};
+use crate::{BaseFieldElement, StmResult};
 
 /// Interprets 32 little-endian bytes as an integer and maps it to a Jubjub
 /// base-field element.
@@ -190,10 +190,12 @@ pub(crate) struct GenesisBenchmarkFixture {
 
 impl GenesisBenchmarkFixture {
     /// Derives the typed genesis message hash from the stored raw bytes. Equals
-    /// `AssetGenerationSetup::genesis_message`, since both apply `from_raw` to the same
-    /// `Sha256(preimage)` digest.
+    /// `AssetGenerationSetup::genesis_message`, since both apply
+    /// `BaseFieldElement::from_message_collision_resistant` to the same `Sha256(preimage)` digest.
     pub(crate) fn genesis_message_hash(&self) -> MessageHash {
-        MessageHash::from_field(jubjub_base_from_raw_le_bytes(&self.genesis_message))
+        MessageHash::from_field(
+            BaseFieldElement::from_message_collision_resistant(&self.genesis_message).0,
+        )
     }
 }
 

@@ -40,10 +40,6 @@ pub enum SchnorrError {
         actual: usize,
     },
 
-    /// Reducing the SHA-256 digest into the Jubjub base field failed.
-    #[error("SNARK genesis failed to reduce SHA-256 digest into the Jubjub base field")]
-    FieldReduction(#[source] StdError),
-
     /// Producing a Schnorr signature over the digest failed.
     #[error("SNARK genesis signing failed")]
     Sign(#[source] StdError),
@@ -56,10 +52,10 @@ pub enum SchnorrError {
 /// A SNARK-friendly signer responsible for signing the genesis attestation that is provable inside
 /// the Halo2 IVC circuit.
 ///
-/// The signer expects the SHA-256 digest of the protocol-message preimage (32 raw bytes). It feeds
-/// the digest to the same `from_raw` reduction that the in-circuit `is_genesis_sig_valid` gadget
-/// uses to recover the witness field element, so on-circuit and off-circuit verification share the
-/// exact same message encoding.
+/// The signer expects the SHA-256 digest of the protocol-message preimage (32 raw bytes). It reduces
+/// the digest with [`BaseFieldElement::from_message_collision_resistant`], the reduction the IVC
+/// circuit applies to the genesis message, so on-circuit and off-circuit verification share the
+/// exact same message reduction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchnorrSigner {
     secret_key: SchnorrSecretKey,
@@ -113,8 +109,8 @@ impl SchnorrSigner {
     /// Sign a SHA-256 digest of the genesis protocol-message preimage.
     ///
     /// The slice must be exactly 32 bytes (the raw SHA-256 output). It is reduced into a single
-    /// [BaseFieldElement] via [`BaseFieldElement::from_raw`], matching the encoding
-    /// pinned by the IVC genesis-signature gadget.
+    /// [BaseFieldElement] via [`BaseFieldElement::from_message_collision_resistant`], matching the
+    /// reduction pinned by the IVC genesis-signature gadget.
     ///
     /// Visibility is `pub(crate)` so external callers cannot reach for a deterministic RNG:
     /// production code must use [`Self::sign_non_deterministic`] which threads
@@ -165,7 +161,7 @@ impl SchnorrVerifier {
 
     /// Verify a SNARK genesis signature against a SHA-256 digest of the protocol-message preimage.
     ///
-    /// The slice must be exactly 32 bytes (the raw SHA-256 output), encoded into the field via the
+    /// The slice must be exactly 32 bytes (the raw SHA-256 output), reduced into the field via the
     /// same reduction used by the signer.
     pub fn verify(&self, sha256_digest: &[u8], signature: &SchnorrSignature) -> StdResult<()> {
         let field_element = Self::digest_to_field_element(sha256_digest)?;
@@ -176,22 +172,21 @@ impl SchnorrVerifier {
     }
 
     /// Convert a 32-byte SHA-256 digest into the [BaseFieldElement] the SNARK signer / verifier
-    /// expect.
+    /// expect, with [`BaseFieldElement::from_message_collision_resistant`].
     ///
-    /// Rejects inputs that are not exactly 32 bytes; otherwise the modulus reduction is
-    /// deterministic on both sides.
+    /// Rejects inputs that are not exactly 32 bytes; otherwise the reduction is deterministic on
+    /// both sides.
     pub fn digest_to_field_element(sha256_digest: &[u8]) -> StdResult<BaseFieldElement> {
-        if sha256_digest.len() != 32 {
-            return Err(SchnorrError::InvalidDigestLength {
-                actual: sha256_digest.len(),
-            }
-            .into());
-        }
-        let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(sha256_digest);
-        BaseFieldElement::from_raw(&bytes)
-            .map_err(|e| anyhow!(SchnorrError::FieldReduction(e)))
-            .with_context(|| "Failed to reduce SHA-256 digest into the Jubjub base field")
+        let sha256_digest: [u8; 32] =
+            sha256_digest
+                .try_into()
+                .map_err(|_| SchnorrError::InvalidDigestLength {
+                    actual: sha256_digest.len(),
+                })?;
+
+        Ok(BaseFieldElement::from_message_collision_resistant(
+            &sha256_digest,
+        ))
     }
 }
 

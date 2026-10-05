@@ -218,6 +218,43 @@ pub(crate) mod tests {
         )
     }
 
+    mod certificate_message {
+        use proptest::prelude::*;
+        use sha2::{Digest, Sha256};
+
+        use crate::MithrilMembershipDigest;
+
+        use super::*;
+
+        proptest! {
+            // The off-circuit checker compares the message decoded from the certificate message
+            // bytes with the one derived from the protocol message preimage, so the two paths
+            // must reduce the SHA-256 hash of the preimage the same way.
+            #[test]
+            fn certificate_message_matches_the_preimage_message_hash(
+                preimage_bytes in any::<[u8; PREIMAGE_SIZE]>(),
+            ) {
+                let aggregate_verification_key =
+                    AggregateVerificationKeyForSnark::<MithrilMembershipDigest>::from_bytes(
+                        &[0u8; 40],
+                    )
+                    .unwrap();
+                let certificate_message: [u8; 32] = Sha256::digest(preimage_bytes).into();
+
+                let (certificate_message_hash, _) = create_snark_message_for_next_state(
+                    &aggregate_verification_key,
+                    &certificate_message,
+                )
+                .unwrap();
+
+                prop_assert_eq!(
+                    certificate_message_hash,
+                    MessageHash::try_from(&ProtocolMessagePreimage::new(preimage_bytes)).unwrap(),
+                );
+            }
+        }
+    }
+
     mod build_next_state {
         use proptest::prelude::*;
 

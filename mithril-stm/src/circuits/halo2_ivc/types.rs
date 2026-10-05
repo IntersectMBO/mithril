@@ -157,7 +157,8 @@ impl TryFrom<&ProtocolMessagePreimage> for MessageHash {
     type Error = anyhow::Error;
     fn try_from(preimage: &ProtocolMessagePreimage) -> StmResult<Self> {
         let preimage_hash: [u8; 32] = Sha256::digest(preimage.0).into();
-        let message_field_elem = BaseFieldElement::from_raw(&preimage_hash)?.0;
+        let message_field_elem =
+            BaseFieldElement::from_message_collision_resistant(&preimage_hash).0;
         Ok(MessageHash::from_field(message_field_elem))
     }
 }
@@ -353,12 +354,12 @@ mod protocol_message_preimage_tests {
             );
         }
 
-        /// The result is the little-endian field reduction of SHA-256 over the complete
+        /// The result is the collision-resistant field reduction of SHA-256 over the complete
         /// original preimage. Arbitrary inputs reach shapes the fixed vectors cannot: all three
         /// of those are sorted, so a conversion that reordered the bytes before hashing would
         /// leave every one of them unchanged.
         #[test]
-        fn a_message_hash_is_the_field_reduction_of_sha256_over_the_whole_preimage(
+        fn a_message_hash_is_the_collision_resistant_reduction_of_sha256_over_the_whole_preimage(
             bytes in any::<[u8; PREIMAGE_SIZE]>(),
         ) {
             let digest: [u8; 32] = Sha256::digest(bytes).into();
@@ -367,9 +368,7 @@ mod protocol_message_preimage_tests {
                 MessageHash::try_from(&ProtocolMessagePreimage::new(bytes))
                     .expect("a preimage of the declared size always converts"),
                 MessageHash::from_field(
-                    BaseFieldElement::from_raw(&digest)
-                        .expect("from_raw applies modulus reduction and cannot fail")
-                        .0,
+                    BaseFieldElement::from_message_collision_resistant(&digest).0,
                 ),
             );
         }

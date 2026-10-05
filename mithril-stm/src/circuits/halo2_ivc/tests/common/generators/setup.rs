@@ -35,7 +35,6 @@ use crate::signature_scheme::{
 };
 use crate::{MembershipDigest, MithrilMembershipDigest, Parameters, StmResult};
 
-use super::super::field_encoding::jubjub_base_from_raw_le_bytes;
 use super::super::{ASSET_SEED, CERTIFICATE_CIRCUIT_DEGREE};
 use super::transitions::build_genesis_protocol_message;
 
@@ -535,8 +534,8 @@ fn derive_genesis_data(merkle_tree: &SignerRegistrationMerkleTree) -> DerivedGen
         let preimage = protocol_message
             .try_rigid_preimage()
             .expect("genesis protocol message preimage should succeed");
-        let message_hash = Sha256::digest(preimage);
-        jubjub_base_from_raw_le_bytes(message_hash.as_ref())
+        let message_hash: [u8; 32] = Sha256::digest(preimage).into();
+        BaseFieldElement::from_message_collision_resistant(&message_hash).0
     };
 
     DerivedGenesisData {

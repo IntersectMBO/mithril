@@ -26,7 +26,8 @@ impl TryFrom<&GenesisMessagePreimage> for MessageHash {
 
     fn try_from(preimage: &GenesisMessagePreimage) -> StmResult<Self> {
         let genesis_preimage_hash: [u8; 32] = Sha256::digest(&preimage.0).into();
-        let genesis_message_field_elem = BaseFieldElement::from_raw(&genesis_preimage_hash)?.0;
+        let genesis_message_field_elem =
+            BaseFieldElement::from_message_collision_resistant(&genesis_preimage_hash).0;
         Ok(MessageHash::from_field(genesis_message_field_elem))
     }
 }

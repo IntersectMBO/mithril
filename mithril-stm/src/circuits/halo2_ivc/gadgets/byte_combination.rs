@@ -3,7 +3,7 @@
 use ff::Field;
 
 use crate::circuits::halo2_ivc::{
-    ArithInstructions, AssignedNative, Error, IvcNativeGadget, Layouter, NativeField,
+    ArithInstructions, AssignedNative, Error, Layouter, NativeField,
     errors::{IvcCircuitError, to_synthesis_error},
 };
 
@@ -22,7 +22,7 @@ fn check_byte_count(byte_count: usize, base_count: usize) -> Result<(), IvcCircu
 
 /// Combines `bytes` into a field element as `sum(bytes[i] * bases[i])`.
 pub(crate) fn combine_bytes(
-    native_gadget: &IvcNativeGadget,
+    native_gadget: &impl ArithInstructions<NativeField, AssignedNative<NativeField>>,
     layouter: &mut impl Layouter<NativeField>,
     bytes: impl IntoIterator<Item = impl Into<AssignedNative<NativeField>>>,
     bases: &[NativeField],

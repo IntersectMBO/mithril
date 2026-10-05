@@ -51,6 +51,16 @@ pub(crate) const DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF: BaseFieldElement =
         0,
     ]));
 
+/// Domain Separation Tag (DST) for the Poseidon hash reducing the 32-byte SNARK message, split
+/// into two 128-bit halves, into a single field element.
+pub(crate) const DOMAIN_SEPARATION_TAG_SNARK_MESSAGE: BaseFieldElement =
+    BaseFieldElement(JubjubBase::from_raw([
+        0x534D_5347_5F44_5354, // "SMSG_DST" (ASCII), little-endian u64
+        0,
+        0,
+        0,
+    ]));
+
 /// Computes a Poseidon digest over the provided base field elements.
 /// Returns a base field element as the digest.
 pub(crate) fn compute_poseidon_digest(input: &[BaseFieldElement]) -> BaseFieldElement {
@@ -63,8 +73,8 @@ pub(crate) fn compute_poseidon_digest(input: &[BaseFieldElement]) -> BaseFieldEl
 mod test {
     use super::{
         DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST, DOMAIN_SEPARATION_TAG_LOTTERY,
-        DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF, DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE,
-        DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE,
+        DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF, DOMAIN_SEPARATION_TAG_SNARK_MESSAGE,
+        DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE, DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE,
     };
 
     #[test]
@@ -75,6 +85,7 @@ mod test {
             DOMAIN_SEPARATION_TAG_LOTTERY,
             DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY_DIGEST,
             DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF,
+            DOMAIN_SEPARATION_TAG_SNARK_MESSAGE,
         ];
 
         for (index, tag) in tags.iter().enumerate() {

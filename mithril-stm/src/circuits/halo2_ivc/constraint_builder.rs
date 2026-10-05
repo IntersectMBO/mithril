@@ -16,7 +16,10 @@ use super::{
     PREIMAGE_CURRENT_EPOCH_BYTES, PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
     PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, PublicInputInstructions, RecursiveEmulation,
     VerifierGadget, ZeroInstructions, ZkStdLib,
-    gadgets::{GenesisSchnorrSignatureInputs, combine_bytes, verify_genesis_signature},
+    gadgets::{
+        GenesisSchnorrSignatureInputs, combine_bytes, protocol_message_hash_to_field_element,
+        verify_genesis_signature,
+    },
     state::{AssignedGlobal, AssignedState, AssignedWitness},
 };
 
@@ -230,7 +233,8 @@ impl<'a> IvcConstraintBuilder<'a> {
         })
     }
 
-    /// Asserts the selected `message` equals the SHA-256 hash of the protocol-message preimage.
+    /// Asserts the selected `message` equals the reduction of the SHA-256 hash of the
+    /// protocol-message preimage based on `BaseFieldElement::from_message_collision_resistant`.
     fn assert_message_matches_preimage(
         &self,
         layouter: &mut impl Layouter<NativeField>,
@@ -239,9 +243,9 @@ impl<'a> IvcConstraintBuilder<'a> {
         bases: &[NativeField],
     ) -> Result<(), Error> {
         let hash = self.std_lib.sha2_256(layouter, &witness.message_preimage)?;
-        // Compare message and hash
-        let hash_native = combine_bytes(self.native_gadget, layouter, &hash, bases)?;
-        self.native_gadget.assert_equal(layouter, message, &hash_native)
+        let reduced_message =
+            protocol_message_hash_to_field_element(self.std_lib, layouter, &hash, bases)?;
+        self.native_gadget.assert_equal(layouter, message, &reduced_message)
     }
 
     /// Reads the next Merkle-tree commitment, next protocol parameters, and current epoch from the
