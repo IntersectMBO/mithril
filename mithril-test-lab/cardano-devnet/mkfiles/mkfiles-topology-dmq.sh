@@ -34,8 +34,7 @@ TOPOLOGY='
     {
       "accessPoints": [],
       "advertise": false,
-      "trustable": false,
-      "valency": 2
+      "trustable": false
     }
   ],
   "peerSnapshotFile": null,
@@ -55,6 +54,6 @@ echo $TOPOLOGY | jq . > topology.dmq.json
 
 NODE_IX=0
 for NODE in ${ALL_NODES}; do
-  cat topology.dmq.json |  jq '.localRoots[0].accessPoints |= del(.['${NODE_IX}'])' > ${NODE}/topology.dmq.json
+  cat topology.dmq.json |  jq '.localRoots[0].accessPoints |= del(.['${NODE_IX}']) | .localRoots[0].valency = (.localRoots[0].accessPoints | length)' > ${NODE}/topology.dmq.json
   NODE_IX=$(( ${NODE_IX} + 1))
 done
