@@ -294,7 +294,7 @@ Usage: mithril-aggregator era <COMMAND>
 Commands:
   list               Era list command
   generate-tx-datum  Era tx datum generate command
-  generate-keypair   Era keypair generation command
+  generate-keypair   [Deprecated] Era keypair generation command
   help               Print this message or the help of the given subcommand(s)
 
 Options:
@@ -521,7 +521,7 @@ Here are the available subcommands:
 | **genesis generate-keypair**              | Generates a genesis keypair                                                                                                               |
 | **era list**                              | Lists the supported eras                                                                                                                  |
 | **era generate-tx-datum**                 | Generates the era markers transaction datum to be stored on-chain                                                                         |
-| **era generate-keypair**                  | Generates an era keypair                                                                                                                  |
+| **era generate-keypair**                  | **Deprecated**, generates an era keypair                                                                                                  |
 | **protocol-configuration export-markers** | Exports the protocol configuration markers to a human readable JSON file                                                                  |
 | **protocol-configuration import-markers** | Generates the protocol configuration markers transaction datum to be stored on-chain                                                      |
 | **database migrate**                      | Migrate databases located in the given stores directory                                                                                   |
@@ -669,7 +669,13 @@ Here is a list of the available parameters for the serve command:
 | `era_markers_secret_key` | `--era-markers-secret-key` |          -           | `ERA_MARKERS_SECRET_KEY` | Era markers secret key that is used to verify the authenticity of the era markers on the chain.                                                                                          | -             | -       | :heavy_check_mark: |
 | `target_path`            | `--target-path`            |          -           | -                        | Path of the file to export the payload to.                                                                                                                                               | -             | -       |         -          |
 
-`era generate-keypair` command:
+`era generate-keypair` command (**Deprecated**, see `tools generate-keypair ed25519` command instead):
+
+| Parameter     | Command line (long) | Command line (short) | Environment variable | Description                           | Default value | Example |     Mandatory      |
+| ------------- | ------------------- | :------------------: | -------------------- | ------------------------------------- | ------------- | ------- | :----------------: |
+| `target_path` | `--target-path`     |          -           | -                    | Target path for the generated keypair | -             | -       | :heavy_check_mark: |
+
+`tools generate-keypair ed25519` command:
 
 | Parameter     | Command line (long) | Command line (short) | Environment variable | Description                           | Default value | Example |     Mandatory      |
 | ------------- | ------------------- | :------------------: | -------------------- | ------------------------------------- | ------------- | ------- | :----------------: |
