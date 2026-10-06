@@ -95,30 +95,48 @@ impl CloudBackendUploader for GCloudBackendUploader {
         &self,
         remote_folder_path: &CloudRemotePath,
     ) -> StdResult<Vec<CloudRemotePath>> {
+        // Google recommended max results for a single response are 1000
+        const MAX_RESULTS_PER_PAGE: i32 = 1000;
+        let mut result = Vec::with_capacity(MAX_RESULTS_PER_PAGE as usize);
+
         let mut normalized_path = remote_folder_path.to_string();
         if !normalized_path.is_empty() && !normalized_path.ends_with('/') {
             normalized_path.push('/');
         }
         info!(self.logger, "Listing files with prefix {normalized_path}");
-        let request = ListObjectsRequest {
-            bucket: self.bucket.clone(),
-            prefix: Some(normalized_path),
-            ..Default::default()
-        };
-        let response = self
-            .storage_client
-            .list_objects(&request)
-            .await
-            .with_context(|| "remote listing files failure")?;
+        let mut page_token = None;
 
-        let files_path: Vec<CloudRemotePath> = response
-            .items
-            .into_iter()
-            .flatten()
-            .map(|object| CloudRemotePath::new(&object.name))
-            .collect();
+        loop {
+            let request = ListObjectsRequest {
+                bucket: self.bucket.clone(),
+                prefix: Some(normalized_path.clone()),
+                max_results: Some(MAX_RESULTS_PER_PAGE),
+                page_token,
+                ..Default::default()
+            };
 
-        Ok(files_path)
+            let response = self
+                .storage_client
+                .list_objects(&request)
+                .await
+                .with_context(|| "remote listing files failure")?;
+
+            result.extend(
+                response
+                    .items
+                    .into_iter()
+                    .flatten()
+                    .map(|object| CloudRemotePath::new(&object.name)),
+            );
+
+            page_token = response.next_page_token;
+            if page_token.is_none() {
+                break;
+            }
+        }
+
+        info!(self.logger, "Remote listing files finished"; "number_of_files" => result.len());
+        Ok(result)
     }
 
     fn get_file_uri(&self, remote_file_path: &CloudRemotePath) -> FileUri {
