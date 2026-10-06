@@ -292,7 +292,7 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
   - `SNAPSHOT_COMPRESSION_ALGORITHM`: Compression algorithm for snapshot archives (default: `zstandard`)
   - `ZSTANDARD_PARAMETERS__LEVEL`: Zstandard compression level (eg, `9` for maximum compression, range 1-22)
   - `ZSTANDARD_PARAMETERS__NUMBER_OF_WORKERS`: Number of worker threads for Zstandard compression (eg, `4`)
-  - `ANCILLARY_FILES_SIGNER_CONFIG`: JSON configuration for signing ancillary files. Can be either a secret key or a GCP KMS key. Example with secret key: `{"type": "secret-key", "secret_key": "your_hex_encoded_secret_key"}`.
+  - `ANCILLARY_FILES_SIGNER_CONFIG`: JSON configuration for signing ancillary files. Can be either a secret key or a GCP KMS key. Keypair can be generated using Mithril Aggregator command `tools generate-keypair ed25519`. Example with secret key: `{"type": "secret-key", "secret_key": "your_hex_encoded_secret_key"}`.
 
 - The **Cardano transactions** configuration values are (only needed if supporting Cardano transactions certification):
   - `CARDANO_TRANSACTIONS_PROVER_CACHE_POOL_SIZE`: Size of the prover cache pool (default: `10`). This configuration can have a significant impact on the aggregator's memory usage. In particular, on `mainnet`, we recommend avoiding values higher than `10`.
