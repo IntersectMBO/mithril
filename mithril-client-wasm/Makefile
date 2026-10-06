@@ -13,17 +13,17 @@ build:
 	npm run build
 
 test:
-	pkill -f "mithril-aggregator-fake" || true
+	pkill -f "[m]ithril-aggregator-fake" || true
 	${CARGO} run -p mithril-aggregator-fake -- -p 8000 &
 	if ! wasm-pack test --headless --firefox --chrome --release; then \
-		pkill -f "mithril-aggregator-fake" || true; \
+		pkill -f "[m]ithril-aggregator-fake" || true; \
         exit 1; \
     fi
 	if ! wasm-pack test --node --release --features test-node; then \
-		pkill -f "mithril-aggregator-fake" || true; \
+		pkill -f "[m]ithril-aggregator-fake" || true; \
 		exit 1; \
 	fi
-	pkill -f "mithril-aggregator-fake" || true
+	pkill -f "[m]ithril-aggregator-fake" || true
 
 check:
 	${CARGO} check --release --all-features --all-targets
