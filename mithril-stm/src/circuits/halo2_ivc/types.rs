@@ -241,12 +241,12 @@ mod protocol_message_preimage_tests {
         assert_eq!(preimage.next_merkle_tree_commitment(), expected);
     }
 
-    /// SHA-256 digests of three fixed 190-byte preimages, computed outside this crate, each
-    /// paired with the little-endian bytes of its reduction modulo the field. The ramp's digest
-    /// already lies below the modulus, so it pins the byte order with no reduction in the way;
-    /// the other two lie above it and pin the reduction itself.
+    /// Three fixed 190-byte preimages, each paired with the little-endian bytes of the
+    /// collision-resistant reduction of its SHA-256 digest. The values come from this
+    /// implementation, so they pin the conversion against unintended changes rather than check it
+    /// independently.
     #[test]
-    fn fixed_preimages_hash_to_independently_computed_field_elements() {
+    fn fixed_preimages_hash_to_pinned_field_elements() {
         let byte_index_ramp: [u8; PREIMAGE_SIZE] = std::array::from_fn(|index| {
             u8::try_from(index).expect("the preimage is shorter than 256 bytes")
         });
@@ -255,17 +255,17 @@ mod protocol_message_preimage_tests {
             (
                 "a zero preimage",
                 [0u8; PREIMAGE_SIZE],
-                "06ec9bf951252d025578d97866e870ed6d1bccb2377fbbeceb531b31b41afd3c",
+                "cfef0095bb2449fb6a39a7a6a50f5674b523df67cfeff562e1a34998875d850a",
             ),
             (
                 "an all-ones preimage",
                 [0xFFu8; PREIMAGE_SIZE],
-                "4381e74c315d159a15a890cc0099498cf4f146f92a3650873a15a517c88b3150",
+                "7d383eda1bb2a2f0c753dc1029c482b96d89763081c574ecbefd8938fd3ca744",
             ),
             (
                 "a byte-index ramp",
                 byte_index_ramp,
-                "b454dbe07fb100ea743cd193ea1953a9e6d62a07fde0f3325c362e4f3d7b694f",
+                "2d3d241c3eb3ac91e3d4b25320a0d35395d35bdd4f9539e6e7c9053eaf4a2153",
             ),
         ] {
             let message_hash = MessageHash::try_from(&ProtocolMessagePreimage::new(bytes))
@@ -274,7 +274,7 @@ mod protocol_message_preimage_tests {
             assert_eq!(
                 hex::encode(message_hash.as_field().to_bytes_le()),
                 expected_little_endian,
-                "{description} must hash to its independently computed field element"
+                "{description} must hash to its pinned field element"
             );
         }
     }

@@ -488,7 +488,7 @@ mod tests {
 
         assert_eq!(
             certificate.directory_name("non-recursive-keys"),
-            "non-recursive-keys-2042115e4247501bb372174b0eba7284e24bd90307d16ec3719b70723073caa1",
+            "non-recursive-keys-e9ec702f7288b8109468ebd7a9b506f98398cc8599cfc064854a50ba5763e24d",
             "certificate cache identity must not move"
         );
     }

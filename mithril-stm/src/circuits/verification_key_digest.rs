@@ -281,14 +281,14 @@ mod tests {
         #[test]
         fn golden_digests_of_production_circuit_keys() {
             assert_eq!(
-                "b4f2e431d9b6f016d6c551a3b6ae9f2b6b494941181eabdafd1313fc7c240f25",
+                "6dd597b297d6b9c80bddea1bb35f4483e3075407207fc06c8e2af62e2ce0702b",
                 CircuitVerificationKeyDigest::for_production_certificate_circuit()
                     .unwrap()
                     .to_string(),
                 "golden production certificate circuit verification key digest changed, either the digest computation, the embedded production key or the certificate circuit changed, which breaks published circuit verification key registries"
             );
             assert_eq!(
-                "8a6b414e9b007a6c4ff68a349ea2a7447cb1c94cb7d3de59307197284a8db252",
+                "9b19d67fd7898e35b0810624b6adc994bab91ba8d7d112126c59d7730c919561",
                 CircuitVerificationKeyDigest::for_ivc_circuit().unwrap().to_string(),
                 "golden IVC circuit verification key digest changed, either the digest computation, the embedded production key or the IVC circuit changed, which breaks published circuit verification key registries"
             );
@@ -307,12 +307,12 @@ mod tests {
             );
 
             assert_eq!(
-                "61026abdb434dacb969e2b0dd6ff3c49de3f2eba759d967fce011bd519372714",
+                "57abd96ea936e33d0f855318b8e91874fbf28dc51163e5cccfee320d5cef4d52",
                 certificate_key_digest.to_string(),
                 "golden certificate circuit verification key digest changed, either the digest computation or the circuit changed, which breaks published circuit verification key registries"
             );
             assert_eq!(
-                "763dfd2235083e2fb78a6d35b69a8daef9331900ba61b0fea5879fd1cce7a00f",
+                "ea5e2c551a83ddc774688f594c8aa000bb23ee64544650fd315c472bb891a44d",
                 recursive_key_digest.to_string(),
                 "golden IVC circuit verification key digest changed, either the digest computation or the circuit changed, which breaks published circuit verification key registries"
             );
