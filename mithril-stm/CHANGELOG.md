@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.30 (10-05-2026)
+
+### Changed
+
+- Upgraded `midnight-proofs` to `0.8.3`, which sends every BLS12-381 G1 multi-scalar multiplication to blst and removes a prover slowdown on commitments above 2^19 terms. The circuit verification keys are unchanged, so no re-genesis is needed.
+- Updated the pinned Midnight versions in the SNARK book.
+
 ## 0.12.27 (10-01-2026)
 
 ### Added

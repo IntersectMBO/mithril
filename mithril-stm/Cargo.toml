@@ -1,6 +1,6 @@
 [package]
 name = "mithril-stm"
-version = "0.12.29"
+version = "0.12.30"
 edition = { workspace = true }
 authors = { workspace = true }
 homepage = { workspace = true }
@@ -73,7 +73,7 @@ hex = { workspace = true }
 # Pin `midnight` crates. Updates must be done following this runbook: `<repository_root>/docs/runbook/update-circuit-keys`
 midnight-circuits = { version = "=7.2.2", optional = true }
 midnight-curves = { version = "=0.3.1", optional = true }
-midnight-proofs = { version = "=0.8.1", optional = true }
+midnight-proofs = { version = "=0.8.3", optional = true }
 midnight-zk-stdlib = { version = "=2.3.3", optional = true }
 num-bigint = { version = "0.4.6", optional = true }
 num-integer = { version = "0.1", optional = true }
