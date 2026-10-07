@@ -11,6 +11,14 @@ impl KeypairTools {
         let secret_key_path = keypair_path.join("ed25519_keypair.sk");
         let verification_key_path = keypair_path.join("ed25519_keypair.vk");
 
+        if secret_key_path.exists() || verification_key_path.exists() {
+            return Err(anyhow::anyhow!(
+                "At least one of the files already exists: {} or {}",
+                secret_key_path.display(),
+                verification_key_path.display()
+            ));
+        }
+
         let signer = Ed25519Signer::create_non_deterministic_signer();
         signer.secret_key().write_json_hex_to_file(&secret_key_path)?;
         signer
@@ -50,5 +58,17 @@ mod tests {
 
         let expected_verification_key = verifier.to_verification_key();
         assert_eq!(expected_verification_key, verification_key);
+    }
+
+    #[test]
+    fn throw_error_if_file_exists_at_target_path() {
+        let temp_dir = temp_dir_create!();
+        KeypairTools::create_and_save_ed25519_keypair(&temp_dir)
+            .expect("Failed to create and save ed25519 keypair");
+        let result = KeypairTools::create_and_save_ed25519_keypair(&temp_dir);
+        assert!(
+            result
+                .is_err_and(|e| e.to_string().contains("At least one of the files already exists"))
+        );
     }
 }
