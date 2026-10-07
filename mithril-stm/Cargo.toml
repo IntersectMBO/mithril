@@ -62,7 +62,7 @@ rug-backend = ["dep:rug"]
 
 [dependencies]
 anyhow = { workspace = true }
-blake2 = "0.10.6"
+blake2 = "0.11.0"
 # Enforce blst portable feature for runtime detection of Intel ADX instruction set.
 blst = { version = "0.3.17", features = ["portable"] }
 ciborium = { workspace = true }
