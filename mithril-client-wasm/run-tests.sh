@@ -18,7 +18,7 @@ display_help() {
   echo "  -h, --help                 Print this help"
   echo
   echo "Browser tests are skipped for browsers that are not installed and have no driver given."
-  echo "Snap Chromium is not supported unless its driver is given (--chromedriver /snap/bin/chromium.chromedriver)."
+  echo "If no Chrome is installed, Snap Chromium is used as a fallback with its own driver (chromium.chromedriver)."
   echo
   exit 0
 }
@@ -39,7 +39,8 @@ has_chrome() {
   local browser path
   for browser in google-chrome google-chrome-stable chromium chromium-browser; do
     path=$(command -v "$browser") || continue
-    # Snap Chromium confinement prevents the chromedriver downloaded by wasm-pack from starting it
+    # Snap Chromium is handled separately: its confinement prevents the chromedriver downloaded by wasm-pack
+    # from starting it, it must be driven by the chromedriver shipped with the snap
     [[ "$path" == /snap/* ]] || return 0
   done
   return 1
@@ -88,6 +89,9 @@ if [[ -n "$CHROMEDRIVER" ]]; then
   BROWSER_ARGS+=(--chrome --chromedriver "$CHROMEDRIVER")
 elif has_chrome; then
   BROWSER_ARGS+=(--chrome)
+elif SNAP_CHROMEDRIVER=$(command -v chromium.chromedriver); then
+  echo ">> Chrome not found, using Snap Chromium"
+  BROWSER_ARGS+=(--chrome --chromedriver "$SNAP_CHROMEDRIVER")
 else
   echo ">> Chrome not found, skipping Chrome tests"
 fi
