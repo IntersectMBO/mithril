@@ -13,7 +13,7 @@ readonly AGGREGATOR_FAKE_PID_FILE="${TMPDIR:-/tmp}/mithril-client-wasm-aggregato
 readonly AGGREGATOR_FAKE_IP="127.0.0.1" AGGREGATOR_FAKE_PORT="8000"
 
 display_help() {
-  echo "Run the mithril-client-wasm tests suite"
+  echo "Run the mithril-client-wasm test suite"
   echo
   echo "Usage: $0 [OPTIONS]"
   echo
@@ -43,13 +43,17 @@ check_requirements() {
 has_chrome() {
   local browser path
   # macOS apps are not in the $PATH
-  [[ -d "/Applications/Google Chrome.app" || -d "/Applications/Chromium.app" ]] && return 0
+  if [[ -d "/Applications/Google Chrome.app" || -d "/Applications/Chromium.app" ]]; then
+    return 0
+  fi
+
   for browser in google-chrome google-chrome-stable chromium chromium-browser; do
     path=$(command -v "$browser") || continue
     # Snap Chromium is handled separately: its confinement prevents the chromedriver downloaded by wasm-pack
     # from starting it, it must be driven by the chromedriver shipped with the snap
     [[ "$path" == /snap/* ]] || return 0
   done
+
   return 1
 }
 
@@ -59,10 +63,13 @@ has_firefox() {
 }
 
 start_aggregator_fake() {
-  cargo build --bins -p mithril-aggregator-fake
-  # `cargo run` replaces itself with the binary, so `$!` is the fake aggregator PID
-  cargo run -p mithril-aggregator-fake -- --ip-address "$AGGREGATOR_FAKE_IP" --tcp-port "$AGGREGATOR_FAKE_PORT" &
-  echo $! > "$AGGREGATOR_FAKE_PID_FILE"
+  cargo build -p mithril-aggregator-fake --bin mithril-aggregator-fake
+
+  local aggregator_fake_bin
+  aggregator_fake_bin="$(cargo metadata --no-deps --format-version 1 | jq -r ".target_directory")/debug/mithril-aggregator-fake"
+
+  "${aggregator_fake_bin}" --ip-address "$AGGREGATOR_FAKE_IP" --tcp-port "$AGGREGATOR_FAKE_PORT" &
+  echo "$!" > "$AGGREGATOR_FAKE_PID_FILE"
 
   # Startup errors (i.e. port already in use) make the fake aggregator exit almost immediately
   sleep 1
@@ -73,12 +80,19 @@ start_aggregator_fake() {
 # Usage: stop_aggregator_fake [--quiet]
 stop_aggregator_fake() {
   local -r quiet=$([[ "${1:-}" == "--quiet" ]] && echo true || echo false)
+  local pid
 
-  [[ -f "$AGGREGATOR_FAKE_PID_FILE" ]] || return 0
-  # The pattern guards against a stale PID file: the PID is only killed if it's still the fake aggregator
-  pkill -F "$AGGREGATOR_FAKE_PID_FILE" -f "mithril-aggregator-fake" || true
+  if [[ ! -f "$AGGREGATOR_FAKE_PID_FILE" ]]; then
+    return 0
+  fi
+
+  pid="$(cat "$AGGREGATOR_FAKE_PID_FILE")"
+  kill "${pid}" 2>/dev/null || true
   rm -f "$AGGREGATOR_FAKE_PID_FILE"
-  [[ "$quiet" == true ]] || echo ">> Mithril-aggregator-fake stopped"
+
+  if [[ "$quiet" != true ]]; then
+    echo ">> Mithril-aggregator-fake (PID: ${pid}) stopped"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -96,7 +110,7 @@ while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
     shift
 done
 
-check_requirements "wasm-pack" "cargo"
+check_requirements "wasm-pack" "cargo" "jq"
 
 # ---------------------------------------------------------------------------
 # Browsers detection
