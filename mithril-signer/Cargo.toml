@@ -46,7 +46,7 @@ serde_json = { workspace = true }
 slog = { workspace = true, features = ["max_level_trace", "release_max_level_debug"] }
 slog-async = { workspace = true }
 slog-bunyan = { workspace = true }
-sqlite = { version = "0.37.0", features = ["bundled"] }
+sqlite = { version = "0.37.4", features = ["bundled"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
 
@@ -58,7 +58,7 @@ mimalloc = { version = "0.1.52" }
 
 [dev-dependencies]
 axum = { version = "0.8.9", features = ["json"] }
-axum-test = "21.0.0"
+axum-test = "21.1.0"
 criterion = { version = "0.8.2", features = ["html_reports", "async_tokio"] }
 httpmock = "0.8.3"
 mockall = { workspace = true }

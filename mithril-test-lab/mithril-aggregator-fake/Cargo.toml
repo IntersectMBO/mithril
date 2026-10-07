@@ -13,14 +13,14 @@ repository = { workspace = true }
 anyhow = { workspace = true }
 axum = { version = "0.8.9", features = ["tokio", "http1"] }
 clap = { workspace = true }
-futures = "0.3.32"
+futures = "0.3.34"
 mithril-build-script = { path = "../../internal/mithril-build-script" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-signal-hook = "0.4.4"
+signal-hook = "0.4.5"
 signal-hook-tokio = { version = "0.4.0", features = ["futures-v0_3"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-tower-http = { version = "0.7.0", features = ["trace", "cors"] }
+tower-http = { version = "0.7.1", features = ["trace", "cors"] }
 tracing = { workspace = true }
 tracing-subscriber = "0.3.23"
 

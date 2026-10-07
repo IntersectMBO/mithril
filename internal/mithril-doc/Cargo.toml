@@ -19,4 +19,4 @@ mithril-doc-derive = { path = "../mithril-doc-derive" }
 
 [dev-dependencies]
 mithril-cli-helper = { path = "../mithril-cli-helper" }
-regex = "1.12.4"
+regex = "1.13.1"

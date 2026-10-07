@@ -19,7 +19,7 @@ rustls = ["reqwest/rustls"]
 anyhow = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
-libp2p = { version = "0.56.0", features = ["tokio", "gossipsub", "dns", "identify", "kad", "macros", "noise", "ping", "pnet", "quic", "tcp", "tls", "websocket-websys", "websocket", "yamux"] }
+libp2p = { version = "0.57.0", features = ["tokio", "gossipsub", "dns", "identify", "kad", "macros", "noise", "ping", "pnet", "quic", "tcp", "tls", "websocket-websys", "websocket", "yamux"] }
 mithril-common = { path = "../mithril-common" }
 mithril-dmq = { path = "../internal/mithril-dmq" }
 mithril-doc = { path = "../internal/mithril-doc" }

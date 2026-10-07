@@ -53,30 +53,30 @@ license = "Apache-2.0"
 repository = "https://github.com/IntersectMBO/mithril/"
 
 [workspace.dependencies]
-anyhow = "1.0.103"
+anyhow = "1.0.104"
 async-trait = "0.1.92"
 chrono = { version = "0.4.45", features = ["serde"] }
 ciborium = "0.2.2"
-clap = { version = "4.6.1", features = ["derive", "env"] }
-config = "0.15.25"
-digest = { version = "0.10.7", features = ["alloc"] }
+clap = { version = "4.6.7", features = ["derive", "env"] }
+config = "0.15.27"
+digest = { version = "0.11.3", features = ["alloc"] }
 hex = "0.4.3"
 mockall = "0.15.0"
-rand_chacha = "0.3.1"
-rand_core = { version = "0.6.4", features = ["std"] }
+rand_chacha = "0.10.0"
+rand_core = { version = "0.10.1", features = ["std"] }
 rayon = "1.12.0"
-reqwest = { version = "0.13.4", default-features = false, features = ["json"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
 semver = "1.0.28"
-serde = { version = "1.0.228", features = ["derive", "rc"] }
-serde_json = { version = "1.0.150", features = ["raw_value"] }
+serde = { version = "1.0.229", features = ["derive", "rc"] }
+serde_json = { version = "1.0.151", features = ["raw_value"] }
 # Pin slog to `2.7.0`: `2.8.2` introduces failures in our test suite
 slog = "=2.7.0"
 slog-async = "2.8.0"
 slog-bunyan = "2.5.0"
 slog-term = "2.9.2"
 strum = { version = "0.28.0", features = ["derive"] }
-thiserror = "2.0.18"
-tokio = { version = "1.52.3", features = ["rt", "sync", "time"] }
+thiserror = "2.0.21"
+tokio = { version = "1.53.2", features = ["rt", "sync", "time"] }
 tracing = "0.1.44"
 warp = { version = "0.4.3", features = ["server", "websocket"] }
 

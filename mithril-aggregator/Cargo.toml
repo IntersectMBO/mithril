@@ -27,7 +27,7 @@ snark = [
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-blockfrost = { version = "1.2.4", default-features = false, features = ["rustls"] }
+blockfrost = { version = "1.3.0", default-features = false, features = ["rustls"] }
 chrono = { workspace = true }
 ciborium = { version = "0.2.2", optional = true }
 clap = { workspace = true, features = ["cargo"] }
@@ -55,7 +55,7 @@ paste = "1.0.15"
 percent-encoding = "2.3.2"
 rand_core = { workspace = true, optional = true }
 rayon = { workspace = true }
-regex = "1.12.4"
+regex = "1.13.1"
 reqwest = { workspace = true, features = ["charset", "http2", "system-proxy", "gzip", "zstd", "deflate", "brotli"] }
 rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
 semver = { workspace = true }
@@ -64,11 +64,11 @@ serde_json = { workspace = true }
 slog = { workspace = true, features = ["max_level_trace", "release_max_level_debug"] }
 slog-async = { workspace = true }
 slog-bunyan = { workspace = true }
-sqlite = { version = "0.37.0", features = ["bundled"] }
+sqlite = { version = "0.37.4", features = ["bundled"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
-tokio-util = { version = "0.7.18", features = ["codec"] }
-uuid = { version = "1.23.4", features = ["v4", "fast-rng", "macro-diagnostics"] }
+tokio-util = { version = "0.7.19", features = ["codec"] }
+uuid = { version = "1.27.0", features = ["v4", "fast-rng", "macro-diagnostics"] }
 warp = { workspace = true }
 
 [target.'cfg(all(not(target_os = "windows"), not(all(target_os = "linux", target_arch = "aarch64"))))'.dependencies]
@@ -79,10 +79,10 @@ mimalloc = { version = "0.1.52" }
 
 [dev-dependencies]
 axum = { version = "0.8.9", features = ["json"] }
-axum-test = "21.0.0"
+axum-test = "21.1.0"
 criterion = { version = "0.8.2", features = ["html_reports", "async_tokio"] }
 hex = { workspace = true }
-http = "1.4.2"
+http = "1.5.0"
 httpmock = "0.8.3"
 mithril-api-spec = { path = "../internal/tests/mithril-api-spec" }
 mithril-common = { path = "../mithril-common", features = ["allow_skip_signer_certification"] }

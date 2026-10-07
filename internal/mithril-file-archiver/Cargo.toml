@@ -19,6 +19,6 @@ zstd = { version = "=0.13.3", features = ["zstdmt"] } # Pinned to ensure archive
 
 [dev-dependencies]
 hex = { workspace = true }
-sha2 = "0.10.9"
+sha2 = "0.11.0"
 slog-async = { workspace = true }
 slog-term = { workspace = true }

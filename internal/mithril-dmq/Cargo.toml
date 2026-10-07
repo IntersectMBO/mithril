@@ -18,12 +18,12 @@ ignored = ["serde_bytes"]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bincode = { version = "=2.0.1" }
-blake2 = "0.10.6"
+blake2 = "0.11.0"
 hex = { workspace = true }
 mithril-cardano-node-chain = { path = "../cardano-node/mithril-cardano-node-chain" }
 mithril-common = { path = "../../mithril-common" }
-pallas-codec = { version = "1.3.0" }
-pallas-network = { version = "1.3.0" }
+pallas-codec = { version = "1.4.0" }
+pallas-network = { version = "1.4.0" }
 serde = { workspace = true }
 serde_bytes = "0.11.19"
 slog = { workspace = true }

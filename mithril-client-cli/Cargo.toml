@@ -33,9 +33,9 @@ chrono = { workspace = true }
 clap = { workspace = true }
 cli-table = "0.5.0"
 config = { workspace = true }
-flate2 = "1.1.9"
+flate2 = "1.1.10"
 fs2 = "0.4.3"
-futures = "0.3.32"
+futures = "0.3.34"
 human_bytes = { version = "0.4.3", features = ["fast"] }
 indicatif = { version = "0.18.6", features = ["tokio"] }
 mithril-cli-helper = { path = "../internal/mithril-cli-helper" }
