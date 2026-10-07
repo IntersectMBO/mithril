@@ -17,6 +17,9 @@ display_help() {
   echo "  --geckodriver <PATH>       Path to the geckodriver to use (default: from \$PATH or downloaded by wasm-pack)"
   echo "  -h, --help                 Print this help"
   echo
+  echo "Browser tests are skipped for browsers that are not installed and have no driver given."
+  echo "Snap Chromium is not supported unless its driver is given (--chromedriver /snap/bin/chromium.chromedriver)."
+  echo
   exit 0
 }
 
@@ -30,6 +33,16 @@ check_requirements() {
     command -v "$tool" >/dev/null ||
         error_exit "It seems '$tool' is not installed or not in the path."
   done
+}
+
+has_chrome() {
+  local browser path
+  for browser in google-chrome google-chrome-stable chromium chromium-browser; do
+    path=$(command -v "$browser") || continue
+    # Snap Chromium confinement prevents the chromedriver downloaded by wasm-pack from starting it
+    [[ "$path" == /snap/* ]] || return 0
+  done
+  return 1
 }
 
 start_aggregator_fake() {
@@ -51,11 +64,11 @@ stop_aggregator_fake() {
 # Argument parsing
 # ---------------------------------------------------------------------------
 
-declare CHROME_ARGS=(--chrome) FIREFOX_ARGS=(--firefox)
+declare CHROMEDRIVER="" GECKODRIVER=""
 
 while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
-      --chromedriver ) CHROME_ARGS=(--chrome --chromedriver "${2:?Missing path for --chromedriver}"); shift ;;
-      --geckodriver ) FIREFOX_ARGS=(--firefox --geckodriver "${2:?Missing path for --geckodriver}"); shift ;;
+      --chromedriver ) CHROMEDRIVER="${2:?Missing path for --chromedriver}"; shift ;;
+      --geckodriver ) GECKODRIVER="${2:?Missing path for --geckodriver}"; shift ;;
       -h | --help ) display_help ;;
       *) error_exit "Unknown option: $1" ;;
     esac
@@ -63,6 +76,30 @@ while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
 done
 
 check_requirements "wasm-pack" "cargo"
+
+# ---------------------------------------------------------------------------
+# Browsers detection
+# ---------------------------------------------------------------------------
+
+declare BROWSER_ARGS=()
+
+if [[ -n "$CHROMEDRIVER" ]]; then
+  check_requirements "$CHROMEDRIVER"
+  BROWSER_ARGS+=(--chrome --chromedriver "$CHROMEDRIVER")
+elif has_chrome; then
+  BROWSER_ARGS+=(--chrome)
+else
+  echo ">> Chrome not found, skipping Chrome tests"
+fi
+
+if [[ -n "$GECKODRIVER" ]]; then
+  check_requirements "$GECKODRIVER"
+  BROWSER_ARGS+=(--firefox --geckodriver "$GECKODRIVER")
+elif command -v firefox >/dev/null; then
+  BROWSER_ARGS+=(--firefox)
+else
+  echo ">> Firefox not found, skipping Firefox tests"
+fi
 
 # ---------------------------------------------------------------------------
 # Main
@@ -74,5 +111,9 @@ stop_aggregator_fake --quiet
 trap stop_aggregator_fake EXIT
 start_aggregator_fake
 
-wasm-pack test --headless "${FIREFOX_ARGS[@]}" "${CHROME_ARGS[@]}" --release
+if [[ ${#BROWSER_ARGS[@]} -gt 0 ]]; then
+  wasm-pack test --headless "${BROWSER_ARGS[@]}" --release
+else
+  echo ">> No browser available, skipping browser tests"
+fi
 wasm-pack test --node --release --features test-node
