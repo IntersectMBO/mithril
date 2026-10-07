@@ -42,6 +42,8 @@ check_requirements() {
 
 has_chrome() {
   local browser path
+  # macOS apps are not in the $PATH
+  [[ -d "/Applications/Google Chrome.app" || -d "/Applications/Chromium.app" ]] && return 0
   for browser in google-chrome google-chrome-stable chromium chromium-browser; do
     path=$(command -v "$browser") || continue
     # Snap Chromium is handled separately: its confinement prevents the chromedriver downloaded by wasm-pack
@@ -49,6 +51,11 @@ has_chrome() {
     [[ "$path" == /snap/* ]] || return 0
   done
   return 1
+}
+
+has_firefox() {
+  # macOS apps are not in the $PATH
+  [[ -d "/Applications/Firefox.app" ]] || command -v firefox >/dev/null
 }
 
 start_aggregator_fake() {
@@ -112,7 +119,7 @@ fi
 if [[ -n "$GECKODRIVER" ]]; then
   check_requirements "$GECKODRIVER"
   BROWSER_ARGS+=(--firefox --geckodriver "$GECKODRIVER")
-elif command -v firefox >/dev/null; then
+elif has_firefox; then
   BROWSER_ARGS+=(--firefox)
 else
   echo ">> Firefox not found, skipping Firefox tests"
