@@ -7,6 +7,9 @@ if [[ "${TRACE-0}" == "1" ]]; then set -o xtrace; fi
 SCRIPT_DIRECTORY=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 readonly SCRIPT_DIRECTORY
 
+# Fixed path so a fake aggregator left over by an interrupted run can be stopped by the next one
+readonly AGGREGATOR_FAKE_PID_FILE="${TMPDIR:-/tmp}/mithril-client-wasm-aggregator-fake.pid"
+
 display_help() {
   echo "Run the mithril-client-wasm tests suite"
   echo
@@ -48,16 +51,20 @@ has_chrome() {
 
 start_aggregator_fake() {
   cargo build --bins -p mithril-aggregator-fake
+  # `cargo run` replaces itself with the binary, so `$!` is the fake aggregator PID
   cargo run -p mithril-aggregator-fake -- -p 8000 &
-  echo ">> Mithril-aggregator-fake started"
+  echo $! > "$AGGREGATOR_FAKE_PID_FILE"
+  echo ">> Mithril-aggregator-fake started (PID: $!)"
 }
 
 # Usage: stop_aggregator_fake [--quiet]
 stop_aggregator_fake() {
   local -r quiet=$([[ "${1:-}" == "--quiet" ]] && echo true || echo false)
 
-  # The `[m]` bracket prevents `pkill` from matching (and killing) the shell running it
-  pkill -f "[m]ithril-aggregator-fake" || true
+  [[ -f "$AGGREGATOR_FAKE_PID_FILE" ]] || return 0
+  # The pattern guards against a stale PID file: the PID is only killed if it's still the fake aggregator
+  pkill -F "$AGGREGATOR_FAKE_PID_FILE" -f "mithril-aggregator-fake" || true
+  rm -f "$AGGREGATOR_FAKE_PID_FILE"
   [[ "$quiet" == true ]] || echo ">> Mithril-aggregator-fake stopped"
 }
 
