@@ -77,6 +77,12 @@ start_aggregator_fake() {
   echo ">> Mithril-aggregator-fake started (PID: $!)"
 }
 
+is_aggregator_fake() {
+  local -r pid="$1"
+  # `command` (full command line) is used rather than `comm` as the latter is truncated to 15 characters on Linux
+  [[ "$(ps -p "$pid" -o command= 2>/dev/null)" == *mithril-aggregator-fake* ]]
+}
+
 # Usage: stop_aggregator_fake [--quiet]
 stop_aggregator_fake() {
   local -r quiet=$([[ "${1:-}" == "--quiet" ]] && echo true || echo false)
@@ -87,7 +93,9 @@ stop_aggregator_fake() {
   fi
 
   pid="$(cat "$AGGREGATOR_FAKE_PID_FILE")"
-  kill "${pid}" 2>/dev/null || true
+  if is_aggregator_fake "${pid}"; then
+    kill "${pid}" 2>/dev/null || true
+  fi
   rm -f "$AGGREGATOR_FAKE_PID_FILE"
 
   if [[ "$quiet" != true ]]; then
