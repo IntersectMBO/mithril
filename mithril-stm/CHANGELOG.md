@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Renamed the `future_snark` feature to `snark`.
+- Renamed the `snark` feature to `snark`.
 
 ## 0.12.25 (09-30-2026)
 
@@ -69,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- Removed the `reqwest` dependency and the `rustls` and `native-tls` features: `future_snark` no longer requires a TLS backend. The SRS is downloaded by the node, or manually as documented in the README.
+- Removed the `reqwest` dependency and the `rustls` and `native-tls` features: `snark` no longer requires a TLS backend. The SRS is downloaded by the node, or manually as documented in the README.
 
 ## 0.12.20 (09-21-2026)
 
@@ -130,12 +130,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Described the three proof systems in the README, linking each to its page on the website and to its example, and marked the two SNARK ones experimental and gated behind `future_snark`.
+- Described the three proof systems in the README, linking each to its page on the website and to its example, and marked the two SNARK ones experimental and gated behind `snark`.
 - Removed the concatenation example from the README and from the crate documentation, leaving `examples/` as its single source.
 
 ### Fixed
 
-- Added the two production circuit verifying keys to the package `include` list, without which the released crate could not be built with `future_snark`, and configured docs.rs to build with that feature.
+- Added the two production circuit verifying keys to the package `include` list, without which the released crate could not be built with `snark`, and configured docs.rs to build with that feature.
 
 ## 0.12.13 (09-07-2026)
 
@@ -220,7 +220,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The `future_snark` feature no longer enables the `rustls` feature: the TLS backend of the SRS download is now selected by the caller, which makes the `native-tls` feature usable.
+- The `snark` feature no longer enables the `rustls` feature: the TLS backend of the SRS download is now selected by the caller, which makes the `native-tls` feature usable.
 
 ## 0.12.0 (07-29-2026)
 
@@ -234,7 +234,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated the validation of the `phi_f` value in the lottery/eligibility computations
 - Updated the visibility of `ClosedKeyRegistration`, `RegistrationEntry` and `ClosedRegistrationEntry` to ensure proper verification of the proof of possession
 - Updated `RegisterError::EntryAlreadyRegistered` to no longer carry the conflicting `RegistrationEntry`, since the type is now crate-private
-- Updated `ClosedKeyRegistration::number_of_registered_parties` to be available only when the `future_snark` feature is enabled
+- Updated `ClosedKeyRegistration::number_of_registered_parties` to be available only when the `snark` feature is enabled
 - Updated `ConcatenationProofSigner::check_lottery` to return `StmResult<Vec<u64>>` instead of `Vec<u64>`
 
 ### Removed
@@ -374,8 +374,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `Clerk::aggregate_signatures_with_type` now returns the aggregate signature together with an `AncillaryProofOutput` instead of the optional `AncillaryVerifierData`.
-- `AncillaryGenesisData` now also carries the genesis Schnorr verification key, gated behind the `future_snark` feature.
-- `AncillaryProofInput` now also carries the rigid preimage of the protocol message being aggregated, gated behind the `future_snark` feature.
+- `AncillaryGenesisData` now also carries the genesis Schnorr verification key, gated behind the `snark` feature.
+- `AncillaryProofInput` now also carries the rigid preimage of the protocol message being aggregated, gated behind the `snark` feature.
 
 ## 0.10.37 (06-17-2026)
 
@@ -387,7 +387,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Renamed the `AncillaryGenesisData` `genesis_message` field to `genesis_message_preimage` and gated it, with its getter, behind the `future_snark` feature.
+- Renamed the `AncillaryGenesisData` `genesis_message` field to `genesis_message_preimage` and gated it, with its getter, behind the `snark` feature.
 
 ## 0.10.35 (06-12-2026)
 
@@ -805,7 +805,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Integrated the Halo2 certificate circuit prototype behind the `future_snark` feature.
+- Integrated the Halo2 certificate circuit prototype behind the `snark` feature.
 
 ## 0.9.5 (01-19-2026)
 
