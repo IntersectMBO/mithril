@@ -9,6 +9,8 @@ readonly SCRIPT_DIRECTORY
 
 # Fixed path so a fake aggregator left over by an interrupted run can be stopped by the next one
 readonly AGGREGATOR_FAKE_PID_FILE="${TMPDIR:-/tmp}/mithril-client-wasm-aggregator-fake.pid"
+# Must match the address used by the tests (see `FAKE_AGGREGATOR_IP` & `FAKE_AGGREGATOR_PORT` in `src/client_wasm.rs`)
+readonly AGGREGATOR_FAKE_IP="127.0.0.1" AGGREGATOR_FAKE_PORT="8000"
 
 display_help() {
   echo "Run the mithril-client-wasm tests suite"
@@ -52,8 +54,12 @@ has_chrome() {
 start_aggregator_fake() {
   cargo build --bins -p mithril-aggregator-fake
   # `cargo run` replaces itself with the binary, so `$!` is the fake aggregator PID
-  cargo run -p mithril-aggregator-fake -- -p 8000 &
+  cargo run -p mithril-aggregator-fake -- --ip-address "$AGGREGATOR_FAKE_IP" --tcp-port "$AGGREGATOR_FAKE_PORT" &
   echo $! > "$AGGREGATOR_FAKE_PID_FILE"
+
+  # Startup errors (i.e. port already in use) make the fake aggregator exit almost immediately
+  sleep 1
+  kill -0 $! 2>/dev/null || error_exit "Mithril-aggregator-fake failed to start, see its logs above."
   echo ">> Mithril-aggregator-fake started (PID: $!)"
 }
 
