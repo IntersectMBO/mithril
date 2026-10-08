@@ -25,7 +25,7 @@ impl BlsProofOfPossession {
     /// The layout of a `MspPoP` encoding is
     /// * K1 (G1 point)
     /// * K2 (G1 point)
-    pub fn to_bytes(self) -> [u8; 96] {
+    pub fn to_canonical_bytes(self) -> [u8; 96] {
         let mut pop_bytes = [0u8; 96];
         pop_bytes[..48].copy_from_slice(&self.k1.to_bytes());
 
@@ -34,7 +34,7 @@ impl BlsProofOfPossession {
     }
 
     /// Deserialize a byte string to a `PublicKeyPoP`.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         let k1 = match BlstSig::from_bytes(
             bytes.get(..48).ok_or(BlsSignatureError::SerializationError)?,
         ) {
@@ -81,6 +81,15 @@ mod tests {
 
         const GOLDEN_JSON: &str = r#"[168,50,233,193,15,136,65,72,123,148,129,176,38,198,209,47,28,204,176,144,57,251,42,28,66,76,89,97,158,63,54,198,194,176,135,221,14,185,197,225,202,98,243,74,233,225,143,151,147,177,170,117,66,165,66,62,33,216,232,75,68,114,195,22,100,65,44,198,4,166,102,233,253,240,59,175,60,117,142,114,140,122,17,87,110,187,1,17,10,195,154,13,249,86,54,226]"#;
 
+        const GOLDEN_CANONICAL_BYTES: &[u8; 96] = &[
+            168, 50, 233, 193, 15, 136, 65, 72, 123, 148, 129, 176, 38, 198, 209, 47, 28, 204, 176,
+            144, 57, 251, 42, 28, 66, 76, 89, 97, 158, 63, 54, 198, 194, 176, 135, 221, 14, 185,
+            197, 225, 202, 98, 243, 74, 233, 225, 143, 151, 147, 177, 170, 117, 66, 165, 66, 62,
+            33, 216, 232, 75, 68, 114, 195, 22, 100, 65, 44, 198, 4, 166, 102, 233, 253, 240, 59,
+            175, 60, 117, 142, 114, 140, 122, 17, 87, 110, 187, 1, 17, 10, 195, 154, 13, 249, 86,
+            54, 226,
+        ];
+
         fn golden_value() -> BlsProofOfPossession {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
             let sk = BlsSigningKey::generate(&mut rng);
@@ -98,6 +107,15 @@ mod tests {
             let golden_serialized = serde_json::to_string(&golden_value())
                 .expect("This JSON serialization should not fail");
             assert_eq!(golden_serialized, serialized);
+        }
+
+        #[test]
+        fn golden_canonical_bytes_conversions() {
+            let value = BlsProofOfPossession::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
+            assert_eq!(golden_value(), value);
+
+            assert_eq!(GOLDEN_CANONICAL_BYTES, &golden_value().to_canonical_bytes());
         }
     }
 }

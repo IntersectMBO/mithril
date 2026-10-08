@@ -56,7 +56,7 @@ impl MerkleTreeLeaf for MerkleTreeConcatenationLeaf {
 impl MerkleTreeConcatenationLeaf {
     fn to_bytes(self) -> Vec<u8> {
         let mut result = [0u8; 104];
-        result[..96].copy_from_slice(&self.0.to_bytes());
+        result[..96].copy_from_slice(&self.0.to_canonical_bytes());
         result[96..].copy_from_slice(&self.1.to_be_bytes());
         result.to_vec()
     }
@@ -65,7 +65,7 @@ impl MerkleTreeConcatenationLeaf {
     // TODO: remove this allow dead_code directive when function is called or snark is activated
     #[allow(dead_code)]
     pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
-        let pk = VerificationKeyForConcatenation::from_bytes(bytes)
+        let pk = VerificationKeyForConcatenation::from_canonical_bytes(bytes)
             .map_err(|_| MerkleTreeError::SerializationError)?;
         let mut u64_bytes = [0u8; 8];
         u64_bytes.copy_from_slice(&bytes[96..]);

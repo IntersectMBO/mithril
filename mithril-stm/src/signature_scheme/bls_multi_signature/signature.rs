@@ -45,7 +45,7 @@ impl BlsSignature {
             .chain_update(b"map")
             .chain_update(msg)
             .chain_update(index.to_le_bytes())
-            .chain_update(self.to_bytes())
+            .chain_update(self.to_canonical_bytes())
             .finalize();
 
         let mut output = [0u8; 64];
@@ -55,7 +55,7 @@ impl BlsSignature {
     }
 
     /// Convert an `Signature` to its compressed byte representation.
-    pub fn to_bytes(self) -> [u8; 48] {
+    pub fn to_canonical_bytes(self) -> [u8; 48] {
         self.0.to_bytes()
     }
 
@@ -63,7 +63,7 @@ impl BlsSignature {
     ///
     /// # Error
     /// Returns an error if the byte string does not represent a point in the curve.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         let bytes = bytes.get(..48).ok_or(BlsSignatureError::SerializationError)?;
         match BlstSig::sig_validate(bytes, true) {
             Ok(sig) => Ok(Self(sig)),
@@ -75,8 +75,8 @@ impl BlsSignature {
     /// Compare two signatures. Used for PartialOrd impl, used to rank signatures. The comparison
     /// function can be anything, as long as it is consistent across different nodes.
     fn compare_signatures(&self, other: &Self) -> Ordering {
-        let self_bytes = self.to_bytes();
-        let other_bytes = other.to_bytes();
+        let self_bytes = self.to_canonical_bytes();
+        let other_bytes = other.to_canonical_bytes();
         let mut result = Ordering::Equal;
 
         for (i, j) in self_bytes.iter().zip(other_bytes.iter()) {
@@ -106,7 +106,7 @@ impl BlsSignature {
 
         let mut hashed_sigs = Blake2b::<U16>::new();
         for sig in sigs {
-            hashed_sigs.update(sig.to_bytes());
+            hashed_sigs.update(sig.to_canonical_bytes());
         }
 
         // First we generate the scalars
@@ -219,6 +219,12 @@ mod tests {
 
         const GOLDEN_JSON: &str = r#"[132,95,124,197,185,105,193,171,114,182,52,171,205,119,202,188,2,213,61,125,219,242,10,131,53,219,53,197,157,42,152,194,234,161,244,204,2,134,47,179,176,49,200,232,120,241,180,246]"#;
 
+        const GOLDEN_CANONICAL_BYTES: &[u8; 48] = &[
+            132, 95, 124, 197, 185, 105, 193, 171, 114, 182, 52, 171, 205, 119, 202, 188, 2, 213,
+            61, 125, 219, 242, 10, 131, 53, 219, 53, 197, 157, 42, 152, 194, 234, 161, 244, 204, 2,
+            134, 47, 179, 176, 49, 200, 232, 120, 241, 180, 246,
+        ];
+
         fn golden_value() -> BlsSignature {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
             let sk = BlsSigningKey::generate(&mut rng);
@@ -237,6 +243,15 @@ mod tests {
             let golden_serialized = serde_json::to_string(&golden_value())
                 .expect("This JSON serialization should not fail");
             assert_eq!(golden_serialized, serialized);
+        }
+
+        #[test]
+        fn golden_canonical_bytes_conversions() {
+            let value = BlsSignature::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
+            assert_eq!(golden_value(), value);
+
+            assert_eq!(GOLDEN_CANONICAL_BYTES, &golden_value().to_canonical_bytes());
         }
     }
 }

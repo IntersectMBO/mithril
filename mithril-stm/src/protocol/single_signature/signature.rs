@@ -107,7 +107,7 @@ impl SingleSignature {
         }
 
         let sigma_end = offset.checked_add(48).ok_or(SignatureError::SerializationError)?;
-        let sigma = BlsSignature::from_bytes(
+        let sigma = BlsSignature::from_canonical_bytes(
             bytes
                 .get(offset..sigma_end)
                 .ok_or(SignatureError::SerializationError)?,
@@ -208,7 +208,10 @@ impl SingleSignature {
 
 impl Hash for SingleSignature {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Hash::hash_slice(&self.concatenation_signature.get_sigma().to_bytes(), state)
+        Hash::hash_slice(
+            &self.concatenation_signature.get_sigma().to_canonical_bytes(),
+            state,
+        )
     }
 }
 
