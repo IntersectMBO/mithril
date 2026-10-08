@@ -11,7 +11,7 @@ This is the process for storing Mithril Protocol Configuration markers on the Ca
 - A Cardano node running locally on the network you are targeting
 - A running Mithril Aggregator node
 - The protocol configuration activation marker Cardano payment keypairs of your Mithril network
-- The protocol configuration secret key of your Mithril network
+- The protocol configuration secret key of your Mithril network (you can generate one by running the aggregator command `tools generate-keypair ed25519 --target-path <KEYPAIR_DIRECTORY>` if none exists for the target environment)
 
 ## Setup
 

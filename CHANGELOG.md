@@ -36,6 +36,7 @@ As a minor extension, we have adopted a slightly different versioning convention
   - Support for an IndexedDB backend of the certificate chain verification cache in the Mithril client WASM library with the `enable_certificate_chain_verification_cache` client option, which persists the verified certificates across page loads, and the `certificate_chain_verification_cache_mode` client option (`EarlyStopVerification` by default).
   - Renamed the `future_snark` feature to `snark` in all the crates.
   - Support for a Proof of Bound Possession (PoBP) binding each signer's SNARK Schnorr key to its stake, epoch and pool id.
+  - Implement a new `tools generate-keypair ed25519` command in the aggregator CLI to supersede the deprecated `era generate-keypair` command.
 
 - **REMOVED** support for `Gzip` compression/decompression in the Mithril aggregator and client:
   - The aggregator no longer produces or supports `Gzip` compression for snapshot-related artifacts: immutable files and ancillaries.
