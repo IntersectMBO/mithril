@@ -1,6 +1,6 @@
 [package]
 name = "mithril-merkle-tree"
-version = "0.1.4"
+version = "0.1.5"
 description = "Merkle tree and merkelized map primitives used by Mithril nodes."
 authors = { workspace = true }
 edition = { workspace = true }

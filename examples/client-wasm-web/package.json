@@ -1,6 +1,6 @@
 {
   "name": "client-wasm-web",
-  "version": "0.3.20",
+  "version": "0.3.21",
   "private": true,
   "scripts": {
     "build": "webpack --config webpack.config.js",

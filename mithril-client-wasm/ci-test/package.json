@@ -1,6 +1,6 @@
 {
   "name": "client-wasm-ci-test",
-  "version": "0.3.22",
+  "version": "0.3.23",
   "private": true,
   "scripts": {
     "build": "webpack --config webpack.config.js",
