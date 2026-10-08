@@ -177,21 +177,21 @@ mod tests {
         }
 
         #[test]
-        fn signature_to_from_bytes(msg in prop::collection::vec(any::<u8>(), 1..128), seed in any::<[u8;32]>()) {
+        fn signature_to_from_canonical_bytes(msg in prop::collection::vec(any::<u8>(), 1..128), seed in any::<[u8;32]>()) {
             let mut rng = ChaCha20Rng::from_seed(seed);
             let sk = SchnorrSigningKey::generate(&mut rng);
             let base_input = BaseFieldElement::try_from(msg.as_slice()).unwrap();
             let signature = sk.sign_unique(&[base_input], &mut ChaCha20Rng::from_seed(seed)).unwrap();
-            let signature_bytes = signature.to_bytes();
+            let signature_bytes = signature.to_canonical_bytes();
 
             // Valid conversion
-            let recovered_signature = UniqueSchnorrSignature::from_bytes(&signature_bytes).unwrap();
+            let recovered_signature = UniqueSchnorrSignature::from_canonical_bytes(&signature_bytes).unwrap();
             assert_eq!(signature, recovered_signature, "Recovered signature does not match with the original!");
 
             // Test invalid `commitment_point`
             let mut corrupted_bytes = signature_bytes;
             corrupted_bytes[31] |= 0xff;
-            let result = UniqueSchnorrSignature::from_bytes(&corrupted_bytes).expect_err("From bytes conversion of signature should fail");
+            let result = UniqueSchnorrSignature::from_canonical_bytes(&corrupted_bytes).expect_err("From canonical bytes conversion of signature should fail");
             assert!(
                 matches!(
                     result.downcast_ref::<SchnorrSignatureError>(),
@@ -203,7 +203,7 @@ mod tests {
             // Test invalid `response`
             let mut corrupted_bytes = signature_bytes;
             corrupted_bytes[63] |= 0xff;
-            let result = UniqueSchnorrSignature::from_bytes(&corrupted_bytes).expect_err("From bytes conversion should fail");
+            let result = UniqueSchnorrSignature::from_canonical_bytes(&corrupted_bytes).expect_err("From canonical bytes conversion of signature should fail");
             assert!(
                 matches!(
                     result.downcast_ref::<SchnorrSignatureError>(),
@@ -215,7 +215,7 @@ mod tests {
             // Test invalid `challenge`
             let mut corrupted_bytes = signature_bytes;
             corrupted_bytes[95] |= 0xff;
-            let result = UniqueSchnorrSignature::from_bytes(&corrupted_bytes).expect_err("From bytes conversion should fail");
+            let result = UniqueSchnorrSignature::from_canonical_bytes(&corrupted_bytes).expect_err("From canonical bytes conversion of signature should fail");
             assert!(
                 matches!(
                     result.downcast_ref::<SchnorrSignatureError>(),
@@ -227,7 +227,7 @@ mod tests {
             // Not enough bytes
             let mut short_bytes = [0u8; 95];
             short_bytes.copy_from_slice(signature_bytes.get(..95).unwrap());
-            let result = UniqueSchnorrSignature::from_bytes(&short_bytes).expect_err("From bytes conversion of signature should fail");
+            let result = UniqueSchnorrSignature::from_canonical_bytes(&short_bytes).expect_err("From canonical bytes conversion of signature should fail");
             assert!(
                 matches!(
                     result.downcast_ref::<SchnorrSignatureError>(),
