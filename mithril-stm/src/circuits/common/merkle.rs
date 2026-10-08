@@ -72,7 +72,7 @@ impl<D: Digest> TryFrom<&StmMerklePath<D>> for MerklePath {
                     actual: value.as_slice().len(),
                 }
             })?;
-            let node = BaseFieldElement::from_bytes(&bytes)
+            let node = BaseFieldElement::from_canonical_bytes(&bytes)
                 .ok()
                 .map(|base| base.into())
                 .ok_or(MerklePathAdapterError::NonCanonicalDigest)?;
@@ -99,8 +99,8 @@ mod tests {
 
     #[test]
     fn converts_valid_merkle_path_and_preserves_position_mapping() {
-        let left_node = BaseFieldElement::from(5u64).to_bytes().to_vec();
-        let right_node = BaseFieldElement::from(9u64).to_bytes().to_vec();
+        let left_node = BaseFieldElement::from(5u64).to_canonical_bytes().to_vec();
+        let right_node = BaseFieldElement::from(9u64).to_canonical_bytes().to_vec();
         let stm_path = StmMerklePath::<MidnightPoseidonDigest>::new(vec![left_node, right_node], 1);
 
         let circuit_path =

@@ -111,9 +111,9 @@ impl UniqueSchnorrSignature {
     /// Convert a `UniqueSchnorrSignature` into bytes.
     pub fn to_bytes(self) -> [u8; 96] {
         let mut out = [0; 96];
-        out[0..32].copy_from_slice(&self.commitment_point.to_bytes());
-        out[32..64].copy_from_slice(&self.response.to_bytes());
-        out[64..96].copy_from_slice(&self.challenge.to_bytes());
+        out[0..32].copy_from_slice(&self.commitment_point.to_canonical_bytes());
+        out[32..64].copy_from_slice(&self.response.to_canonical_bytes());
+        out[64..96].copy_from_slice(&self.challenge.to_canonical_bytes());
 
         out
     }
@@ -125,7 +125,7 @@ impl UniqueSchnorrSignature {
                 .with_context(|| "Not enough bytes provided to create a signature.");
         }
 
-        let commitment_point = ProjectivePoint::from_bytes(
+        let commitment_point = ProjectivePoint::from_canonical_bytes(
             bytes
                 .get(0..32)
                 .ok_or(SchnorrSignatureError::Serialization)
@@ -133,7 +133,7 @@ impl UniqueSchnorrSignature {
         )
         .with_context(|| "Could not convert bytes to `commitment_point`")?;
 
-        let response = ScalarFieldElement::from_bytes(
+        let response = ScalarFieldElement::from_canonical_bytes(
             bytes
                 .get(32..64)
                 .ok_or(SchnorrSignatureError::Serialization)
@@ -141,7 +141,7 @@ impl UniqueSchnorrSignature {
         )
         .with_context(|| "Could not convert the bytes to `response`")?;
 
-        let challenge = BaseFieldElement::from_bytes(
+        let challenge = BaseFieldElement::from_canonical_bytes(
             bytes
                 .get(64..96)
                 .ok_or(SchnorrSignatureError::Serialization)
@@ -216,8 +216,10 @@ mod tests {
         let msg = [BaseFieldElement::from(42u64)];
 
         // `(0, -1)` is the point of order 2: its encoding is the `v` coordinate with a zero sign bit.
-        let low_order_point =
-            ProjectivePoint::from_bytes(&(-BaseFieldElement::from(1u64)).to_bytes()).unwrap();
+        let low_order_point = ProjectivePoint::from_canonical_bytes(
+            &(-BaseFieldElement::from(1u64)).to_canonical_bytes(),
+        )
+        .unwrap();
         assert!(!low_order_point.is_prime_order());
 
         let generator = PrimeOrderProjectivePoint::create_generator();

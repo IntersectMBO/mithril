@@ -90,8 +90,8 @@ impl SnarkClerk {
     ) -> StmResult<BTreeMap<LotteryIndex, SingleSignature>> {
         let mut seed_hasher = Sha256::new();
         seed_hasher.update(DOMAIN_SEPARATION_TAG_SELECTION_SEED);
-        seed_hasher.update(message_to_sign[0].to_bytes());
-        seed_hasher.update(message_to_sign[1].to_bytes());
+        seed_hasher.update(message_to_sign[0].to_canonical_bytes());
+        seed_hasher.update(message_to_sign[1].to_canonical_bytes());
         let seed: [u8; 32] = seed_hasher.finalize().into();
 
         // Collect all valid signatures grouped by lottery index.
@@ -533,8 +533,8 @@ mod tests {
         // Recompute the seed the same way production does.
         let mut seed_hasher = Sha256::new();
         seed_hasher.update(DOMAIN_SEPARATION_TAG_SELECTION_SEED);
-        seed_hasher.update(message_to_sign[0].to_bytes());
-        seed_hasher.update(message_to_sign[1].to_bytes());
+        seed_hasher.update(message_to_sign[0].to_canonical_bytes());
+        seed_hasher.update(message_to_sign[1].to_canonical_bytes());
         let seed: [u8; 32] = seed_hasher.finalize().into();
 
         let expected_winner_signer_index = contested_sigs

@@ -115,7 +115,7 @@ impl MerkleTreeLeaf for MerkleTreeSnarkLeaf {
     }
 
     fn leaf_domain_separation_tag() -> Vec<u8> {
-        DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF.to_bytes().to_vec()
+        DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF.to_canonical_bytes().to_vec()
     }
 }
 
@@ -126,7 +126,7 @@ impl MerkleTreeSnarkLeaf {
     fn to_bytes(self) -> Vec<u8> {
         let mut result = [0u8; 96];
         result[..64].copy_from_slice(&self.0.to_bytes());
-        result[64..].copy_from_slice(&self.1.to_bytes());
+        result[64..].copy_from_slice(&self.1.to_canonical_bytes());
         result.to_vec()
     }
 
@@ -138,7 +138,7 @@ impl MerkleTreeSnarkLeaf {
             .map_err(|_| MerkleTreeError::SerializationError)?;
         let mut target_value_bytes = [0u8; 32];
         target_value_bytes.copy_from_slice(&bytes[64..]);
-        let target_value = LotteryTargetValue::from_bytes(&target_value_bytes)
+        let target_value = LotteryTargetValue::from_canonical_bytes(&target_value_bytes)
             .map_err(|_| MerkleTreeError::SerializationError)?;
         Ok(MerkleTreeSnarkLeaf(pk, target_value))
     }

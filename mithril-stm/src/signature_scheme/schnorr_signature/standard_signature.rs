@@ -69,8 +69,8 @@ impl StandardSchnorrSignature {
     /// Convert a `StandardSchnorrSignature` into bytes.
     pub fn to_bytes(self) -> [u8; 64] {
         let mut out = [0; 64];
-        out[0..32].copy_from_slice(&self.response.to_bytes());
-        out[32..64].copy_from_slice(&self.challenge.to_bytes());
+        out[0..32].copy_from_slice(&self.response.to_canonical_bytes());
+        out[32..64].copy_from_slice(&self.challenge.to_canonical_bytes());
 
         out
     }
@@ -82,7 +82,7 @@ impl StandardSchnorrSignature {
                 .with_context(|| "Not enough bytes provided to create a standard signature.");
         }
 
-        let response = ScalarFieldElement::from_bytes(
+        let response = ScalarFieldElement::from_canonical_bytes(
             bytes
                 .get(0..32)
                 .ok_or(SchnorrSignatureError::Serialization)
@@ -90,7 +90,7 @@ impl StandardSchnorrSignature {
         )
         .with_context(|| "Could not convert the bytes to `response`")?;
 
-        let challenge = BaseFieldElement::from_bytes(
+        let challenge = BaseFieldElement::from_canonical_bytes(
             bytes
                 .get(32..64)
                 .ok_or(SchnorrSignatureError::Serialization)

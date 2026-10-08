@@ -146,8 +146,8 @@ mod tests {
             /// Verifies that `build_snark_message` encodes the Merkle tree commitment bytes
             /// consistently with the circuit's public-input encoding.
             ///
-            /// Both paths decode those bytes with `BaseFieldElement::from_bytes`, which rejects a
-            /// non-canonical encoding: `build_snark_message` on the host side, and
+            /// Both paths decode those bytes with `BaseFieldElement::from_canonical_bytes`, which
+            /// rejects a non-canonical encoding: `build_snark_message` on the host side, and
             /// `circuits::halo2::golden::helpers::decode_merkle_tree_commitment` on the circuit
             /// side. This test pins that shared encoding contract, so a change to either decode
             /// path is caught here.
@@ -173,7 +173,7 @@ mod tests {
 
                 // Circuit encoding, as the golden helpers perform it
                 assert_eq!(32, root_bytes.len());
-                let root_circuit = BaseFieldElement::from_bytes(root_bytes)
+                let root_circuit = BaseFieldElement::from_canonical_bytes(root_bytes)
                     .expect("Poseidon root must be canonical");
 
                 assert_eq!(

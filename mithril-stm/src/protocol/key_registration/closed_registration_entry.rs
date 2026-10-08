@@ -122,7 +122,7 @@ impl ClosedRegistrationEntry {
             #[cfg(feature = "snark")]
             lottery_target_value_bytes: self
                 .lottery_target_value
-                .map(|ltv| ltv.to_bytes().to_vec()),
+                .map(|ltv| ltv.to_canonical_bytes().to_vec()),
         };
         codec::to_cbor_bytes(&envelope)
     }
@@ -149,7 +149,7 @@ impl ClosedRegistrationEntry {
             #[cfg(feature = "snark")]
             let lottery_target_value = envelope
                 .lottery_target_value_bytes
-                .map(|b| LotteryTargetValue::from_bytes(&b))
+                .map(|b| LotteryTargetValue::from_canonical_bytes(&b))
                 .transpose()?;
 
             Ok(ClosedRegistrationEntry {
@@ -187,8 +187,10 @@ impl ClosedRegistrationEntry {
                 .map(VerificationKeyForSnark::from_bytes)
                 .transpose()?;
 
-            let lottery_target_value =
-                bytes.get(168..200).map(LotteryTargetValue::from_bytes).transpose()?;
+            let lottery_target_value = bytes
+                .get(168..200)
+                .map(LotteryTargetValue::from_canonical_bytes)
+                .transpose()?;
 
             match (schnorr_verification_key, lottery_target_value) {
                 (Some(_), None) | (None, Some(_)) => {

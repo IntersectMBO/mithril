@@ -79,12 +79,12 @@ impl ProjectivePoint {
     }
 
     /// Converts the projective point to its byte representation
-    pub(crate) fn to_bytes(self) -> [u8; 32] {
+    pub(crate) fn to_canonical_bytes(self) -> [u8; 32] {
         self.0.to_bytes()
     }
 
     /// Constructs a projective point from its byte representation
-    pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub(crate) fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         let mut projective_point_bytes = [0u8; 32];
         projective_point_bytes
             .copy_from_slice(bytes.get(..32).ok_or(SchnorrSignatureError::Serialization)?);
@@ -129,7 +129,7 @@ impl From<PrimeOrderProjectivePoint> for ProjectivePoint {
 
 impl Hash for ProjectivePoint {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.to_bytes().hash(state);
+        self.to_canonical_bytes().hash(state);
     }
 }
 
@@ -141,7 +141,7 @@ impl PartialOrd for ProjectivePoint {
 
 impl Ord for ProjectivePoint {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.to_bytes().cmp(&other.to_bytes())
+        self.to_canonical_bytes().cmp(&other.to_canonical_bytes())
     }
 }
 
@@ -197,12 +197,12 @@ impl PrimeOrderProjectivePoint {
     }
 
     /// Converts the prime order projective point to its byte representation
-    pub(crate) fn to_bytes(self) -> [u8; 32] {
+    pub(crate) fn to_canonical_bytes(self) -> [u8; 32] {
         self.0.to_bytes()
     }
 
     /// Constructs a prime order projective point from its byte representation
-    pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub(crate) fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         let mut prime_order_projective_point_bytes = [0u8; 32];
         prime_order_projective_point_bytes
             .copy_from_slice(bytes.get(..32).ok_or(SchnorrSignatureError::Serialization)?);
@@ -247,6 +247,11 @@ mod tests {
 
         const GOLDEN_JSON: &str = r#"[144, 52, 95, 161, 127, 253, 49, 32, 140, 217, 231, 207, 32, 238, 244, 196, 97, 241, 47, 95, 101, 9, 70, 136, 194, 66, 187, 253, 200, 32, 218, 43]"#;
 
+        const GOLDEN_CANONICAL_BYTES: &[u8; 32] = &[
+            144, 52, 95, 161, 127, 253, 49, 32, 140, 217, 231, 207, 32, 238, 244, 196, 97, 241, 47,
+            95, 101, 9, 70, 136, 194, 66, 187, 253, 200, 32, 218, 43,
+        ];
+
         fn golden_value() -> PrimeOrderProjectivePoint {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
             let scalar = ScalarFieldElement::new_random_nonzero_scalar(&mut rng).unwrap();
@@ -266,6 +271,15 @@ mod tests {
                 .expect("This JSON serialization should not fail");
             assert_eq!(golden_serialized, serialized);
         }
+
+        #[test]
+        fn golden_canonical_bytes_conversions() {
+            let value = PrimeOrderProjectivePoint::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
+            assert_eq!(golden_value(), value);
+
+            assert_eq!(GOLDEN_CANONICAL_BYTES, &golden_value().to_canonical_bytes());
+        }
     }
 
     mod golden_hash {
@@ -284,9 +298,81 @@ mod tests {
 
         #[test]
         fn golden_hash() {
-            let value =
-                ProjectivePoint::from_bytes(GOLDEN_BYTES).expect("This from bytes should not fail");
+            let value = ProjectivePoint::from_canonical_bytes(GOLDEN_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
             assert_eq!(golden_value(), value);
+        }
+
+        #[test]
+        fn golden_canonical_bytes() {
+            assert_eq!(GOLDEN_BYTES, golden_value().to_canonical_bytes());
+        }
+    }
+
+    mod canonical_bytes_rejection {
+        use super::*;
+
+        #[test]
+        fn projective_point_from_canonical_bytes_fails_on_short_input() {
+            let result = ProjectivePoint::from_canonical_bytes(&[0u8; 31])
+                .expect_err("Canonical bytes conversion should fail on short input");
+
+            assert!(
+                matches!(
+                    result.downcast_ref::<SchnorrSignatureError>(),
+                    Some(SchnorrSignatureError::Serialization)
+                ),
+                "Unexpected error: {result:?}"
+            );
+        }
+
+        #[test]
+        fn projective_point_from_canonical_bytes_fails_on_non_canonical_encoding() {
+            let result = ProjectivePoint::from_canonical_bytes(&[255u8; 32])
+                .expect_err("Canonical bytes conversion should fail on a coordinate above modulus");
+
+            assert!(
+                matches!(
+                    result.downcast_ref::<SchnorrSignatureError>(),
+                    Some(SchnorrSignatureError::ProjectivePointSerialization)
+                ),
+                "Unexpected error: {result:?}"
+            );
+        }
+
+        #[test]
+        fn prime_order_projective_point_from_canonical_bytes_fails_on_short_input() {
+            let result = PrimeOrderProjectivePoint::from_canonical_bytes(&[0u8; 31])
+                .expect_err("Canonical bytes conversion should fail on short input");
+
+            assert!(
+                matches!(
+                    result.downcast_ref::<SchnorrSignatureError>(),
+                    Some(SchnorrSignatureError::Serialization)
+                ),
+                "Unexpected error: {result:?}"
+            );
+        }
+
+        #[test]
+        fn prime_order_projective_point_from_canonical_bytes_fails_on_small_order_point() {
+            let order_two_point_bytes =
+                BaseFieldElement(-JubjubBase::from(1u64)).to_canonical_bytes();
+            ProjectivePoint::from_canonical_bytes(&order_two_point_bytes)
+                .expect("The order two point should be on the curve");
+
+            let result = PrimeOrderProjectivePoint::from_canonical_bytes(&order_two_point_bytes)
+                .expect_err(
+                    "Canonical bytes conversion should fail outside the prime order subgroup",
+                );
+
+            assert!(
+                matches!(
+                    result.downcast_ref::<SchnorrSignatureError>(),
+                    Some(SchnorrSignatureError::PrimeOrderProjectivePointSerialization)
+                ),
+                "Unexpected error: {result:?}"
+            );
         }
     }
 
@@ -304,8 +390,8 @@ mod tests {
             let p1 = scalar1 * point;
             let p2 = scalar2 * point;
             let result = p1 + p2;
-            let bytes = result.to_bytes();
-            let recovered = ProjectivePoint::from_bytes(&bytes).unwrap();
+            let bytes = result.to_canonical_bytes();
+            let recovered = ProjectivePoint::from_canonical_bytes(&bytes).unwrap();
 
             assert_eq!(result, recovered);
         }
@@ -359,8 +445,8 @@ mod tests {
             let point = ProjectivePoint::hash_to_projective_point(&[base_input]).unwrap();
 
             let result = scalar * point;
-            let bytes = result.to_bytes();
-            let recovered = ProjectivePoint::from_bytes(&bytes).unwrap();
+            let bytes = result.to_canonical_bytes();
+            let recovered = ProjectivePoint::from_canonical_bytes(&bytes).unwrap();
 
             assert_eq!(result, recovered);
         }
@@ -411,8 +497,8 @@ mod tests {
 
             let result = p1 + p2;
 
-            let bytes = result.to_bytes();
-            let recovered = PrimeOrderProjectivePoint::from_bytes(&bytes).unwrap();
+            let bytes = result.to_canonical_bytes();
+            let recovered = PrimeOrderProjectivePoint::from_canonical_bytes(&bytes).unwrap();
             assert_eq!(result, recovered);
         }
 
@@ -464,8 +550,8 @@ mod tests {
 
             let result = scalar * generator;
 
-            let bytes = result.to_bytes();
-            let recovered = PrimeOrderProjectivePoint::from_bytes(&bytes).unwrap();
+            let bytes = result.to_canonical_bytes();
+            let recovered = PrimeOrderProjectivePoint::from_canonical_bytes(&bytes).unwrap();
             assert_eq!(result, recovered);
         }
 
