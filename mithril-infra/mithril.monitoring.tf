@@ -17,6 +17,10 @@ resource "null_resource" "mithril_monitoring" {
     mithril_ipfs_enabled     = var.mithril_ipfs_enabled
   }
 
+  lifecycle {
+    replace_triggered_by = [null_resource.mithril_bootstrap]
+  }
+
   connection {
     type        = "ssh"
     user        = "curry"
