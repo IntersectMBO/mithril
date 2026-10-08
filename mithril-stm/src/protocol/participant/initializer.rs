@@ -235,8 +235,10 @@ impl Initializer {
 
         #[cfg(feature = "snark")]
         let (schnorr_signing_key, schnorr_verification_key) = {
-            let schnorr_signing_key =
-                bytes.get(256..288).map(SchnorrSigningKey::from_bytes).transpose()?;
+            let schnorr_signing_key = bytes
+                .get(256..288)
+                .map(SchnorrSigningKey::from_canonical_bytes)
+                .transpose()?;
             let schnorr_verification_key = bytes
                 .get(288..352)
                 .map(VerificationKeyForSnark::from_bytes)

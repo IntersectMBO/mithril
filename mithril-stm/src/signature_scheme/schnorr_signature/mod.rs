@@ -108,19 +108,19 @@ mod tests {
         }
 
         #[test]
-        fn signing_key_to_from_bytes(seed in any::<[u8;32]>()) {
+        fn signing_key_to_from_canonical_bytes(seed in any::<[u8;32]>()) {
             let mut rng = ChaCha20Rng::from_seed(seed);
             let sk = SchnorrSigningKey::generate(&mut rng);
-            let mut sk_bytes = sk.to_bytes();
+            let mut sk_bytes = sk.to_canonical_bytes();
 
             // Valid conversion
-            let recovered_sk = SchnorrSigningKey::from_bytes(&sk_bytes).unwrap();
+            let recovered_sk = SchnorrSigningKey::from_canonical_bytes(&sk_bytes).unwrap();
             assert_eq!(sk.0, recovered_sk.0, "Recovered signing key does not match with the original!");
 
             // Not enough bytes
             let mut short_bytes = [0u8; 31];
             short_bytes.copy_from_slice(sk_bytes.get(..31).unwrap());
-            let result = SchnorrSigningKey::from_bytes(&short_bytes).expect_err("From bytes conversion of signing key should fail");
+            let result = SchnorrSigningKey::from_canonical_bytes(&short_bytes).expect_err("From canonical bytes conversion of signing key should fail");
             assert!(
                 matches!(
                     result.downcast_ref::<SchnorrSignatureError>(),
@@ -131,7 +131,7 @@ mod tests {
 
             // Invalid bytes
             sk_bytes[31] |= 0xff;
-            let result = SchnorrSigningKey::from_bytes(&sk_bytes).expect_err("From bytes conversion of signing key should fail");
+            let result = SchnorrSigningKey::from_canonical_bytes(&sk_bytes).expect_err("From canonical bytes conversion of signing key should fail");
             assert!(
                 matches!(
                     result.downcast_ref::<SchnorrSignatureError>(),

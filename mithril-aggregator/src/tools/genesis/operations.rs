@@ -1036,7 +1036,10 @@ mod tests {
                 GenesisSigningKeyBundle::try_from_hex(&fs::read_to_string(&sk_a).unwrap()).unwrap();
             let bundle_b =
                 GenesisSigningKeyBundle::try_from_hex(&fs::read_to_string(&sk_b).unwrap()).unwrap();
-            assert_ne!(bundle_a.schnorr.to_bytes(), bundle_b.schnorr.to_bytes());
+            assert_ne!(
+                bundle_a.schnorr.to_canonical_bytes(),
+                bundle_b.schnorr.to_canonical_bytes()
+            );
         }
 
         #[test]

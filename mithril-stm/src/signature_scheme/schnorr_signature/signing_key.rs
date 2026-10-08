@@ -182,14 +182,14 @@ impl SchnorrSigningKey {
     }
 
     /// Convert a `SchnorrSigningKey` into bytes.
-    pub fn to_bytes(&self) -> [u8; 32] {
+    pub fn to_canonical_bytes(&self) -> [u8; 32] {
         self.0.to_canonical_bytes()
     }
 
     /// Convert bytes into a `SchnorrSigningKey`.
     ///
     /// The bytes must represent a Jubjub scalar or the conversion will fail
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         if bytes.len() < 32 {
             return Err(anyhow!(SchnorrSignatureError::Serialization)).with_context(
                 || "Not enough bytes provided to re-construct a Schnorr signing key.",
@@ -227,53 +227,53 @@ mod tests {
     }
 
     #[test]
-    fn from_bytes_not_enough_bytes() {
+    fn from_canonical_bytes_not_enough_bytes() {
         let bytes = vec![0u8; 31];
-        let result = SchnorrSigningKey::from_bytes(&bytes);
+        let result = SchnorrSigningKey::from_canonical_bytes(&bytes);
 
         result.expect_err("Should fail with insufficient bytes");
     }
 
     #[test]
-    fn from_bytes_exact_size() {
+    fn from_canonical_bytes_exact_size() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let sk = SchnorrSigningKey::generate(&mut rng);
-        let sk_bytes = sk.to_bytes();
+        let sk_bytes = sk.to_canonical_bytes();
 
-        let sk_restored = SchnorrSigningKey::from_bytes(&sk_bytes).unwrap();
+        let sk_restored = SchnorrSigningKey::from_canonical_bytes(&sk_bytes).unwrap();
 
         assert_eq!(sk, sk_restored);
     }
 
     #[test]
-    fn from_bytes_extra_bytes() {
+    fn from_canonical_bytes_extra_bytes() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let sk = SchnorrSigningKey::generate(&mut rng);
-        let sk_bytes = sk.to_bytes();
+        let sk_bytes = sk.to_canonical_bytes();
 
         let mut extended_bytes = sk_bytes.to_vec();
         extended_bytes.extend_from_slice(&[0xFF; 10]);
 
-        let sk_restored = SchnorrSigningKey::from_bytes(&extended_bytes).unwrap();
+        let sk_restored = SchnorrSigningKey::from_canonical_bytes(&extended_bytes).unwrap();
 
         assert_eq!(sk, sk_restored);
     }
 
     #[test]
-    fn to_bytes_is_deterministic() {
+    fn to_canonical_bytes_is_deterministic() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let sk = SchnorrSigningKey::generate(&mut rng);
 
-        let bytes1 = sk.to_bytes();
-        let bytes2 = sk.to_bytes();
+        let bytes1 = sk.to_canonical_bytes();
+        let bytes2 = sk.to_canonical_bytes();
 
-        assert_eq!(bytes1, bytes2, "to_bytes should be deterministic");
+        assert_eq!(bytes1, bytes2, "to_canonical_bytes should be deterministic");
     }
 
     mod golden {
         use super::*;
 
-        const GOLDEN_BYTES: &[u8; 32] = &[
+        const GOLDEN_CANONICAL_BYTES: &[u8; 32] = &[
             126, 191, 239, 197, 88, 151, 248, 254, 187, 143, 86, 35, 29, 62, 90, 13, 196, 71, 234,
             5, 90, 124, 205, 194, 51, 192, 228, 133, 25, 140, 157, 7,
         ];
@@ -284,14 +284,12 @@ mod tests {
         }
 
         #[test]
-        fn golden_conversions() {
-            let value = SchnorrSigningKey::from_bytes(GOLDEN_BYTES)
-                .expect("This from bytes should not fail");
+        fn golden_canonical_bytes_conversions() {
+            let value = SchnorrSigningKey::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
             assert_eq!(golden_value().0, value.0);
 
-            let serialized = SchnorrSigningKey::to_bytes(&value);
-            let golden_serialized = SchnorrSigningKey::to_bytes(&golden_value());
-            assert_eq!(golden_serialized, serialized);
+            assert_eq!(GOLDEN_CANONICAL_BYTES, &golden_value().to_canonical_bytes());
         }
     }
 
