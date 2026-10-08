@@ -72,7 +72,7 @@ for SIGNER_TYPE in $SIGNER_TYPES; do
       echo $CARDANO_NODE_VERSION > $SIGNER_TYPE_CONFIG_DIRECTORY/config.version
 
       # Copy config.json files to the signer
-      cat $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json | jq ".hasPrometheus[0] |= \"cardano-node-$SIGNER_TYPE-signer-${each.key}\"" > $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json.new
+      cat $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json | jq '.TraceOptions[""].backends |= map(if startswith("PrometheusSimple ") then sub("127.0.0.1"; "0.0.0.0") else . end)' > $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json.new
       rm -f $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json
       mv $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json.new $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json
 
