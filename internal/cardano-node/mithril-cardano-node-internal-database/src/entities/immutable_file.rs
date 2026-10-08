@@ -2,7 +2,7 @@ use digest::{Digest, Output};
 use std::{
     cmp::Ordering,
     fs::File,
-    io,
+    io::{self, BufRead, BufReader},
     num::ParseIntError,
     path::{Path, PathBuf},
 };
@@ -125,11 +125,19 @@ impl ImmutableFile {
     /// Compute the hash of this immutable file.
     pub fn compute_raw_hash<D>(&self) -> Result<Output<D>, io::Error>
     where
-        D: Digest + io::Write,
+        D: Digest,
     {
         let mut hasher = D::new();
-        let mut file = File::open(&self.path)?;
-        io::copy(&mut file, &mut hasher)?;
+        let mut reader = BufReader::new(File::open(&self.path)?);
+        loop {
+            let buffer = reader.fill_buf()?;
+            if buffer.is_empty() {
+                break;
+            }
+            hasher.update(buffer);
+            let consumed_length = buffer.len();
+            reader.consume(consumed_length);
+        }
         Ok(hasher.finalize())
     }
 

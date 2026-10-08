@@ -1,4 +1,4 @@
-use digest::generic_array::typenum::U32;
+use digest::consts::U32;
 use digest::{FixedOutput, HashMarker, Output, OutputSizeUser, Reset, Update};
 use midnight_circuits::{hash::poseidon::PoseidonChip, instructions::hash::HashCPU};
 use midnight_curves::Fq as JubjubBase;

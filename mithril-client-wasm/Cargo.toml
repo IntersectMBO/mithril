@@ -1,6 +1,6 @@
 [package]
 name = "mithril-client-wasm"
-version = "0.10.11"
+version = "0.10.12"
 description = "Mithril client WASM"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -27,14 +27,14 @@ snark = ["mithril-client/snark"]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
-js-sys = "0.3.103"
+js-sys = "0.3.106"
 mithril-client = { path = "../mithril-client", default-features = false, features = ["unstable"] }
 serde = { workspace = true }
 serde-wasm-bindgen = "0.6.5"
 serde_json = { workspace = true }
-wasm-bindgen = "0.2.126"
-wasm-bindgen-futures = "0.4.76"
-web-sys = { version = "0.3.103", features = [
+wasm-bindgen = "0.2.129"
+wasm-bindgen-futures = "0.4.79"
+web-sys = { version = "0.3.106", features = [
     "BroadcastChannel",
     "DomException",
     "IdbDatabase",
@@ -61,4 +61,4 @@ mithril-build-script = { path = "../internal/mithril-build-script" }
 
 [dev-dependencies]
 mithril-common = { path = "../mithril-common", default-features = false }
-wasm-bindgen-test = "0.3.76"
+wasm-bindgen-test = "0.3.79"

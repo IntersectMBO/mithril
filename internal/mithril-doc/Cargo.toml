@@ -1,6 +1,6 @@
 [package]
 name = "mithril-doc"
-version = "0.1.29"
+version = "0.1.30"
 description = "An internal crate to generate documentation."
 authors = { workspace = true }
 edition = { workspace = true }
@@ -19,4 +19,4 @@ mithril-doc-derive = { path = "../mithril-doc-derive" }
 
 [dev-dependencies]
 mithril-cli-helper = { path = "../mithril-cli-helper" }
-regex = "1.12.4"
+regex = "1.13.1"

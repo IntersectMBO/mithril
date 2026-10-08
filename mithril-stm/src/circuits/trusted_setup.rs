@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufReader, ErrorKind, Write},
+    io::{BufRead, BufReader, ErrorKind, Write},
     path::PathBuf,
     sync::Arc,
 };
@@ -114,9 +114,18 @@ impl TrustedSetupProvider {
 
     /// Computes the SHA256 hash of `file` and returns its hex encoding, streaming it rather than
     /// holding the whole SRS in memory.
-    fn compute_file_hash(mut file: File) -> StmResult<String> {
+    fn compute_file_hash(file: File) -> StmResult<String> {
+        let mut reader = BufReader::new(file);
         let mut hasher = Sha256::new();
-        std::io::copy(&mut file, &mut hasher)?;
+        loop {
+            let buffer = reader.fill_buf()?;
+            if buffer.is_empty() {
+                break;
+            }
+            hasher.update(buffer);
+            let consumed_length = buffer.len();
+            reader.consume(consumed_length);
+        }
 
         Ok(hex::encode(hasher.finalize()))
     }

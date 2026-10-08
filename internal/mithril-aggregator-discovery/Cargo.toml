@@ -1,7 +1,7 @@
 [package]
 name = "mithril-aggregator-discovery"
 description = "Mechanisms to discover aggregators available in a Mithril network."
-version = "0.2.0"
+version = "0.2.1"
 authors.workspace = true
 documentation.workspace = true
 edition.workspace = true
@@ -13,9 +13,9 @@ include = ["**/*.rs", "Cargo.toml", "README.md", ".gitignore"]
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-mithril-aggregator-client = { path = "../mithril-aggregator-client", version = "0.3.0" }
-mithril-common = { path = "../../mithril-common", version = "0.8.0" }
-rand = { version = "0.10.2" }
+mithril-aggregator-client = { path = "../mithril-aggregator-client", version = "0.3.1" }
+mithril-common = { path = "../../mithril-common", version = "0.8.1" }
+rand = { version = "0.10.3" }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

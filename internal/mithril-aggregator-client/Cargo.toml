@@ -1,6 +1,6 @@
 [package]
 name = "mithril-aggregator-client"
-version = "0.3.0"
+version = "0.3.1"
 description = "Client to request data from a Mithril Aggregator"
 authors.workspace = true
 documentation.workspace = true
@@ -13,7 +13,7 @@ include = ["**/*.rs", "Cargo.toml", "README.md"]
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-mithril-common = { path = "../../mithril-common", version = "0.8.0" }
+mithril-common = { path = "../../mithril-common", version = "0.8.1" }
 reqwest = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
@@ -23,7 +23,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
-http = "1.4.2"
+http = "1.5.0"
 httpmock = "0.8.3"
 mockall = { workspace = true }
 slog-async = { workspace = true }
