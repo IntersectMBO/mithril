@@ -185,7 +185,7 @@ impl StmInitializerWrapper {
             let (signature, _op_cert) = kes_signer.sign(
                 &stm_initializer
                     .get_verification_key_proof_of_possession_for_concatenation()
-                    .to_bytes(),
+                    .to_canonical_bytes(),
                 current_kes_period.unwrap_or_default(),
             )?;
             kes_signature = Some(signature);
@@ -440,7 +440,7 @@ impl KeyRegWrapper {
         kes_evolutions: KesEvolutions,
     ) -> StdResult<ProtocolPartyId> {
         self.verify_kes_signature(
-            &parameters.verification_key_for_concatenation.to_bytes(),
+            &parameters.verification_key_for_concatenation.to_canonical_bytes(),
             parameters
                 .verification_key_signature_for_concatenation
                 .map(|s| s.into_inner()),
