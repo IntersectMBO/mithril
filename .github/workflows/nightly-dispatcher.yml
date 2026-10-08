@@ -28,6 +28,16 @@ jobs:
     secrets:
       E2E_RUNNER_GCP_CREDENTIALS: ${{ secrets.E2E_RUNNER_GCP_CREDENTIALS }}
 
+  check-crates-advisories:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+          arguments: "--all-features"
+          log-level: error
+
   publish-crate-dry-run-with-verification:
     runs-on: ubuntu-24.04
     steps:
@@ -72,6 +82,7 @@ jobs:
         test-client,
         test-rust,
         test-e2e,
+        check-crates-advisories,
         publish-crate-dry-run-with-verification,
         clippy-check-all-crates,
       ]
