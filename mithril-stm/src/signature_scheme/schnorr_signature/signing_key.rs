@@ -319,9 +319,11 @@ mod tests {
 
         #[test]
         fn golden_conversions() {
-            let value = StandardSchnorrSignature::from_bytes(GOLDEN_BYTES)
-                .expect("This from bytes should not fail");
+            let value = StandardSchnorrSignature::from_canonical_bytes(GOLDEN_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
             assert_eq!(golden_value(), value);
+
+            assert_eq!(GOLDEN_BYTES, &golden_value().to_canonical_bytes());
         }
     }
 
