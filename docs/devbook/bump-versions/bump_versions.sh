@@ -5,13 +5,15 @@ if [[ "${TRACE-0}" == "1" ]]; then set -o xtrace; fi
 
 display_help() {
     local -r default_diff_ref=$1
-    local -r resources_to_check=$2
+    local -r crates_resources_to_check=$2
+    local -r npm_package_resources_to_check=$3
 
     echo "Check crates, js packages, and openapi changes against '$default_diff_ref' (default) and update their versions"
     echo
     echo "By default, no changes are made (dry-run mode), use '--run' to apply the changes."
     echo "At the end of the script, the commit message to used is displayed, use '--commit' to commit the changes."
-    echo "Check crates will look for this pattern '$resources_to_check'."
+    echo "Check crates will look for this pattern '$crates_resources_to_check'."
+    echo "NPM packages will look for this pattern '$npm_package_resources_to_check'."
     echo
     echo "Usage: $0 [OPTIONS]"
     echo
@@ -61,7 +63,9 @@ declare IPFS_DEVNET_UPDATE=""
 declare IPFS_DEVNET_UPDATE_MESSAGE=""
 
 readonly DEFAULT_DIFF_REF="origin/main"
-readonly RESOURCES_TO_CHECK="(src/|tests/|benches/|Cargo.toml)"
+# Grep extended regex to identify resources that trigger a version update
+readonly CRATES_RESOURCES_TO_CHECK="(src/|tests/|benches/|Cargo\.toml)"
+readonly NPM_PACKAGES_RESOURCES_TO_CHECK="(src/|__tests__/|helpers/|Cargo\.toml|[^/]*\.(js|json|mjs|ts|tsx)\$)"
 
 update_crate_versions() {
     # NOTE
@@ -82,7 +86,7 @@ update_crate_versions() {
 
     for member in $members
     do
-        nb_files_modify=$(echo "$files_modify" | grep -E -c "^$member/$RESOURCES_TO_CHECK")
+        nb_files_modify=$(echo "$files_modify" | grep -E -c "^$member/$CRATES_RESOURCES_TO_CHECK")
         if [[ $nb_files_modify -gt 0 ]]
         then
             package_name=${member##*/}
@@ -104,7 +108,7 @@ update_package_json_versions() {
 
     for member in $members
     do
-        nb_files_modify=$(echo "$files_modify" | grep -c "^$member/")
+        nb_files_modify=$(echo "$files_modify" | grep -E -c "^$member/$NPM_PACKAGES_RESOURCES_TO_CHECK")
         if [[ $nb_files_modify -gt 0 ]]
         then
             if [[ $member == "mithril-client-wasm" ]]
@@ -196,7 +200,7 @@ declare COMPARE_AGAINST=$DEFAULT_DIFF_REF
 readonly COMMIT_REF="HEAD"
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        -h|--help) display_help $DEFAULT_DIFF_REF $RESOURCES_TO_CHECK ;;
+        -h|--help) display_help "$DEFAULT_DIFF_REF" "$CRATES_RESOURCES_TO_CHECK" "$NPM_PACKAGES_RESOURCES_TO_CHECK" ;;
         --run) DRY_RUN=false ;;
         --commit) COMMIT=true ;;
         --ref) [[ -n "${2-}" ]] || error "--ref requires a reference (branch/commit)."; COMPARE_AGAINST="$2"; shift ;;
@@ -206,7 +210,7 @@ done
 
 FILES_MODIFY="$(git diff --name-only "$COMPARE_AGAINST" "$COMMIT_REF")"
 readonly -a FILES_MODIFY
-PACKAGE_JSON_FILES="$(find -- * -name package.json | grep -v -e "/node_modules/" -e "/pkg/" -e "/dist/" -e "/.next/" -e "docs/website/")"
+PACKAGE_JSON_FILES="$(find -- * -name package.json | grep -v -e "/node_modules/" -e "/pkg/" -e "/dist/" -e "/.next/")"
 readonly -a PACKAGE_JSON_FILES
 
 update_crate_versions $DRY_RUN FILES_MODIFY
@@ -281,7 +285,7 @@ else
   then
     git add --update $OPEN_API_FILE Cargo.lock ./*/Cargo.toml ./mithril-test-lab/*/Cargo.toml examples/*/Cargo.toml
     git add --update ./internal/*/Cargo.toml ./internal/cardano-node/*/Cargo.toml ./internal/signed-entity/*/Cargo.toml ./internal/tests/*/Cargo.toml
-    git add --update ./*/package.json ./*/package-lock.json mithril-client-wasm/ci-test/package-lock.json examples/*/package.json examples/*/package-lock.json
+    git add --update ./*/package.json ./*/package-lock.json mithril-client-wasm/ci-test/package-lock.json examples/*/package.json examples/*/package-lock.json docs/website/package.json docs/website/package-lock.json
     git add --update $INFRA_VERSION_FILE $DEVNET_VERSION_FILE $BENCHMARK_VERSION_FILE $IPFS_DEVNET_VERSION_FILE
     git commit -m "$COMMIT_MESSAGE"
   fi

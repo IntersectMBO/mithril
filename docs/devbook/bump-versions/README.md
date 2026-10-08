@@ -7,15 +7,15 @@ Open API specification and plain version files in the project.
 
 Only the resources with changes on the branch compared to `origin/main` are bumped:
 
-| Resource                                               | Bumped when a change is detected in                             |
-| ------------------------------------------------------ | --------------------------------------------------------------- |
-| Crates                                                 | `src/`, `tests/`, `benches/` or `Cargo.toml` of the crate       |
-| JS packages                                            | The directory of the package                                    |
-| `openapi.yaml`                                         | The file itself                                                 |
-| `mithril-infra/assets/infra.version`                   | `*.tf` files of `mithril-infra/`                                |
-| `mithril-test-lab/cardano-devnet/VERSION`              | `*.sh` files of `mithril-test-lab/cardano-devnet/`              |
-| `mithril-test-lab/benchmark/aggregator-prover/VERSION` | `*.sh` files of `mithril-test-lab/benchmark/aggregator-prover/` |
-| `mithril-test-lab/ipfs-devnet/VERSION`                 | `*.sh` files of `mithril-test-lab/ipfs-devnet/`                 |
+| Resource                                               | Bumped when a change is detected in                                                                                    |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Crates                                                 | `src/`, `tests/`, `benches/` or `Cargo.toml` of the crate                                                              |
+| JS packages                                            | `src/`, `__tests__/`, `helpers/`, `Cargo.toml` or `*.js`, `*.json`, `*.mjs`, `*.ts`, `*.tsx` files in the package root |
+| `openapi.yaml`                                         | The file itself                                                                                                        |
+| `mithril-infra/assets/infra.version`                   | `*.tf` files of `mithril-infra/`                                                                                       |
+| `mithril-test-lab/cardano-devnet/VERSION`              | `*.sh` files of `mithril-test-lab/cardano-devnet/`                                                                     |
+| `mithril-test-lab/benchmark/aggregator-prover/VERSION` | `*.sh` files of `mithril-test-lab/benchmark/aggregator-prover/`                                                        |
+| `mithril-test-lab/ipfs-devnet/VERSION`                 | `*.sh` files of `mithril-test-lab/ipfs-devnet/`                                                                        |
 
 ## Prerequisites
 
