@@ -4,6 +4,27 @@ This document describes the versioned CBOR encoding used by `mithril-stm` for
 `to_bytes` / `from_bytes` and the rules to follow when evolving serialized
 structures.
 
+## Canonical bytes are out of scope
+
+This document does not concern the canonical bytes encoding. Canonical bytes are
+a fixed-size encoding without version byte nor CBOR payload, exposed by
+`to_canonical_bytes` / `from_canonical_bytes` on:
+
+- BLS types: `BlsSigningKey`, `BlsVerificationKey`, `BlsProofOfPossession`,
+  `BlsSignature`, `BlsVerificationKeyProofOfPossession`
+- Schnorr types: `SchnorrSigningKey`, `SchnorrVerificationKey`,
+  `StandardSchnorrSignature`, `UniqueSchnorrSignature`
+- Jubjub types: `BaseFieldElement`, `ScalarFieldElement`, `ProjectivePoint`,
+  `PrimeOrderProjectivePoint`
+- Merkle tree leaves: `MerkleTreeConcatenationLeaf`, `MerkleTreeSnarkLeaf`
+
+The rigid slot layouts consumed by the circuits (`Parameters::to_rigid_bytes`,
+`AggregateVerificationKeyForSnark::to_rigid_slot_bytes`) are canonical bytes too.
+
+Hash computations must only rely on canonical bytes, so that an evolution of
+the CBOR codec never alters a hash. The canonical bytes of a type must never
+change, and each of them is protected by a golden test.
+
 ## Wire format
 
 Every CBOR-encoded value is prefixed with a **version byte**:
