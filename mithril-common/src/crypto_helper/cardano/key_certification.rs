@@ -197,7 +197,7 @@ impl StmInitializerWrapper {
                         &stm_initializer.schnorr_verification_key
                     {
                         let (signature, op_cert) = kes_signer.sign(
-                            &schnorr_verification_key.to_bytes(),
+                            &schnorr_verification_key.to_canonical_bytes(),
                             current_kes_period.unwrap_or_default(),
                         )?;
                         let proof_of_bound_possession_prefix = ProofOfBoundPossessionPrefix::new(
@@ -471,7 +471,7 @@ impl KeyRegWrapper {
         };
 
         self.verify_kes_signature(
-            &verification_key_for_snark.to_bytes(),
+            &verification_key_for_snark.to_canonical_bytes(),
             parameters
                 .verification_key_signature_for_snark
                 .map(|s| s.into_inner()),

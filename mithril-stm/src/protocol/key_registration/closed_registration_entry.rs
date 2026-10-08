@@ -118,7 +118,7 @@ impl ClosedRegistrationEntry {
             #[cfg(feature = "snark")]
             snark_verification_key_bytes: self
                 .verification_key_for_snark
-                .map(|vk| vk.to_bytes().to_vec()),
+                .map(|vk| vk.to_canonical_bytes().to_vec()),
             #[cfg(feature = "snark")]
             lottery_target_value_bytes: self
                 .lottery_target_value
@@ -143,7 +143,7 @@ impl ClosedRegistrationEntry {
             #[cfg(feature = "snark")]
             let verification_key_for_snark = envelope
                 .snark_verification_key_bytes
-                .map(|b| VerificationKeyForSnark::from_bytes(&b))
+                .map(|b| VerificationKeyForSnark::from_canonical_bytes(&b))
                 .transpose()?;
 
             #[cfg(feature = "snark")]
@@ -184,7 +184,7 @@ impl ClosedRegistrationEntry {
         let (verification_key_for_snark, lottery_target_value) = {
             let schnorr_verification_key = bytes
                 .get(104..168)
-                .map(VerificationKeyForSnark::from_bytes)
+                .map(VerificationKeyForSnark::from_canonical_bytes)
                 .transpose()?;
 
             let lottery_target_value = bytes

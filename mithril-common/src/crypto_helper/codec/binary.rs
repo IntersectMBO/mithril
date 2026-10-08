@@ -121,14 +121,14 @@ mod binary_mithril_stm {
     #[cfg(feature = "snark")]
     impl TryToBytes for VerificationKeyForSnark {
         fn to_bytes_vec(&self) -> StdResult<Vec<u8>> {
-            Ok(self.to_bytes().to_vec())
+            Ok(self.to_canonical_bytes().to_vec())
         }
     }
 
     #[cfg(feature = "snark")]
     impl TryFromBytes for VerificationKeyForSnark {
         fn try_from_bytes(bytes: &[u8]) -> StdResult<Self> {
-            Self::from_bytes(bytes)
+            Self::from_canonical_bytes(bytes)
         }
     }
 

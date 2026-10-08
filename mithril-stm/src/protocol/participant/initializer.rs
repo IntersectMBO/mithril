@@ -241,7 +241,7 @@ impl Initializer {
                 .transpose()?;
             let schnorr_verification_key = bytes
                 .get(288..352)
-                .map(VerificationKeyForSnark::from_bytes)
+                .map(VerificationKeyForSnark::from_canonical_bytes)
                 .transpose()?;
 
             match (&schnorr_signing_key, &schnorr_verification_key) {

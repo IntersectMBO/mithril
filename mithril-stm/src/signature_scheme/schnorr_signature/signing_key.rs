@@ -175,7 +175,7 @@ impl SchnorrSigningKey {
         rng: &mut R,
     ) -> StmResult<StandardSchnorrSignature> {
         let verification_key_bytes =
-            SchnorrVerificationKey::new_from_signing_key(self.clone()).to_bytes();
+            SchnorrVerificationKey::new_from_signing_key(self.clone()).to_canonical_bytes();
         let field_element_for_proof_of_bound_possession =
             compute_schnorr_proof_of_bound_possession_challenge(prefix, &verification_key_bytes)?;
         self.sign_standard(&[field_element_for_proof_of_bound_possession], rng)
