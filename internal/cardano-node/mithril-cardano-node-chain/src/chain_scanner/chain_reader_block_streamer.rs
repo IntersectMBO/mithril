@@ -450,6 +450,100 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn streams_a_rollback_to_the_start_point_after_blocks_were_streamed() {
+        // The streamer starts at block 11. The node first follows a fork with the block F12,
+        // then switches to the canonical chain with the blocks C12 and C13:
+        //
+        //   11 -> F12             fork, abandoned
+        //   11 -> C12 -> C13      canonical chain
+        //
+        // Sequence delivered by the chain reader:
+        //
+        //   RollBackward(11)      acknowledges the intersection at block 11
+        //   RollForward(F12)
+        //   RollBackward(11)      switches to the canonical chain, F12 must be discarded
+        //   RollForward(C12)
+        //   RollForward(C13)
+        //
+        // Expected polls of the streamer:
+        //
+        //   poll 1 -> RollBackward(11)
+        //   poll 2 -> RollForwards([C12, C13])
+        //   poll 3 -> nothing
+        let start_point_at_block_11 = RawCardanoPoint::new(SlotNumber(110), "hash-11");
+        let fork_block_12 = ScannedBlock::new(
+            "hash-fork-12",
+            BlockNumber(12),
+            SlotNumber(120),
+            Vec::<&str>::new(),
+        );
+        let canonical_block_12 = ScannedBlock::new(
+            "hash-canonical-12",
+            BlockNumber(12),
+            SlotNumber(121),
+            Vec::<&str>::new(),
+        );
+        let canonical_block_13 = ScannedBlock::new(
+            "hash-canonical-13",
+            BlockNumber(13),
+            SlotNumber(130),
+            Vec::<&str>::new(),
+        );
+        let chain_reader = Arc::new(Mutex::new(FakeChainReader::new(vec![
+            ChainBlockNextAction::RollBackward {
+                rollback_point: start_point_at_block_11.clone(),
+            },
+            ChainBlockNextAction::RollForward {
+                parsed_block: fork_block_12,
+            },
+            ChainBlockNextAction::RollBackward {
+                rollback_point: start_point_at_block_11.clone(),
+            },
+            ChainBlockNextAction::RollForward {
+                parsed_block: canonical_block_12.clone(),
+            },
+            ChainBlockNextAction::RollForward {
+                parsed_block: canonical_block_13.clone(),
+            },
+        ])));
+        let mut block_streamer = ChainReaderBlockStreamer::try_new(
+            chain_reader,
+            Some(start_point_at_block_11.clone()),
+            BlockNumber(1000),
+            MAX_ROLL_FORWARDS_PER_POLL,
+            TestLogger::stdout(),
+        )
+        .await
+        .unwrap();
+
+        let scanned_blocks = block_streamer.poll_next().await.expect("poll_next failed");
+        assert_eq!(
+            Some(ChainScannedBlocks::RollBackward(SlotNumber(110))),
+            scanned_blocks
+        );
+        assert_eq!(
+            block_streamer.last_polled_point(),
+            Some(start_point_at_block_11)
+        );
+
+        let scanned_blocks = block_streamer.poll_next().await.expect("poll_next failed");
+        assert_eq!(
+            Some(ChainScannedBlocks::RollForwards(vec![
+                canonical_block_12,
+                canonical_block_13.clone()
+            ])),
+            scanned_blocks
+        );
+        assert_eq!(
+            block_streamer.last_polled_point(),
+            Some(RawCardanoPoint::from(&canonical_block_13))
+        );
+
+        let scanned_blocks = block_streamer.poll_next().await.expect("poll_next failed");
+        assert_eq!(None, scanned_blocks);
+    }
+
+    #[tokio::test]
     async fn test_parse_expected_rollbackward_when_on_different_point_and_no_previous_rollforward()
     {
         let chain_reader = Arc::new(Mutex::new(FakeChainReader::new(vec![
