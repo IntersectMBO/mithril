@@ -11,7 +11,6 @@ readonly SCRIPT_DIRECTORY
 source "${SCRIPT_DIRECTORY}/../lib/common.sh"
 
 readonly BIN_NAME="kubo"
-readonly IPFS_DISTRIBUTIONS_CDN="https://dist.ipfs.tech"
 readonly GITHUB_RELEASES="https://github.com/ipfs/kubo/releases"
 readonly CONNECT_TIMEOUT_SECONDS=10
 
@@ -33,12 +32,6 @@ fetch() {
   curl --fail --silent --show-error --location --connect-timeout "$CONNECT_TIMEOUT_SECONDS" "$@"
 }
 
-find_last_released_version_from_cdn() {
-  # The file have the following structure: one version per line, from earliest to latest, named "vXX.YY.ZZ[-rcN]" (e.g "v0.31.0-rc2" or "v0.33.2")
-  fetch "${IPFS_DISTRIBUTIONS_CDN}/${BIN_NAME}/versions" |
-    awk '/^v[0-9]+[.][0-9]+[.][0-9]+$/ { latest = $0 } END { if (latest != "") print latest; else exit 1 }'
-}
-
 find_last_released_version_from_github() {
   # The latest release url redirects to the url of its tag (e.g. "https://github.com/ipfs/kubo/releases/tag/v0.43.1")
   fetch --head --output /dev/null --write-out '%{url_effective}' "${GITHUB_RELEASES}/latest" |
@@ -47,9 +40,8 @@ find_last_released_version_from_github() {
 
 find_last_released_version() {
   local latest_version
-  latest_version=$(find_last_released_version_from_cdn) ||
-    latest_version=$(find_last_released_version_from_github) ||
-    error_exit "Could not find a released version for '${BIN_NAME}' from '${IPFS_DISTRIBUTIONS_CDN}' or '${GITHUB_RELEASES}'."
+  latest_version=$(find_last_released_version_from_github) ||
+    error_exit "Could not find a released version for '${BIN_NAME}' from '${GITHUB_RELEASES}'."
 
   echo "$latest_version"
 }
@@ -124,14 +116,11 @@ download_bin_archive() {
   archive_name=$(format_archive_name "$version" "$os" "$arch")
   local -r archive_path="${download_dir}/${archive_name}"
 
-  # example url: https://dist.ipfs.tech/kubo/v0.42.0/kubo_v0.42.0_linux-arm64.tar.gz
-  local -r cdn_url="${IPFS_DISTRIBUTIONS_CDN}/${BIN_NAME}/${version}/${archive_name}"
   # example url: https://github.com/ipfs/kubo/releases/download/v0.42.0/kubo_v0.42.0_linux-arm64.tar.gz
   local -r github_url="${GITHUB_RELEASES}/download/${version}/${archive_name}"
 
-  download_bin_archive_from "$cdn_url" "$archive_path" ||
-    download_bin_archive_from "$github_url" "$archive_path" ||
-    error_exit "Failed to download '${BIN_NAME}' archive from '${cdn_url}' or '${github_url}'."
+  download_bin_archive_from "$github_url" "$archive_path" ||
+    error_exit "Failed to download '${BIN_NAME}' archive from '${github_url}'."
 
   echo "$archive_path"
 }
