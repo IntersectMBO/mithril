@@ -611,4 +611,84 @@ mod tests {
             assert_eq!(golden_serialized, serialized);
         }
     }
+
+    mod golden_avk_computation {
+        use blake2::{Blake2b, digest::consts::U32};
+
+        use crate::{
+            Initializer, Parameters,
+            membership_commitment::{
+                MerkleTreeBatchCommitment, MerkleTreeConcatenationLeaf, MerkleTreeSnarkLeaf,
+            },
+        };
+        #[cfg(feature = "snark")]
+        use crate::{MidnightPoseidonDigest, membership_commitment::MerkleTreeCommitment};
+
+        use super::*;
+
+        const GOLDEN_AVK_CONCATENATION_NO_COLLISION: &str = r#"
+        {
+            "root":[13, 114, 165, 123, 88, 179, 198, 14, 4, 145, 236, 245, 78, 124, 123, 144, 109, 215, 155, 54, 192, 230, 67, 115, 171, 79, 203, 46, 107, 211, 221, 3],
+            "nr_leaves":10,
+            "hasher":null
+        }"#;
+
+        #[cfg(feature = "snark")]
+        const GOLDEN_AVK_SNARK_NO_COLLISION: &str = r#"
+        {
+            "root":[118, 68, 108, 35, 117, 100, 134, 230, 170, 118, 106, 64, 97, 210, 41, 103, 127, 247, 125, 13, 199, 159, 186, 246, 221, 67, 143, 155, 41, 250, 165, 115],
+            "hasher":null
+        }"#;
+
+        fn closed_key_registration_no_collision() -> ClosedKeyRegistration {
+            let params = Parameters {
+                m: 10,
+                k: 5,
+                phi_f: 0.8,
+            };
+            let number_of_parties = 10;
+
+            let mut key_reg = KeyRegistration::initialize();
+            for stake in 0..number_of_parties {
+                // rng is recreated for each initializer to prevent the snark feature
+                // from modifying the AVK
+                let mut rng = ChaCha20Rng::seed_from_u64(stake);
+                let initializer = Initializer::new(params, stake, &mut rng);
+                key_reg
+                    .register_by_entry(&initializer.clone().try_into().unwrap())
+                    .unwrap();
+            }
+
+            key_reg.close_registration(&params).unwrap()
+        }
+
+        fn golden_avk_concatenation_no_collision()
+        -> MerkleTreeBatchCommitment<Blake2b<U32>, MerkleTreeConcatenationLeaf> {
+            closed_key_registration_no_collision()
+                .to_merkle_tree()
+                .to_merkle_tree_batch_commitment()
+        }
+
+        #[cfg(feature = "snark")]
+        fn golden_avk_snark_no_collision()
+        -> MerkleTreeCommitment<MidnightPoseidonDigest, MerkleTreeSnarkLeaf> {
+            closed_key_registration_no_collision()
+                .to_merkle_tree()
+                .to_merkle_tree_commitment()
+        }
+
+        #[test]
+        fn golden_computation_concatenation_no_collision() {
+            let value = serde_json::from_str(GOLDEN_AVK_CONCATENATION_NO_COLLISION)
+                .expect("This JSON deserialization should not fail");
+            assert_eq!(golden_avk_concatenation_no_collision(), value);
+        }
+
+        #[test]
+        fn golden_computation_snark_no_collision() {
+            let value = serde_json::from_str(GOLDEN_AVK_SNARK_NO_COLLISION)
+                .expect("This JSON deserialization should not fail");
+            assert_eq!(golden_avk_snark_no_collision(), value);
+        }
+    }
 }
