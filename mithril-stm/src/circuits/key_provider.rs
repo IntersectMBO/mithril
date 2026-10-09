@@ -74,12 +74,12 @@ impl CircuitCacheIdentity {
             return Ok(Self::Production);
         }
 
-        Self::fingerprinted(
+        Ok(Self::fingerprinted(
             parameters,
             merkle_tree_depth,
             &CircuitVerificationKeyDigest::for_production_certificate_circuit()?,
             None,
-        )
+        ))
     }
 
     /// Identifies a configuration of the recursive circuit, additionally bound to that circuit's own
@@ -100,12 +100,12 @@ impl CircuitCacheIdentity {
             return Ok(Self::Production);
         }
 
-        Self::fingerprinted(
+        Ok(Self::fingerprinted(
             parameters,
             merkle_tree_depth,
             &CircuitVerificationKeyDigest::for_production_certificate_circuit()?,
             Some(&CircuitVerificationKeyDigest::for_ivc_circuit()?),
-        )
+        ))
     }
 
     /// `true` for the configuration the embedded production verifying keys were derived from.
@@ -121,13 +121,13 @@ impl CircuitCacheIdentity {
         merkle_tree_depth: u32,
         certificate_circuit_digest: &CircuitVerificationKeyDigest,
         recursive_circuit_digest: Option<&CircuitVerificationKeyDigest>,
-    ) -> StmResult<Self> {
+    ) -> Self {
         let mut hasher = Sha256::new();
         for input in [
             CACHE_SCHEMA_VERSION,
             certificate_circuit_digest.as_bytes(),
             MIDNIGHT_SRS_HASH_K22.as_bytes(),
-            parameters.to_bytes()?.as_slice(),
+            parameters.to_rigid_bytes().as_slice(),
             &merkle_tree_depth.to_le_bytes(),
         ] {
             hasher.update((input.len() as u64).to_le_bytes());
@@ -140,7 +140,7 @@ impl CircuitCacheIdentity {
             hasher.update(digest);
         }
 
-        Ok(Self::Fingerprinted(hex::encode(hasher.finalize())))
+        Self::Fingerprinted(hex::encode(hasher.finalize()))
     }
 
     /// Name of the directory holding the keys of `circuit_name` for this configuration.
@@ -488,7 +488,7 @@ mod tests {
 
         assert_eq!(
             certificate.directory_name("non-recursive-keys"),
-            "non-recursive-keys-e9ec702f7288b8109468ebd7a9b506f98398cc8599cfc064854a50ba5763e24d",
+            "non-recursive-keys-9df6ff91cfdfcb489c0552f4dfd39685d9a573dbf51f45285139646c8098f70d",
             "certificate cache identity must not move"
         );
     }
@@ -507,7 +507,6 @@ mod tests {
                 &certificate_circuit_digest,
                 None,
             )
-            .unwrap()
             .directory_name("non-recursive-keys")
         };
 
@@ -529,7 +528,6 @@ mod tests {
                 &certificate_circuit_digest,
                 Some(&recursive_circuit_digest),
             )
-            .unwrap()
             .directory_name("recursive-keys")
         };
         let baseline = directory_name(circuit_digest(1), circuit_digest(3));
