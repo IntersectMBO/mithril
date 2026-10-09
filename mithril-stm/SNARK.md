@@ -338,8 +338,10 @@ Each proof system then commits its own leaf form over those entries, in a [Merkl
 | --------------- | ----------------------------------------------- | --------------------------------------------------------- |
 | Leaf contents   | Concatenation verification key, stake           | Schnorr verification key, lottery target value            |
 | Leaf width      | 104 bytes: 96-byte key, 8-byte big-endian stake | 96 bytes: 64-byte key, 32-byte target value               |
-| Membership hash | Blake2b                                         | Poseidon                                                  |
+| Membership hash | Blake2b                                         | Poseidon, with a leaf domain separation tag               |
 | Leaf order      | By stake, then concatenation verification key   | The same sequence, filtered to entries with a Schnorr key |
+
+The SNARK leaf hash takes the Merkle leaf domain separation tag as its first input, so a leaf hash cannot coincide with a Poseidon hash taken for another purpose. Internal nodes carry no tag, because each extra input would cost a Poseidon round at every level of the circuit's path.
 
 The concatenation leaf commits the stake; the SNARK leaf commits the target value derived from it. Performing that conversion once at closing keeps the stake arithmetic out of the [circuit](#term-circuit), which compares a lottery evaluation against a value it reads from the leaf. Part 4 shows the comparison. The proof therefore rests on the authenticated root for the target's correctness: the circuit does not recompute the target from stake and total stake.
 
@@ -378,23 +380,27 @@ Fixed widths give the recursive [circuit](#term-circuit) a preimage of known siz
 
 The older scheme, which the earlier Pythagoras era uses throughout, takes SHA-256 over each part's key and then its value, in part-key enumeration order. Its preimage is variable-length. Part 8 covers the era switch.
 
-**What is signed.** The SNARK signing message is a pair of field elements: the closed registration's Merkle tree commitment, then the protocol message hash. The commitment must be exactly 32 bytes and a canonical field element, so a value at or above the field modulus is rejected. The message is 32 bytes, or 64 hex characters decoding to them, read as a little-endian integer and reduced modulo the field.
+**What is signed.** The SNARK signing message is a pair of field elements: the closed registration's Merkle tree commitment, then the protocol message hash. The commitment must be exactly 32 bytes and a canonical field element, so a value at or above the field modulus is rejected. The message is 32 bytes, or 64 hex characters decoding to them. It is split into two 16-byte little-endian halves, each a field element below 2^128, and the signed value is the Poseidon hash of the message domain separation tag and the two halves. A direct reduction modulo the field would map a digest `M` and `M + p` to the same element, so one signature would cover two messages. Splitting is injective and Poseidon is collision resistant, so distinct digests give distinct signed values.
 
 Pairing the commitment with the message binds a signature to a registration set: the same protocol message under a different closed registration yields a different signed value.
 
-**Domain separation.** Poseidon hash purposes are separated by fixed field-element tags prefixed to their input. The crate defines four such tags, of which three matter here. The aggregator's selection hashes are separated too, but they are SHA-256 over byte-string tags of their own; aggregation covers them.
+**Domain separation.** Poseidon hash purposes are separated by fixed field-element tags prefixed to their input. The crate defines six such tags, of which five matter here. The aggregator's selection hashes are separated too, but they are SHA-256 over byte-string tags of their own; aggregation covers them.
 
-| Tag                             | Enters                                                          | Does not enter                        |
-| ------------------------------- | --------------------------------------------------------------- | ------------------------------------- |
-| Unique signature                | The signature's challenge.                                      | The commitment point, or the lottery. |
-| Lottery                         | The lottery prefix, and through it every evaluation.            | The signature's challenge.            |
-| Circuit verification key digest | The digest identifying a configured circuit, covered in Part 6. | Signing or the lottery directly.      |
+| Tag                             | Enters                                                          | Does not enter                                    |
+| ------------------------------- | --------------------------------------------------------------- | ------------------------------------------------- |
+| Unique signature                | The signature's challenge.                                      | The commitment point, or the lottery.             |
+| Lottery                         | The lottery prefix, and through it every evaluation.            | The signature's challenge.                        |
+| Circuit verification key digest | The digest identifying a configured circuit, covered in Part 6. | Signing or the lottery directly.                  |
+| SNARK Merkle leaf               | Every SNARK leaf hash.                                          | The internal nodes of the tree.                   |
+| SNARK message                   | The reduction of the protocol message hash into the field.      | The commitment, which is already a field element. |
 
-The certificate circuit assigns the signature and lottery tags as fixed values, and a unit test asserts the two differ.
+The certificate circuit assigns the signature, lottery and leaf tags as fixed values, and the recursive circuit assigns the message tag the same way. A unit test asserts that all six tags differ.
 
 **The signature itself** is a unique Schnorr signature. Besides the randomized challenge and response it carries a commitment point, obtained by applying the signing key to a point derived from the message, and therefore determined by the key and the message alone. The next subsection uses that property.
 
-**What this constrains.** Changing a slot width, a label, or their order changes every rigid protocol message hash, and so every signature made under it. Changing a domain separation tag changes the hashes of that tag's purpose only: the signature challenge, or the lottery evaluations, or the circuit digest. Part 6 covers what moves with a changed digest.
+Verification rejects a commitment point outside the prime-order subgroup. Jubjub has cofactor 8, so without that check a signer could add a low-order component and obtain up to eight commitment points for one message, each with its own lottery evaluations. The circuit already reconstructs the commitment point as a prime-order point, so the check makes native verification agree with it.
+
+**What this constrains.** Changing a slot width, a label, or their order changes every rigid protocol message hash, and so every signature made under it. Changing a domain separation tag changes the hashes of that tag's purpose only: the signature challenge, the lottery evaluations, the circuit digest, the SNARK leaf hashes and so the commitment, or the signed message. Part 6 covers what moves with a changed digest.
 
 ### The lottery and the target value
 
@@ -444,7 +450,7 @@ A received signature survives only if it has that SNARK part, its signer has a S
 
 `seed = SHA-256("MITHRIL_SNARK_SELECTION_SEED" || commitment || message)`
 
-Both operands are the canonical 32-byte little-endian encodings of the two signed-message field elements, so the second is the message hash after its reduction into the field rather than the digest's original bytes.
+Both operands are the canonical 32-byte little-endian encodings of the two signed-message field elements, so the second is the message hash after the Poseidon reduction described under [signing](#the-message-and-its-preimage) rather than the digest's original bytes.
 
 Each distinct index is then ranked by `SHA-256("MITHRIL_SNARK_SELECTION_INDEX" || seed || index)`, and the `k` smallest are kept. The ranking is independent of who signed.
 
@@ -550,7 +556,7 @@ Three guards run at the start of synthesis, before any constraint is emitted. Th
 | Witness length | Any length other than `k`                     |
 | Lottery index  | An index at or above `m`, or above `2^16 - 1` |
 
-Further checks run as the witness is assigned: path siblings and positions are matched against the configured depth, and a signature's commitment point is reconstructed as a prime-order point, which can fail. Those make synthesis well defined rather than filtering eligibility.
+Further checks run as the witness is assigned: path siblings and positions are matched against the configured depth, and a signature's commitment point is reconstructed as a prime-order point, which can fail. Host verification already rejects such a point, so for a signature that survived it this reconstruction does not fail. Those make synthesis well defined rather than filtering eligibility.
 
 Two protocol checks the host never verifies. It constructs each Merkle path from the tree rather than checking one, and its sorted output makes index order true by construction rather than by test. Both are enforced in-circuit and nowhere earlier.
 
@@ -601,19 +607,15 @@ The lottery comparison is written as its negation: the circuit derives the evalu
 
 ## The membership constraint
 
-The [circuit](#term-circuit) rebuilds the leaf rather than reading one. It takes the two coordinates of the signer's verification key and the [lottery target value](#term-lottery-target) from the entry, and hashes those three values with Poseidon. A signer therefore cannot present a target it was not registered with: the target is an input to the hash that has to open to the public commitment.
+The [circuit](#term-circuit) rebuilds the leaf rather than reading one. It takes the two coordinates of the signer's verification key and the [lottery target value](#term-lottery-target) from the entry, and hashes them with Poseidon after the Merkle leaf domain separation tag, which is assigned as a fixed value. A signer therefore cannot present a target it was not registered with: the target is an input to the hash that has to open to the public commitment.
 
 From that leaf the circuit walks upward. At each level the position bit decides which of the accumulator and the sibling goes left, and Poseidon combines the pair.
 
-**Padding.** A path is padded to the fixed depth with zeros, so that one circuit serves any tree up to its capacity without being regenerated for each size. From the second level upward, a sibling of zero marks the level as padding and the accumulator passes through unchanged. Without that rule a tree shallower than the fixed depth would keep hashing above its real root and arrive at a value the commitment was never taken from.
-
-**The first level** carries no such check: it is hashed unconditionally, which saves constraints on every entry of every proof. That rests on the real path having at least one level, which holds for every tree of two or more leaves, where an absent sibling is filled with the hash of a single zero byte rather than a zero field element.
-
-**The one-leaf case** falls outside that. A tree of exactly one leaf has no levels at all — its root is the leaf hash and its path is empty — so the circuit would hash that leaf against a padding element and reach a different value. Registration imposes no minimum signer count, so nothing upstream excludes the case.
+**Padding.** A path is padded to the fixed depth with zeros, so that one circuit serves any tree up to its capacity without being regenerated for each size. At every level, a sibling of zero marks the level as padding and the accumulator passes through unchanged. Without that rule a tree shallower than the fixed depth would keep hashing above its real root and arrive at a value the commitment was never taken from. Real levels never carry a zero sibling, because an absent sibling is filled with the hash of a single zero byte rather than a zero field element.
 
 The walk ends by asserting the computed root equals the public Merkle tree commitment.
 
-**What this constrains.** The padding rule keys on a sibling equal to zero, so a genuine sibling hash of zero would be read as padding and the level skipped. Poseidon makes that negligible rather than impossible, and the circuit does not check it. The rule is what decouples the circuit from tree size within one configuration: at the production depth of 13, trees from two up to 8192 leaves prove against the same key.
+**What this constrains.** The padding rule keys on a sibling equal to zero, so a genuine sibling hash of zero would be read as padding and the level skipped. Poseidon makes that negligible rather than impossible, and the circuit does not check it. The rule is what decouples the circuit from tree size within one configuration: at the production depth of 13, trees from one up to 8192 leaves prove against the same key.
 
 ## The signature constraint
 
@@ -839,9 +841,9 @@ flowchart TD
 
 **Bootstrap authentication comes first.** The genesis Schnorr signature over the genesis message is verified in-circuit against the genesis verification key from the global anchor. The result is combined with the genesis bit so that the check is enforced at the genesis step and skipped afterwards: the signature is always computed, never always required.
 
-**The message and its preimage.** The step selects the genesis message at genesis and the certificate's message otherwise, then binds that selection to the protocol message preimage by requiring it to equal the preimage's SHA-256 digest reduced into the circuit's field. The comparison is between field elements, not between 32-byte strings: the circuit combines the digest's bytes into a native field element, and the host reduces the same digest the same way. Genesis does not skip this; it binds to a different message. The next commitment, the next protocol parameter hash and the epoch are then read from fixed byte ranges of that preimage, each reconstructed from its bytes as a field element. Part 3 specifies the layout those offsets depend on.
+**The message and its preimage.** The step selects the genesis message at genesis and the certificate's message otherwise, then binds that selection to the protocol message preimage by requiring it to equal the reduction of the preimage's SHA-256 digest into the circuit's field. The comparison is between field elements, not between 32-byte strings. The circuit combines each 16-byte half of the digest into a native field element and hashes the two with Poseidon after the message domain separation tag, assigned as a fixed value. The host computes the same reduction, which Part 3 specifies, and the genesis signature covers the genesis message reduced this way. Genesis does not skip this; it binds to a different message. The next commitment, the next protocol parameter hash and the epoch are then read from fixed byte ranges of that preimage, each reconstructed from its bytes as a field element. Part 3 specifies the layout those offsets depend on.
 
-The state carries parameter _hashes_, not the numeric `k`, `m` and `phi_f`, and those hashes are carried as field elements by the same reduction. The circuit compares hashes, so it can enforce that a value is preserved or promoted without knowing which parameters it stands for. The converse also holds: a hash the circuit accepts reconfigures nothing, because the certificate circuit's numeric parameters are fixed in its key rather than read from the state.
+The state carries parameter _hashes_, not the numeric `k`, `m` and `phi_f`, and those hashes are carried as field elements by a direct reduction of their 32 bytes modulo the field. The circuit compares hashes, so it can enforce that a value is preserved or promoted without knowing which parameters it stands for. The converse also holds: a hash the circuit accepts reconfigures nothing, because the certificate circuit's numeric parameters are fixed in its key rather than read from the state.
 
 **The step counter** increases by one at every step, and it is the only value that always moves.
 
@@ -1158,13 +1160,14 @@ Which flavors require certification is a property of the aggregate signature typ
 
 Changing a circuit changes its verifying key, its digest, and therefore its identity to every mechanism in this part. What that costs depends on what the change touches.
 
-| The change                                                         | What it requires                                                                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`k`](#symbol-k), [`m`](#symbol-m) or the Merkle tree depth        | A new certificate key and digest, and a recursive setup rebuilt against it. Whether the recursive key itself changes depends on whether the certificate key's domain and constraint system moved, since those are what the recursive relation fixes                                                                                                                                                            |
-| A change confined to the recursive relation                        | A new recursive key and digest; the certificate key is unaffected                                                                                                                                                                                                                                                                                                                                              |
-| An enabled chip, or a dependency change reaching verifier metadata | New keys for whichever circuits' constraint systems move                                                                                                                                                                                                                                                                                                                                                       |
-| A different trusted setup                                          | New keys for both circuits, a new pinned artifact hash, and a matching embedded KZG verifier parameter, which verification reads rather than deriving. Selecting a larger artifact from the same setup is a separate case: reduced to the same degree it need not change the derived keys, their digests or the verifier parameter, but it is a different download, so it needs its own pinned hash and source |
-| A registry entry expiring or being revoked                         | No new key; the same key stops being permitted                                                                                                                                                                                                                                                                                                                                                                 |
+| The change                                                                | What it requires                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`k`](#symbol-k), [`m`](#symbol-m) or the Merkle tree depth               | A new certificate key and digest, and a recursive setup rebuilt against it. Whether the recursive key itself changes depends on whether the certificate key's domain and constraint system moved, since those are what the recursive relation fixes                                                                                                                                                            |
+| A change confined to the recursive relation                               | A new recursive key and digest; the certificate key is unaffected                                                                                                                                                                                                                                                                                                                                              |
+| A fixed value of the certificate circuit, such as a domain separation tag | A new certificate key and digest. The recursive key does not move, because it fixes the certificate key's domain and constraint system and not its fixed commitments                                                                                                                                                                                                                                           |
+| An enabled chip, or a dependency change reaching verifier metadata        | New keys for whichever circuits' constraint systems move                                                                                                                                                                                                                                                                                                                                                       |
+| A different trusted setup                                                 | New keys for both circuits, a new pinned artifact hash, and a matching embedded KZG verifier parameter, which verification reads rather than deriving. Selecting a larger artifact from the same setup is a separate case: reduced to the same degree it need not change the derived keys, their digests or the verifier parameter, but it is a different download, so it needs its own pinned hash and source |
+| A registry entry expiring or being revoked                                | No new key; the same key stops being permitted                                                                                                                                                                                                                                                                                                                                                                 |
 
 **Four separate conditions.** A key may decode and be rejected by the registry. A key may be permitted and produce a proof that fails verification. A proof already made does not stop being valid under the context it was made against merely because a newer circuit exists. And a proof may be valid and permitted while still being unusable as the _predecessor_ of a new step. Only the fourth is specific to recursion.
 
@@ -1195,7 +1198,7 @@ These checks are regression evidence. `MockProver` decides whether an assignment
 
 Two levels, and the division gives the coverage its shape. Both use real setup, proving and verification, through harnesses of their own.
 
-**Focused tests exercise one gadget at a time.** The Merkle path gadget accepts a valid entry, rejects a wrong commitment, and accepts a padded path. A further case supplies both a corrupted padded sibling and a wrong commitment, so its rejection does not isolate the padding rule. The lottery gadget accepts a maximal target and rejects a zero target for a fixed fixture, which are the extremes rather than the equality boundary. Its index constraints accept a strictly increasing sequence below `m` and reject an index at the bound. The signature gadget accepts a valid entry and rejects a wrong challenge. The comparison gadget accepts strictly increasing values and rejects equal ones.
+**Focused tests exercise one gadget at a time.** The Merkle path gadget accepts a valid entry, rejects a wrong commitment, accepts a padded path, and accepts the empty path of a one-leaf tree. A further case supplies both a corrupted padded sibling and a wrong commitment, so its rejection does not isolate the padding rule. The lottery gadget accepts a maximal target and rejects a zero target for a fixed fixture, which are the extremes rather than the equality boundary. Its index constraints accept a strictly increasing sequence below `m` and reject an index at the bound. The signature gadget accepts a valid entry and rejects a wrong challenge. The comparison gadget accepts strictly increasing values and rejects equal ones.
 
 **The assembled relation is checked against selected mutations**, and the outcome they assert differs.
 

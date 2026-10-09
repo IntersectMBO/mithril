@@ -9,6 +9,10 @@ pub(crate) use schnorr_signature::DOMAIN_SEPARATION_TAG_CIRCUIT_VERIFICATION_KEY
 #[cfg(feature = "snark")]
 pub(crate) use schnorr_signature::DOMAIN_SEPARATION_TAG_LOTTERY;
 #[cfg(feature = "snark")]
+pub(crate) use schnorr_signature::DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF;
+#[cfg(feature = "snark")]
+pub(crate) use schnorr_signature::DOMAIN_SEPARATION_TAG_SNARK_MESSAGE;
+#[cfg(feature = "snark")]
 pub(crate) use schnorr_signature::DOMAIN_SEPARATION_TAG_STANDARD_SIGNATURE;
 #[cfg(feature = "snark")]
 pub(crate) use schnorr_signature::DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE;

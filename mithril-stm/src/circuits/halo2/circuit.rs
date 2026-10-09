@@ -19,7 +19,8 @@ use crate::circuits::halo2::witness_assignments::{
     assign_signature_components, assign_witness_entry,
 };
 use crate::signature_scheme::{
-    DOMAIN_SEPARATION_TAG_LOTTERY, DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE,
+    DOMAIN_SEPARATION_TAG_LOTTERY, DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF,
+    DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE,
 };
 use crate::{LotteryIndex, Parameters, StmResult};
 
@@ -244,6 +245,10 @@ impl Relation for CertificateCircuit {
         )?;
         let domain_separation_tag_lottery: AssignedNative<_> =
             std_lib.assign_fixed(layouter, CircuitBase::from(DOMAIN_SEPARATION_TAG_LOTTERY))?;
+        let domain_separation_tag_merkle_tree_leaf: AssignedNative<_> = std_lib.assign_fixed(
+            layouter,
+            CircuitBase::from(DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF),
+        )?;
         let lottery_prefix = std_lib.poseidon(
             layouter,
             &[
@@ -284,6 +289,7 @@ impl Relation for CertificateCircuit {
                     merkle_siblings: &assigned_witness_entry.merkle_path.siblings,
                     merkle_positions: &assigned_witness_entry.merkle_path.positions,
                     merkle_tree_depth: self.merkle_tree_depth,
+                    leaf_domain_separation_tag: &domain_separation_tag_merkle_tree_leaf,
                 },
             )?;
 

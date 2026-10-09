@@ -22,6 +22,8 @@ pub(crate) struct MerklePathInputs<'a> {
     pub(crate) merkle_positions: &'a [AssignedBit<CircuitBase>],
     /// Expected Merkle tree depth, used for error reporting on empty paths.    
     pub(crate) merkle_tree_depth: u32,
+    /// Assigned tag preceding the leaf inputs in the leaf hash.
+    pub(crate) leaf_domain_separation_tag: &'a AssignedNative<CircuitBase>,
 }
 
 /// Verifies that the assigned Merkle path opens the witness leaf to the public commitment.
@@ -35,6 +37,7 @@ pub(crate) fn verify_merkle_path(
     let leaf = std_lib.poseidon(
         layouter,
         &[
+            inputs.leaf_domain_separation_tag.clone(),
             verification_key_x.clone(),
             verification_key_y.clone(),
             inputs.lottery_target_value.clone(),
@@ -73,30 +76,26 @@ pub(crate) fn verify_merkle_path(
     //  During the computation of the root, the values 0 are ignored in the accumulator
     // so the final result is the root of the original merkle tree.
     //
-    // The first sibling can never be padding so there is not need to check for a 0 value.
-    // This saves a few constraints per loop.
-    let first_sibling = inputs.merkle_siblings.first().ok_or(
-        CertificateCircuitError::MerkleSiblingLengthMismatch {
+    // The first sibling is checked for padding too: a tree with a single leaf has an empty
+    // path, so its padded path is only zeros and its root is the leaf hash itself.
+    if inputs.merkle_siblings.is_empty() {
+        return Err(CertificateCircuitError::MerkleSiblingLengthMismatch {
             expected_depth: inputs.merkle_tree_depth,
             actual: 0,
-        },
-    )?;
-    let first_position = inputs.merkle_positions.first().ok_or(
-        CertificateCircuitError::MerklePositionLengthMismatch {
+        });
+    }
+    if inputs.merkle_positions.is_empty() {
+        return Err(CertificateCircuitError::MerklePositionLengthMismatch {
             expected_depth: inputs.merkle_tree_depth,
             actual: 0,
-        },
-    )?;
-    let first_left = std_lib.select(layouter, first_position, &leaf, first_sibling)?;
-    let first_right = std_lib.select(layouter, first_position, first_sibling, &leaf)?;
-    let first_node = std_lib.poseidon(layouter, &[first_left, first_right])?;
+        });
+    }
 
     let root = inputs
         .merkle_siblings
         .iter()
-        .skip(1)
-        .zip(inputs.merkle_positions.iter().skip(1))
-        .try_fold(first_node, |acc, (x, pos)| {
+        .zip(inputs.merkle_positions.iter())
+        .try_fold(leaf, |acc, (x, pos)| {
             let left = std_lib.select(layouter, pos, &acc, x)?;
             let right = std_lib.select(layouter, pos, x, &acc)?;
             let current_node = std_lib.poseidon(layouter, &[left, right])?;
@@ -120,10 +119,11 @@ mod tests {
     use crate::circuits::halo2::tests::test_helpers::{
         TEST_MERKLE_TREE_DEPTH, TEST_MERKLE_TREE_DEPTH_FOR_PATH_PADDING, assert_relation_rejected,
         impl_focused_test_relation, jubjub_poseidon_used_chips, prove_and_verify_relation,
-        sample_valid_circuit_witness_entry,
+        sample_valid_circuit_witness_entry, sample_valid_circuit_witness_entry_for_tree_size,
     };
     use crate::circuits::halo2::types::{CircuitBase, CircuitBaseField};
     use crate::circuits::halo2::witness::{CircuitWitnessEntry, MerkleTreeCommitment};
+    use crate::signature_scheme::DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF;
 
     use super::{MerklePathInputs, verify_merkle_path};
 
@@ -183,6 +183,11 @@ mod tests {
                 .map(|position| std_lib.convert(layouter, position))
                 .collect::<Result<Vec<_>, Error>>()?;
 
+            let leaf_domain_separation_tag = std_lib.assign_fixed(
+                layouter,
+                CircuitBase::from(DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF),
+            )?;
+
             verify_merkle_path(
                 std_lib,
                 layouter,
@@ -193,6 +198,7 @@ mod tests {
                     merkle_siblings: &merkle_siblings,
                     merkle_positions: &merkle_positions,
                     merkle_tree_depth: TEST_MERKLE_TREE_DEPTH as u32,
+                    leaf_domain_separation_tag: &leaf_domain_separation_tag,
                 },
             )
         }
@@ -254,6 +260,11 @@ mod tests {
                 .map(|position| std_lib.convert(layouter, position))
                 .collect::<Result<Vec<_>, Error>>()?;
 
+            let leaf_domain_separation_tag = std_lib.assign_fixed(
+                layouter,
+                CircuitBase::from(DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF),
+            )?;
+
             verify_merkle_path(
                 std_lib,
                 layouter,
@@ -264,6 +275,7 @@ mod tests {
                     merkle_siblings: &merkle_siblings,
                     merkle_positions: &merkle_positions,
                     merkle_tree_depth: TEST_MERKLE_TREE_DEPTH as u32,
+                    leaf_domain_separation_tag: &leaf_domain_separation_tag,
                 },
             )
         }
@@ -308,6 +320,27 @@ mod tests {
 
         prove_and_verify_relation(&relation, &(), (entry.clone(), merkle_tree_commitment))
             .expect("merkle_path_accepts_valid_witness_entry should succeed");
+    }
+
+    #[test]
+    fn merkle_path_accepts_single_leaf_tree() {
+        let relation = MerklePathRelation;
+        let (entry, merkle_tree_commitment, _) = sample_valid_circuit_witness_entry_for_tree_size(
+            1,
+            TEST_MERKLE_TREE_DEPTH_FOR_PATH_PADDING as u32,
+        )
+        .expect("merkle_path_accepts_single_leaf_tree should build fixture");
+        assert!(
+            entry
+                .merkle_path
+                .siblings
+                .iter()
+                .all(|(_, sibling)| *sibling == CircuitBaseField::ZERO),
+            "The path of a single leaf tree should only contain zero padding"
+        );
+
+        prove_and_verify_relation(&relation, &(), (entry, merkle_tree_commitment))
+            .expect("merkle_path_accepts_single_leaf_tree should succeed");
     }
 
     #[test]

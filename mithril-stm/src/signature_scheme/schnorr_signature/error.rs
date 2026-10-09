@@ -44,4 +44,8 @@ pub enum SchnorrSignatureError {
     /// Given point is not prime order
     #[error("Given point is not prime order")]
     PointIsNotPrimeOrder(Box<PrimeOrderProjectivePoint>),
+
+    /// The commitment point of a Unique signature is not in the prime order subgroup
+    #[error("Unique Schnorr signature commitment point is not prime order")]
+    CommitmentPointIsNotPrimeOrder(Box<UniqueSchnorrSignature>),
 }

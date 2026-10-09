@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.12.32 (10-09-2026)
+
+### Added
+
+- A DST in the leaves of the SNARK merkle tree
+- New check that the commitment point of unique schnorr signature is in the prime order group of the field
+
+### Changed
+
+- Fix to the SNARK merkle tree padding in the certificate circuit to allow a single signer merkle path
+- Update to the conversion of the input message from bytes slice to field element to avoid potential collisions
+- Regenerated the production verification keys of the certificate and recursive circuits, as they changed due to the leaf tag, the padding fix and the message reduction
+- Regenerated the IVC test assets
+
 ## 0.12.30 (10-05-2026)
 
 ### Changed

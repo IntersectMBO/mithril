@@ -1,5 +1,5 @@
 use anyhow::{Context, anyhow};
-use ff::Field;
+use ff::{Field, PrimeField};
 use midnight_curves::{Fq as JubjubBase, Fr as JubjubScalar};
 use rand_core::{CryptoRng, RngCore};
 use sha2::{Digest, Sha256};
@@ -8,6 +8,12 @@ use std::ops::{Add, Mul, Neg, Sub};
 
 use crate::StmError;
 use crate::{StmResult, signature_scheme::SchnorrSignatureError};
+
+use super::{DOMAIN_SEPARATION_TAG_SNARK_MESSAGE, compute_poseidon_digest};
+
+/// Number of message bytes carried by each of the two halves hashed by
+/// [`BaseFieldElement::from_message_collision_resistant`].
+const MESSAGE_HALF_SIZE: usize = 16;
 
 /// Represents an element in the base field of the Jubjub curve
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
@@ -59,6 +65,27 @@ impl BaseFieldElement {
             u64::from_le_bytes(bytes[16..24].try_into()?),
             u64::from_le_bytes(bytes[24..32].try_into()?),
         ])))
+    }
+
+    /// Reduces a 32-byte message to a single base field element without the collisions of a
+    /// modular reduction.
+    ///
+    /// The message is split into two 16-byte halves, low half first, each read as a little-endian
+    /// integer. This ensures that each half is lower than the field modulus so they can be converted
+    /// to field elements and hashed to a single element using Poseidon.
+    pub fn from_message_collision_resistant(message: &[u8; 32]) -> Self {
+        let (message_low, message_high) = message.split_at(MESSAGE_HALF_SIZE);
+        let to_field_element = |half: &[u8]| {
+            let mut half_bytes = [0u8; MESSAGE_HALF_SIZE];
+            half_bytes.copy_from_slice(half);
+            BaseFieldElement(JubjubBase::from_u128(u128::from_le_bytes(half_bytes)))
+        };
+
+        compute_poseidon_digest(&[
+            DOMAIN_SEPARATION_TAG_SNARK_MESSAGE,
+            to_field_element(message_low),
+            to_field_element(message_high),
+        ])
     }
 }
 
@@ -272,6 +299,29 @@ mod tests {
             let golden_serialized = serde_json::to_string(&golden_value())
                 .expect("This JSON serialization should not fail");
             assert_eq!(golden_serialized, serialized);
+        }
+    }
+
+    mod golden_message_reduction {
+        use super::*;
+
+        const GOLDEN_BYTES: &[u8; 32] = &[
+            252, 81, 174, 159, 132, 165, 102, 1, 161, 32, 163, 24, 196, 74, 14, 223, 253, 94, 232,
+            73, 117, 76, 79, 81, 77, 94, 228, 158, 234, 150, 85, 16,
+        ];
+
+        fn golden_value() -> BaseFieldElement {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let mut message = [0u8; 32];
+            rng.fill_bytes(&mut message);
+            BaseFieldElement::from_message_collision_resistant(&message)
+        }
+
+        #[test]
+        fn golden_reduction() {
+            let value = BaseFieldElement::from_bytes(GOLDEN_BYTES)
+                .expect("Golden bytes deserialization should not fail");
+            assert_eq!(golden_value(), value);
         }
     }
 

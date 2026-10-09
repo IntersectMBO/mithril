@@ -28,7 +28,6 @@ use crate::signature_scheme::{
 };
 use crate::{AggregateVerificationKeyForSnark, MithrilMembershipDigest};
 
-use super::super::field_encoding::jubjub_base_from_raw_le_bytes;
 use super::proofs::verify_prepare_poseidon_ivc;
 use super::setup::{AssetGenerationSetup, GENESIS_EPOCH, QUORUM_SIZE};
 
@@ -338,9 +337,9 @@ pub(crate) fn next_message_and_preimage_for_step(
     let preimage = protocol_message
         .try_rigid_preimage()
         .expect("protocol message preimage should succeed");
-    let message_hash = Sha256::digest(preimage);
+    let message_hash: [u8; 32] = Sha256::digest(preimage).into();
     (
-        jubjub_base_from_raw_le_bytes(message_hash.as_ref()),
+        BaseFieldElement::from_message_collision_resistant(&message_hash).0,
         preimage.to_vec(),
     )
 }
@@ -369,9 +368,9 @@ pub(crate) fn same_epoch_message_and_preimage_for_step(
     let preimage = protocol_message
         .try_rigid_preimage()
         .expect("protocol message preimage should succeed");
-    let message_hash = Sha256::digest(preimage);
+    let message_hash: [u8; 32] = Sha256::digest(preimage).into();
     (
-        jubjub_base_from_raw_le_bytes(message_hash.as_ref()),
+        BaseFieldElement::from_message_collision_resistant(&message_hash).0,
         preimage.to_vec(),
     )
 }

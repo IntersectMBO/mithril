@@ -260,8 +260,8 @@ where
             }
         }
 
-        let message_as_base_field_element = BaseFieldElement::from_raw(&msg_bytes)
-            .with_context(|| "Failed to convert message to BaseFieldElement.")?;
+        let message_as_base_field_element =
+            BaseFieldElement::from_message_collision_resistant(&msg_bytes);
 
         if self.state.message != MessageHash::from_field(message_as_base_field_element.0) {
             return Err(IvcProofError::InvalidMessage.into());
@@ -655,18 +655,18 @@ mod tests {
     use super::{IvcChainStepBundle, IvcProof};
 
     const STEP_OUTPUT_MSG: [u8; 32] = [
-        22, 148, 87, 37, 149, 0, 124, 10, 156, 94, 108, 6, 78, 59, 239, 80, 126, 213, 158, 211,
-        191, 213, 128, 70, 128, 30, 235, 80, 192, 191, 159, 67,
+        39, 138, 98, 145, 201, 147, 83, 121, 159, 136, 22, 4, 58, 15, 163, 94, 46, 183, 168, 195,
+        191, 5, 28, 96, 114, 241, 127, 214, 52, 129, 118, 52,
     ];
 
     const SAME_EPOCH_MSG: [u8; 32] = [
-        147, 84, 244, 74, 250, 60, 153, 155, 8, 94, 236, 150, 53, 39, 132, 61, 99, 153, 192, 207,
-        20, 90, 16, 130, 216, 12, 87, 134, 230, 4, 190, 175,
+        69, 94, 237, 139, 57, 199, 43, 226, 31, 21, 158, 170, 87, 4, 67, 46, 65, 241, 25, 62, 97,
+        163, 76, 111, 125, 24, 231, 217, 129, 153, 88, 25,
     ];
 
     const CHAIN_STATE_MSG: [u8; 32] = [
-        253, 10, 116, 221, 249, 84, 222, 35, 101, 84, 229, 73, 90, 91, 97, 173, 36, 63, 47, 98,
-        189, 1, 99, 75, 183, 186, 225, 31, 226, 29, 121, 122,
+        163, 14, 51, 21, 127, 206, 70, 139, 173, 111, 15, 50, 121, 132, 12, 167, 74, 225, 81, 215,
+        71, 119, 42, 139, 20, 36, 37, 197, 32, 11, 2, 235,
     ];
 
     const PROTOCOL_MESSAGE_PREIMAGE: [u8; PREIMAGE_SIZE] = [0u8; PREIMAGE_SIZE];
@@ -760,8 +760,8 @@ mod tests {
     }
 
     // Exactly 32 bytes are the raw message and take precedence; any other width is decoded as hex.
-    // Both are then compared as field values, so equality is modulo the field order rather than
-    // over bytes.
+    // Both are then compared through their collision-resistant field reduction, which only maps two
+    // different messages to one value through a Poseidon collision.
     mod input_message {
         use proptest::prelude::*;
 
@@ -777,11 +777,7 @@ mod tests {
         use super::*;
 
         fn message_hash(bytes: &[u8; 32]) -> MessageHash {
-            MessageHash::from_field(
-                BaseFieldElement::from_raw(bytes)
-                    .expect("from_raw applies modulus reduction and cannot fail")
-                    .0,
-            )
+            MessageHash::from_field(BaseFieldElement::from_message_collision_resistant(bytes).0)
         }
 
         /// The helper reads only the stored message, so the proof around it can be empty.
@@ -852,7 +848,7 @@ mod tests {
                 other in any::<[u8; 32]>(),
                 uppercase_at in any::<[bool; 64]>(),
             ) {
-                // Distinct bytes can reduce to the same element, and those are accepted by design.
+                // Distinct bytes only reduce to the same element through a Poseidon collision.
                 prop_assume!(message_hash(&message) != message_hash(&other));
                 let proof = proof_committing_to(&message);
 
@@ -948,11 +944,11 @@ mod tests {
             );
         }
 
-        /// `from_raw` reduces modulo the field order, so a value and that value plus the modulus
-        /// are the same message. Recorded as behaviour: a successful check means the bytes name
-        /// the committed field element, not that they are the only bytes that do.
+        /// A value and that value plus the field modulus reduce to the same field element, so a
+        /// check reducing the message modulo the field order would accept both. The collision-
+        /// resistant reduction hashes the two halves instead, so the offset message is rejected.
         #[test]
-        fn a_message_offset_by_the_field_modulus_is_accepted() {
+        fn a_message_offset_by_the_field_modulus_is_rejected() {
             let message = [0u8; 32];
             let proof = proof_committing_to(&message);
 
@@ -963,9 +959,13 @@ mod tests {
                 0x53, 0xa7, 0xed, 0x73,
             ];
 
-            proof
+            let error = proof
                 .check_input_message_matches_state_message(&modulus)
-                .expect("a representative of the same field element is accepted");
+                .expect_err("a message offset by the field modulus is a different message");
+            assert_eq!(
+                error.downcast_ref::<IvcProofError>(),
+                Some(&IvcProofError::InvalidMessage)
+            );
         }
     }
 
@@ -1091,10 +1091,12 @@ mod tests {
         let mut step_output = load_embedded_next_epoch_step_output_asset()
             .expect("recursive step output asset should load");
 
-        // Set the message and the MessageHash to zero so they match between
+        // Set the message to zero and the MessageHash to its reduction so they match between
         // them but they don't match what was used to create the proof
         let tampered_msg = &[0u8; 32];
-        step_output.next_state.message = MessageHash::ZERO;
+        step_output.next_state.message = MessageHash::from_field(
+            BaseFieldElement::from_message_collision_resistant(tampered_msg).0,
+        );
 
         let proof = IvcProof::<Blake2b256>::new(
             step_output.ivc_proof,
@@ -1780,8 +1782,8 @@ mod tests {
         use super::*;
 
         const GOLDEN_R: [u8; 32] = [
-            165, 247, 132, 27, 176, 110, 28, 81, 167, 172, 57, 230, 210, 92, 60, 187, 160, 108, 7,
-            240, 30, 88, 242, 172, 83, 151, 174, 191, 118, 114, 203, 1,
+            86, 124, 50, 88, 245, 154, 192, 160, 74, 63, 23, 52, 149, 127, 27, 4, 194, 238, 159,
+            12, 252, 157, 81, 149, 205, 65, 150, 100, 143, 32, 82, 109,
         ];
 
         #[test]

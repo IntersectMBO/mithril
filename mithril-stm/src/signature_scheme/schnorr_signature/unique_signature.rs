@@ -44,6 +44,10 @@ impl UniqueSchnorrSignature {
     ///
     /// Check: challenge == challenge_recomputed
     ///
+    /// The commitment point must be in the prime order subgroup, as the circuit requires. Otherwise
+    /// a signer could add a low-order point to it and still pass the challenge check, which gives
+    /// several commitment points, and so several lottery evaluations, for one key and message.
+    ///
     pub fn verify(
         &self,
         msg: &[BaseFieldElement],
@@ -53,6 +57,12 @@ impl UniqueSchnorrSignature {
         verification_key
             .is_valid()
             .with_context(|| "Signature verification failed due to invalid verification key")?;
+
+        if !self.commitment_point.is_prime_order() {
+            return Err(anyhow!(
+                SchnorrSignatureError::CommitmentPointIsNotPrimeOrder(Box::new(*self))
+            ));
+        }
 
         let prime_order_generator_point = PrimeOrderProjectivePoint::create_generator();
 
@@ -153,7 +163,9 @@ mod tests {
     use rand_core::SeedableRng;
 
     use crate::signature_scheme::{
-        BaseFieldElement, SchnorrSigningKey, SchnorrVerificationKey, UniqueSchnorrSignature,
+        BaseFieldElement, DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE, PrimeOrderProjectivePoint,
+        ProjectivePoint, ScalarFieldElement, SchnorrSignatureError, SchnorrSigningKey,
+        SchnorrVerificationKey, UniqueSchnorrSignature, compute_poseidon_digest,
     };
 
     #[test]
@@ -194,6 +206,72 @@ mod tests {
         result1.expect_err("Wrong verification key used, test should fail.");
         // Wrong message is verified
         result2.expect_err("Wrong message used, test should fail.");
+    }
+
+    #[test]
+    fn signature_with_a_low_order_commitment_point_component_is_rejected() {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let sk = SchnorrSigningKey::generate(&mut rng);
+        let vk = SchnorrVerificationKey::new_from_signing_key(sk.clone());
+        let msg = [BaseFieldElement::from(42u64)];
+
+        // `(0, -1)` is the point of order 2: its encoding is the `v` coordinate with a zero sign bit.
+        let low_order_point =
+            ProjectivePoint::from_bytes(&(-BaseFieldElement::from(1u64)).to_bytes()).unwrap();
+        assert!(!low_order_point.is_prime_order());
+
+        let generator = PrimeOrderProjectivePoint::create_generator();
+        let msg_hash_point = ProjectivePoint::hash_to_projective_point(&msg).unwrap();
+        let commitment_point = sk.0 * msg_hash_point + low_order_point;
+
+        let signature = loop {
+            let random_scalar = ScalarFieldElement::new_random_nonzero_scalar(&mut rng).unwrap();
+            let random_point_2 = ProjectivePoint::from(random_scalar * generator);
+            let found = [false, true].into_iter().find_map(|adds_low_order_point| {
+                let mut random_point_1 = random_scalar * msg_hash_point;
+                if adds_low_order_point {
+                    random_point_1 = random_point_1 + low_order_point;
+                }
+                let mut points_coordinates = vec![DOMAIN_SEPARATION_TAG_UNIQUE_SIGNATURE];
+                points_coordinates.extend(
+                    [
+                        msg_hash_point,
+                        ProjectivePoint::from(vk.0),
+                        commitment_point,
+                        random_point_1,
+                        random_point_2,
+                    ]
+                    .iter()
+                    .flat_map(|point| {
+                        let (u, v) = point.get_coordinates();
+                        [u, v]
+                    }),
+                );
+                let challenge = compute_poseidon_digest(&points_coordinates);
+                let challenge_as_scalar = ScalarFieldElement::from_base_field(&challenge).unwrap();
+                // `challenge * T` is `T` for an odd challenge and the identity for an even one.
+                let challenge_is_odd = challenge_as_scalar * low_order_point == low_order_point;
+                (challenge_is_odd == adds_low_order_point).then(|| UniqueSchnorrSignature {
+                    commitment_point,
+                    response: random_scalar - challenge_as_scalar * sk.0,
+                    challenge,
+                })
+            });
+            if let Some(signature) = found {
+                break signature;
+            }
+        };
+
+        let error = signature
+            .verify(&msg, &vk)
+            .expect_err("A commitment point outside the prime-order subgroup should be rejected");
+        assert!(
+            matches!(
+                error.downcast_ref::<SchnorrSignatureError>(),
+                Some(SchnorrSignatureError::CommitmentPointIsNotPrimeOrder(_))
+            ),
+            "expected a commitment point order error, got: {error}"
+        );
     }
 
     #[test]
