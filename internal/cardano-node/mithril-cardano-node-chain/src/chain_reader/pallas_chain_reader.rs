@@ -5,7 +5,10 @@ use anyhow::Context;
 use async_trait::async_trait;
 use pallas_network::{
     facades::NodeClient,
-    miniprotocols::chainsync::{BlockContent, NextResponse},
+    miniprotocols::{
+        Point,
+        chainsync::{BlockContent, NextResponse},
+    },
 };
 use pallas_traverse::MultiEraBlock;
 use slog::{Logger, debug, warn};
@@ -94,7 +97,8 @@ impl PallasChainReader {
         }
     }
 
-    /// Intersects the point of the chain with the given point.
+    /// Intersects the point of the chain with the given point and consumes the acknowledgement
+    /// of the intersection sent by the node.
     async fn find_intersect_point(&mut self, point: &RawCardanoPoint) -> StdResult<()> {
         let logger = self.logger.clone();
         let chainsync_timeout = self.chainsync_timeout;
@@ -108,8 +112,8 @@ impl PallasChainReader {
                 chainsync.find_intersect(vec![point.to_owned().into()]),
             )
             .await;
-            match result {
-                Ok(Ok(_)) => {}
+            let intersection_point = match result {
+                Ok(Ok((intersection_point, _tip))) => intersection_point,
                 Ok(Err(err)) => {
                     self.drop_client();
 
@@ -127,12 +131,71 @@ impl PallasChainReader {
                         "PallasChainReader timed out finding intersect point"
                     ));
                 }
+            };
+            if let Some(intersection_point) = intersection_point {
+                self.consume_intersection_acknowledgement(intersection_point).await?;
             }
         } else {
             debug!(logger, "Doesn't have agency, no need to find intersect point";);
         }
 
         Ok(())
+    }
+
+    /// Consumes the acknowledgement of an intersection: in the chainsync mini-protocol, the node
+    /// answers the first request that follows a found intersection with a rollback to the
+    /// intersection point. Reading it here keeps it out of the streamed events, so that every
+    /// rollback read afterwards is a genuine one.
+    async fn consume_intersection_acknowledgement(
+        &mut self,
+        intersection_point: Point,
+    ) -> StdResult<()> {
+        let logger = self.logger.clone();
+        let chainsync_timeout = self.chainsync_timeout;
+        let client = self.get_client().await?;
+        let acknowledgement = timeout(chainsync_timeout, client.chainsync().request_next()).await;
+        match acknowledgement {
+            Ok(Ok(NextResponse::RollBackward(rollback_point, _tip)))
+                if rollback_point == intersection_point =>
+            {
+                Ok(())
+            }
+            Ok(Ok(NextResponse::RollBackward(rollback_point, _tip))) => {
+                self.drop_client();
+
+                Err(anyhow::anyhow!(
+                    "PallasChainReader expected a rollback to the intersection point {:?} as acknowledgement, received a rollback to {:?}",
+                    RawCardanoPoint::from(intersection_point),
+                    RawCardanoPoint::from(rollback_point)
+                ))
+            }
+            Ok(Ok(_)) => {
+                self.drop_client();
+
+                Err(anyhow::anyhow!(
+                    "PallasChainReader expected a rollback to the intersection point {:?} as acknowledgement, received no rollback",
+                    RawCardanoPoint::from(intersection_point)
+                ))
+            }
+            Ok(Err(err)) => {
+                self.drop_client();
+
+                Err(anyhow::anyhow!(err).context(
+                    "PallasChainReader failed to receive the acknowledgement of the intersection",
+                ))
+            }
+            Err(_elapsed) => {
+                warn!(
+                    logger, "Timeout elapsed while waiting for the acknowledgement of the intersection, dropping connection";
+                    "timeout" => ?chainsync_timeout, "intersection_point" => ?RawCardanoPoint::from(intersection_point)
+                );
+                self.drop_client();
+
+                Err(anyhow::anyhow!(
+                    "PallasChainReader timed out waiting for the acknowledgement of the intersection"
+                ))
+            }
+        }
     }
 
     /// Processes a block content next response and returns the appropriate chain block next action.
@@ -233,6 +296,12 @@ mod tests {
         No,
     }
 
+    /// Enum representing an invalid reply of the server to the request that follows an intersection.
+    enum InvalidAcknowledgement {
+        Block,
+        RollbackToAnotherPoint,
+    }
+
     /// Returns a fake specific point for testing purposes.
     fn get_fake_specific_point() -> Point {
         Point::Specific(
@@ -242,9 +311,23 @@ mod tests {
         )
     }
 
+    /// Returns a fake specific point which is not the intersection point.
+    fn get_fake_other_specific_point() -> Point {
+        Point::Specific(
+            1654400,
+            hex::decode("0000000000000000000000000000000000000000000000000000000000000000")
+                .unwrap(),
+        )
+    }
+
     /// Returns a fake block number for testing purposes.
     fn get_fake_block_number() -> BlockNumber {
         BlockNumber(1337)
+    }
+
+    /// Returns the fake tip of the chain, at the fake specific point.
+    fn get_fake_tip() -> Tip {
+        Tip(get_fake_specific_point(), *get_fake_block_number())
     }
 
     /// Returns a fake cardano raw point for testing purposes.
@@ -271,64 +354,93 @@ mod tests {
         ScannedBlock::convert(multi_era_block)
     }
 
-    /// Sets up a mock server for related tests.
-    ///
-    /// Use the `action` parameter to specify the action to be performed by the server.
+    /// Accepts a client on the socket and intersects at the fake specific point, leaving the
+    /// server ready to reply to the request that follows the intersection.
+    async fn accept_and_intersect(socket_path: PathBuf) -> NodeServer {
+        if socket_path.exists() {
+            fs::remove_file(&socket_path).expect("Previous socket removal failed");
+        }
+
+        let unix_listener = UnixListener::bind(socket_path.as_path()).unwrap();
+        let mut server = NodeServer::accept(&unix_listener, 10).await.unwrap();
+        let chainsync_server = server.chainsync();
+
+        chainsync_server.recv_while_idle().await.unwrap();
+        chainsync_server
+            .send_intersect_found(get_fake_specific_point(), get_fake_tip())
+            .await
+            .unwrap();
+        chainsync_server.recv_while_idle().await.unwrap();
+
+        server
+    }
+
+    /// Sets up a mock server which intersects at the fake specific point, acknowledges the
+    /// intersection as the node does, then performs the given action.
     async fn setup_server(
         socket_path: PathBuf,
         action: ServerAction,
         has_agency: HasAgency,
     ) -> tokio::task::JoinHandle<NodeServer> {
-        tokio::spawn({
-            async move {
-                if socket_path.exists() {
-                    fs::remove_file(&socket_path).expect("Previous socket removal failed");
-                }
+        tokio::spawn(async move {
+            let mut server = accept_and_intersect(socket_path).await;
+            let chainsync_server = server.chainsync();
 
-                let known_point = get_fake_specific_point();
-                let tip_block_number = get_fake_block_number();
-                let unix_listener = UnixListener::bind(socket_path.as_path()).unwrap();
-                let mut server = NodeServer::accept(&unix_listener, 10).await.unwrap();
+            chainsync_server
+                .send_roll_backward(get_fake_specific_point(), get_fake_tip())
+                .await
+                .unwrap();
+            chainsync_server.recv_while_idle().await.unwrap();
 
-                let chainsync_server = server.chainsync();
-
-                chainsync_server.recv_while_idle().await.unwrap();
-
-                chainsync_server
-                    .send_intersect_found(
-                        known_point.clone(),
-                        Tip(known_point.clone(), *tip_block_number),
-                    )
-                    .await
-                    .unwrap();
-
-                chainsync_server.recv_while_idle().await.unwrap();
-
-                if has_agency == HasAgency::No {
-                    chainsync_server.send_await_reply().await.unwrap();
-                }
-
-                match action {
-                    ServerAction::RollBackward => {
-                        chainsync_server
-                            .send_roll_backward(
-                                known_point.clone(),
-                                Tip(known_point.clone(), *tip_block_number),
-                            )
-                            .await
-                            .unwrap();
-                    }
-                    ServerAction::RollForward => {
-                        let block = BlockContent(get_fake_raw_block());
-                        chainsync_server
-                            .send_roll_forward(block, Tip(known_point.clone(), *tip_block_number))
-                            .await
-                            .unwrap();
-                    }
-                }
-
-                server
+            if has_agency == HasAgency::No {
+                chainsync_server.send_await_reply().await.unwrap();
             }
+
+            match action {
+                ServerAction::RollBackward => {
+                    chainsync_server
+                        .send_roll_backward(get_fake_specific_point(), get_fake_tip())
+                        .await
+                        .unwrap();
+                }
+                ServerAction::RollForward => {
+                    chainsync_server
+                        .send_roll_forward(BlockContent(get_fake_raw_block()), get_fake_tip())
+                        .await
+                        .unwrap();
+                }
+            }
+
+            server
+        })
+    }
+
+    /// Sets up a mock server which intersects at the fake specific point and replies to the
+    /// request that follows with the given invalid acknowledgement.
+    async fn setup_server_with_invalid_acknowledgement(
+        socket_path: PathBuf,
+        acknowledgement: InvalidAcknowledgement,
+    ) -> tokio::task::JoinHandle<NodeServer> {
+        tokio::spawn(async move {
+            let mut server = accept_and_intersect(socket_path).await;
+            let chainsync_server = server.chainsync();
+
+            match acknowledgement {
+                InvalidAcknowledgement::Block => {
+                    chainsync_server
+                        .send_roll_forward(BlockContent(get_fake_raw_block()), get_fake_tip())
+                        .await
+                        .unwrap();
+                }
+                InvalidAcknowledgement::RollbackToAnotherPoint => {
+                    chainsync_server
+                        .send_roll_backward(get_fake_other_specific_point(), get_fake_tip())
+                        .await
+                        .unwrap();
+                }
+            }
+
+            server
         })
     }
 
@@ -533,6 +645,15 @@ mod tests {
                     .await
                     .unwrap();
 
+                chainsync_server.recv_while_idle().await.unwrap();
+                chainsync_server
+                    .send_roll_backward(
+                        known_point.clone(),
+                        Tip(known_point.clone(), *tip_block_number),
+                    )
+                    .await
+                    .unwrap();
+
                 // Receive the request_next but never respond — simulates a stuck Cardano node
                 chainsync_server.recv_while_idle().await.unwrap();
 
@@ -630,6 +751,71 @@ mod tests {
 
                 chain_reader
             }
+        });
+
+        let client_result = client.await;
+        server.abort();
+        client_result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn set_chain_point_fails_when_the_intersection_is_acknowledged_by_a_block() {
+        let socket_path = create_temp_dir(current_function!()).join("node.socket");
+        let server = setup_server_with_invalid_acknowledgement(
+            socket_path.clone(),
+            InvalidAcknowledgement::Block,
+        )
+        .await;
+        let client = tokio::spawn(async move {
+            let mut chain_reader = PallasChainReader::new(
+                socket_path.as_path(),
+                CardanoNetwork::TestNet(10),
+                TestLogger::stdout(),
+            );
+
+            chain_reader
+                .set_chain_point(&RawCardanoPoint::from(get_fake_specific_point()))
+                .await
+                .expect_err("Setting the chain point should fail when acknowledged by a block");
+
+            assert!(
+                !chain_reader.has_client(),
+                "Client should have been dropped after error"
+            );
+        });
+
+        let client_result = client.await;
+        server.abort();
+        client_result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn set_chain_point_fails_when_the_intersection_is_acknowledged_by_a_rollback_to_another_point()
+     {
+        let socket_path = create_temp_dir(current_function!()).join("node.socket");
+        let server = setup_server_with_invalid_acknowledgement(
+            socket_path.clone(),
+            InvalidAcknowledgement::RollbackToAnotherPoint,
+        )
+        .await;
+        let client = tokio::spawn(async move {
+            let mut chain_reader = PallasChainReader::new(
+                socket_path.as_path(),
+                CardanoNetwork::TestNet(10),
+                TestLogger::stdout(),
+            );
+
+            chain_reader
+                .set_chain_point(&RawCardanoPoint::from(get_fake_specific_point()))
+                .await
+                .expect_err(
+                    "Setting the chain point should fail when acknowledged by a rollback to another point",
+                );
+
+            assert!(
+                !chain_reader.has_client(),
+                "Client should have been dropped after error"
+            );
         });
 
         let client_result = client.await;

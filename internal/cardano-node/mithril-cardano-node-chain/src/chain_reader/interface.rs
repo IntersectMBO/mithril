@@ -10,7 +10,8 @@ use crate::entities::{ChainBlockNextAction, RawCardanoPoint};
 /// - do nothing when tip of the chain is reached
 #[async_trait]
 pub trait ChainBlockReader: Send + Sync {
-    /// Sets the chain point
+    /// Sets the chain point: intersects the chain at the given point and consumes the
+    /// acknowledgement of the intersection, so that the next chain blocks are genuine events
     async fn set_chain_point(&mut self, point: &RawCardanoPoint) -> StdResult<()>;
 
     /// Get the next chain block
