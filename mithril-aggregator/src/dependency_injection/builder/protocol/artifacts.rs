@@ -282,7 +282,7 @@ impl DependenciesBuilder {
         Ok(IpfsUploader::new(
             Arc::new(rpc_api_client),
             IpfsMfsDirPath::from(ipfs_rpc_config.mfs_folder_name),
-            None,
+            ipfs_rpc_config.ipns_key_name,
             FileUploadRetryPolicy::default(),
             &self.root_logger(),
         ))

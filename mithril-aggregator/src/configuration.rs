@@ -501,9 +501,10 @@ pub struct ServeCommandConfiguration {
     ///
     /// `mfs_folder_name` (optional) allows overriding the name of the folder in the IPFS MFS (Mutable File System)
     /// where the snapshots will be stored. Defaults to "mithril" if not specified.
+    /// `ipns_key_name` (optional) if set, publishes the snapshot MFS folder to IPNS under this key name.
     #[example = "\
     `{ \"url\": \"http://localhost:5001/\" }`\
-    or `{ \"url\": \"http://localhost:5001/\", \"mfs_folder_name\": \"custom-folder\" }`\
+    or `{ \"url\": \"http://localhost:5001/\", \"mfs_folder_name\": \"custom-folder\", \"ipns_key_name\": \"ipns-key\" }`\
     "]
     #[serde(
         default,
@@ -718,6 +719,11 @@ pub struct IpfsRpcServerConfig {
     /// Defaults to "mithril" if not specified.
     #[serde(default = "default_mfs_folder_name")]
     pub mfs_folder_name: String,
+
+    /// Optional IPNS publishing keypair.
+    ///
+    /// When configured, publishes the snapshot MFS folder to IPNS under this key name.
+    pub ipns_key_name: Option<String>,
 }
 
 impl IpfsRpcServerConfig {
@@ -1519,13 +1525,14 @@ mod test {
 
     #[test]
     fn deserializing_ipfs_rpc_server_parameters() {
-        let deserialized_without_mfs_dir: IpfsRpcServerConfig =
+        let deserialized_without_mfs_dir_nor_optional_keys: IpfsRpcServerConfig =
             serde_json::from_str(r#"{ "url": "http://localhost:5001/" }"#).unwrap();
         assert_eq!(
-            deserialized_without_mfs_dir,
+            deserialized_without_mfs_dir_nor_optional_keys,
             IpfsRpcServerConfig {
                 url: "http://localhost:5001/".to_string(),
                 mfs_folder_name: default_mfs_folder_name(),
+                ipns_key_name: None,
             }
         );
 
@@ -1538,6 +1545,20 @@ mod test {
             IpfsRpcServerConfig {
                 url: "http://localhost:5001/".to_string(),
                 mfs_folder_name: "altered".to_string(),
+                ipns_key_name: None,
+            }
+        );
+
+        let deserialized_with_ipfs_key_name: IpfsRpcServerConfig = serde_json::from_str(
+            r#"{ "url": "http://localhost:5001/", "ipns_key_name": "my-key" }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            deserialized_with_ipfs_key_name,
+            IpfsRpcServerConfig {
+                url: "http://localhost:5001/".to_string(),
+                mfs_folder_name: default_mfs_folder_name(),
+                ipns_key_name: Some("my-key".to_string()),
             }
         );
     }
