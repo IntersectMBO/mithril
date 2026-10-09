@@ -482,7 +482,7 @@ mod tests {
         fn field_elements(bytes: &[u8]) -> Vec<BaseFieldElement> {
             bytes
                 .chunks(32)
-                .map(|chunk| BaseFieldElement::from_bytes(chunk).unwrap())
+                .map(|chunk| BaseFieldElement::from_canonical_bytes(chunk).unwrap())
                 .collect()
         }
 
@@ -498,12 +498,12 @@ mod tests {
                 .map(|leaf| {
                     let mut inputs = vec![DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF];
                     inputs.extend(field_elements(&leaf.as_bytes_for_merkle_tree()));
-                    compute_poseidon_digest(&inputs).to_bytes().to_vec()
+                    compute_poseidon_digest(&inputs).to_canonical_bytes().to_vec()
                 })
                 .collect();
             let mut root_inputs = field_elements(&leaf_hashes[0]);
             root_inputs.extend(field_elements(&leaf_hashes[1]));
-            let root = compute_poseidon_digest(&root_inputs).to_bytes().to_vec();
+            let root = compute_poseidon_digest(&root_inputs).to_canonical_bytes().to_vec();
 
             assert_eq!(tree.nodes[1..], leaf_hashes[..]);
             assert_eq!(tree.nodes[0], root);

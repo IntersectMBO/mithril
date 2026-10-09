@@ -116,8 +116,8 @@ mod test {
 
         #[test]
         fn golden_hash() {
-            let value = BaseFieldElement::from_bytes(GOLDEN_BYTES)
-                .expect("This from bytes should not fail");
+            let value = BaseFieldElement::from_canonical_bytes(GOLDEN_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
             assert_eq!(golden_value(), value);
         }
     }

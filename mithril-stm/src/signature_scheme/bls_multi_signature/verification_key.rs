@@ -26,7 +26,7 @@ pub struct BlsVerificationKey(pub BlstVk);
 
 impl BlsVerificationKey {
     /// Convert an `VerificationKey` to its compressed byte representation.
-    pub fn to_bytes(self) -> [u8; 96] {
+    pub fn to_canonical_bytes(self) -> [u8; 96] {
         self.0.to_bytes()
     }
 
@@ -35,7 +35,7 @@ impl BlsVerificationKey {
     /// # Error
     /// This function fails if the bytes do not represent a compressed point of the prime
     /// order subgroup of the curve Bls12-381.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         let bytes = bytes.get(..96).ok_or(BlsSignatureError::SerializationError)?;
         match BlstVk::key_validate(bytes) {
             Ok(vk) => Ok(Self(vk)),
@@ -47,8 +47,8 @@ impl BlsVerificationKey {
     /// Compare two `VerificationKey`. Used for PartialOrd impl, used to order signatures. The comparison
     /// function can be anything, as long as it is consistent.
     fn compare_verification_keys(&self, other: &BlsVerificationKey) -> Ordering {
-        let self_bytes = self.to_bytes();
-        let other_bytes = other.to_bytes();
+        let self_bytes = self.to_canonical_bytes();
+        let other_bytes = other.to_canonical_bytes();
         let mut result = Ordering::Equal;
 
         for (i, j) in self_bytes.iter().zip(other_bytes.iter()) {
@@ -68,13 +68,13 @@ impl BlsVerificationKey {
 
 impl Display for BlsVerificationKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.to_bytes())
+        write!(f, "{:?}", self.to_canonical_bytes())
     }
 }
 
 impl Hash for BlsVerificationKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Hash::hash_slice(&self.to_bytes(), state)
+        Hash::hash_slice(&self.to_canonical_bytes(), state)
     }
 }
 
@@ -167,20 +167,20 @@ impl BlsVerificationKeyProofOfPossession {
     /// The layout of a `PublicKeyPoP` encoding is
     /// * Public key
     /// * Proof of Possession
-    pub fn to_bytes(self) -> [u8; 192] {
+    pub fn to_canonical_bytes(self) -> [u8; 192] {
         let mut vkpop_bytes = [0u8; 192];
-        vkpop_bytes[..96].copy_from_slice(&self.vk.to_bytes());
-        vkpop_bytes[96..].copy_from_slice(&self.pop.to_bytes());
+        vkpop_bytes[..96].copy_from_slice(&self.vk.to_canonical_bytes());
+        vkpop_bytes[96..].copy_from_slice(&self.pop.to_canonical_bytes());
         vkpop_bytes
     }
 
     /// Deserialize a byte string to a `BlsVerificationKeyProofOfPossession`.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
-        let mvk = BlsVerificationKey::from_bytes(
+    pub fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
+        let mvk = BlsVerificationKey::from_canonical_bytes(
             bytes.get(..96).ok_or(BlsSignatureError::SerializationError)?,
         )?;
 
-        let pop = BlsProofOfPossession::from_bytes(
+        let pop = BlsProofOfPossession::from_canonical_bytes(
             bytes.get(96..).ok_or(BlsSignatureError::SerializationError)?,
         )?;
 
@@ -203,6 +203,37 @@ impl From<&BlsSigningKey> for BlsVerificationKeyProofOfPossession {
 mod tests {
     use super::*;
 
+    mod golden_verification_key {
+        use rand_chacha::ChaCha20Rng;
+        use rand_core::SeedableRng;
+
+        use super::*;
+
+        const GOLDEN_CANONICAL_BYTES: &[u8; 96] = &[
+            143, 161, 255, 48, 78, 57, 204, 220, 25, 221, 164, 252, 248, 14, 56, 126, 186, 135,
+            228, 188, 145, 181, 52, 200, 97, 99, 213, 46, 0, 199, 193, 89, 187, 88, 29, 135, 173,
+            244, 86, 36, 83, 54, 67, 164, 6, 137, 94, 72, 6, 105, 128, 128, 93, 48, 176, 11, 4,
+            246, 138, 48, 180, 133, 90, 142, 192, 24, 193, 111, 142, 31, 76, 111, 110, 234, 153,
+            90, 208, 192, 31, 124, 95, 102, 49, 158, 99, 52, 220, 165, 94, 251, 68, 69, 121, 16,
+            224, 194,
+        ];
+
+        fn golden_value() -> BlsVerificationKey {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let sk = BlsSigningKey::generate(&mut rng);
+            BlsVerificationKey::from(&sk)
+        }
+
+        #[test]
+        fn golden_canonical_bytes_conversions() {
+            let value = BlsVerificationKey::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
+            assert_eq!(golden_value(), value);
+
+            assert_eq!(GOLDEN_CANONICAL_BYTES, &golden_value().to_canonical_bytes());
+        }
+    }
+
     mod golden {
 
         use rand_chacha::ChaCha20Rng;
@@ -216,6 +247,20 @@ mod tests {
                 "pop": [168, 50, 233, 193, 15, 136, 65, 72, 123, 148, 129, 176, 38, 198, 209, 47, 28, 204, 176, 144, 57, 251, 42, 28, 66, 76, 89, 97, 158, 63, 54, 198, 194, 176, 135, 221, 14, 185, 197, 225, 202, 98, 243, 74, 233, 225, 143, 151, 147, 177, 170, 117, 66, 165, 66, 62, 33, 216, 232, 75, 68, 114, 195, 22, 100, 65, 44, 198, 4, 166, 102, 233, 253, 240, 59, 175, 60, 117, 142, 114, 140, 122, 17, 87, 110, 187, 1, 17, 10, 195, 154, 13, 249, 86, 54, 226]
             }
         "#;
+
+        const GOLDEN_CANONICAL_BYTES: &[u8; 192] = &[
+            143, 161, 255, 48, 78, 57, 204, 220, 25, 221, 164, 252, 248, 14, 56, 126, 186, 135,
+            228, 188, 145, 181, 52, 200, 97, 99, 213, 46, 0, 199, 193, 89, 187, 88, 29, 135, 173,
+            244, 86, 36, 83, 54, 67, 164, 6, 137, 94, 72, 6, 105, 128, 128, 93, 48, 176, 11, 4,
+            246, 138, 48, 180, 133, 90, 142, 192, 24, 193, 111, 142, 31, 76, 111, 110, 234, 153,
+            90, 208, 192, 31, 124, 95, 102, 49, 158, 99, 52, 220, 165, 94, 251, 68, 69, 121, 16,
+            224, 194, 168, 50, 233, 193, 15, 136, 65, 72, 123, 148, 129, 176, 38, 198, 209, 47, 28,
+            204, 176, 144, 57, 251, 42, 28, 66, 76, 89, 97, 158, 63, 54, 198, 194, 176, 135, 221,
+            14, 185, 197, 225, 202, 98, 243, 74, 233, 225, 143, 151, 147, 177, 170, 117, 66, 165,
+            66, 62, 33, 216, 232, 75, 68, 114, 195, 22, 100, 65, 44, 198, 4, 166, 102, 233, 253,
+            240, 59, 175, 60, 117, 142, 114, 140, 122, 17, 87, 110, 187, 1, 17, 10, 195, 154, 13,
+            249, 86, 54, 226,
+        ];
 
         fn golden_value() -> BlsVerificationKeyProofOfPossession {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
@@ -237,6 +282,16 @@ mod tests {
             let golden_serialized = serde_json::to_string(&golden_value())
                 .expect("This JSON serialization should not fail");
             assert_eq!(golden_serialized, serialized);
+        }
+
+        #[test]
+        fn golden_canonical_bytes_conversions() {
+            let value =
+                BlsVerificationKeyProofOfPossession::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                    .expect("This canonical bytes deserialization should not fail");
+            assert_eq!(golden_value(), value);
+
+            assert_eq!(GOLDEN_CANONICAL_BYTES, &golden_value().to_canonical_bytes());
         }
     }
 }

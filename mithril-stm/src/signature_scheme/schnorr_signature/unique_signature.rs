@@ -109,23 +109,23 @@ impl UniqueSchnorrSignature {
     }
 
     /// Convert a `UniqueSchnorrSignature` into bytes.
-    pub fn to_bytes(self) -> [u8; 96] {
+    pub fn to_canonical_bytes(self) -> [u8; 96] {
         let mut out = [0; 96];
-        out[0..32].copy_from_slice(&self.commitment_point.to_bytes());
-        out[32..64].copy_from_slice(&self.response.to_bytes());
-        out[64..96].copy_from_slice(&self.challenge.to_bytes());
+        out[0..32].copy_from_slice(&self.commitment_point.to_canonical_bytes());
+        out[32..64].copy_from_slice(&self.response.to_canonical_bytes());
+        out[64..96].copy_from_slice(&self.challenge.to_canonical_bytes());
 
         out
     }
 
     /// Convert bytes into a `UniqueSchnorrSignature`.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         if bytes.len() < 96 {
             return Err(anyhow!(SchnorrSignatureError::Serialization))
                 .with_context(|| "Not enough bytes provided to create a signature.");
         }
 
-        let commitment_point = ProjectivePoint::from_bytes(
+        let commitment_point = ProjectivePoint::from_canonical_bytes(
             bytes
                 .get(0..32)
                 .ok_or(SchnorrSignatureError::Serialization)
@@ -133,7 +133,7 @@ impl UniqueSchnorrSignature {
         )
         .with_context(|| "Could not convert bytes to `commitment_point`")?;
 
-        let response = ScalarFieldElement::from_bytes(
+        let response = ScalarFieldElement::from_canonical_bytes(
             bytes
                 .get(32..64)
                 .ok_or(SchnorrSignatureError::Serialization)
@@ -141,7 +141,7 @@ impl UniqueSchnorrSignature {
         )
         .with_context(|| "Could not convert the bytes to `response`")?;
 
-        let challenge = BaseFieldElement::from_bytes(
+        let challenge = BaseFieldElement::from_canonical_bytes(
             bytes
                 .get(64..96)
                 .ok_or(SchnorrSignatureError::Serialization)
@@ -216,8 +216,10 @@ mod tests {
         let msg = [BaseFieldElement::from(42u64)];
 
         // `(0, -1)` is the point of order 2: its encoding is the `v` coordinate with a zero sign bit.
-        let low_order_point =
-            ProjectivePoint::from_bytes(&(-BaseFieldElement::from(1u64)).to_bytes()).unwrap();
+        let low_order_point = ProjectivePoint::from_canonical_bytes(
+            &(-BaseFieldElement::from(1u64)).to_canonical_bytes(),
+        )
+        .unwrap();
         assert!(!low_order_point.is_prime_order());
 
         let generator = PrimeOrderProjectivePoint::create_generator();
@@ -275,45 +277,45 @@ mod tests {
     }
 
     #[test]
-    fn from_bytes_signature_not_enough_bytes() {
+    fn from_canonical_bytes_signature_not_enough_bytes() {
         let msg = vec![0u8; 95];
-        let result = UniqueSchnorrSignature::from_bytes(&msg);
+        let result = UniqueSchnorrSignature::from_canonical_bytes(&msg);
         result.expect_err("Not enough bytes.");
     }
 
     #[test]
-    fn from_bytes_signature_exact_size() {
+    fn from_canonical_bytes_signature_exact_size() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let msg = vec![1, 2, 3];
         let base_input = BaseFieldElement::try_from(msg.as_slice()).unwrap();
         let sk = SchnorrSigningKey::generate(&mut rng);
 
         let sig = sk.sign_unique(&[base_input], &mut rng).unwrap();
-        let sig_bytes: [u8; 96] = sig.to_bytes();
+        let sig_bytes: [u8; 96] = sig.to_canonical_bytes();
 
-        let sig_restored = UniqueSchnorrSignature::from_bytes(&sig_bytes).unwrap();
+        let sig_restored = UniqueSchnorrSignature::from_canonical_bytes(&sig_bytes).unwrap();
         assert_eq!(sig, sig_restored);
     }
 
     #[test]
-    fn from_bytes_signature_extra_bytes() {
+    fn from_canonical_bytes_signature_extra_bytes() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let msg = vec![1, 2, 3];
         let base_input = BaseFieldElement::try_from(msg.as_slice()).unwrap();
         let sk = SchnorrSigningKey::generate(&mut rng);
 
         let sig = sk.sign_unique(&[base_input], &mut rng).unwrap();
-        let sig_bytes: [u8; 96] = sig.to_bytes();
+        let sig_bytes: [u8; 96] = sig.to_canonical_bytes();
 
         let mut extended_bytes = sig_bytes.to_vec();
         extended_bytes.extend_from_slice(&[0xFF; 10]);
 
-        let sig_restored = UniqueSchnorrSignature::from_bytes(&extended_bytes).unwrap();
+        let sig_restored = UniqueSchnorrSignature::from_canonical_bytes(&extended_bytes).unwrap();
         assert_eq!(sig, sig_restored);
     }
 
     #[test]
-    fn to_bytes_is_deterministic() {
+    fn to_canonical_bytes_is_deterministic() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let msg = vec![1, 2, 3];
         let base_input = BaseFieldElement::try_from(msg.as_slice()).unwrap();
@@ -322,8 +324,8 @@ mod tests {
         let sig = sk.sign_unique(&[base_input], &mut rng).unwrap();
 
         // Converting to bytes multiple times should give same result
-        let bytes1 = sig.to_bytes();
-        let bytes2 = sig.to_bytes();
+        let bytes1 = sig.to_canonical_bytes();
+        let bytes2 = sig.to_canonical_bytes();
 
         assert_eq!(bytes1, bytes2);
     }
@@ -342,8 +344,8 @@ mod tests {
             .expect("Original signature should verify");
 
         // Roundtrip through bytes
-        let sig_bytes = sig.to_bytes();
-        let sig_restored = UniqueSchnorrSignature::from_bytes(&sig_bytes).unwrap();
+        let sig_bytes = sig.to_canonical_bytes();
+        let sig_restored = UniqueSchnorrSignature::from_canonical_bytes(&sig_bytes).unwrap();
 
         // Restored signature should still verify
         sig_restored
@@ -354,7 +356,7 @@ mod tests {
     mod golden {
         use super::*;
 
-        const GOLDEN_BYTES: &[u8; 96] = &[
+        const GOLDEN_CANONICAL_BYTES: &[u8; 96] = &[
             39, 90, 41, 56, 174, 106, 33, 173, 254, 49, 113, 116, 208, 4, 121, 177, 236, 223, 173,
             108, 193, 135, 214, 159, 99, 93, 108, 202, 201, 200, 141, 148, 230, 175, 77, 63, 232,
             229, 34, 36, 7, 205, 254, 86, 70, 160, 49, 87, 114, 98, 20, 88, 141, 224, 113, 109,
@@ -372,14 +374,12 @@ mod tests {
         }
 
         #[test]
-        fn golden_conversions() {
-            let value = UniqueSchnorrSignature::from_bytes(GOLDEN_BYTES)
-                .expect("This from bytes should not fail");
+        fn golden_canonical_bytes_conversions() {
+            let value = UniqueSchnorrSignature::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
             assert_eq!(golden_value(), value);
 
-            let serialized = UniqueSchnorrSignature::to_bytes(value);
-            let golden_serialized = UniqueSchnorrSignature::to_bytes(golden_value());
-            assert_eq!(golden_serialized, serialized);
+            assert_eq!(GOLDEN_CANONICAL_BYTES, &golden_value().to_canonical_bytes());
         }
     }
 

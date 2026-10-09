@@ -10,7 +10,9 @@ use crate::{
     proof_system::SingleSignatureForConcatenation, signature_scheme::BlsSignature,
 };
 #[cfg(feature = "snark")]
-use crate::{RegistrationEntryForSnark, proof_system::SingleSignatureForSnark};
+use crate::{
+    RegistrationEntryForSnark, UniqueSchnorrSignature, proof_system::SingleSignatureForSnark,
+};
 
 use super::SignatureError;
 
@@ -107,7 +109,7 @@ impl SingleSignature {
         }
 
         let sigma_end = offset.checked_add(48).ok_or(SignatureError::SerializationError)?;
-        let sigma = BlsSignature::from_bytes(
+        let sigma = BlsSignature::from_canonical_bytes(
             bytes
                 .get(offset..sigma_end)
                 .ok_or(SignatureError::SerializationError)?,
@@ -129,7 +131,7 @@ impl SingleSignature {
                 let schnorr_signature_end = snark_offset
                     .checked_add(96)
                     .ok_or(SignatureError::SerializationError)?;
-                let schnorr_signature = crate::UniqueSchnorrSignature::from_bytes(
+                let schnorr_signature = UniqueSchnorrSignature::from_canonical_bytes(
                     bytes
                         .get(snark_offset..schnorr_signature_end)
                         .ok_or(SignatureError::SerializationError)?,
@@ -208,7 +210,10 @@ impl SingleSignature {
 
 impl Hash for SingleSignature {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Hash::hash_slice(&self.concatenation_signature.get_sigma().to_bytes(), state)
+        Hash::hash_slice(
+            &self.concatenation_signature.get_sigma().to_canonical_bytes(),
+            state,
+        )
     }
 }
 

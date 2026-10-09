@@ -30,7 +30,7 @@ macro_rules! impl_serde {
             {
                 use serde::ser::SerializeTuple;
                 let mut seq = serializer.serialize_tuple($size)?;
-                for e in self.to_bytes().iter() {
+                for e in self.to_canonical_bytes().iter() {
                     seq.serialize_element(e)?;
                 }
                 seq.end()
@@ -66,7 +66,7 @@ macro_rules! impl_serde {
                                     &format!("expected bytes{}", $size.to_string()).as_str(),
                                 ))?;
                         }
-                        <$st>::from_bytes(&bytes).map_err(|_| {
+                        <$st>::from_canonical_bytes(&bytes).map_err(|_| {
                             serde::de::Error::custom(
                                 &format!("deserialization failed [{}]", stringify!($st)).as_str(),
                             )

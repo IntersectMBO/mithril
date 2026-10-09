@@ -35,12 +35,12 @@ impl BaseFieldElement {
 
     /// Converts the base field element to its byte representation in
     /// little endian form
-    pub(crate) fn to_bytes(self) -> [u8; 32] {
+    pub(crate) fn to_canonical_bytes(self) -> [u8; 32] {
         self.0.to_bytes_le()
     }
 
     /// Constructs a base field element from its byte representation
-    pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub(crate) fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         let mut base_bytes = [0u8; 32];
         base_bytes.copy_from_slice(
             bytes
@@ -198,12 +198,12 @@ impl ScalarFieldElement {
     }
 
     /// Converts the scalar field element to its byte representation
-    pub(crate) fn to_bytes(self) -> [u8; 32] {
+    pub(crate) fn to_canonical_bytes(self) -> [u8; 32] {
         self.0.to_bytes()
     }
 
     /// Constructs a scalar field element from its byte representation
-    pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub(crate) fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         let mut scalar_bytes = [0u8; 32];
         scalar_bytes.copy_from_slice(
             bytes
@@ -267,7 +267,7 @@ impl Sub for ScalarFieldElement {
 
 impl Hash for ScalarFieldElement {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.to_bytes().hash(state);
+        self.to_canonical_bytes().hash(state);
     }
 }
 
@@ -282,6 +282,11 @@ mod tests {
         use super::*;
 
         const GOLDEN_JSON: &str = r#"[126, 191, 239, 197, 88, 151, 248, 254, 187, 143, 86, 35, 29, 62, 90, 13, 196, 71, 234, 5, 90, 124, 205, 194, 51, 192, 228, 133, 25, 140, 157, 7]"#;
+
+        const GOLDEN_CANONICAL_BYTES: &[u8; 32] = &[
+            126, 191, 239, 197, 88, 151, 248, 254, 187, 143, 86, 35, 29, 62, 90, 13, 196, 71, 234,
+            5, 90, 124, 205, 194, 51, 192, 228, 133, 25, 140, 157, 7,
+        ];
 
         fn golden_value() -> ScalarFieldElement {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
@@ -299,6 +304,38 @@ mod tests {
             let golden_serialized = serde_json::to_string(&golden_value())
                 .expect("This JSON serialization should not fail");
             assert_eq!(golden_serialized, serialized);
+        }
+
+        #[test]
+        fn golden_canonical_bytes_conversions() {
+            let value = ScalarFieldElement::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
+            assert_eq!(golden_value(), value);
+
+            assert_eq!(GOLDEN_CANONICAL_BYTES, &golden_value().to_canonical_bytes());
+        }
+    }
+
+    mod golden_base_field_element {
+        use super::*;
+
+        const GOLDEN_CANONICAL_BYTES: &[u8; 32] = &[
+            118, 184, 224, 173, 160, 241, 61, 144, 64, 93, 106, 229, 83, 134, 189, 40, 189, 210,
+            25, 184, 160, 141, 237, 26, 168, 54, 239, 204, 139, 119, 13, 71,
+        ];
+
+        fn golden_value() -> BaseFieldElement {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            BaseFieldElement::random(&mut rng)
+        }
+
+        #[test]
+        fn golden_canonical_bytes_conversions() {
+            let value = BaseFieldElement::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
+            assert_eq!(golden_value(), value);
+
+            assert_eq!(GOLDEN_CANONICAL_BYTES, &golden_value().to_canonical_bytes());
         }
     }
 
@@ -319,7 +356,7 @@ mod tests {
 
         #[test]
         fn golden_reduction() {
-            let value = BaseFieldElement::from_bytes(GOLDEN_BYTES)
+            let value = BaseFieldElement::from_canonical_bytes(GOLDEN_BYTES)
                 .expect("Golden bytes deserialization should not fail");
             assert_eq!(golden_value(), value);
         }
@@ -329,13 +366,13 @@ mod tests {
         use super::*;
 
         #[test]
-        fn from_bytes_fails_if_value_too_high() {
+        fn from_canonical_bytes_fails_if_value_too_high() {
             let bytes = [255; 32];
 
-            let value = BaseFieldElement::from_bytes(&bytes);
+            let value = BaseFieldElement::from_canonical_bytes(&bytes);
             value.expect_err("Bytes conversion should fail because input is higher than modulus.");
 
-            let value = ScalarFieldElement::from_bytes(&bytes);
+            let value = ScalarFieldElement::from_canonical_bytes(&bytes);
             value.expect_err("Bytes conversion should fail because input is higher than modulus.");
         }
 
@@ -344,9 +381,9 @@ mod tests {
         fn from_raw_recover_element_correctly() {
             let mut rng = ChaCha20Rng::from_seed([3u8; 32]);
             let elem = BaseFieldElement::random(&mut rng);
-            let elem_bytes = elem.to_bytes();
+            let elem_bytes = elem.to_canonical_bytes();
 
-            let val1 = BaseFieldElement::from_bytes(&elem_bytes).unwrap();
+            let val1 = BaseFieldElement::from_canonical_bytes(&elem_bytes).unwrap();
             let val2 = BaseFieldElement::from_raw(&elem_bytes).unwrap();
 
             assert_eq!(val1, val2);
@@ -356,7 +393,7 @@ mod tests {
         fn from_raw_succeed_for_max_value() {
             let bytes = [255; 32];
 
-            let value = BaseFieldElement::from_bytes(&bytes);
+            let value = BaseFieldElement::from_canonical_bytes(&bytes);
             value.expect_err("Bytes conversion should fail because input is higher than modulus.");
 
             let value = BaseFieldElement::from_raw(&bytes);

@@ -665,8 +665,8 @@ mod tests {
             GenesisSchnorrSigner::from_secret_key(signing_bundle.schnorr).verification_key();
 
         assert_eq!(
-            verification_bundle.schnorr.to_bytes(),
-            expected_schnorr_verification_key.to_bytes()
+            verification_bundle.schnorr.to_canonical_bytes(),
+            expected_schnorr_verification_key.to_canonical_bytes()
         );
     }
 
@@ -1013,8 +1013,8 @@ mod tests {
             let derived_schnorr_vk =
                 GenesisSchnorrSigner::from_secret_key(signing_bundle.schnorr).verification_key();
             assert_eq!(
-                verification_bundle.schnorr.to_bytes(),
-                derived_schnorr_vk.to_bytes()
+                verification_bundle.schnorr.to_canonical_bytes(),
+                derived_schnorr_vk.to_canonical_bytes()
             );
         }
 
@@ -1036,7 +1036,10 @@ mod tests {
                 GenesisSigningKeyBundle::try_from_hex(&fs::read_to_string(&sk_a).unwrap()).unwrap();
             let bundle_b =
                 GenesisSigningKeyBundle::try_from_hex(&fs::read_to_string(&sk_b).unwrap()).unwrap();
-            assert_ne!(bundle_a.schnorr.to_bytes(), bundle_b.schnorr.to_bytes());
+            assert_ne!(
+                bundle_a.schnorr.to_canonical_bytes(),
+                bundle_b.schnorr.to_canonical_bytes()
+            );
         }
 
         #[test]

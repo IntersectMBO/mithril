@@ -27,7 +27,7 @@ impl BlsSigningKey {
     }
 
     /// Convert the secret key into byte string.
-    pub fn to_bytes(&self) -> [u8; 32] {
+    pub fn to_canonical_bytes(&self) -> [u8; 32] {
         self.0.to_bytes()
     }
 
@@ -35,7 +35,7 @@ impl BlsSigningKey {
     ///
     /// # Error
     /// Fails if the byte string represents a scalar larger than the group order.
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         let bytes = bytes.get(..32).ok_or(BlsSignatureError::SerializationError)?;
         match BlstSk::from_bytes(bytes) {
             Ok(sk) => Ok(Self(sk)),
@@ -62,6 +62,11 @@ mod tests {
 
         const GOLDEN_JSON: &str = r#"[64, 129, 87, 121, 27, 239, 221, 215, 2, 103, 45, 207, 207, 201, 157, 163, 81, 47, 156, 14, 168, 24, 137, 15, 203, 106, 183, 73, 88, 14, 242, 207]"#;
 
+        const GOLDEN_CANONICAL_BYTES: &[u8; 32] = &[
+            64, 129, 87, 121, 27, 239, 221, 215, 2, 103, 45, 207, 207, 201, 157, 163, 81, 47, 156,
+            14, 168, 24, 137, 15, 203, 106, 183, 73, 88, 14, 242, 207,
+        ];
+
         fn golden_value() -> BlsSigningKey {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
             BlsSigningKey::generate(&mut rng)
@@ -78,6 +83,15 @@ mod tests {
             let golden_serialized = serde_json::to_string(&golden_value())
                 .expect("This JSON serialization should not fail");
             assert_eq!(golden_serialized, serialized);
+        }
+
+        #[test]
+        fn golden_canonical_bytes_conversions() {
+            let value = BlsSigningKey::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
+            assert_eq!(golden_value(), value);
+
+            assert_eq!(GOLDEN_CANONICAL_BYTES, &golden_value().to_canonical_bytes());
         }
     }
 }

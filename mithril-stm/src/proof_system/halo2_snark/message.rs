@@ -4,8 +4,8 @@ use crate::{StmResult, signature_scheme::BaseFieldElement};
 
 /// Build the SNARK message from the Merkle tree commitment bytes and a raw message.
 ///
-/// The commitment bytes are converted via `from_bytes`, which requires a canonical field element
-/// (rejects values >= p). The message is reduced with [`parse_and_hash_snark_message`].
+/// The commitment bytes are converted via `from_canonical_bytes`, which requires a canonical
+/// field element (rejects values >= p). The message is reduced with [`parse_and_hash_snark_message`].
 ///
 /// # Error
 /// Returns an error if the commitment bytes or the message is not exactly 32 bytes, or if the
@@ -17,7 +17,7 @@ pub(crate) fn build_snark_message(
     let root_bytes: [u8; 32] = merkle_tree_commitment_bytes
         .try_into()
         .with_context(|| "Merkle tree commitment bytes must be exactly 32 bytes.")?;
-    let root_as_base_field_element = BaseFieldElement::from_bytes(&root_bytes)
+    let root_as_base_field_element = BaseFieldElement::from_canonical_bytes(&root_bytes)
         .with_context(|| "Failed to convert Merkle tree commitment bytes to BaseFieldElement.")?;
 
     Ok([root_as_base_field_element, parse_and_hash_snark_message(message)?])
@@ -136,8 +136,8 @@ mod test {
         high[..16].copy_from_slice(&message[16..]);
         let expected = compute_poseidon_digest(&[
             DOMAIN_SEPARATION_TAG_SNARK_MESSAGE,
-            BaseFieldElement::from_bytes(&low).unwrap(),
-            BaseFieldElement::from_bytes(&high).unwrap(),
+            BaseFieldElement::from_canonical_bytes(&low).unwrap(),
+            BaseFieldElement::from_canonical_bytes(&high).unwrap(),
         ]);
 
         assert_eq!(expected, parse_and_hash_snark_message(&message).unwrap());

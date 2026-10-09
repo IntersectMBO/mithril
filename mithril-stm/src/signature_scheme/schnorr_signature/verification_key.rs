@@ -54,7 +54,10 @@ impl SchnorrVerificationKey {
         signature: &StandardSchnorrSignature,
     ) -> StmResult<()> {
         let field_element_for_proof_of_bound_possession =
-            compute_schnorr_proof_of_bound_possession_challenge(prefix, &self.to_bytes())?;
+            compute_schnorr_proof_of_bound_possession_challenge(
+                prefix,
+                &self.to_canonical_bytes(),
+            )?;
         signature.verify(&[field_element_for_proof_of_bound_possession], self)
     }
 
@@ -65,25 +68,25 @@ impl SchnorrVerificationKey {
 
     /// Convert a `SchnorrVerificationKey` into bytes by decomposing it into
     /// its coordinates first.
-    pub fn to_bytes(self) -> [u8; 64] {
+    pub fn to_canonical_bytes(self) -> [u8; 64] {
         let (x, y) = self.0.get_coordinates();
         let mut output = [0; 64];
-        output[0..32].copy_from_slice(&x.to_bytes());
-        output[32..64].copy_from_slice(&y.to_bytes());
+        output[0..32].copy_from_slice(&x.to_canonical_bytes());
+        output[32..64].copy_from_slice(&y.to_canonical_bytes());
         output
     }
 
     /// Convert bytes into a `SchnorrVerificationKey`.
     ///
     /// The bytes must represent two Jubjub Base field elements or the conversion will fail
-    pub fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    pub fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         if bytes.len() < 64 {
             return Err(anyhow!(SchnorrSignatureError::Serialization)).with_context(
                 || "Not enough bytes provided to construct a Schnorr verification key.",
             );
         }
-        let x = BaseFieldElement::from_bytes(&bytes[0..32])?;
-        let y = BaseFieldElement::from_bytes(&bytes[32..64])?;
+        let x = BaseFieldElement::from_canonical_bytes(&bytes[0..32])?;
+        let y = BaseFieldElement::from_canonical_bytes(&bytes[32..64])?;
         let prime_order_projective_point = PrimeOrderProjectivePoint::from_coordinates(x, y)
             .with_context(|| "Cannot construct Schnorr verification key from given bytes.")?;
 
@@ -93,7 +96,7 @@ impl SchnorrVerificationKey {
 
 impl Hash for SchnorrVerificationKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Hash::hash_slice(&self.to_bytes(), state)
+        Hash::hash_slice(&self.to_canonical_bytes(), state)
     }
 }
 
@@ -105,7 +108,7 @@ impl PartialOrd for SchnorrVerificationKey {
 
 impl Ord for SchnorrVerificationKey {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.to_bytes().cmp(&other.to_bytes())
+        self.to_canonical_bytes().cmp(&other.to_canonical_bytes())
     }
 }
 
@@ -173,50 +176,50 @@ mod tests {
     }
 
     #[test]
-    fn from_bytes_not_enough_bytes() {
+    fn from_canonical_bytes_not_enough_bytes() {
         let bytes = vec![0u8; 31];
-        let result = SchnorrVerificationKey::from_bytes(&bytes);
+        let result = SchnorrVerificationKey::from_canonical_bytes(&bytes);
 
         result.expect_err("Should fail with insufficient bytes");
     }
 
     #[test]
-    fn from_bytes_exact_size() {
+    fn from_canonical_bytes_exact_size() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let sk = SchnorrSigningKey::generate(&mut rng);
         let vk = SchnorrVerificationKey::new_from_signing_key(sk);
-        let vk_bytes = vk.to_bytes();
+        let vk_bytes = vk.to_canonical_bytes();
 
-        let vk_restored = SchnorrVerificationKey::from_bytes(&vk_bytes).unwrap();
+        let vk_restored = SchnorrVerificationKey::from_canonical_bytes(&vk_bytes).unwrap();
 
         assert_eq!(vk, vk_restored);
     }
 
     #[test]
-    fn from_bytes_extra_bytes() {
+    fn from_canonical_bytes_extra_bytes() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let sk = SchnorrSigningKey::generate(&mut rng);
         let vk = SchnorrVerificationKey::new_from_signing_key(sk);
-        let vk_bytes = vk.to_bytes();
+        let vk_bytes = vk.to_canonical_bytes();
 
         let mut extended_bytes = vk_bytes.to_vec();
         extended_bytes.extend_from_slice(&[0xFF; 10]);
 
-        let vk_restored = SchnorrVerificationKey::from_bytes(&extended_bytes).unwrap();
+        let vk_restored = SchnorrVerificationKey::from_canonical_bytes(&extended_bytes).unwrap();
 
         assert_eq!(vk, vk_restored);
     }
 
     #[test]
-    fn to_bytes_is_deterministic() {
+    fn to_canonical_bytes_is_deterministic() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let sk = SchnorrSigningKey::generate(&mut rng);
         let vk = SchnorrVerificationKey::new_from_signing_key(sk);
 
-        let bytes1 = vk.to_bytes();
-        let bytes2 = vk.to_bytes();
+        let bytes1 = vk.to_canonical_bytes();
+        let bytes2 = vk.to_canonical_bytes();
 
-        assert_eq!(bytes1, bytes2, "to_bytes should be deterministic");
+        assert_eq!(bytes1, bytes2, "to_canonical_bytes should be deterministic");
     }
 
     #[test]
@@ -263,7 +266,7 @@ mod tests {
     mod golden {
         use super::*;
 
-        const GOLDEN_BYTES: &[u8; 64] = &[
+        const GOLDEN_CANONICAL_BYTES: &[u8; 64] = &[
             186, 22, 69, 162, 1, 67, 125, 160, 104, 197, 105, 109, 200, 34, 186, 196, 171, 155,
             191, 178, 11, 116, 108, 8, 111, 249, 47, 39, 137, 55, 62, 62, 144, 52, 95, 161, 127,
             253, 49, 32, 140, 217, 231, 207, 32, 238, 244, 196, 97, 241, 47, 95, 101, 9, 70, 136,
@@ -277,14 +280,12 @@ mod tests {
         }
 
         #[test]
-        fn golden_conversions() {
-            let value = SchnorrVerificationKey::from_bytes(GOLDEN_BYTES)
-                .expect("This from bytes should not fail");
+        fn golden_canonical_bytes_conversions() {
+            let value = SchnorrVerificationKey::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                .expect("This canonical bytes deserialization should not fail");
             assert_eq!(golden_value(), value);
 
-            let serialized = SchnorrVerificationKey::to_bytes(value);
-            let golden_serialized = SchnorrVerificationKey::to_bytes(golden_value());
-            assert_eq!(golden_serialized, serialized);
+            assert_eq!(GOLDEN_CANONICAL_BYTES, &golden_value().to_canonical_bytes());
         }
     }
 

@@ -60,7 +60,7 @@ impl CircuitVerificationKeyDigest {
             BaseFieldElement(transcript_representation),
         ]);
 
-        Self(digest.to_bytes())
+        Self(digest.to_canonical_bytes())
     }
 
     /// Digest of the embedded IVC circuit verification key generated for the production protocol
@@ -222,7 +222,7 @@ mod tests {
             BaseFieldElement(context.certificate_verifying_key.as_ref().transcript_repr()),
         ]);
 
-        assert_eq!(&expected.to_bytes(), digest.as_bytes());
+        assert_eq!(&expected.to_canonical_bytes(), digest.as_bytes());
     }
 
     #[test]

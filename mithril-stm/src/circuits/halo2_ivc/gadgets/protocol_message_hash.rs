@@ -89,7 +89,7 @@ mod tests {
     fn fixture_preimage_hashes_above_the_modulus() {
         let hash: [u8; 32] = Sha256::digest(PREIMAGE_WITH_A_HASH_ABOVE_THE_MODULUS).into();
 
-        BaseFieldElement::from_bytes(&hash)
+        BaseFieldElement::from_canonical_bytes(&hash)
             .expect_err("the fixture hash should not be a canonical field element");
     }
 

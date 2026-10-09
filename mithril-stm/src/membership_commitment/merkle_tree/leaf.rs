@@ -10,14 +10,10 @@ use crate::{LotteryTargetValue, VerificationKeyForSnark};
 
 use crate::{Stake, VerificationKeyForConcatenation};
 
-#[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
+#[cfg(test)]
 use crate::StmResult;
 
-#[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
+#[cfg(test)]
 use super::MerkleTreeError;
 
 /// Trait implemented to be used as a Merkle tree leaf.
@@ -45,7 +41,7 @@ pub struct MerkleTreeConcatenationLeaf(pub VerificationKeyForConcatenation, pub 
 
 impl MerkleTreeLeaf for MerkleTreeConcatenationLeaf {
     fn as_bytes_for_merkle_tree(&self) -> Vec<u8> {
-        self.to_bytes()
+        self.to_canonical_bytes()
     }
 
     fn leaf_domain_separation_tag() -> Vec<u8> {
@@ -54,18 +50,16 @@ impl MerkleTreeLeaf for MerkleTreeConcatenationLeaf {
 }
 
 impl MerkleTreeConcatenationLeaf {
-    fn to_bytes(self) -> Vec<u8> {
+    fn to_canonical_bytes(self) -> Vec<u8> {
         let mut result = [0u8; 104];
-        result[..96].copy_from_slice(&self.0.to_bytes());
+        result[..96].copy_from_slice(&self.0.to_canonical_bytes());
         result[96..].copy_from_slice(&self.1.to_be_bytes());
         result.to_vec()
     }
 
-    #[cfg(feature = "snark")]
-    // TODO: remove this allow dead_code directive when function is called or snark is activated
-    #[allow(dead_code)]
-    pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
-        let pk = VerificationKeyForConcatenation::from_bytes(bytes)
+    #[cfg(test)]
+    fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
+        let pk = VerificationKeyForConcatenation::from_canonical_bytes(bytes)
             .map_err(|_| MerkleTreeError::SerializationError)?;
         let mut u64_bytes = [0u8; 8];
         u64_bytes.copy_from_slice(&bytes[96..]);
@@ -111,34 +105,33 @@ pub struct MerkleTreeSnarkLeaf(pub VerificationKeyForSnark, pub LotteryTargetVal
 #[allow(dead_code)]
 impl MerkleTreeLeaf for MerkleTreeSnarkLeaf {
     fn as_bytes_for_merkle_tree(&self) -> Vec<u8> {
-        self.to_bytes()
+        self.to_canonical_bytes()
     }
 
     fn leaf_domain_separation_tag() -> Vec<u8> {
-        DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF.to_bytes().to_vec()
+        DOMAIN_SEPARATION_TAG_SNARK_MERKLE_LEAF.to_canonical_bytes().to_vec()
     }
 }
 
 #[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
 impl MerkleTreeSnarkLeaf {
-    fn to_bytes(self) -> Vec<u8> {
+    fn to_canonical_bytes(self) -> Vec<u8> {
         let mut result = [0u8; 96];
-        result[..64].copy_from_slice(&self.0.to_bytes());
-        result[64..].copy_from_slice(&self.1.to_bytes());
+        result[..64].copy_from_slice(&self.0.to_canonical_bytes());
+        result[64..].copy_from_slice(&self.1.to_canonical_bytes());
         result.to_vec()
     }
 
-    pub(crate) fn from_bytes(bytes: &[u8]) -> StmResult<Self> {
+    #[cfg(test)]
+    fn from_canonical_bytes(bytes: &[u8]) -> StmResult<Self> {
         if bytes.len() < 96 {
             return Err(MerkleTreeError::SerializationError.into());
         }
-        let pk = VerificationKeyForSnark::from_bytes(&bytes[..64])
+        let pk = VerificationKeyForSnark::from_canonical_bytes(&bytes[..64])
             .map_err(|_| MerkleTreeError::SerializationError)?;
         let mut target_value_bytes = [0u8; 32];
         target_value_bytes.copy_from_slice(&bytes[64..]);
-        let target_value = LotteryTargetValue::from_bytes(&target_value_bytes)
+        let target_value = LotteryTargetValue::from_canonical_bytes(&target_value_bytes)
             .map_err(|_| MerkleTreeError::SerializationError)?;
         Ok(MerkleTreeSnarkLeaf(pk, target_value))
     }
@@ -187,10 +180,9 @@ mod tests {
     mod concatenation {
         use super::*;
 
-        #[cfg(feature = "snark")]
         mod golden {
             use super::*;
-            const GOLDEN_BYTES: &[u8; 104] = &[
+            const GOLDEN_CANONICAL_BYTES: &[u8; 104] = &[
                 143, 161, 255, 48, 78, 57, 204, 220, 25, 221, 164, 252, 248, 14, 56, 126, 186, 135,
                 228, 188, 145, 181, 52, 200, 97, 99, 213, 46, 0, 199, 193, 89, 187, 88, 29, 135,
                 173, 244, 86, 36, 83, 54, 67, 164, 6, 137, 94, 72, 6, 105, 128, 128, 93, 48, 176,
@@ -208,14 +200,16 @@ mod tests {
             }
 
             #[test]
-            fn golden_conversions() {
-                let value = MerkleTreeConcatenationLeaf::from_bytes(GOLDEN_BYTES)
-                    .expect("This from bytes should not fail");
+            fn golden_canonical_bytes_conversions() {
+                let value =
+                    MerkleTreeConcatenationLeaf::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                        .expect("This canonical bytes deserialization should not fail");
                 assert_eq!(golden_value(), value);
 
-                let serialized = MerkleTreeConcatenationLeaf::to_bytes(value);
-                let golden_serialized = MerkleTreeConcatenationLeaf::to_bytes(golden_value());
-                assert_eq!(golden_serialized, serialized);
+                assert_eq!(
+                    GOLDEN_CANONICAL_BYTES.as_slice(),
+                    golden_value().to_canonical_bytes().as_slice()
+                );
             }
         }
 
@@ -266,7 +260,7 @@ mod tests {
 
             use super::*;
 
-            const GOLDEN_BYTES: &[u8; 96] = &[
+            const GOLDEN_CANONICAL_BYTES: &[u8; 96] = &[
                 186, 22, 69, 162, 1, 67, 125, 160, 104, 197, 105, 109, 200, 34, 186, 196, 171, 155,
                 191, 178, 11, 116, 108, 8, 111, 249, 47, 39, 137, 55, 62, 62, 144, 52, 95, 161,
                 127, 253, 49, 32, 140, 217, 231, 207, 32, 238, 244, 196, 97, 241, 47, 95, 101, 9,
@@ -283,14 +277,15 @@ mod tests {
             }
 
             #[test]
-            fn golden_conversions() {
-                let value = MerkleTreeSnarkLeaf::from_bytes(GOLDEN_BYTES)
-                    .expect("This from bytes should not fail");
+            fn golden_canonical_bytes_conversions() {
+                let value = MerkleTreeSnarkLeaf::from_canonical_bytes(GOLDEN_CANONICAL_BYTES)
+                    .expect("This canonical bytes deserialization should not fail");
                 assert_eq!(golden_value(), value);
 
-                let serialized = MerkleTreeSnarkLeaf::to_bytes(value);
-                let golden_serialized = MerkleTreeSnarkLeaf::to_bytes(golden_value());
-                assert_eq!(golden_serialized, serialized);
+                assert_eq!(
+                    GOLDEN_CANONICAL_BYTES.as_slice(),
+                    golden_value().to_canonical_bytes().as_slice()
+                );
             }
         }
 
