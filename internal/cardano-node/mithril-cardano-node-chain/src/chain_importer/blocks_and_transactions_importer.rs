@@ -97,10 +97,10 @@ impl BlocksTransactionsImporter {
                         .await?;
                 }
             }
-        }
 
-        if let Some(point) = streamer.last_polled_point() {
-            *self.last_polled_point.lock().await = Some(point);
+            if let Some(point) = streamer.last_polled_point() {
+                *self.last_polled_point.lock().await = Some(point);
+            }
         }
 
         Ok(())
