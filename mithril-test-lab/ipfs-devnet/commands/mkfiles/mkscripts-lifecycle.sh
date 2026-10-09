@@ -57,6 +57,29 @@ error_exit() {
   exit 1
 }
 
+readonly READY_TIMEOUT_SECONDS=30
+
+# A node is ready once its daemon has written the 'api' file and answers RPC calls.
+# Without the 'api' file check, 'ipfs id' would run offline against the repository and succeed.
+wait_for_node_ready() {
+  local -r node_path="$1"
+  local -r pid="$2"
+  local -r log_file="${node_path%/}/ipfs.log"
+
+  for ((i = 0; i < READY_TIMEOUT_SECONDS * 2; i++)); do
+    if [[ -f "${node_path%/}/api" ]] && IPFS_PATH="$node_path" "$IPFS_BIN" id >/dev/null 2>&1; then
+      echo ">> Kubo node ready: '$node_path'"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      error_exit "Kubo node exited during startup: '$node_path' (see '$log_file')"
+    fi
+    sleep 0.5
+  done
+
+  error_exit "Kubo node not ready after ${READY_TIMEOUT_SECONDS}s: '$node_path' (see '$log_file')"
+}
+
 EOF
 
     printf 'readonly IPFS_BIN=%s\n' "$(shell_quote "$ipfs_bin")"
@@ -113,6 +136,11 @@ for node_path in "${NODES_PATHS[@]}"; do
 
   printf '%s\n' "$pid" >"$pid_file"
   echo ">> Started Kubo node: '$node_path' pid=$pid"
+done
+
+# Wait in a separate loop so that all nodes boot in parallel
+for node_path in "${NODES_PATHS[@]}"; do
+  wait_for_node_ready "$node_path" "$(cat "${node_path%/}/ipfs.pid")"
 done
 EOF
   } > "$script_path"
