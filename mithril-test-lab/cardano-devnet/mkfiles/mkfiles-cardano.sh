@@ -82,18 +82,6 @@ fi
 cp $SCRIPT_DIRECTORY/configuration/$GENESIS_ALONZO_FILE "${ARTIFACTS_DIR_TEMP}/genesis.alonzo.spec.json"
 cp $SCRIPT_DIRECTORY/configuration/$GENESIS_CONWAY_FILE "${ARTIFACTS_DIR_TEMP}/genesis.conway.spec.json"
 
-# create configuration file for the snapshot converter
-cat > "${ARTIFACTS_DIR_TEMP}/snapshot-converter-config.json" <<EOF
-{
-    "AlonzoGenesisFile": "shelley/genesis.alonzo.json",
-    "ByronGenesisFile": "byron/genesis.json",
-    "ConwayGenesisFile": "shelley/genesis.conway.json",
-    "ShelleyGenesisFile": "shelley/genesis.json",
-    "RequiresNetworkMagic": "RequiresMagic"
-}
-EOF
-
-
 cp $SCRIPT_DIRECTORY/configuration/configuration.yaml "${ARTIFACTS_DIR_TEMP}/"
 $SED -i "${ARTIFACTS_DIR_TEMP}/configuration.yaml" \
      -e 's/Protocol: RealPBFT/Protocol: Cardano/' \
@@ -170,6 +158,21 @@ if [ "$(version_lt ${CARDANO_NODE_VERSION_RELEASE} 11.1.0)" = "false" ]; then
   ' > ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp
   mv ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp ${ARTIFACTS_DIR_TEMP}/genesis.json
 fi
+
+# Create configuration file for the snapshot converter, the genesis hashes are mandatory since cardano-node 11.2.0
+cat > "${ARTIFACTS_DIR_TEMP}/snapshot-converter-config.json" <<EOF
+{
+    "AlonzoGenesisFile": "shelley/genesis.alonzo.json",
+    "AlonzoGenesisHash": "$($CARDANO_CLI hash genesis-file --genesis ${ARTIFACTS_DIR_TEMP}/genesis.alonzo.json)",
+    "ByronGenesisFile": "byron/genesis.json",
+    "ByronGenesisHash": "$($CARDANO_CLI byron genesis print-genesis-hash --genesis-json ${ARTIFACTS_DIR_TEMP}/byron-gen-command/genesis.json)",
+    "ConwayGenesisFile": "shelley/genesis.conway.json",
+    "ConwayGenesisHash": "$($CARDANO_CLI hash genesis-file --genesis ${ARTIFACTS_DIR_TEMP}/genesis.conway.json)",
+    "ShelleyGenesisFile": "shelley/genesis.json",
+    "ShelleyGenesisHash": "$($CARDANO_CLI hash genesis-file --genesis ${ARTIFACTS_DIR_TEMP}/genesis.json)",
+    "RequiresNetworkMagic": "RequiresMagic"
+}
+EOF
 
 # Step 2: Dispatch artifacts in the correct directories
 

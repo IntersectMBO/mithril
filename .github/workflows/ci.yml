@@ -428,6 +428,14 @@ jobs:
             hard_fork_latest_era_at_epoch: 0
             run_id: "#1"
             extra_args: "--use-ipfs --ipfs-devnet-scripts-directory=./mithril-test-lab/ipfs-devnet/"
+          # Temporary test for the cardano-node 11.2.0 integration build
+          - mode: "std"
+            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
+            next_era: ""
+            cardano_node_version: "11.2.0-integration"
+            hard_fork_latest_era_at_epoch: 0
+            run_id: "#1"
+            extra_args: "--cardano-binary-url=https://storage.googleapis.com/mithril-cardano-node-artifacts-test/cardano-node/11.2.0-integration/cardano-node-11.1.1-linux.tar.gz --aggregate-signature-type=Concatenation full --check-client-cli-snapshot-converter"
     steps:
       - name: Checkout sources
         uses: actions/checkout@v6
