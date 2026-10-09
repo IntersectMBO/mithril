@@ -299,7 +299,45 @@ mod tests {
     }
 
     mod transactions_import_start_point {
+        use anyhow::anyhow;
+        use async_trait::async_trait;
+
+        use crate::chain_scanner::BlockStreamer;
+
         use super::*;
+
+        /// Streams one batch of blocks, then fails on the next poll as a streamer which lost its
+        /// connection to the node does.
+        struct BlockStreamerFailingAfterOneBatch {
+            batch: Option<Vec<ScannedBlock>>,
+            last_polled_point: Option<RawCardanoPoint>,
+        }
+
+        impl BlockStreamerFailingAfterOneBatch {
+            fn new(batch: Vec<ScannedBlock>) -> Self {
+                Self {
+                    batch: Some(batch),
+                    last_polled_point: None,
+                }
+            }
+        }
+
+        #[async_trait]
+        impl BlockStreamer for BlockStreamerFailingAfterOneBatch {
+            async fn poll_next(&mut self) -> StdResult<Option<ChainScannedBlocks>> {
+                match self.batch.take() {
+                    Some(batch) => {
+                        self.last_polled_point = batch.last().map(RawCardanoPoint::from);
+                        Ok(Some(ChainScannedBlocks::RollForwards(batch)))
+                    }
+                    None => Err(anyhow!("Connection to the node lost")),
+                }
+            }
+
+            fn last_polled_point(&self) -> Option<RawCardanoPoint> {
+                self.last_polled_point.clone()
+            }
+        }
 
         async fn importer_with_last_polled_point(
             last_polled_point: Option<RawCardanoPoint>,
@@ -450,6 +488,51 @@ mod tests {
             assert_eq!(
                 Some(RawCardanoPoint::new(SlotNumber(15), "block_hash-1")),
                 start_point_after_import
+            );
+        }
+
+        #[tokio::test]
+        async fn a_failed_run_leaves_the_start_point_at_the_highest_committed_block() {
+            // The run starts at block 11. The streamer delivers the fork block F12, which is
+            // committed to the store, then fails:
+            //
+            //   poll 1 -> RollForwards([F12])    committed to the store
+            //   poll 2 -> error                   the run fails
+            //
+            // The next run must start at F12, the highest committed block, not at block 11:
+            // the node never rolls back a block it did not deliver in the session of that run,
+            // so a run intersecting at block 11 would keep F12 beside the canonical blocks.
+            let start_point_at_block_11 = RawCardanoPoint::new(SlotNumber(110), "hash-11");
+            let fork_block_12 = ScannedBlock::new(
+                "hash-fork-12",
+                BlockNumber(12),
+                SlotNumber(120),
+                Vec::<&str>::new(),
+            );
+            let streamer: Box<dyn BlockStreamer> =
+                Box::new(BlockStreamerFailingAfterOneBatch::new(vec![
+                    fork_block_12.clone(),
+                ]));
+            let mut scanner = MockBlockScanner::new();
+            scanner.expect_scan().return_once(move |_, _| Ok(streamer));
+            let repository = Arc::new(InMemoryChainDataStore::default());
+            let importer = BlocksTransactionsImporter {
+                last_polled_point: Arc::new(Mutex::new(Some(start_point_at_block_11))),
+                ..BlocksTransactionsImporter::new_for_test(Arc::new(scanner), repository.clone())
+            };
+
+            importer
+                .run(BlockNumber(1000))
+                .await
+                .expect_err("The run should fail with the streamer");
+
+            assert_eq!(
+                vec![CardanoBlockWithTransactions::from(fork_block_12.clone())],
+                repository.get_all_block_with_txs().await
+            );
+            assert_eq!(
+                Some(RawCardanoPoint::from(&fork_block_12)),
+                importer.start_point(&None).await.unwrap()
             );
         }
     }
