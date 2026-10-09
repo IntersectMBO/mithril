@@ -32,3 +32,15 @@ allow = [
     "Zlib",
 ]
 
+[advisories]
+yanked = "deny"
+unmaintained="none"
+ignore = [
+    # Known vulnerabilities
+    { id = "RUSTSEC-2026-0285", reason = "Known vulnerability on rustls (0.23.41) DIRECTLY and not directly imported by Mithril crates" },
+    { id = "RUSTSEC-2026-0204", reason = "Known vulnerability on crossbeam-epoch (0.9.19) not directly imported by Mithril crates" },
+    { id = "RUSTSEC-2026-0258", reason = "Known vulnerability on h2 (0.4.15) not directly imported by Mithril crates" },
+    { id = "RUSTSEC-2026-0118", reason = "Known vulnerability on hickory-proto (0.25.2) not directly imported by Mithril crates" },
+    { id = "RUSTSEC-2026-0119", reason = "Known vulnerability on hickory-proto (0.25.2) not directly imported by Mithril crates" },
+]
+

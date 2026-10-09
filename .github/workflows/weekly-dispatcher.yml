@@ -1,0 +1,41 @@
+name: Weekly Dispatcher
+
+on:
+  workflow_dispatch:
+  # Important note about scheduled workflows:
+  # Notifications for scheduled workflows are sent to the user who last modified the cron syntax in the workflow file.
+  schedule:
+    - cron: "0 1 * * 1"
+
+jobs:
+  check-crates-advisories-full:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - id: deny
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+          arguments: "--all-features --config .config/deny-full.toml"
+          log-level: error
+
+      - name: Explain result
+        if: always() && steps.deny.outcome != 'skipped'
+        run: |
+          {
+            echo "## Crates advisories (full check)"
+            echo ""
+            if [ "${{ steps.deny.outcome }}" = "failure" ]; then
+              echo "**Advisories found.**"
+              echo ""
+              echo "Yanked crates and vulnerabilities:"
+              echo "- Direct dependency of Mithril: open an issue and fix with \`cargo update -p <package> [--precise <version>]\`."
+              echo "- Not a direct dependency: try \`cargo update -p <package>\` first; if a parent crate's version constraint blocks the update, add an ignore entry to \`deny.toml\` and wait for an upstream fix (this weekly check will keep reporting it)."
+              echo ""
+              echo "Unmaintained crates: if it is a direct dependency of Mithril, open an issue to replace it."
+            else
+              echo "No advisories found ✅"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
