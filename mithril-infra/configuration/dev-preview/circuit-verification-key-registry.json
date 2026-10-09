@@ -16,9 +16,25 @@
       "name": "ivc-circuit v1 (k=1054)",
       "start_epoch": 0,
       "status": "allowed"
+    },
+    {
+      "comment": "initial publication (2026-10-09, commit c0c1e86fd)",
+      "digest": "420e9a8b745fd2d234421bd71777251ea3a1da2dba69122fd213afae7aa4de45",
+      "end_epoch": null,
+      "name": "certificate-circuit v2 (k=1054)",
+      "start_epoch": 0,
+      "status": "allowed"
+    },
+    {
+      "comment": "initial publication (2026-10-09, commit c0c1e86fd)",
+      "digest": "7df19444253d48babb2c05f1520cfd29c4f393fe3d1850f6f36c32115fe0fa66",
+      "end_epoch": null,
+      "name": "ivc-circuit v2 (k=1054)",
+      "start_epoch": 0,
+      "status": "allowed"
     }
   ],
-  "version": 2
+  "version": 4
 },
-  "signature": "1f76a72e9caac7aced0ad1e2f7526f284740429737290c87dc724a8c2c07957c62cce74f1f2219da80243f9f0479dec0680005466568d8c11f6ef39b8f4eeb07"
+  "signature": "938d7ac005c88c31c13c2966b549321dbbde53642c37e90083d0fd47f0d2123e3ebcf8f87889758af26182b3f9f92280c1c1536c20e51823b8cab7f525835807"
 }
