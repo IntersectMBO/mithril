@@ -9,6 +9,9 @@ use crate::entities::{ChainBlockNextAction, RawCardanoPoint};
 use crate::chain_reader::ChainBlockReader;
 
 /// [FakeChainReader] is a fake implementation of [ChainBlockReader] for testing purposes.
+///
+/// Setting the chain point consumes a leading rollback to that point, as the acknowledgement
+/// of the intersection sent by the node.
 pub struct FakeChainReader {
     chain_block_next_actions: Mutex<VecDeque<ChainBlockNextAction>>,
 }
@@ -29,7 +32,16 @@ impl FakeChainReader {
 
 #[async_trait]
 impl ChainBlockReader for FakeChainReader {
-    async fn set_chain_point(&mut self, _point: &RawCardanoPoint) -> StdResult<()> {
+    async fn set_chain_point(&mut self, point: &RawCardanoPoint) -> StdResult<()> {
+        let mut chain_block_next_actions = self.chain_block_next_actions.lock().unwrap();
+        let acknowledges_intersection = matches!(
+            chain_block_next_actions.front(),
+            Some(ChainBlockNextAction::RollBackward { rollback_point }) if rollback_point == point
+        );
+        if acknowledges_intersection {
+            chain_block_next_actions.pop_front();
+        }
+
         Ok(())
     }
 
@@ -79,5 +91,72 @@ mod tests {
         }
 
         assert_eq!(expected_chain_block_next_actions, chain_block_next_actions);
+    }
+
+    #[tokio::test]
+    async fn set_chain_point_consumes_a_leading_rollback_to_the_chain_point() {
+        let chain_point = RawCardanoPoint::new(SlotNumber(1), "point-hash-1".as_bytes());
+        let block = ScannedBlock::new("hash-1", BlockNumber(1), SlotNumber(10), Vec::<&str>::new());
+        let mut chain_reader = FakeChainReader::new(vec![
+            ChainBlockNextAction::RollBackward {
+                rollback_point: chain_point.clone(),
+            },
+            ChainBlockNextAction::RollForward {
+                parsed_block: block.clone(),
+            },
+        ]);
+
+        chain_reader.set_chain_point(&chain_point).await.unwrap();
+
+        assert_eq!(
+            Some(ChainBlockNextAction::RollForward {
+                parsed_block: block
+            }),
+            chain_reader.get_next_chain_block().await.unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn set_chain_point_keeps_a_leading_rollback_to_another_point() {
+        let rollback = ChainBlockNextAction::RollBackward {
+            rollback_point: RawCardanoPoint::new(SlotNumber(1), "point-hash-1".as_bytes()),
+        };
+        let mut chain_reader = FakeChainReader::new(vec![rollback.clone()]);
+
+        chain_reader
+            .set_chain_point(&RawCardanoPoint::new(
+                SlotNumber(2),
+                "point-hash-2".as_bytes(),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            Some(rollback),
+            chain_reader.get_next_chain_block().await.unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn set_chain_point_keeps_a_leading_roll_forward() {
+        let roll_forward = ChainBlockNextAction::RollForward {
+            parsed_block: ScannedBlock::new(
+                "hash-1",
+                BlockNumber(1),
+                SlotNumber(10),
+                Vec::<&str>::new(),
+            ),
+        };
+        let mut chain_reader = FakeChainReader::new(vec![roll_forward.clone()]);
+
+        chain_reader
+            .set_chain_point(&RawCardanoPoint::new(SlotNumber(10), "hash-1"))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            Some(roll_forward),
+            chain_reader.get_next_chain_block().await.unwrap()
+        );
     }
 }

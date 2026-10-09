@@ -12,19 +12,9 @@ use crate::chain_reader::ChainBlockReader;
 use crate::chain_scanner::{BlockStreamer, ChainScannedBlocks};
 use crate::entities::{ChainBlockNextAction, RawCardanoPoint};
 
-/// The action that indicates what to do next with the streamer
-#[derive(Debug, Clone, PartialEq)]
-enum BlockStreamerNextAction {
-    /// Use a [ChainBlockNextAction]
-    ChainBlockNextAction(ChainBlockNextAction),
-    /// Skip to the next action
-    SkipToNextAction,
-}
-
 /// [Block streamer][BlockStreamer] that streams blocks with a [Chain block reader][ChainBlockReader]
 pub struct ChainReaderBlockStreamer {
     chain_reader: Arc<Mutex<dyn ChainBlockReader>>,
-    from: RawCardanoPoint,
     until: BlockNumber,
     max_roll_forwards_per_poll: usize,
     last_polled_point: Option<RawCardanoPoint>,
@@ -39,11 +29,8 @@ impl BlockStreamer for ChainReaderBlockStreamer {
         let chain_scanned_blocks: ChainScannedBlocks;
         let mut roll_forwards = vec![];
         loop {
-            let block_streamer_next_action = self.get_next_chain_block_action().await?;
-            match block_streamer_next_action {
-                Some(BlockStreamerNextAction::ChainBlockNextAction(
-                    ChainBlockNextAction::RollForward { parsed_block },
-                )) => {
+            match self.get_next_chain_block_action().await? {
+                Some(ChainBlockNextAction::RollForward { parsed_block }) => {
                     self.last_polled_point = Some(RawCardanoPoint::from(&parsed_block));
                     let parsed_block_number = parsed_block.block_number;
                     roll_forwards.push(parsed_block);
@@ -53,9 +40,7 @@ impl BlockStreamer for ChainReaderBlockStreamer {
                         return Ok(Some(ChainScannedBlocks::RollForwards(roll_forwards)));
                     }
                 }
-                Some(BlockStreamerNextAction::ChainBlockNextAction(
-                    ChainBlockNextAction::RollBackward { rollback_point },
-                )) => {
+                Some(ChainBlockNextAction::RollBackward { rollback_point }) => {
                     self.last_polled_point = Some(rollback_point.clone());
                     let rollback_slot_number = rollback_point.slot_number;
                     let index_rollback = roll_forwards
@@ -79,9 +64,6 @@ impl BlockStreamer for ChainReaderBlockStreamer {
                             return Ok(Some(chain_scanned_blocks));
                         }
                     }
-                }
-                Some(BlockStreamerNextAction::SkipToNextAction) => {
-                    continue;
                 }
                 None => {
                     return if roll_forwards.is_empty() {
@@ -121,7 +103,6 @@ impl ChainReaderBlockStreamer {
 
         Ok(Self {
             chain_reader,
-            from,
             until,
             max_roll_forwards_per_poll,
             last_polled_point: None,
@@ -129,7 +110,7 @@ impl ChainReaderBlockStreamer {
         })
     }
 
-    async fn get_next_chain_block_action(&self) -> StdResult<Option<BlockStreamerNextAction>> {
+    async fn get_next_chain_block_action(&self) -> StdResult<Option<ChainBlockNextAction>> {
         let mut chain_reader = self.chain_reader.try_lock()?;
         match chain_reader.get_next_chain_block().await? {
             Some(ChainBlockNextAction::RollForward { parsed_block }) => {
@@ -146,25 +127,15 @@ impl ChainReaderBlockStreamer {
                         "Received a RollForward below threshold block number ({})",
                         parsed_block.block_number
                     );
-                    Ok(Some(BlockStreamerNextAction::ChainBlockNextAction(
-                        ChainBlockNextAction::RollForward { parsed_block },
-                    )))
+                    Ok(Some(ChainBlockNextAction::RollForward { parsed_block }))
                 }
             }
             Some(ChainBlockNextAction::RollBackward { rollback_point }) => {
-                let rollback_slot_number = rollback_point.slot_number;
                 trace!(
                     self.logger,
-                    "Received a RollBackward({rollback_slot_number:?})"
+                    "Received a RollBackward({:?})", rollback_point.slot_number
                 );
-                let block_streamer_next_action = if rollback_slot_number == self.from.slot_number {
-                    BlockStreamerNextAction::SkipToNextAction
-                } else {
-                    BlockStreamerNextAction::ChainBlockNextAction(
-                        ChainBlockNextAction::RollBackward { rollback_point },
-                    )
-                };
-                Ok(Some(block_streamer_next_action))
+                Ok(Some(ChainBlockNextAction::RollBackward { rollback_point }))
             }
             None => {
                 trace!(self.logger, "Received nothing");
