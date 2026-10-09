@@ -34,8 +34,10 @@ impl KeyRegistration {
         }
     }
 
-    /// Check whether the given `RegistrationEntry` is already registered.
-    /// Insert the new entry if all checks pass.
+    /// Check whether the given `RegistrationEntry` is already registered by looking
+    /// at its BLS key.
+    /// Insert the new entry if the BLS key is not registered already and return
+    /// an error if it is.
     ///
     /// This is `pub(crate)` rather than `pub`: it trusts that `entry` was produced through a
     /// path that already verified proof of possession (`RegistrationEntry::new`), which every
@@ -47,24 +49,11 @@ impl KeyRegistration {
     /// The function fails when the entry is already registered.
     pub(crate) fn register_by_entry(&mut self, entry: &RegistrationEntry) -> StmResult<()> {
         let vk_concatenation = entry.get_verification_key_for_concatenation();
-        let is_already_registered =
-            self.registered_keys_for_concatenation.contains(&vk_concatenation);
-
-        #[cfg(feature = "snark")]
-        let is_already_registered = is_already_registered
-            || entry
-                .get_verification_key_for_snark()
-                .is_some_and(|vk_snark| self.registered_keys_for_snark.contains(&vk_snark));
-
-        if is_already_registered {
+        if self.registered_keys_for_concatenation.contains(&vk_concatenation) {
             return Err(RegisterError::EntryAlreadyRegistered.into());
         }
 
         self.registered_keys_for_concatenation.insert(vk_concatenation);
-        #[cfg(feature = "snark")]
-        if let Some(vk_snark) = entry.get_verification_key_for_snark() {
-            self.registered_keys_for_snark.insert(vk_snark);
-        }
         self.registration_entries.insert(*entry);
 
         Ok(())
@@ -105,16 +94,46 @@ impl KeyRegistration {
         if total_stake == 0 {
             return Err(RegisterError::ZeroTotalStake.into());
         }
-        let closed_registration_entries: StmResult<BTreeSet<ClosedRegistrationEntry>> = self
+        let closed_registration_entries: BTreeSet<ClosedRegistrationEntry> = self
             .registration_entries
             .iter()
             .map(|entry| ClosedRegistrationEntry::try_from((*entry, total_stake, params.phi_f)))
-            .collect();
+            .collect::<StmResult<BTreeSet<_>>>()?;
+
+        #[cfg(feature = "snark")]
+        let closed_registration_entries =
+            Self::dedup_snark_verification_keys(closed_registration_entries);
 
         Ok(ClosedKeyRegistration::new(
-            closed_registration_entries?,
+            closed_registration_entries,
             total_stake,
         ))
+    }
+
+    /// Takes the full list of registered entries and deduplicates the SNARK keys
+    /// of those entries, leaving only the entry with the highest stake with the
+    /// duplicated snark key.
+    #[cfg(feature = "snark")]
+    fn dedup_snark_verification_keys(
+        entries: BTreeSet<ClosedRegistrationEntry>,
+    ) -> BTreeSet<ClosedRegistrationEntry> {
+        // `entries` is ordered by (stake, concatenation key): iterating in reverse means the first
+        // entry seen for a given SNARK key is the one with the highest stake, so it keeps its key.
+        let mut registered_snark_keys = HashSet::new();
+        entries
+            .into_iter()
+            .rev()
+            .map(|entry| {
+                let is_loser = entry
+                    .get_verification_key_for_snark()
+                    .is_some_and(|vk_snark| !registered_snark_keys.insert(vk_snark));
+                if is_loser {
+                    entry.without_snark_fields()
+                } else {
+                    entry
+                }
+            })
+            .collect()
     }
 }
 
@@ -391,7 +410,7 @@ mod tests {
 
     #[cfg(feature = "snark")]
     #[test]
-    fn register_by_entry_rejects_same_snark_key_with_different_concatenation_key() {
+    fn register_by_entry_accepts_same_snark_key_with_different_concatenation_key() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let mut kr = KeyRegistration::initialize();
         let schnorr_vk =
@@ -408,12 +427,113 @@ mod tests {
             &BlsSigningKey::generate(&mut rng),
         );
         let second_entry = RegistrationEntry::new(second_vk_pop, 200, Some(schnorr_vk)).unwrap();
-        let result = kr.register_by_entry(&second_entry);
 
-        assert!(matches!(
-            result.unwrap_err().downcast_ref::<RegisterError>(),
-            Some(RegisterError::EntryAlreadyRegistered)
-        ));
+        kr.register_by_entry(&second_entry)
+            .expect("a SNARK key shared with another party should not prevent registration");
+    }
+
+    #[cfg(feature = "snark")]
+    mod dedup_snark_verification_keys {
+        use super::*;
+
+        fn new_schnorr_vk(rng: &mut ChaCha20Rng) -> SchnorrVerificationKey {
+            SchnorrVerificationKey::new_from_signing_key(SchnorrSigningKey::generate(rng))
+        }
+
+        fn closed_entry(
+            stake: Stake,
+            schnorr_vk: Option<SchnorrVerificationKey>,
+            rng: &mut ChaCha20Rng,
+        ) -> ClosedRegistrationEntry {
+            let vk_pop = VerificationKeyProofOfPossessionForConcatenation::from(
+                &BlsSigningKey::generate(rng),
+            );
+            let entry = RegistrationEntry::new(vk_pop, stake, schnorr_vk).unwrap();
+            ClosedRegistrationEntry::try_from((entry, 1_000, 0.2)).unwrap()
+        }
+
+        // `BTreeSet` equality compares elements with `PartialEq`, which includes the SNARK
+        // fields, so these assertions do distinguish a stripped entry from a kept one.
+
+        #[test]
+        fn keeps_the_snark_key_only_on_the_highest_stake_entry() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let shared_vk = new_schnorr_vk(&mut rng);
+            let lower = closed_entry(100, Some(shared_vk), &mut rng);
+            let higher = closed_entry(200, Some(shared_vk), &mut rng);
+
+            let result = KeyRegistration::dedup_snark_verification_keys(BTreeSet::from([
+                higher.clone(),
+                lower.clone(),
+            ]));
+
+            assert_eq!(
+                BTreeSet::from([lower.without_snark_fields(), higher]),
+                result
+            );
+        }
+
+        #[test]
+        fn strips_every_colliding_entry_but_the_highest_stake_one() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let shared_vk = new_schnorr_vk(&mut rng);
+            let lowest = closed_entry(100, Some(shared_vk), &mut rng);
+            let middle = closed_entry(200, Some(shared_vk), &mut rng);
+            let highest = closed_entry(300, Some(shared_vk), &mut rng);
+
+            let result = KeyRegistration::dedup_snark_verification_keys(BTreeSet::from([
+                middle.clone(),
+                highest.clone(),
+                lowest.clone(),
+            ]));
+
+            assert_eq!(
+                BTreeSet::from([
+                    lowest.without_snark_fields(),
+                    highest,
+                    middle.without_snark_fields(),
+                ]),
+                result
+            );
+        }
+
+        #[test]
+        fn breaks_stake_ties_with_the_concatenation_key() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let shared_vk = new_schnorr_vk(&mut rng);
+            let first = closed_entry(100, Some(shared_vk), &mut rng);
+            let second = closed_entry(100, Some(shared_vk), &mut rng);
+            let (loser, winner) = if first < second {
+                (first, second)
+            } else {
+                (second, first)
+            };
+
+            let result = KeyRegistration::dedup_snark_verification_keys(BTreeSet::from([
+                loser.clone(),
+                winner.clone(),
+            ]));
+
+            assert_eq!(
+                BTreeSet::from([winner, loser.without_snark_fields(),]),
+                result
+            );
+        }
+
+        #[test]
+        fn leaves_entries_without_collision_untouched() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let without_snark_key = closed_entry(100, None, &mut rng);
+            let first_unique_vk = new_schnorr_vk(&mut rng);
+            let first_unique = closed_entry(200, Some(first_unique_vk), &mut rng);
+            let second_unique_vk = new_schnorr_vk(&mut rng);
+            let second_unique = closed_entry(300, Some(second_unique_vk), &mut rng);
+            let entries = BTreeSet::from([without_snark_key, first_unique, second_unique]);
+
+            let result = KeyRegistration::dedup_snark_verification_keys(entries.clone());
+
+            assert_eq!(entries, result);
+        }
     }
 
     proptest! {
@@ -617,16 +737,17 @@ mod tests {
 
         use crate::{
             Initializer, Parameters,
-            membership_commitment::{
-                MerkleTreeBatchCommitment, MerkleTreeConcatenationLeaf, MerkleTreeSnarkLeaf,
-            },
+            membership_commitment::{MerkleTreeBatchCommitment, MerkleTreeConcatenationLeaf},
         };
         #[cfg(feature = "snark")]
-        use crate::{MidnightPoseidonDigest, membership_commitment::MerkleTreeCommitment};
+        use crate::{
+            MidnightPoseidonDigest,
+            membership_commitment::{MerkleTreeCommitment, MerkleTreeSnarkLeaf},
+        };
 
         use super::*;
 
-        const GOLDEN_AVK_CONCATENATION_NO_COLLISION: &str = r#"
+        const GOLDEN_CONCATENATION_AVK_NO_COLLISION: &str = r#"
         {
             "root":[13, 114, 165, 123, 88, 179, 198, 14, 4, 145, 236, 245, 78, 124, 123, 144, 109, 215, 155, 54, 192, 230, 67, 115, 171, 79, 203, 46, 107, 211, 221, 3],
             "nr_leaves":10,
@@ -634,9 +755,16 @@ mod tests {
         }"#;
 
         #[cfg(feature = "snark")]
-        const GOLDEN_AVK_SNARK_NO_COLLISION: &str = r#"
+        const GOLDEN_SNARK_AVK_NO_COLLISION: &str = r#"
         {
             "root":[118, 68, 108, 35, 117, 100, 134, 230, 170, 118, 106, 64, 97, 210, 41, 103, 127, 247, 125, 13, 199, 159, 186, 246, 221, 67, 143, 155, 41, 250, 165, 115],
+            "hasher":null
+        }"#;
+
+        #[cfg(feature = "snark")]
+        const GOLDEN_SNARK_AVK_SNARK_KEY_COLLISION: &str = r#"
+        {
+            "root":[177, 91, 236, 76, 232, 38, 63, 64, 251, 150, 98, 201, 65, 144, 60, 162, 255, 209, 57, 127, 183, 113, 217, 172, 220, 6, 181, 95, 217, 169, 147, 38],
             "hasher":null
         }"#;
 
@@ -662,7 +790,43 @@ mod tests {
             key_reg.close_registration(&params).unwrap()
         }
 
-        fn golden_avk_concatenation_no_collision()
+        /// Same parties as `closed_key_registration_no_collision` (party `i` has stake `i`), with
+        /// two SNARK key collisions:
+        /// - 3-way: parties 2 and 5 are given the SNARK key of party 8, which keeps it.
+        /// - 2-way: party 1 is given the SNARK key of party 6, which keeps it.
+        #[cfg(feature = "snark")]
+        fn closed_key_registration_snark_key_collision() -> ClosedKeyRegistration {
+            let params = Parameters {
+                m: 10,
+                k: 5,
+                phi_f: 0.8,
+            };
+            let number_of_parties = 10;
+
+            let mut initializers: Vec<Initializer> = (0..number_of_parties)
+                .map(|stake| {
+                    // rng is recreated for each initializer to prevent the snark feature
+                    // from modifying the AVK
+                    let mut rng = ChaCha20Rng::seed_from_u64(stake);
+                    Initializer::new(params, stake, &mut rng)
+                })
+                .collect();
+            for (receiver, owner) in [(2, 8), (5, 8), (1, 6)] {
+                initializers[receiver].schnorr_signing_key =
+                    initializers[owner].schnorr_signing_key.clone();
+                initializers[receiver].schnorr_verification_key =
+                    initializers[owner].schnorr_verification_key;
+            }
+
+            let mut key_reg = KeyRegistration::initialize();
+            for initializer in initializers {
+                key_reg.register_by_entry(&initializer.try_into().unwrap()).unwrap();
+            }
+
+            key_reg.close_registration(&params).unwrap()
+        }
+
+        fn golden_concatenation_avk_no_collision()
         -> MerkleTreeBatchCommitment<Blake2b<U32>, MerkleTreeConcatenationLeaf> {
             closed_key_registration_no_collision()
                 .to_merkle_tree()
@@ -670,25 +834,54 @@ mod tests {
         }
 
         #[cfg(feature = "snark")]
-        fn golden_avk_snark_no_collision()
+        fn golden_snark_avk_no_collision()
         -> MerkleTreeCommitment<MidnightPoseidonDigest, MerkleTreeSnarkLeaf> {
             closed_key_registration_no_collision()
                 .to_merkle_tree()
                 .to_merkle_tree_commitment()
         }
 
-        #[test]
-        fn golden_computation_concatenation_no_collision() {
-            let value = serde_json::from_str(GOLDEN_AVK_CONCATENATION_NO_COLLISION)
-                .expect("This JSON deserialization should not fail");
-            assert_eq!(golden_avk_concatenation_no_collision(), value);
+        fn golden_concatenation_avk_snark_key_collision()
+        -> MerkleTreeBatchCommitment<Blake2b<U32>, MerkleTreeConcatenationLeaf> {
+            closed_key_registration_snark_key_collision()
+                .to_merkle_tree()
+                .to_merkle_tree_batch_commitment()
+        }
+
+        #[cfg(feature = "snark")]
+        fn golden_snark_avk_snark_key_collision()
+        -> MerkleTreeCommitment<MidnightPoseidonDigest, MerkleTreeSnarkLeaf> {
+            closed_key_registration_snark_key_collision()
+                .to_merkle_tree()
+                .to_merkle_tree_commitment()
         }
 
         #[test]
-        fn golden_computation_snark_no_collision() {
-            let value = serde_json::from_str(GOLDEN_AVK_SNARK_NO_COLLISION)
+        fn golden_concatenation_computation_no_collision() {
+            let value = serde_json::from_str(GOLDEN_CONCATENATION_AVK_NO_COLLISION)
                 .expect("This JSON deserialization should not fail");
-            assert_eq!(golden_avk_snark_no_collision(), value);
+            assert_eq!(golden_concatenation_avk_no_collision(), value);
+        }
+
+        #[test]
+        fn golden_snark_computation_no_collision() {
+            let value = serde_json::from_str(GOLDEN_SNARK_AVK_NO_COLLISION)
+                .expect("This JSON deserialization should not fail");
+            assert_eq!(golden_snark_avk_no_collision(), value);
+        }
+
+        #[test]
+        fn golden_concatenation_computation_snark_key_collision() {
+            let value = serde_json::from_str(GOLDEN_CONCATENATION_AVK_NO_COLLISION)
+                .expect("This JSON deserialization should not fail");
+            assert_eq!(golden_concatenation_avk_snark_key_collision(), value);
+        }
+
+        #[test]
+        fn golden_snark_computation_snark_key_collision() {
+            let value = serde_json::from_str(GOLDEN_SNARK_AVK_SNARK_KEY_COLLISION)
+                .expect("This JSON deserialization should not fail");
+            assert_eq!(golden_snark_avk_snark_key_collision(), value);
         }
     }
 }
