@@ -17,6 +17,10 @@ resource "null_resource" "mithril_monitoring" {
     mithril_ipfs_enabled     = var.mithril_ipfs_enabled
   }
 
+  lifecycle {
+    replace_triggered_by = [null_resource.mithril_bootstrap]
+  }
+
   connection {
     type        = "ssh"
     user        = "curry"
@@ -61,8 +65,8 @@ cat /home/curry/docker/prometheus/cardano.json | jq --arg CARDANO_NODES "$CARDAN
     },
     "targets": $CARDANO_NODES
 }]' | jq '. | map(try(.targets |= split(",")) // .)' > /home/curry/docker/prometheus/cardano.json.new
-rm -f /home/curry/docker/prometheus/cardano.json
-mv /home/curry/docker/prometheus/cardano.json.new docker/prometheus/cardano.json
+cat /home/curry/docker/prometheus/cardano.json.new > /home/curry/docker/prometheus/cardano.json
+rm -f /home/curry/docker/prometheus/cardano.json.new
 # Setup prometheus targets configuration for Mithril signer nodes
 MITHRIL_SIGNER_NODES=$(docker ps --format='{{.Names}}:9090,' | grep "mithril-signer" | grep -v "www" | grep -v "relay" | sort | tr -d '\n\t\r ' | sed 's/.$//')
 cat /home/curry/docker/prometheus/mithril-signer.json | jq --arg MITHRIL_SIGNER_NODES "$MITHRIL_SIGNER_NODES" '. += [{
@@ -71,8 +75,8 @@ cat /home/curry/docker/prometheus/mithril-signer.json | jq --arg MITHRIL_SIGNER_
     },
     "targets": $MITHRIL_SIGNER_NODES
 }]' | jq '. | map(try(.targets |= split(",")) // .)' > /home/curry/docker/prometheus/mithril-signer.json.new
-rm -f /home/curry/docker/prometheus/mithril-signer.json
-mv /home/curry/docker/prometheus/mithril-signer.json.new docker/prometheus/mithril-signer.json
+cat /home/curry/docker/prometheus/mithril-signer.json.new > /home/curry/docker/prometheus/mithril-signer.json
+rm -f /home/curry/docker/prometheus/mithril-signer.json.new
 # Setup prometheus targets configuration for Mithril aggregator nodes
 MITHRIL_AGGREGATOR_NODES=$(docker ps --format='{{.Names}}:9090,' | grep "mithril-aggregator" | sort | tr -d '\n\t\r ' | sed 's/.$//')
 cat /home/curry/docker/prometheus/mithril-aggregator.json | jq --arg MITHRIL_AGGREGATOR_NODES "$MITHRIL_AGGREGATOR_NODES" '. += [{
@@ -81,8 +85,8 @@ cat /home/curry/docker/prometheus/mithril-aggregator.json | jq --arg MITHRIL_AGG
     },
     "targets": $MITHRIL_AGGREGATOR_NODES
 }]' | jq '. | map(try(.targets |= split(",")) // .)' > /home/curry/docker/prometheus/mithril-aggregator.json.new
-rm -f /home/curry/docker/prometheus/mithril-aggregator.json
-mv /home/curry/docker/prometheus/mithril-aggregator.json.new docker/prometheus/mithril-aggregator.json
+cat /home/curry/docker/prometheus/mithril-aggregator.json.new > /home/curry/docker/prometheus/mithril-aggregator.json
+rm -f /home/curry/docker/prometheus/mithril-aggregator.json.new
 EOT
       ,
       <<-EOT
