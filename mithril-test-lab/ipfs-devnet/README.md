@@ -374,8 +374,11 @@ SWARM_DIR=./swarm ./ipfs-devnet.sh query -- --node 2 swarm peers
 Download the Kubo Web UI as a CAR archive and import it into the first swarm node, making it available inside the
 private IPFS network.
 
+The CAR archive is downloaded from the [ipfs-webui GitHub release](https://github.com/ipfs/ipfs-webui/releases) whose
+CID matches the Web UI expected by the running Kubo node. The command fails if no release matches this CID.
+
 > [!IMPORTANT]
-> The swarm must be running before using this command. The download may take some time.
+> The swarm must be running before using this command, and `jq` must be installed.
 
 ```shell
 ./ipfs-devnet.sh load-webui [OPTIONS]
