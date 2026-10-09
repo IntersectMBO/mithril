@@ -98,7 +98,8 @@ impl PallasChainReader {
     }
 
     /// Intersects the point of the chain with the given point and consumes the acknowledgement
-    /// of the intersection sent by the node.
+    /// of the intersection sent by the node. When the node finds no intersection, the error keeps
+    /// the connection, which stays usable for another intersection.
     async fn find_intersect_point(&mut self, point: &RawCardanoPoint) -> StdResult<()> {
         let logger = self.logger.clone();
         let chainsync_timeout = self.chainsync_timeout;
@@ -113,7 +114,17 @@ impl PallasChainReader {
             )
             .await;
             let intersection_point = match result {
-                Ok(Ok((intersection_point, _tip))) => intersection_point,
+                Ok(Ok((Some(intersection_point), _tip))) => intersection_point,
+                Ok(Ok((None, tip))) => {
+                    warn!(
+                        logger, "No intersection found with the chain of the Cardano node";
+                        "point" => ?point, "tip" => ?RawCardanoPoint::from(tip.0), "tip_block_number" => tip.1
+                    );
+
+                    return Err(anyhow::anyhow!(
+                        "PallasChainReader found no intersection for the point {point:?}"
+                    ));
+                }
                 Ok(Err(err)) => {
                     self.drop_client();
 
@@ -132,9 +143,7 @@ impl PallasChainReader {
                     ));
                 }
             };
-            if let Some(intersection_point) = intersection_point {
-                self.consume_intersection_acknowledgement(intersection_point).await?;
-            }
+            self.consume_intersection_acknowledgement(intersection_point).await?;
         } else {
             debug!(logger, "Doesn't have agency, no need to find intersect point";);
         }
