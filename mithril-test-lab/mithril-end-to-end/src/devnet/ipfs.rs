@@ -4,7 +4,7 @@ use std::process::Stdio;
 
 use anyhow::{Context, anyhow};
 use reqwest::Url;
-use slog_scope::info;
+use slog_scope::{info, warn};
 use tokio::process::Command;
 
 use mithril_common::StdResult;
@@ -47,10 +47,15 @@ pub struct IpfsDevnetBootstrapArgs {
 }
 
 impl IpfsDevnet {
-    fn build_command<C: AsRef<OsStr>>(&self, sub_command: C) -> StdResult<Command> {
+    fn build_command<C, A>(&self, sub_command: C, additional_args: A) -> StdResult<Command>
+    where
+        C: AsRef<OsStr>,
+        A: IntoIterator<Item = C>,
+    {
         let mut command = Command::new(self.devnet_script_path.clone());
         command
             .arg(sub_command)
+            .args(additional_args)
             .env("SWARM_DIR", self.swarm_dir.as_os_str())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -176,7 +181,7 @@ impl IpfsDevnet {
     pub async fn start(&self) -> StdResult<()> {
         // Note: running the start command on an already running devnet does nothing, so running it
         // against a "Detached" devnet poses no risk (if stopped, it will start, if running, it will do nothing).
-        let mut run_command = self.build_command("start")?;
+        let mut run_command = self.build_command("start", [])?;
 
         info!("Starting the IPFS devnet"; "script" => &self.devnet_script_path.display(), "cmd" => "start");
 
@@ -201,7 +206,7 @@ impl IpfsDevnet {
             return Ok(());
         }
 
-        let mut run_command = self.build_command("stop")?;
+        let mut run_command = self.build_command("stop", [])?;
 
         info!("Stopping the IPFS devnet"; "script" => &self.devnet_script_path.display(), "cmd" => "stop");
 
@@ -215,6 +220,55 @@ impl IpfsDevnet {
             Some(0) => Ok(()),
             Some(code) => Err(anyhow!("Stop IPFS devnet exited with status code: {code}")),
             None => Err(anyhow!("Stop IPFS devnet terminated by signal")),
+        }
+    }
+
+    async fn list_ipns_keys(&self) -> StdResult<Vec<String>> {
+        let output = self
+            .build_command("query", ["--", "key", "list"])?
+            .output()
+            .await
+            .with_context(|| "Failed to list IPNS keys")?;
+        if !output.status.success() {
+            return Err(anyhow!(RetryableDevnetError(format!(
+                "List IPNS keys failed with status {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            ))));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty())
+            .collect())
+    }
+
+    pub async fn create_ipns_keypair(&self, key_name: &str) -> StdResult<()> {
+        if self.list_ipns_keys().await?.iter().any(|key| key == key_name) {
+            warn!("Create IPNS keypair - key with name '{key_name}' already exists, reusing it");
+            return Ok(());
+        }
+
+        let mut run_command =
+            self.build_command("query", ["--", "key", "gen", "--type=ed25519", key_name])?;
+
+        info!("Creating IPNS keypair"; "script" => &self.devnet_script_path.display(), "cmd" => "query -- key gen");
+
+        let status = run_command
+            .spawn()
+            .with_context(|| "Failed to create IPNS keypair")?
+            .wait_forwarding_output_to_slog_scope(&format!(
+                "{IPFS_DEVNET_SCRIPT_NAME} query -- key gen"
+            ))
+            .await
+            .with_context(|| "Error while creating IPNS keypair")?;
+        match status.code() {
+            Some(0) => Ok(()),
+            Some(code) => Err(anyhow!(RetryableDevnetError(format!(
+                "Create IPNS keypair exited with status code: {code}"
+            )))),
+            None => Err(anyhow!("Create IPNS keypair terminated by signal")),
         }
     }
 }

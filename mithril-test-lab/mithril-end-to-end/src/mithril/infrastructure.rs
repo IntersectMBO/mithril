@@ -18,8 +18,8 @@ use crate::mithril::relay_signer::RelaySignerConfiguration;
 use crate::toolkit::ScenarioToolkit;
 use crate::{
     AggregateSignatureType, Aggregator, AggregatorConfig, Client, DEVNET_MAGIC_ID, Devnet,
-    DmqNodeFlavor, FullNode, GenesisKeys, IpfsDevnet, KuboNode, PoolNode, RelayAggregator,
-    RelayPassive, RelaySigner, Signer,
+    DmqNodeFlavor, FullNode, GenesisKeys, IPNS_KEY_NAME_FOR_SNAPSHOT, IpfsDevnet, KuboNode,
+    PoolNode, RelayAggregator, RelayPassive, RelaySigner, Signer,
 };
 
 use super::signer::SignerConfig;
@@ -165,6 +165,7 @@ impl MithrilInfrastructure {
         }
         if let Some(ipfs_devnet) = &config.ipfs_devnet {
             ipfs_devnet.start().await?;
+            ipfs_devnet.create_ipns_keypair(IPNS_KEY_NAME_FOR_SNAPSHOT).await?;
         }
 
         let devnet_topology = config.devnet.topology();
@@ -386,6 +387,7 @@ impl MithrilInfrastructure {
             server_port: config.server_port + index as u64,
             full_node,
             ipfs_kubo_node,
+            ipns_key_name: IPNS_KEY_NAME_FOR_SNAPSHOT,
             cardano_cli_path: &config.devnet.cardano_cli_path(),
             work_dir: &config.work_dir,
             store_dir: &aggregator_store_dir,

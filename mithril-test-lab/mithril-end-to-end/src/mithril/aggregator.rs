@@ -30,6 +30,7 @@ pub struct AggregatorConfig<'a> {
     pub server_port: u64,
     pub full_node: &'a FullNode,
     pub ipfs_kubo_node: Option<&'a KuboNode>,
+    pub ipns_key_name: &'a str,
     pub cardano_cli_path: &'a Path,
     pub work_dir: &'a Path,
     pub store_dir: &'a Path,
@@ -223,8 +224,8 @@ impl Aggregator {
             env.insert(
                 "IPFS_RPC_SERVER_CONFIG",
                 format!(
-                    r#"{{"url": "{}", "mfs_folder_name": "mithril-snapshots"}}"#,
-                    node.rpc_url
+                    r#"{{"url": "{}", "mfs_folder_name": "mithril-snapshots", "ipns_key_name": "{}"}}"#,
+                    node.rpc_url, aggregator_config.ipns_key_name
                 ),
             );
         }
