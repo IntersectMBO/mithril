@@ -30,6 +30,15 @@ generate_swarm_key() {
   od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
 }
 
+# Fail if something is already listening on the given local port, whatever process owns it
+require_free_port() {
+  local -r port="$1"
+
+  if (echo >"/dev/tcp/127.0.0.1/${port}") 2>/dev/null; then
+    error_exit "Port ${port} is already in use: another Kubo swarm may be running, please stop then try again."
+  fi
+}
+
 # Init a node, removing existing content if overwrite is set, returning the node Peer Id
 init_node() {
   local -r node_id="$1"
@@ -166,6 +175,13 @@ fi
 # ---------------------------------------------------------------------------
 
 echo ">> Configuring ${NUMBER_OF_NODES} Kubo nodes in '${SWARM_DIR}'"
+
+# Check ports before touching any node so a running swarm is never orphaned
+for ((node_id = 1; node_id <= NUMBER_OF_NODES; node_id++)); do
+  require_free_port $((5000 + node_id))
+  require_free_port $((5100 + node_id))
+  require_free_port $((5200 + node_id))
+done
 
 SWARM_KEY="$(generate_swarm_key)"
 readonly SWARM_KEY

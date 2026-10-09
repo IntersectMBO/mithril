@@ -152,6 +152,10 @@ For node `N`, the default local ports are:
 | Gateway | `5100 + N`   | `5101`             |
 | Swarm   | `5200 + N`   | `5201`             |
 
+> [!IMPORTANT]
+> `init` fails if any of these ports is already in use (e.g. by a swarm still running from this or another
+> directory). Stop that swarm first, see [Troubleshooting](#some-kubo-nodes-are-still-running-after-stop).
+
 #### Re-initialize an existing swarm
 
 If the target swarm directory already contains node configurations, use `--overwrite`:
