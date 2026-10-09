@@ -822,4 +822,56 @@ mod tests {
         server.abort();
         client_result.unwrap();
     }
+
+    /// Sets up a mock server which finds none of the points of the intersection request on its chain.
+    async fn setup_server_without_intersection(
+        socket_path: PathBuf,
+    ) -> tokio::task::JoinHandle<NodeServer> {
+        tokio::spawn(async move {
+            if socket_path.exists() {
+                fs::remove_file(&socket_path).expect("Previous socket removal failed");
+            }
+
+            let unix_listener = UnixListener::bind(socket_path.as_path()).unwrap();
+            let mut server = NodeServer::accept(&unix_listener, 10).await.unwrap();
+            let chainsync_server = server.chainsync();
+
+            chainsync_server.recv_while_idle().await.unwrap();
+            chainsync_server
+                .send_intersect_not_found(get_fake_tip())
+                .await
+                .unwrap();
+
+            server
+        })
+    }
+
+    #[tokio::test]
+    async fn set_chain_point_fails_when_the_intersection_is_not_found() {
+        // On a new connection, the node keeps its read-pointer at genesis until an intersection
+        // is found. When the chain point is a block the node rolled back in the meantime, the
+        // node answers IntersectNotFound and the read-pointer stays at genesis, so the next
+        // request would replay the whole chain behind a rollback to the origin.
+        // Setting the chain point must fail instead of ignoring the reply.
+        let socket_path = create_temp_dir(current_function!()).join("node.socket");
+        let server = setup_server_without_intersection(socket_path.clone()).await;
+        let client = tokio::spawn(async move {
+            let mut chain_reader = PallasChainReader::new(
+                socket_path.as_path(),
+                CardanoNetwork::TestNet(10),
+                TestLogger::stdout(),
+            );
+
+            chain_reader
+                .set_chain_point(&RawCardanoPoint::from(get_fake_specific_point()))
+                .await
+                .expect_err(
+                    "Setting the chain point should fail when the intersection is not found",
+                );
+        });
+
+        let client_result = client.await;
+        server.abort();
+        client_result.unwrap();
+    }
 }
