@@ -43,6 +43,13 @@ impl ChainDataStore for SignerCardanoChainDataRepository {
         self.inner.get_transaction_highest_chain_point().await
     }
 
+    async fn get_chain_points_by_block_numbers(
+        &self,
+        block_numbers: Vec<BlockNumber>,
+    ) -> StdResult<Vec<ChainPoint>> {
+        self.inner.get_chain_points_by_block_numbers(block_numbers).await
+    }
+
     async fn get_highest_block_range(&self) -> StdResult<Option<BlockRange>> {
         let record = self.inner.retrieve_highest_block_range_root().await?;
         Ok(record.map(|record| record.range))
