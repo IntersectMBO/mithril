@@ -10,8 +10,9 @@ use crate::chain_reader::ChainBlockReader;
 
 /// [FakeChainReader] is a fake implementation of [ChainBlockReader] for testing purposes.
 ///
-/// Setting the chain point consumes a leading rollback to that point, as the acknowledgement
-/// of the intersection sent by the node.
+/// Setting the chain point consumes a leading rollback to the first candidate, as the
+/// acknowledgement of the intersection sent by the node. A leading rollback to an older candidate
+/// stays as the next chain block, as the node acknowledges an intersection below the chain point.
 pub struct FakeChainReader {
     chain_block_next_actions: Mutex<VecDeque<ChainBlockNextAction>>,
 }
@@ -32,11 +33,12 @@ impl FakeChainReader {
 
 #[async_trait]
 impl ChainBlockReader for FakeChainReader {
-    async fn set_chain_point(&mut self, point: &RawCardanoPoint) -> StdResult<()> {
+    async fn set_chain_point(&mut self, candidates: &[RawCardanoPoint]) -> StdResult<()> {
         let mut chain_block_next_actions = self.chain_block_next_actions.lock().unwrap();
         let acknowledges_intersection = matches!(
-            chain_block_next_actions.front(),
-            Some(ChainBlockNextAction::RollBackward { rollback_point }) if rollback_point == point
+            (chain_block_next_actions.front(), candidates.first()),
+            (Some(ChainBlockNextAction::RollBackward { rollback_point }), Some(first_candidate))
+                if rollback_point == first_candidate
         );
         if acknowledges_intersection {
             chain_block_next_actions.pop_front();
@@ -106,7 +108,7 @@ mod tests {
             },
         ]);
 
-        chain_reader.set_chain_point(&chain_point).await.unwrap();
+        chain_reader.set_chain_point(&[chain_point]).await.unwrap();
 
         assert_eq!(
             Some(ChainBlockNextAction::RollForward {
@@ -117,17 +119,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_chain_point_keeps_a_leading_rollback_to_another_point() {
+    async fn set_chain_point_keeps_a_leading_rollback_to_an_older_candidate() {
         let rollback = ChainBlockNextAction::RollBackward {
             rollback_point: RawCardanoPoint::new(SlotNumber(1), "point-hash-1".as_bytes()),
         };
         let mut chain_reader = FakeChainReader::new(vec![rollback.clone()]);
 
         chain_reader
-            .set_chain_point(&RawCardanoPoint::new(
-                SlotNumber(2),
-                "point-hash-2".as_bytes(),
-            ))
+            .set_chain_point(&[
+                RawCardanoPoint::new(SlotNumber(2), "point-hash-2".as_bytes()),
+                RawCardanoPoint::new(SlotNumber(1), "point-hash-1".as_bytes()),
+            ])
             .await
             .unwrap();
 
@@ -150,7 +152,7 @@ mod tests {
         let mut chain_reader = FakeChainReader::new(vec![roll_forward.clone()]);
 
         chain_reader
-            .set_chain_point(&RawCardanoPoint::new(SlotNumber(10), "hash-1"))
+            .set_chain_point(&[RawCardanoPoint::new(SlotNumber(10), "hash-1")])
             .await
             .unwrap();
 

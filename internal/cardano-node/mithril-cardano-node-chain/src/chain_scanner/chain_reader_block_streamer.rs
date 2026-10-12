@@ -1,3 +1,4 @@
+use std::slice;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -94,7 +95,7 @@ impl ChainReaderBlockStreamer {
         let from = from.unwrap_or(RawCardanoPoint::origin());
         {
             let mut chain_reader_inner = chain_reader.try_lock()?;
-            chain_reader_inner.set_chain_point(&from).await?;
+            chain_reader_inner.set_chain_point(slice::from_ref(&from)).await?;
         }
         debug!(
             logger, "starting ChainReaderBlockStreamer";
