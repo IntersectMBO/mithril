@@ -1,4 +1,3 @@
-use std::slice;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -84,22 +83,27 @@ impl BlockStreamer for ChainReaderBlockStreamer {
 }
 
 impl ChainReaderBlockStreamer {
-    /// Factory
+    /// Factory: streams the blocks from the first candidate point on the chain, the candidates
+    /// being ordered by preference, most recent first, or from the origin without candidates
     pub async fn try_new(
         chain_reader: Arc<Mutex<dyn ChainBlockReader>>,
-        from: Option<RawCardanoPoint>,
+        candidates: Vec<RawCardanoPoint>,
         until: BlockNumber,
         max_roll_forwards_per_poll: usize,
         logger: Logger,
     ) -> StdResult<Self> {
-        let from = from.unwrap_or(RawCardanoPoint::origin());
+        let candidates = if candidates.is_empty() {
+            vec![RawCardanoPoint::origin()]
+        } else {
+            candidates
+        };
         {
             let mut chain_reader_inner = chain_reader.try_lock()?;
-            chain_reader_inner.set_chain_point(slice::from_ref(&from)).await?;
+            chain_reader_inner.set_chain_point(&candidates).await?;
         }
         debug!(
             logger, "starting ChainReaderBlockStreamer";
-            "from" => ?from, "until" => ?until, "max_roll_forwards_per_poll" => max_roll_forwards_per_poll
+            "candidates" => ?candidates, "until" => ?until, "max_roll_forwards_per_poll" => max_roll_forwards_per_poll
         );
 
         Ok(Self {
@@ -182,7 +186,7 @@ mod tests {
         ])));
         let mut block_streamer = ChainReaderBlockStreamer::try_new(
             chain_reader.clone(),
-            None,
+            vec![],
             until_block_number - 1,
             MAX_ROLL_FORWARDS_PER_POLL,
             TestLogger::stdout(),
@@ -196,7 +200,7 @@ mod tests {
 
         let mut block_streamer = ChainReaderBlockStreamer::try_new(
             chain_reader,
-            None,
+            vec![],
             until_block_number,
             MAX_ROLL_FORWARDS_PER_POLL,
             TestLogger::stdout(),
@@ -250,7 +254,7 @@ mod tests {
         ])));
         let mut block_streamer = ChainReaderBlockStreamer::try_new(
             chain_reader.clone(),
-            None,
+            vec![],
             BlockNumber(2),
             MAX_ROLL_FORWARDS_PER_POLL,
             TestLogger::stdout(),
@@ -301,7 +305,7 @@ mod tests {
         ])));
         let mut block_streamer = ChainReaderBlockStreamer::try_new(
             chain_reader.clone(),
-            None,
+            vec![],
             BlockNumber(100),
             MAX_ROLL_FORWARDS_PER_POLL,
             TestLogger::stdout(),
@@ -354,7 +358,7 @@ mod tests {
         ])));
         let mut block_streamer = ChainReaderBlockStreamer::try_new(
             chain_reader,
-            None,
+            vec![],
             BlockNumber(100),
             MAX_ROLL_FORWARDS_PER_POLL,
             TestLogger::stdout(),
@@ -400,7 +404,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_parse_expected_nothing_when_rollbackward_on_same_point() {
+    async fn passes_the_candidates_to_the_chain_reader_which_consumes_the_acknowledgement() {
         let chain_reader = Arc::new(Mutex::new(FakeChainReader::new(vec![
             ChainBlockNextAction::RollBackward {
                 rollback_point: RawCardanoPoint::new(SlotNumber(100), "hash-123"),
@@ -408,7 +412,7 @@ mod tests {
         ])));
         let mut block_streamer = ChainReaderBlockStreamer::try_new(
             chain_reader,
-            Some(RawCardanoPoint::new(SlotNumber(100), "hash-123")),
+            vec![RawCardanoPoint::new(SlotNumber(100), "hash-123")],
             BlockNumber(1),
             MAX_ROLL_FORWARDS_PER_POLL,
             TestLogger::stdout(),
@@ -480,7 +484,7 @@ mod tests {
         ])));
         let mut block_streamer = ChainReaderBlockStreamer::try_new(
             chain_reader,
-            Some(start_point_at_block_11.clone()),
+            vec![start_point_at_block_11.clone()],
             BlockNumber(1000),
             MAX_ROLL_FORWARDS_PER_POLL,
             TestLogger::stdout(),
@@ -525,7 +529,7 @@ mod tests {
         ])));
         let mut block_streamer = ChainReaderBlockStreamer::try_new(
             chain_reader,
-            None,
+            vec![],
             BlockNumber(1),
             MAX_ROLL_FORWARDS_PER_POLL,
             TestLogger::stdout(),
@@ -586,7 +590,7 @@ mod tests {
         ])));
         let mut block_streamer = ChainReaderBlockStreamer::try_new(
             chain_reader,
-            None,
+            vec![],
             BlockNumber(1000),
             MAX_ROLL_FORWARDS_PER_POLL,
             TestLogger::stdout(),
@@ -635,7 +639,7 @@ mod tests {
         ])));
         let mut block_streamer = ChainReaderBlockStreamer::try_new(
             chain_reader,
-            None,
+            vec![],
             BlockNumber(1000),
             MAX_ROLL_FORWARDS_PER_POLL,
             TestLogger::stdout(),
@@ -656,11 +660,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn streams_the_rollback_to_an_older_candidate_before_its_blocks() {
+        let start_point_at_block_12 = RawCardanoPoint::new(SlotNumber(120), "hash-fork-12");
+        let older_candidate_at_block_11 = RawCardanoPoint::new(SlotNumber(110), "hash-11");
+        let canonical_block_12 = ScannedBlock::new(
+            "hash-canonical-12",
+            BlockNumber(12),
+            SlotNumber(121),
+            Vec::<&str>::new(),
+        );
+        let chain_reader = Arc::new(Mutex::new(FakeChainReader::new(vec![
+            ChainBlockNextAction::RollBackward {
+                rollback_point: older_candidate_at_block_11.clone(),
+            },
+            ChainBlockNextAction::RollForward {
+                parsed_block: canonical_block_12.clone(),
+            },
+        ])));
+        let mut block_streamer = ChainReaderBlockStreamer::try_new(
+            chain_reader,
+            vec![start_point_at_block_12, older_candidate_at_block_11],
+            BlockNumber(1000),
+            MAX_ROLL_FORWARDS_PER_POLL,
+            TestLogger::stdout(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            Some(ChainScannedBlocks::RollBackward(SlotNumber(110))),
+            block_streamer.poll_next().await.unwrap()
+        );
+        assert_eq!(
+            Some(ChainScannedBlocks::RollForwards(vec![canonical_block_12])),
+            block_streamer.poll_next().await.unwrap()
+        );
+    }
+
+    #[tokio::test]
     async fn test_parse_expected_nothing() {
         let chain_reader = Arc::new(Mutex::new(FakeChainReader::new(vec![])));
         let mut block_streamer = ChainReaderBlockStreamer::try_new(
             chain_reader,
-            None,
+            vec![],
             BlockNumber(1),
             MAX_ROLL_FORWARDS_PER_POLL,
             TestLogger::stdout(),
@@ -678,7 +720,7 @@ mod tests {
         let chain_reader = Arc::new(Mutex::new(FakeChainReader::new(vec![])));
         let block_streamer = ChainReaderBlockStreamer::try_new(
             chain_reader,
-            None,
+            vec![],
             BlockNumber(1),
             MAX_ROLL_FORWARDS_PER_POLL,
             TestLogger::stdout(),

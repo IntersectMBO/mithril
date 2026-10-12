@@ -58,13 +58,13 @@ impl CardanoBlockScanner {
 impl BlockScanner for CardanoBlockScanner {
     async fn scan(
         &self,
-        from: Option<RawCardanoPoint>,
+        candidates: Vec<RawCardanoPoint>,
         until: BlockNumber,
     ) -> StdResult<Box<dyn BlockStreamer>> {
         let streamer = Box::new(
             ChainReaderBlockStreamer::try_new(
                 self.chain_reader.clone(),
-                from,
+                candidates,
                 until,
                 self.max_roll_forwards_per_poll,
                 self.logger.clone(),

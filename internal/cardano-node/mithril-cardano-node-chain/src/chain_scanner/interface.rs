@@ -9,10 +9,11 @@ use crate::entities::{RawCardanoPoint, ScannedBlock};
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait BlockScanner: Sync + Send {
-    /// Scan the transactions
+    /// Scan the blocks from the first candidate point on the chain, the candidates being ordered
+    /// by preference, most recent first, or from the origin without candidates
     async fn scan(
         &self,
-        from: Option<RawCardanoPoint>,
+        candidates: Vec<RawCardanoPoint>,
         until: BlockNumber,
     ) -> StdResult<Box<dyn BlockStreamer>>;
 }

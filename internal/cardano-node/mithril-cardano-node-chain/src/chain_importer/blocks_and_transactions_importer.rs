@@ -79,7 +79,7 @@ impl BlocksTransactionsImporter {
         from: Option<RawCardanoPoint>,
         until: BlockNumber,
     ) -> StdResult<()> {
-        let mut streamer = self.block_scanner.scan(from, until).await?;
+        let mut streamer = self.block_scanner.scan(from.into_iter().collect(), until).await?;
 
         while let Some(blocks) = streamer.poll_next().await? {
             match blocks {
@@ -188,7 +188,9 @@ mod tests {
                 let mut scanner_mock = MockBlockScanner::new();
                 scanner_mock
                     .expect_scan()
-                    .withf(move |from, until| from.is_none() && until == up_to_block_number)
+                    .withf(move |candidates, until| {
+                        candidates.is_empty() && until == up_to_block_number
+                    })
                     .return_once(move |_, _| {
                         Ok(Box::new(DumbBlockStreamer::new().forwards(vec![blocks])))
                     });
@@ -275,8 +277,8 @@ mod tests {
                 let mut scanner_mock = MockBlockScanner::new();
                 scanner_mock
                     .expect_scan()
-                    .withf(move |from, until| {
-                        from == &Some(highest_stored_chain_point.clone().into())
+                    .withf(move |candidates, until| {
+                        candidates == &vec![highest_stored_chain_point.clone().into()]
                             && *until == up_to_block_number
                     })
                     .return_once(move |_, _| {
@@ -545,8 +547,9 @@ mod tests {
 
         use super::*;
 
-        /// Scans a known chain: streams the blocks after the start point when it is on the chain,
-        /// and fails otherwise, as the chain reader does when the node finds no intersection.
+        /// Scans a known chain as the node, the chain reader and the streamer do: streams a
+        /// rollback to the first candidate on the chain when it is not the first candidate, then
+        /// the blocks after it, and fails when no candidate is on the chain.
         struct KnownChainBlockScanner {
             chain: Vec<ScannedBlock>,
         }
@@ -555,21 +558,35 @@ mod tests {
         impl BlockScanner for KnownChainBlockScanner {
             async fn scan(
                 &self,
-                from: Option<RawCardanoPoint>,
+                candidates: Vec<RawCardanoPoint>,
                 until: BlockNumber,
             ) -> StdResult<Box<dyn BlockStreamer>> {
-                let first_block_after_start_point = match &from {
-                    None => 0,
-                    Some(start_point) => self
-                        .chain
+                let intersection = candidates.iter().find_map(|candidate| {
+                    self.chain
                         .iter()
-                        .position(|block| RawCardanoPoint::from(block) == *start_point)
-                        .map(|position| position + 1)
-                        .ok_or_else(|| {
-                            anyhow!("No intersection found for the point {start_point:?}")
-                        })?,
+                        .position(|block| RawCardanoPoint::from(block) == *candidate)
+                });
+                let mut streamer = DumbBlockStreamer::new();
+                let first_block_after_intersection = match (candidates.first(), intersection) {
+                    (None, _) => 0,
+                    (Some(_), None) => {
+                        return Err(anyhow!(
+                            "No intersection found for the candidates {candidates:?}"
+                        ));
+                    }
+                    (Some(start_point), Some(position)) => {
+                        let intersection_block = &self.chain[position];
+                        if RawCardanoPoint::from(intersection_block) != *start_point {
+                            streamer = streamer.rollback(ChainPoint::new(
+                                intersection_block.slot_number,
+                                intersection_block.block_number,
+                                hex::encode(&intersection_block.block_hash),
+                            ));
+                        }
+                        position + 1
+                    }
                 };
-                let blocks: Vec<ScannedBlock> = self.chain[first_block_after_start_point..]
+                let blocks: Vec<ScannedBlock> = self.chain[first_block_after_intersection..]
                     .iter()
                     .filter(|block| block.block_number <= until)
                     .cloned()
@@ -577,7 +594,7 @@ mod tests {
                 let last_polled_point = blocks.last().map(RawCardanoPoint::from);
 
                 Ok(Box::new(
-                    DumbBlockStreamer::new()
+                    streamer
                         .forwards(vec![blocks])
                         .set_last_polled_point(last_polled_point),
                 ))

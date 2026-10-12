@@ -71,7 +71,7 @@ impl Default for DumbBlockScanner {
 impl BlockScanner for DumbBlockScanner {
     async fn scan(
         &self,
-        _from: Option<RawCardanoPoint>,
+        _candidates: Vec<RawCardanoPoint>,
         _until: BlockNumber,
     ) -> StdResult<Box<dyn BlockStreamer>> {
         let streamer = self.streamer.read().unwrap();
@@ -223,7 +223,7 @@ mod tests {
         )];
 
         let scanner = DumbBlockScanner::new().forwards(vec![expected_blocks.clone()]);
-        let mut streamer = scanner.scan(None, BlockNumber(5)).await.unwrap();
+        let mut streamer = scanner.scan(vec![], BlockNumber(5)).await.unwrap();
 
         let blocks = streamer.poll_next().await.unwrap();
         assert_eq!(
@@ -248,7 +248,7 @@ mod tests {
         let scanner = DumbBlockScanner::new()
             .forwards(vec![expected_blocks.clone()])
             .backward(expected_chain_point.clone());
-        let mut streamer = scanner.scan(None, BlockNumber(5)).await.unwrap();
+        let mut streamer = scanner.scan(vec![], BlockNumber(5)).await.unwrap();
 
         let blocks = streamer.poll_next().await.unwrap();
         assert_eq!(
