@@ -1,10 +1,14 @@
+use std::cmp::Reverse;
+use std::iter;
 use std::sync::Arc;
 
 use slog::{Logger, debug};
 use tokio::sync::Mutex;
 
 use mithril_common::StdResult;
-use mithril_common::entities::{BlockNumber, CardanoBlockWithTransactions, ChainPoint};
+use mithril_common::entities::{
+    BlockNumber, BlockNumberOffset, CardanoBlockWithTransactions, ChainPoint,
+};
 
 use crate::chain_importer::ChainDataStore;
 use crate::chain_scanner::{BlockScanner, ChainScannedBlocks};
@@ -20,6 +24,9 @@ pub(crate) struct BlocksTransactionsImporter {
 }
 
 impl BlocksTransactionsImporter {
+    /// Security parameter of Cardano, the deepest rollback a node can make
+    const SECURITY_PARAMETER: u64 = 2160;
+
     pub fn new(
         block_scanner: Arc<dyn BlockScanner>,
         transaction_store: Arc<dyn ChainDataStore>,
@@ -35,7 +42,6 @@ impl BlocksTransactionsImporter {
 
     pub async fn run(&self, up_to_beacon: BlockNumber) -> StdResult<()> {
         let highest_stored_beacon = self.transaction_store.get_highest_beacon().await?;
-        let from = self.start_point(&highest_stored_beacon).await?;
 
         if highest_stored_beacon
             .as_ref()
@@ -48,13 +54,14 @@ impl BlocksTransactionsImporter {
 
             Ok(())
         } else {
+            let candidates = self.intersection_candidates(&highest_stored_beacon).await?;
             debug!(
                 self.logger, "Retrieving Cardano blocks and transactions until block numbered '{up_to_beacon}'";
-                "starting_slot_number" => ?from.as_ref().map(|c| c.slot_number),
+                "starting_slot_number" => ?candidates.first().map(|c| c.slot_number),
                 "highest_stored_block_number" => ?highest_stored_beacon.as_ref().map(|c| c.block_number),
             );
 
-            self.parse_and_store_block_and_transactions_not_imported_yet(from, up_to_beacon)
+            self.parse_and_store_block_and_transactions_not_imported_yet(candidates, up_to_beacon)
                 .await
         }
     }
@@ -74,12 +81,60 @@ impl BlocksTransactionsImporter {
         Ok(last_polled_point.or(highest_stored_chain_point.as_ref().map(RawCardanoPoint::from)))
     }
 
+    /// Candidates of the intersection with the chain of the node, most recent first: the start
+    /// point and the stored blocks at Fibonacci depths below the highest stored block, so that the
+    /// chain is intersected at the most recent of them the node knows and the store rolled back to
+    /// it when the blocks above were rolled back
+    async fn intersection_candidates(
+        &self,
+        highest_stored_chain_point: &Option<ChainPoint>,
+    ) -> StdResult<Vec<RawCardanoPoint>> {
+        let mut candidates: Vec<RawCardanoPoint> = self
+            .start_point(highest_stored_chain_point)
+            .await?
+            .into_iter()
+            .collect();
+        if let Some(highest_stored_chain_point) = highest_stored_chain_point {
+            let block_numbers =
+                Self::intersection_candidate_depths(highest_stored_chain_point.block_number)
+                    .into_iter()
+                    .map(|depth| highest_stored_chain_point.block_number - BlockNumberOffset(depth))
+                    .collect();
+            let stored_chain_points = self
+                .transaction_store
+                .get_chain_points_by_block_numbers(block_numbers)
+                .await?;
+            candidates.extend(stored_chain_points.iter().map(RawCardanoPoint::from));
+        }
+        candidates.sort_by_key(|candidate| {
+            (Reverse(candidate.slot_number), candidate.block_hash.clone())
+        });
+        candidates.dedup();
+
+        Ok(candidates)
+    }
+
+    /// Depths below the highest stored block of the stored candidates, the strategy of the
+    /// chain-sync client of the Cardano node: 0, the Fibonacci numbers below the limit, then the
+    /// limit, which is the security parameter or the highest stored block number when smaller
+    fn intersection_candidate_depths(highest_stored_block_number: BlockNumber) -> Vec<u64> {
+        let limit = Self::SECURITY_PARAMETER.min(*highest_stored_block_number);
+        let fibonacci = iter::successors(Some((1u64, 2u64)), |(current, next)| {
+            Some((*next, current + next))
+        })
+        .map(|(current, _next)| current);
+        iter::once(0)
+            .chain(fibonacci.take_while(|depth| *depth < limit))
+            .chain((limit > 0).then_some(limit))
+            .collect()
+    }
+
     async fn parse_and_store_block_and_transactions_not_imported_yet(
         &self,
-        from: Option<RawCardanoPoint>,
+        candidates: Vec<RawCardanoPoint>,
         until: BlockNumber,
     ) -> StdResult<()> {
-        let mut streamer = self.block_scanner.scan(from.into_iter().collect(), until).await?;
+        let mut streamer = self.block_scanner.scan(candidates, until).await?;
 
         while let Some(blocks) = streamer.poll_next().await? {
             match blocks {
@@ -543,7 +598,9 @@ mod tests {
         use anyhow::anyhow;
         use async_trait::async_trait;
 
-        use crate::chain_scanner::BlockStreamer;
+        use crate::chain_scanner::{BlockStreamer, CardanoBlockScanner};
+        use crate::entities::ChainBlockNextAction;
+        use crate::test::double::FakeChainReader;
 
         use super::*;
 
@@ -599,6 +656,122 @@ mod tests {
                         .set_last_polled_point(last_polled_point),
                 ))
             }
+        }
+
+        fn stored_blocks_from_10_to_20() -> Vec<ScannedBlock> {
+            (10..=20)
+                .map(|block_number| {
+                    ScannedBlock::new(
+                        format!("hash-{block_number}"),
+                        BlockNumber(block_number),
+                        SlotNumber(block_number * 10),
+                        Vec::<&str>::new(),
+                    )
+                })
+                .collect()
+        }
+
+        fn point_of_block(blocks: &[ScannedBlock], block_number: u64) -> RawCardanoPoint {
+            let block = blocks
+                .iter()
+                .find(|block| block.block_number == BlockNumber(block_number))
+                .unwrap();
+            RawCardanoPoint::from(block)
+        }
+
+        fn points_of_blocks(
+            blocks: &[ScannedBlock],
+            block_numbers: &[u64],
+        ) -> Vec<RawCardanoPoint> {
+            block_numbers
+                .iter()
+                .map(|block_number| point_of_block(blocks, *block_number))
+                .collect()
+        }
+
+        fn scanner_expecting_candidates(
+            expected_candidates: Vec<RawCardanoPoint>,
+        ) -> MockBlockScanner {
+            let mut scanner = MockBlockScanner::new();
+            scanner
+                .expect_scan()
+                .withf(move |candidates, _| *candidates == expected_candidates)
+                .return_once(|_, _| Ok(Box::new(DumbBlockStreamer::new())));
+            scanner
+        }
+
+        #[test]
+        fn the_candidate_depths_are_the_fibonacci_offsets_of_the_cardano_node_up_to_the_security_parameter()
+         {
+            assert_eq!(
+                vec![
+                    0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2160
+                ],
+                BlocksTransactionsImporter::intersection_candidate_depths(BlockNumber(10_000))
+            );
+        }
+
+        #[test]
+        fn the_candidate_depths_end_at_the_highest_stored_block_number_when_the_store_is_shorter() {
+            assert_eq!(
+                vec![0, 1, 2, 3, 5, 8, 13, 20],
+                BlocksTransactionsImporter::intersection_candidate_depths(BlockNumber(20))
+            );
+        }
+
+        #[test]
+        fn the_candidate_depths_hold_no_duplicate_at_the_boundaries() {
+            assert_eq!(
+                vec![0],
+                BlocksTransactionsImporter::intersection_candidate_depths(BlockNumber(0))
+            );
+            assert_eq!(
+                vec![0, 1],
+                BlocksTransactionsImporter::intersection_candidate_depths(BlockNumber(1))
+            );
+            assert_eq!(
+                vec![0, 1, 2, 3, 5, 8, 13],
+                BlocksTransactionsImporter::intersection_candidate_depths(BlockNumber(13))
+            );
+        }
+
+        #[tokio::test]
+        async fn the_candidates_are_the_start_point_and_the_stored_blocks_at_fibonacci_depths_most_recent_first()
+         {
+            let stored_blocks = stored_blocks_from_10_to_20();
+            let scanner = scanner_expecting_candidates(points_of_blocks(
+                &stored_blocks,
+                &[20, 19, 18, 17, 15, 12],
+            ));
+            let repository = Arc::new(
+                InMemoryChainDataStore::builder()
+                    .with_blocks_and_transactions(&stored_blocks)
+                    .build(),
+            );
+            let importer = BlocksTransactionsImporter::new_for_test(Arc::new(scanner), repository);
+
+            importer.run(BlockNumber(1000)).await.unwrap();
+        }
+
+        #[tokio::test]
+        async fn a_start_point_below_the_highest_stored_block_is_ordered_among_the_stored_candidates()
+         {
+            let stored_blocks = stored_blocks_from_10_to_20();
+            let scanner = scanner_expecting_candidates(points_of_blocks(
+                &stored_blocks,
+                &[20, 19, 18, 17, 16, 15, 12],
+            ));
+            let repository = Arc::new(
+                InMemoryChainDataStore::builder()
+                    .with_blocks_and_transactions(&stored_blocks)
+                    .build(),
+            );
+            let importer = BlocksTransactionsImporter {
+                last_polled_point: Arc::new(Mutex::new(Some(point_of_block(&stored_blocks, 16)))),
+                ..BlocksTransactionsImporter::new_for_test(Arc::new(scanner), repository)
+            };
+
+            importer.run(BlockNumber(1000)).await.unwrap();
         }
 
         #[tokio::test]
@@ -677,6 +850,73 @@ mod tests {
                 importer.start_point(&None).await.unwrap()
             );
         }
+
+        #[tokio::test]
+        async fn a_rollback_to_an_older_candidate_streamed_by_the_reader_is_applied_before_the_canonical_blocks()
+         {
+            let block_11 = ScannedBlock::new(
+                "hash-11",
+                BlockNumber(11),
+                SlotNumber(110),
+                Vec::<&str>::new(),
+            );
+            let fork_block_12 = ScannedBlock::new(
+                "hash-fork-12",
+                BlockNumber(12),
+                SlotNumber(120),
+                Vec::<&str>::new(),
+            );
+            let canonical_block_12 = ScannedBlock::new(
+                "hash-canonical-12",
+                BlockNumber(12),
+                SlotNumber(121),
+                Vec::<&str>::new(),
+            );
+            let canonical_block_13 = ScannedBlock::new(
+                "hash-canonical-13",
+                BlockNumber(13),
+                SlotNumber(130),
+                Vec::<&str>::new(),
+            );
+            let chain_reader = Arc::new(Mutex::new(FakeChainReader::new(vec![
+                ChainBlockNextAction::RollBackward {
+                    rollback_point: RawCardanoPoint::from(&block_11),
+                },
+                ChainBlockNextAction::RollForward {
+                    parsed_block: canonical_block_12.clone(),
+                },
+                ChainBlockNextAction::RollForward {
+                    parsed_block: canonical_block_13.clone(),
+                },
+            ])));
+            let scanner = CardanoBlockScanner::new(chain_reader, 100, TestLogger::stdout());
+            let repository = Arc::new(
+                InMemoryChainDataStore::builder()
+                    .with_blocks_and_transactions(&[block_11.clone(), fork_block_12.clone()])
+                    .build(),
+            );
+            let importer = BlocksTransactionsImporter {
+                last_polled_point: Arc::new(Mutex::new(Some(RawCardanoPoint::from(
+                    &fork_block_12,
+                )))),
+                ..BlocksTransactionsImporter::new_for_test(Arc::new(scanner), repository.clone())
+            };
+
+            importer.run(BlockNumber(1000)).await.unwrap();
+
+            assert_eq!(
+                into_blocks_with_transactions(&[
+                    block_11,
+                    canonical_block_12,
+                    canonical_block_13.clone()
+                ]),
+                repository.get_all_block_with_txs().await
+            );
+            assert_eq!(
+                Some(RawCardanoPoint::from(&canonical_block_13)),
+                importer.start_point(&None).await.unwrap()
+            );
+        }
     }
 
     mod chain_data_rollback {
@@ -686,7 +926,7 @@ mod tests {
         async fn when_rollbackward_should_remove_transactions() {
             let expected_remaining_block_with_transactions =
                 vec![CardanoBlockWithTransactions::new(
-                    "block_hash-130",
+                    hex::encode("block_hash-130"),
                     BlockNumber(130),
                     SlotNumber(5),
                     vec!["tx_hash-6", "tx_hash-7"],
@@ -708,7 +948,11 @@ mod tests {
                     .build(),
             );
 
-            let chain_point = ChainPoint::new(SlotNumber(5), BlockNumber(130), "block_hash-130");
+            let chain_point = ChainPoint::new(
+                SlotNumber(5),
+                BlockNumber(130),
+                hex::encode("block_hash-130"),
+            );
             let scanner = DumbBlockScanner::new().backward(chain_point);
 
             let importer =
