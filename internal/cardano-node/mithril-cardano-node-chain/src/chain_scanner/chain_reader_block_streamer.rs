@@ -13,9 +13,13 @@ use crate::chain_scanner::{BlockStreamer, ChainScannedBlocks};
 use crate::entities::{ChainBlockNextAction, RawCardanoPoint};
 
 /// [Block streamer][BlockStreamer] that streams blocks with a [Chain block reader][ChainBlockReader]
+///
+/// Once the block at the `until` block number is streamed, the polls are empty without requesting
+/// the chain reader, which leaves its connection idle for the next intersection.
 pub struct ChainReaderBlockStreamer {
     chain_reader: Arc<Mutex<dyn ChainBlockReader>>,
     until: BlockNumber,
+    until_reached: bool,
     max_roll_forwards_per_poll: usize,
     last_polled_point: Option<RawCardanoPoint>,
     logger: Logger,
@@ -25,6 +29,9 @@ pub struct ChainReaderBlockStreamer {
 impl BlockStreamer for ChainReaderBlockStreamer {
     async fn poll_next(&mut self) -> StdResult<Option<ChainScannedBlocks>> {
         debug!(self.logger, ">> poll_next"; "last_polled_point" => ?self.last_polled_point);
+        if self.until_reached {
+            return Ok(None);
+        }
 
         let chain_scanned_blocks: ChainScannedBlocks;
         let mut roll_forwards = vec![];
@@ -34,8 +41,8 @@ impl BlockStreamer for ChainReaderBlockStreamer {
                     self.last_polled_point = Some(RawCardanoPoint::from(&parsed_block));
                     let parsed_block_number = parsed_block.block_number;
                     roll_forwards.push(parsed_block);
-                    if roll_forwards.len() >= self.max_roll_forwards_per_poll
-                        || parsed_block_number >= self.until
+                    self.until_reached = parsed_block_number >= self.until;
+                    if self.until_reached || roll_forwards.len() >= self.max_roll_forwards_per_poll
                     {
                         return Ok(Some(ChainScannedBlocks::RollForwards(roll_forwards)));
                     }
@@ -109,6 +116,7 @@ impl ChainReaderBlockStreamer {
         Ok(Self {
             chain_reader,
             until,
+            until_reached: false,
             max_roll_forwards_per_poll,
             last_polled_point: None,
             logger: logger.new_with_component_name::<Self>(),
@@ -279,6 +287,48 @@ mod tests {
         assert_eq!(
             block_streamer.last_polled_point(),
             Some(RawCardanoPoint::new(SlotNumber(20), "hash-2"))
+        );
+    }
+
+    #[tokio::test]
+    async fn stops_polling_the_chain_reader_once_the_block_at_the_until_block_number_was_streamed()
+    {
+        let chain_reader = Arc::new(Mutex::new(FakeChainReader::new(vec![
+            ChainBlockNextAction::RollForward {
+                parsed_block: ScannedBlock::new(
+                    "hash-1",
+                    BlockNumber(1),
+                    SlotNumber(10),
+                    Vec::<&str>::new(),
+                ),
+            },
+            ChainBlockNextAction::RollForward {
+                parsed_block: ScannedBlock::new(
+                    "hash-2",
+                    BlockNumber(2),
+                    SlotNumber(20),
+                    Vec::<&str>::new(),
+                ),
+            },
+        ])));
+        let mut block_streamer = ChainReaderBlockStreamer::try_new(
+            chain_reader.clone(),
+            vec![],
+            BlockNumber(1),
+            MAX_ROLL_FORWARDS_PER_POLL,
+            TestLogger::stdout(),
+        )
+        .await
+        .unwrap();
+        block_streamer.poll_next().await.unwrap();
+
+        let scanned_blocks = block_streamer.poll_next().await.unwrap();
+
+        assert_eq!(None, scanned_blocks);
+        assert_eq!(
+            1,
+            chain_reader.lock().await.get_total_remaining_next_actions(),
+            "The block above the until block number should not have been requested"
         );
     }
 
