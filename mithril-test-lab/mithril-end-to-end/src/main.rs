@@ -350,7 +350,7 @@ async fn main_exec() -> StdResult<()> {
                 }
             }
         };
-        create_workdir_if_not_exist_clean_otherwise(&dir);
+        create_workdir_if_not_exist_clean_otherwise(&dir)?;
         std::path::absolute(&dir).with_context(|| {
             format!(
                 "Failed to resolve absolute work directory path: {}",
@@ -785,11 +785,14 @@ fn build_logger(args: &Cli, log_file: &Path) -> Logger {
     Logger::root(slog_duplicate, slog::o!())
 }
 
-fn create_workdir_if_not_exist_clean_otherwise(work_dir: &Path) {
+fn create_workdir_if_not_exist_clean_otherwise(work_dir: &Path) -> StdResult<()> {
     if work_dir.exists() {
-        fs::remove_dir_all(work_dir).expect("Previous work dir removal failed");
+        fs::remove_dir_all(work_dir).with_context(|| {
+            format!("Previous work dir removal failed '{}'", work_dir.display())
+        })?;
     }
-    fs::create_dir(work_dir).expect("Work dir creation failure");
+    fs::create_dir_all(work_dir)
+        .with_context(|| format!("Work dir creation failure '{}'", work_dir.display()))
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -834,7 +837,7 @@ mod tests {
         .join("missing-parent")
         .join("work-dir");
 
-        create_workdir_if_not_exist_clean_otherwise(&work_dir);
+        create_workdir_if_not_exist_clean_otherwise(&work_dir).unwrap();
 
         assert!(work_dir.is_dir());
     }
