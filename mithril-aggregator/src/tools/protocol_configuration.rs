@@ -716,6 +716,23 @@ mod tests {
         }
 
         #[test]
+        fn fails_because_on_chain_configuration_a_for_next_epoch_in_offset_window_is_not_repeated()
+        {
+            let current_epoch = Epoch(47);
+            let on_chain_configurations = build_on_chain_markers(vec![(Epoch(40), 'A')]);
+            let configurations_to_import =
+                build_configurations_to_import(vec![(Epoch(40), 'A'), (Epoch(48), 'Z')]);
+
+            let tools = build_tools(current_epoch, on_chain_configurations, TestLogger::stdout());
+            let result = tools.verify_configurations_against_chain(configurations_to_import);
+
+            assert!(matches!(
+                result.unwrap_err(),
+                ProtocolConfigurationVerifierError::NotSameConfigurationForEpoch(Epoch(48))
+            ));
+        }
+
+        #[test]
         fn verification_should_handle_offset_with_current_epoch_1() {
             let current_epoch = Epoch(1);
             let on_chain_configurations = build_on_chain_markers(vec![(Epoch(1), 'A')]);
@@ -726,6 +743,23 @@ mod tests {
                 on_chain_configurations.clone(),
                 TestLogger::stdout(),
             );
+
+            assert!(
+                tools
+                    .verify_configurations_against_chain(configurations_to_import)
+                    .is_ok()
+            );
+        }
+
+        #[test]
+        fn succeeds_with_a_changed_conf_three_epochs_back_outside_offset_window() {
+            let current_epoch = Epoch(47);
+            let on_chain_configurations =
+                build_on_chain_markers(vec![(Epoch(38), 'A'), (Epoch(44), 'B')]);
+            let configurations_to_import =
+                build_configurations_to_import(vec![(Epoch(38), 'A'), (Epoch(45), 'B')]);
+
+            let tools = build_tools(current_epoch, on_chain_configurations, TestLogger::stdout());
 
             assert!(
                 tools
