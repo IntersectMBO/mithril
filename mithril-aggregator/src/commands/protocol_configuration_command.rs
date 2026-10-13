@@ -51,6 +51,16 @@ pub enum InputConfigurationImportVerificationError {
     InvalidSignedEntityConfiguration(InconsistentSignedEntityConfigError),
 }
 
+/// Errors of the protocol configuration export command
+#[derive(Debug, Error)]
+pub enum ExportProtocolConfigurationError {
+    /// No marker verified by the configured verification key was found at the configured address
+    #[error(
+        "No protocol configuration markers verified by the configured verification key were found at the configured address: check that the Cardano node is synchronized on the expected network and the protocol configuration reader adapter configuration, or use the '--default' option if no markers have been published on chain yet"
+    )]
+    NoMarkersFoundOnChain,
+}
+
 /// Protocol configuration parameters configuration
 #[derive(Debug, Clone, Deserialize, Documenter)]
 pub struct ProtocolConfigurationParametersConfiguration {
@@ -199,7 +209,7 @@ impl ExportProtocolConfigurationSubCommand {
                 .await
                 .with_context(|| "protocol-configuration-tools: initialization error")?;
 
-            // 1: Retrieve markers from chain or fallback to default configuration
+            // 1: Retrieve markers from chain
             Self::select_markers_to_export(tools.get_on_chain_configurations())?
         };
 
@@ -222,21 +232,18 @@ impl ExportProtocolConfigurationSubCommand {
         Ok(())
     }
 
-    /// Select the markers to export from the markers read on chain.
+    /// Select the markers to export from the markers read on chain, failing when none was read.
     pub fn select_markers_to_export(
         on_chain_configurations: ConfigurationResolverFromMarkers,
     ) -> StdResult<ConfigurationResolverFromMarkers> {
         if on_chain_configurations.markers.is_empty() {
-            println!(
-                "No protocol configurations found on chain, getting default protocol configurations output file..."
-            );
-            Ok(get_default_protocol_configurations())
-        } else {
-            println!(
-                "Protocol configurations found on chain, getting protocol configurations output file..."
-            );
-            Ok(on_chain_configurations)
+            return Err(ExportProtocolConfigurationError::NoMarkersFoundOnChain.into());
         }
+
+        println!(
+            "Protocol configurations found on chain, getting protocol configurations output file..."
+        );
+        Ok(on_chain_configurations)
     }
 
     pub fn extract_config(command_path: String) -> HashMap<String, StructDoc> {
@@ -524,21 +531,13 @@ mod tests {
         }
 
         #[test]
-        fn falls_back_to_default_markers_when_no_marker_is_read_on_chain() {
-            let markers = ExportProtocolConfigurationSubCommand::select_markers_to_export(
-                ConfigurationResolverFromMarkers::new(BTreeMap::new()),
-            )
-            .unwrap();
-
-            assert_eq!(markers, get_default_protocol_configurations());
-        }
-
-        #[test]
         fn fails_when_no_marker_is_read_on_chain() {
             ExportProtocolConfigurationSubCommand::select_markers_to_export(
                 ConfigurationResolverFromMarkers::new(BTreeMap::new()),
             )
-            .expect_err("should fail when no marker is read on chain");
+            .expect_err("should fail when no marker is read on chain")
+            .downcast::<ExportProtocolConfigurationError>()
+            .expect("should be an ExportProtocolConfigurationError");
         }
     }
 
