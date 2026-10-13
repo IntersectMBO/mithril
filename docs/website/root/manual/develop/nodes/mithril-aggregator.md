@@ -391,13 +391,13 @@ Options:
 The 'protocol-configuration' sub-commands read the protocol configuration markers stored on the Cardano chain: they require a running Cardano node and the Cardano network, chain observer and protocol configuration reader adapter configuration parameters, except for the 'export-markers' sub-command with the `--default` option.
 
 Run the 'protocol-configuration export-markers' command to export the protocol configuration markers to a human readable JSON file.
-The markers are read from the Cardano chain with the 'cardano-chain' protocol configuration reader adapter, and the default protocol configuration is exported if no markers are found on chain:
+The markers are read from the Cardano chain with the 'cardano-chain' protocol configuration reader adapter, and the command fails if no markers verified by the configured verification key are found on chain:
 
 ```bash
 ./mithril-aggregator protocol-configuration export-markers --target-path **TARGET_PATH**
 ```
 
-Add the `--default` option to export the default protocol configuration without reading the Cardano chain:
+Add the `--default` option to export the default protocol configuration without reading the Cardano chain (eg, before the first markers are stored on chain):
 
 ```bash
 ./mithril-aggregator protocol-configuration export-markers --default --target-path **TARGET_PATH**
