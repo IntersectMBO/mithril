@@ -279,13 +279,16 @@ impl DependenciesBuilder {
     ) -> Result<IpfsUploader> {
         let rpc_api_client =
             KuboRpcClient::new(ipfs_rpc_config.sanitized_url()?, self.root_logger())?;
-        Ok(IpfsUploader::new(
+        let ipfs_uploader = IpfsUploader::new(
             Arc::new(rpc_api_client),
             IpfsMfsDirPath::from(ipfs_rpc_config.mfs_folder_name),
             ipfs_rpc_config.ipns_key_name,
             FileUploadRetryPolicy::default(),
             &self.root_logger(),
-        ))
+        );
+        ipfs_uploader.check_backend_availability().await;
+
+        Ok(ipfs_uploader)
     }
 
     async fn build_cardano_database_ancillary_uploaders(
