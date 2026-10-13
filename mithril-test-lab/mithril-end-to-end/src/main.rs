@@ -821,7 +821,23 @@ fn with_graceful_shutdown(join_set: &mut JoinSet<StdResult<()>>) {
 
 #[cfg(test)]
 mod tests {
+    use mithril_common::test::TempDir;
+
     use super::*;
+
+    #[test]
+    fn create_workdir_creates_its_missing_parent_directories() {
+        let work_dir = TempDir::create(
+            "e2e-main",
+            "create_workdir_creates_its_missing_parent_directories",
+        )
+        .join("missing-parent")
+        .join("work-dir");
+
+        create_workdir_if_not_exist_clean_otherwise(&work_dir);
+
+        assert!(work_dir.is_dir());
+    }
 
     #[test]
     fn default_scenario_is_full_with_expected_signed_entity_types() {
