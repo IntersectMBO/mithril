@@ -200,18 +200,7 @@ impl ExportProtocolConfigurationSubCommand {
                 .with_context(|| "protocol-configuration-tools: initialization error")?;
 
             // 1: Retrieve markers from chain or fallback to default configuration
-            let on_chain_configurations = tools.get_on_chain_configurations();
-            if on_chain_configurations.markers.is_empty() {
-                println!(
-                    "No protocol configurations found on chain, getting default protocol configurations output file..."
-                );
-                get_default_protocol_configurations()
-            } else {
-                println!(
-                    "Protocol configurations found on chain, getting protocol configurations output file..."
-                );
-                on_chain_configurations
-            }
+            Self::select_markers_to_export(tools.get_on_chain_configurations())?
         };
 
         // 2: transform to human readable
@@ -231,6 +220,23 @@ impl ExportProtocolConfigurationSubCommand {
             self.target_path.to_string_lossy()
         );
         Ok(())
+    }
+
+    /// Select the markers to export from the markers read on chain.
+    pub fn select_markers_to_export(
+        on_chain_configurations: ConfigurationResolverFromMarkers,
+    ) -> StdResult<ConfigurationResolverFromMarkers> {
+        if on_chain_configurations.markers.is_empty() {
+            println!(
+                "No protocol configurations found on chain, getting default protocol configurations output file..."
+            );
+            Ok(get_default_protocol_configurations())
+        } else {
+            println!(
+                "Protocol configurations found on chain, getting protocol configurations output file..."
+            );
+            Ok(on_chain_configurations)
+        }
     }
 
     pub fn extract_config(command_path: String) -> HashMap<String, StructDoc> {
@@ -495,6 +501,36 @@ mod tests {
                 error,
                 InputConfigurationImportVerificationError::InvalidSignedEntityConfiguration(_)
             ));
+        }
+    }
+
+    mod select_markers_to_export {
+        use super::*;
+
+        #[test]
+        fn returns_markers_read_on_chain() {
+            let on_chain_configurations =
+                ConfigurationResolverFromMarkers::new(BTreeMap::from([(
+                    Epoch(42),
+                    ProtocolConfigurationForEpoch::dummy(),
+                )]));
+
+            let markers = ExportProtocolConfigurationSubCommand::select_markers_to_export(
+                on_chain_configurations.clone(),
+            )
+            .unwrap();
+
+            assert_eq!(markers, on_chain_configurations);
+        }
+
+        #[test]
+        fn falls_back_to_default_markers_when_no_marker_is_read_on_chain() {
+            let markers = ExportProtocolConfigurationSubCommand::select_markers_to_export(
+                ConfigurationResolverFromMarkers::new(BTreeMap::new()),
+            )
+            .unwrap();
+
+            assert_eq!(markers, get_default_protocol_configurations());
         }
     }
 
