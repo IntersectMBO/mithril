@@ -26,15 +26,8 @@ export CARDANO_WALLET_PATH=**PATH_TO_YOUR_KEYPAIRS**
 export PROTOCOL_CONFIGURATION_READER_SECRET_KEY=**YOUR_PROTOCOL_CONFIGURATION_READER_SECRET_KEY**
 export PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY=**YOUR_PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY**
 export ASSETS_PATH=**YOUR_ASSETS_PATH**
-export SCRIPT_TX_VALUE=**MINIMUM_SCRIPT_TX_VALUE**
 export NETWORK=**YOUR_NETWORK**
 export CHAIN_OBSERVER_TYPE=pallas
-```
-
-A common value for the transaction amount used when a script transaction is made is:
-
-```bash
-export SCRIPT_TX_VALUE=4600000
 ```
 
 Compute the network magic parameter that handles both the Cardano mainnet and Cardano test networks:
@@ -199,6 +192,19 @@ An example output of the command is:
   ],
   "signature": "6310e8eab0261643a5115cfe331d78c1826d5637c2cf28ae0e4df72cc11b95657c6948ff468227ffc2f16471bb3fc3e44973ec30a78a8ef0de2295454171e706"
 }
+```
+
+#### Compute the transaction amount
+
+Compute the minimum amount of the transaction output holding the datum, which depends on the size of the datum:
+
+```bash
+$CARDANO_CLI $CARDANO_ERA query protocol-parameters $CARDANO_NETWORK_MAGIC --socket-path $CARDANO_NODE_SOCKET_PATH --out-file $ASSETS_PATH/protocol-parameters.json
+export SCRIPT_TX_VALUE=$($CARDANO_CLI $CARDANO_ERA transaction calculate-min-required-utxo \
+    --protocol-params-file $ASSETS_PATH/protocol-parameters.json \
+    --tx-out "$(cat $CARDANO_WALLET_PATH/payment.addr)+0" \
+    --tx-out-inline-datum-file $ASSETS_PATH/protocol-configurations-datum.json | awk '{print $2}')
+echo $SCRIPT_TX_VALUE
 ```
 
 ## Bootstrap Protocol Configuration Markers: Write a transaction with the first version of datum on chain
