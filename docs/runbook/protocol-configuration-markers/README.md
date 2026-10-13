@@ -75,9 +75,6 @@ export PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG="{\"type\":\"$PROTOCOL_CONFI
 
 Export latest active configurations from the Cardano chain:
 
-> [!IMPORTANT]
-> If it's the first time on the targeted environment and there are no protocol configurations on-chain, add `--default` at the end of the `protocol-configuration export-markers` command.
-
 ```bash
 ./mithril-aggregator protocol-configuration export-markers --target-path $ASSETS_PATH/protocol-configurations.json
 ```
@@ -85,7 +82,24 @@ Export latest active configurations from the Cardano chain:
 Execution of previous command must return the following information:
 
 ```bash
-No protocol configurations found on chain, getting default protocol configurations output file...
+Protocol configurations found on chain, getting protocol configurations output file...
+Generating JSON protocol configurations output file...
+Successfully wrote JSON protocol configurations file at **YOUR_ASSETS_PATH**/protocol-configurations.json
+```
+
+> [!IMPORTANT]
+> The command fails if no protocol configuration markers verified by `PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY` are found at `PROTOCOL_CONFIGURATION_READER_ADDRESS`: check both values.
+
+If it's the first time on the targeted environment and there are no protocol configurations on-chain, export the default protocol configurations instead:
+
+```bash
+./mithril-aggregator protocol-configuration export-markers --default --target-path $ASSETS_PATH/protocol-configurations.json
+```
+
+Execution of previous command must return the following information:
+
+```bash
+Getting default protocol configurations output file...
 Generating JSON protocol configurations output file...
 Successfully wrote JSON protocol configurations file at **YOUR_ASSETS_PATH**/protocol-configurations.json
 ```
