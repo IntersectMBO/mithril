@@ -926,4 +926,40 @@ mod tests {
         assert!(matches!(from_str, GenesisVerificationKey::JsonHex(key) if key == "5b3132"));
         assert!(matches!(from_string, GenesisVerificationKey::JsonHex(key) if key == "5b3132"));
     }
+
+    #[cfg(all(feature = "unstable", feature = "fs"))]
+    mod available_ipfs_file_downloader {
+        use httpmock::Method::POST;
+        use httpmock::MockServer;
+        use reqwest::Url;
+
+        use crate::test_utils::TestLogger;
+
+        use super::*;
+
+        fn ipfs_file_downloader(server: &MockServer) -> IpfsFileDownloader {
+            IpfsFileDownloader::new(
+                Url::parse(&server.base_url()).unwrap(),
+                FeedbackSender::new(&[]),
+                TestLogger::stdout(),
+            )
+            .unwrap()
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn returns_none_when_rpc_url_does_not_answer_as_a_kubo_rpc_api() {
+            let server = MockServer::start();
+            server.mock(|when, then| {
+                when.method(POST).path("/api/v0/version");
+                then.status(200).body("<html><body>IPFS gateway</body></html>");
+            });
+
+            let ipfs_file_downloader = ClientBuilder::available_ipfs_file_downloader(
+                ipfs_file_downloader(&server),
+                &TestLogger::stdout(),
+            );
+
+            assert!(ipfs_file_downloader.is_none());
+        }
+    }
 }
