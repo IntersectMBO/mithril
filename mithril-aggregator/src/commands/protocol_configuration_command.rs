@@ -532,6 +532,14 @@ mod tests {
 
             assert_eq!(markers, get_default_protocol_configurations());
         }
+
+        #[test]
+        fn fails_when_no_marker_is_read_on_chain() {
+            ExportProtocolConfigurationSubCommand::select_markers_to_export(
+                ConfigurationResolverFromMarkers::new(BTreeMap::new()),
+            )
+            .expect_err("should fail when no marker is read on chain");
+        }
     }
 
     #[test]
