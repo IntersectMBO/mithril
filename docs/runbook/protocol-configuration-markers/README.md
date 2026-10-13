@@ -143,7 +143,10 @@ cat $ASSETS_PATH/protocol-configurations.json | jq
 Manually edit previously exported JSON file written at `$ASSETS_PATH/protocol-configurations.json`
 
 > [!IMPORTANT]
-> :fire: Make sure to keep, if it exists, at least the three last epoch's configuration without any modification.
+> :fire: Leave the configuration in use from two epochs before the current epoch to the next epoch unchanged: `import-markers` verifies that it is the same on chain and in the file.
+
+> [!IMPORTANT]
+> :fire: Date a new marker at least two epochs after the current epoch: the nodes already hold the configuration of the next epoch, which can't be modified. Submit the transaction in the epoch in which `import-markers` verified the markers: if the epoch changes before the submission, run `import-markers` again.
 
 > [!IMPORTANT]
 > For the `Snark` and `IvcSnark` aggregate signature types, changing `k` or `m` changes the
