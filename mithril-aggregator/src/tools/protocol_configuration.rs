@@ -25,7 +25,7 @@ use thiserror::Error;
 
 use crate::dependency_injection::ProtocolConfigurationCommandDependenciesContainer;
 
-const EPOCH_OFFSET: u64 = 3;
+const EPOCH_OFFSET: u64 = 2;
 const DATUM_MAX_SIZE_KB: usize = 10;
 
 #[derive(Debug, Error)]
@@ -151,6 +151,9 @@ impl ProtocolConfigurationTools {
     }
 
     /// Verify if configurations to import are compatible with what's on-chain.
+    ///
+    /// The nodes use the configurations of the previous, the current and the next epochs, so they must be left unchanged.
+    /// One more epoch back is verified for the nodes lagging at the epoch transition.
     pub fn verify_configurations_against_chain(
         &self,
         configurations_to_import: Vec<HumanReadableProtocolConfiguration>,
@@ -162,13 +165,14 @@ impl ProtocolConfigurationTools {
         let markers_to_import = to_configuration_resolver_from_markers(configurations_to_import);
 
         let epoch_start = Epoch(current_epoch.0.saturating_sub(EPOCH_OFFSET));
+        let epoch_end = current_epoch.next();
 
         info!(
             &self.logger,
-            "Verifying configurations for epoch range [{}..={}]", epoch_start, current_epoch
+            "Verifying configurations for epoch range [{}..={}]", epoch_start, epoch_end
         );
 
-        for epoch in epoch_start.iter_inclusive_up_to_epoch(current_epoch) {
+        for epoch in epoch_start.iter_inclusive_up_to_epoch(epoch_end) {
             let marker_to_import = markers_to_import.get_network_configuration(epoch);
             let marker_on_chain = markers_from_chain.get_network_configuration(epoch);
             if marker_on_chain.is_some() {
@@ -515,12 +519,12 @@ mod tests {
             let current_epoch = Epoch(47);
             let on_chain_markers = BTreeMap::from([
                 (Epoch(38), fake_configuration('A')),
-                (Epoch(44), fake_configuration('B')),
+                (Epoch(45), fake_configuration('B')),
             ]);
             let on_chain_configurations = ConfigurationResolverFromMarkers::new(on_chain_markers);
 
             let configurations_to_import =
-                build_configurations_to_import(vec![(Epoch(44), 'B'), (Epoch(56), 'Z')]);
+                build_configurations_to_import(vec![(Epoch(45), 'B'), (Epoch(56), 'Z')]);
 
             let tools = build_tools(current_epoch, on_chain_configurations, logger);
             assert!(
@@ -530,7 +534,7 @@ mod tests {
             );
 
             assert!(
-                log_inspector.contains_log("Verifying configurations for epoch range [44..=47]")
+                log_inspector.contains_log("Verifying configurations for epoch range [45..=48]")
             )
         }
 
@@ -599,7 +603,7 @@ mod tests {
 
             assert!(matches!(
                 result.unwrap_err(),
-                ProtocolConfigurationVerifierError::NotSameConfigurationForEpoch(Epoch(44))
+                ProtocolConfigurationVerifierError::NotSameConfigurationForEpoch(Epoch(45))
             ));
         }
 
@@ -711,7 +715,7 @@ mod tests {
 
             assert!(matches!(
                 result.unwrap_err(),
-                ProtocolConfigurationVerifierError::NotSameConfigurationForEpoch(Epoch(44))
+                ProtocolConfigurationVerifierError::NotSameConfigurationForEpoch(Epoch(45))
             ));
         }
 
@@ -730,6 +734,22 @@ mod tests {
                 result.unwrap_err(),
                 ProtocolConfigurationVerifierError::NotSameConfigurationForEpoch(Epoch(48))
             ));
+        }
+
+        #[test]
+        fn succeeds_with_new_conf_two_epochs_ahead_outside_offset_window() {
+            let current_epoch = Epoch(47);
+            let on_chain_configurations = build_on_chain_markers(vec![(Epoch(40), 'A')]);
+            let configurations_to_import =
+                build_configurations_to_import(vec![(Epoch(40), 'A'), (Epoch(49), 'Z')]);
+
+            let tools = build_tools(current_epoch, on_chain_configurations, TestLogger::stdout());
+
+            assert!(
+                tools
+                    .verify_configurations_against_chain(configurations_to_import)
+                    .is_ok()
+            );
         }
 
         #[test]
