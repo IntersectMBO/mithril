@@ -497,7 +497,7 @@ Restart=always
 RestartSec=60
 User=cardano
 EnvironmentFile=/opt/mithril/mithril-aggregator.env
-ExecStart=/opt/mithril/mithril-aggregator -vvv
+ExecStart=/opt/mithril/mithril-aggregator -vvv serve
 
 [Install]
 WantedBy=multi-user.target
