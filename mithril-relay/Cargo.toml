@@ -39,3 +39,4 @@ warp = { workspace = true }
 httpmock = "0.8.3"
 slog-scope = "4.4.1"
 slog-term = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
