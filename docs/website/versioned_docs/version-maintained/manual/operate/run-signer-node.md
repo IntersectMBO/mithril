@@ -279,7 +279,7 @@ sudo mv mithril-signer /opt/mithril
 #### Set up the service
 
 :::info
-For Signer in version **1.2.1 and upper**, since protocol configuration is now **decentralized**, the mechanism to retrieve protocol configuration has changed.
+For Signer in version **1.2.1 and later**, since protocol configuration is now **decentralized**, the mechanism to retrieve protocol configuration has changed.
 Setting up `PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG` as described in the following steps will allow the signer to retrieve this information on the Cardano Chain.
 :::
 
