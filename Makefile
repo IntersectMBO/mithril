@@ -26,6 +26,7 @@ COMPONENTS = demo/protocol-demo \
 			 mithril-client-wasm \
 			 mithril-common \
 			 mithril-relay \
+			 mithril-setup \
 			 mithril-signer \
 			 mithril-stm \
 			 mithril-test-lab/mithril-aggregator-fake \
