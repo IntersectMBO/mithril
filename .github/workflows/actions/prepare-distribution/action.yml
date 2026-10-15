@@ -91,7 +91,7 @@ runs:
         EOF
 
         cargo metadata --quiet --no-deps | \
-          jq -r '.packages | sort_by(.name) | .[] | select([.name] | inside(["mithril-stm", "mithril-aggregator", "mithril-client", "mithril-client-cli", "mithril-client-wasm", "mithril-signer", "mithril-common"])) | "| \(.name) | `\(.version)` |"' \
+          jq -r '.packages | sort_by(.name) | .[] | select([.name] | inside(["mithril-stm", "mithril-aggregator", "mithril-client", "mithril-client-cli", "mithril-client-wasm", "mithril-signer", "mithril-common", "mithril-setup"])) | "| \(.name) | `\(.version)` |"' \
           >> ./release-notes-addon.txt
 
     - name: Add network compatibility table

@@ -55,9 +55,9 @@ jobs:
       - name: Build Mithril workspace & publish artifacts
         uses: ./.github/workflows/actions/build-upload-mithril-artifact
         with:
-          binaries-build-args: --bins --package mithril-aggregator --package mithril-signer --package mithril-client-cli --package mithril-relay --target=${{ matrix.musl_target }}
+          binaries-build-args: --bins --package mithril-aggregator --package mithril-signer --package mithril-client-cli --package mithril-relay --package mithril-setup --target=${{ matrix.musl_target }}
           libraries-build-args: --package mithril-stm --package mithril-client --features rustls,full,unstable
-          binaries-to-check-static: mithril-aggregator,mithril-signer,mithril-client,mithril-relay
+          binaries-to-check-static: mithril-aggregator,mithril-signer,mithril-client,mithril-relay,mithril-setup
           binaries-build-target: ${{ matrix.musl_target }}
 
       - name: Build Debian packages
@@ -67,6 +67,7 @@ jobs:
           cargo deb --no-build --package mithril-signer --target=${{ matrix.musl_target }}
           cargo deb --no-build --package mithril-client-cli --target=${{ matrix.musl_target }}
           cargo deb --no-build --package mithril-relay --target=${{ matrix.musl_target }}
+          cargo deb --no-build --package mithril-setup --target=${{ matrix.musl_target }}
 
       - name: Publish Debian packages
         uses: actions/upload-artifact@v7
@@ -514,6 +515,7 @@ jobs:
             mithril-client-cli,
             mithril-signer,
             mithril-relay,
+            mithril-setup,
           ]
 
         include:
@@ -886,7 +888,7 @@ jobs:
                     -p mithril-merkle-tree -p mithril-metric -p mithril-persistence -p mithril-resource-pool \
                     -p mithril-ticker -p mithril-signed-entity-lock -p mithril-signed-entity-preloader \
                     -p mithril-aggregator -p mithril-signer -p mithril-client -p mithril-client-cli \
-                    -p mithril-api-spec -p mithril-test-http-server \
+                    -p mithril-api-spec -p mithril-test-http-server -p mithril-setup \
                     --all-features --message-format=json \
                     | clippy-sarif | tee rust-cargo-doc-results.sarif | sarif-fmt
 

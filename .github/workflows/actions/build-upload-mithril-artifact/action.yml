@@ -78,6 +78,8 @@ runs:
         cp ${{ steps.build-path.outputs.path }}/mithril-signer.exe binaries/ || true
         cp ${{ steps.build-path.outputs.path }}/mithril-relay binaries/ || true
         cp ${{ steps.build-path.outputs.path }}/mithril-relay.exe binaries/ || true
+        cp ${{ steps.build-path.outputs.path }}/mithril-setup binaries/ || true
+        cp ${{ steps.build-path.outputs.path }}/mithril-setup.exe binaries/ || true
 
     - name: Publish Mithril Distribution (${{ runner.os }}-${{ runner.arch }})
       uses: actions/upload-artifact@v7

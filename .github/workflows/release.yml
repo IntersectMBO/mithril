@@ -23,7 +23,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [mithril-aggregator, mithril-client-cli, mithril-signer]
+        project:
+          [
+            mithril-aggregator,
+            mithril-client-cli,
+            mithril-signer,
+            mithril-setup,
+          ]
 
         include:
           - project: mithril-client-cli

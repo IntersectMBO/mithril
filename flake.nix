@@ -260,6 +260,8 @@
             buildPackageMusl ./mithril-aggregator/Cargo.toml mithril-common-musl.cargoArtifacts {};
           mithril-signer =
             buildPackageMusl ./mithril-signer/Cargo.toml mithril-common-musl.cargoArtifacts {};
+          mithril-setup =
+            buildPackageMusl ./mithril-setup/Cargo.toml mithril-common-musl.cargoArtifacts {};
           mithril-client-cli =
             buildPackageMusl ./mithril-client-cli/Cargo.toml mithril-common-musl.cargoArtifacts {
               pname = "mithril-client";
