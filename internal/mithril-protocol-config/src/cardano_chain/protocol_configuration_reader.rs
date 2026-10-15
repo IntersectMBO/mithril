@@ -2,7 +2,7 @@
 
 use anyhow::Context;
 use async_trait::async_trait;
-use slog::{Logger, debug};
+use slog::{Logger, debug, warn};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -68,10 +68,16 @@ impl ProtocolConfigurationMarkersReader for CardanoChainProtocolConfigurationMar
                 SignedProtocolConfigurationMarkersPayload::from_json_hex(&field_value_str).ok()
             })
             .filter_map(|signed_payload| {
-                signed_payload
-                    .verify_signature(self.verification_key)
-                    .ok()
-                    .map(|_| signed_payload.markers_payload.markers)
+                match signed_payload.verify_signature(self.verification_key) {
+                    Ok(()) => Some(signed_payload.markers_payload.markers),
+                    Err(error) => {
+                        warn!(
+                            self.logger, "Discarded protocol configuration markers datum with an invalid signature";
+                            "address" => &self.address, "error" => ?error
+                        );
+                        None
+                    }
+                }
             })
             .next()
             .unwrap_or_default();
