@@ -187,6 +187,46 @@ mod test {
     }
 
     #[tokio::test]
+    async fn markers_with_invalid_signature_are_logged() {
+        let markers_signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
+        let bad_markers_signer =
+            ProtocolConfigurationMarkersSigner::create_non_deterministic_signer();
+        let payload = ProtocolConfigurationMarkersPayloadCardanoChain {
+            markers: vec![ProtocolConfigurationMarker::new(
+                Epoch(41),
+                generate_configuration_message('A').to_cbor_hex().unwrap(),
+            )],
+        }
+        .sign(&bad_markers_signer)
+        .unwrap();
+
+        let chain_observer = FakeChainObserver::default();
+        chain_observer
+            .set_datums(dummy_tx_datums_from_markers_payload(vec![payload]))
+            .await;
+
+        let (logger, log_inspector) = TestLogger::memory();
+        let cardano_chain_reader = CardanoChainProtocolConfigurationMarkersReader::new(
+            "addr_test_123456".to_string(),
+            Arc::new(chain_observer),
+            markers_signer.create_verifier().to_verification_key(),
+            logger,
+        );
+        cardano_chain_reader
+            .read_configuration_markers()
+            .await
+            .expect("read_configuration_markers should not fail");
+
+        assert!(
+            log_inspector
+                .search_logs("WARN")
+                .iter()
+                .any(|log| log.contains("signature")),
+            "Expected a warning about the invalid signature, logs:\n{log_inspector}"
+        );
+    }
+
+    #[tokio::test]
     async fn throw_error_on_invalid_cbor() {
         let markers_signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
         let fake_address = "addr_test_123456".to_string();
