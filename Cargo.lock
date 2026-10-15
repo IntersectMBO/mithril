@@ -4928,6 +4928,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "mithril-setup"
+version = "0.1.0"
+
+[[package]]
 name = "mithril-signed-entity-lock"
 version = "0.0.7"
 dependencies = [

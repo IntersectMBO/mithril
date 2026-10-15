@@ -1,0 +1,5 @@
+data/
+target/
+mithril-setup
+.DS_Store
+stores

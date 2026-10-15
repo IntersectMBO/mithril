@@ -79,6 +79,8 @@ This repository consists of the following parts:
 
 - [**Mithril signer**](./mithril-signer): the node of the **Mithril network** responsible for producing individual signatures that are collected and aggregated by the **Mithril aggregator**.
 
+- [**Mithril setup**](./mithril-setup): the command line interface helping users tu setup their environment.
+
 - [**Internal**](./internal): the shared tools and API used by **Mithril** crates.
   - [**Mithril aggregator client**](./internal/mithril-aggregator-client): a client to request data from a Mithril aggregator, used by **Mithril network** nodes and client library.
 

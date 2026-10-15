@@ -1,0 +1,13 @@
+[package]
+name = "mithril-setup"
+version = "0.1.0"
+
+description = "A Mithril setup binary with commands to help install environment"
+authors = { workspace = true }
+edition = { workspace = true }
+documentation = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
