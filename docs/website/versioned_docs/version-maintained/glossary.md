@@ -54,6 +54,18 @@ For each [beacon](#beacon), the [Mithril signers](#mithril-signer) will compute 
 
 > More information is available on the [protocol page](./mithril/advanced/mithril-protocol/protocol.md).
 
+## Incrementally Verifiable Computation
+
+IVC (**I**ncrementally **V**erifiable **C**omputation) is a technique that lets a proof be extended step by step: each new proof attests to one more step of computation while also verifying that the previous proof was valid, so a single proof can stand for an entire chain of steps.
+
+> More information is available on the [recursive SNARK page](./mithril/advanced/mithril-protocol/aggregation/recursive-snark.md).
+
+## Merkle tree
+
+A Merkle tree is a data structure whose leaves hold hashes of data items, and whose other nodes hold the hash of their children. It lets anyone prove an item belongs to the set with a short path of sibling hashes up to the root, called a Merkle path, without revealing the rest of the set.
+
+In Mithril, a Merkle tree commits to the stake and verification key of every registered signer: its root is the basis of the aggregate verification key (AVK).
+
 ## Mithril aggregator
 
 The Mithril aggregator is a trustless node of the [Mithril network](#mithril-network) that orchestrates the work of the [Mithril signer](#mithril-signer) nodes and gathers their [individual signatures](#individual-signature) to produce [Mithril multi-signatures](#multi-signature) and their associated [certificates](#certificate).
@@ -91,6 +103,10 @@ The Mithril signer is a node of the [Mithril network](#mithril-network) that wor
 The Mithril multi-signature is an aggregate of [individual signatures](#individual-signature), which guarantees that a minimum share of the total stake has participated in its creation.
 
 > More information is available on the [protocol page](./mithril/advanced/mithril-protocol/protocol.md).
+
+## SNARK
+
+A SNARK (**S**uccinct **N**on-interactive **AR**gument of **K**nowledge) is a proof that a prover knows a witness `w` such that a relation `R(x,w) = 1` given a public input `x`. The relation is a statement connecting the two inputs and is represented in the form of a circuit of constraints. The prover builds a proof from this circuit and the inputs `(x,w)`. The proof verifies only if the relation `R(x,w)=1`, i.e. if the inputs satisfy the constraints.
 
 ## Stake distribution
 
