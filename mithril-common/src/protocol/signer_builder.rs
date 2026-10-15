@@ -224,10 +224,10 @@ mod test {
     }
 
     #[test]
-    fn cant_construct_signer_builder_if_a_signer_registration_fail() {
-        // To make this test fail we try to build a SignerBuilder with signers from two
-        // different stake distributions, this will pass the individual check but not the
-        // register check.
+    fn can_construct_signer_builder_with_signers_colliding_on_their_keys() {
+        // Signers from two different stake distributions share their keys. The key collisions
+        // are resolved when closing the registration, so they don't prevent building a
+        // SignerBuilder.
         let fixture = MithrilFixtureBuilder::default().with_signers(3).build();
         let colliding_party_stake = fixture.signers_with_stake()[0].stake;
         let fixture_with_another_stake_distribution = MithrilFixtureBuilder::default()
@@ -239,15 +239,8 @@ mod test {
         let mut signers = fixture.signers_with_stake();
         signers.append(&mut fixture_with_another_stake_distribution.signers_with_stake());
 
-        let error = SignerBuilder::new(&signers, &fixture.protocol_parameters(), Epoch::default())
-            .expect_err(
-                "We should not be able to construct a signer builder if a signer registration fail",
-            );
-
-        match error.downcast_ref::<RegisterError>() {
-            Some(RegisterError::EntryAlreadyRegistered) => (),
-            _ => panic!("Expected an CoreRegister error, got: {error:?}"),
-        }
+        SignerBuilder::new(&signers, &fixture.protocol_parameters(), Epoch::default())
+            .expect("signers colliding on their keys should not prevent building a signer builder");
     }
 
     #[test]
@@ -355,26 +348,21 @@ mod test {
 
     #[cfg(feature = "snark")]
     #[test]
-    fn signer_builder_fails_to_register_two_signers_sharing_a_snark_key() {
+    fn signer_builder_registers_two_signers_sharing_a_snark_key() {
         let epoch = Epoch(10);
         let [lower_stake_signer, higher_stake_signer] =
             create_signers_with_stake_sharing_snark_key(
                 [100, 200],
                 epoch,
-                "signer_builder_fails_to_register_two_signers_sharing_a_snark_key",
+                "signer_builder_registers_two_signers_sharing_a_snark_key",
             )
             .unwrap();
 
-        let error = SignerBuilder::new(
+        SignerBuilder::new(
             &[lower_stake_signer, higher_stake_signer],
             &ProtocolParameters::new(5, 5, 1.0),
             epoch,
         )
-        .expect_err("registering two signers that share a SNARK key should fail");
-
-        match error.downcast_ref::<RegisterError>() {
-            Some(RegisterError::EntryAlreadyRegistered) => (),
-            _ => panic!("Expected an EntryAlreadyRegistered error, got: {error:?}"),
-        }
+        .expect("two signers sharing a SNARK key should not prevent building a signer builder");
     }
 }
