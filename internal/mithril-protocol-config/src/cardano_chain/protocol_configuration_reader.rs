@@ -2,6 +2,7 @@
 
 use anyhow::Context;
 use async_trait::async_trait;
+use slog::{Logger, debug};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -10,6 +11,7 @@ use mithril_cardano_node_chain::entities::{ChainAddress, TxDatumFieldTypeName};
 use mithril_common::StdResult;
 use mithril_common::crypto_helper::ProtocolConfigurationMarkersVerifierVerificationKey;
 use mithril_common::entities::Epoch;
+use mithril_common::logging::LoggerExtensions;
 
 use crate::cardano_chain::message::{
     ProtocolConfigurationForEpochMessage, ProtocolConfigurationMarker,
@@ -23,6 +25,7 @@ pub struct CardanoChainProtocolConfigurationMarkersReader {
     address: ChainAddress,
     chain_observer: Arc<dyn ChainObserver>,
     verification_key: ProtocolConfigurationMarkersVerifierVerificationKey,
+    logger: Logger,
 }
 
 impl CardanoChainProtocolConfigurationMarkersReader {
@@ -31,11 +34,13 @@ impl CardanoChainProtocolConfigurationMarkersReader {
         address: ChainAddress,
         chain_observer: Arc<dyn ChainObserver>,
         verification_key: ProtocolConfigurationMarkersVerifierVerificationKey,
+        logger: Logger,
     ) -> Self {
         Self {
             address,
             chain_observer,
             verification_key,
+            logger: logger.new_with_component_name::<Self>(),
         }
     }
 }
@@ -44,6 +49,10 @@ impl CardanoChainProtocolConfigurationMarkersReader {
 impl ProtocolConfigurationMarkersReader for CardanoChainProtocolConfigurationMarkersReader {
     async fn read_configuration_markers(&self) -> StdResult<ConfigurationResolverFromMarkers> {
         let tx_datums = self.chain_observer.get_current_datums(&self.address).await?;
+        debug!(
+            self.logger, "Read protocol configuration markers datums";
+            "address" => &self.address, "datums_count" => tx_datums.len()
+        );
 
         let last_markers: Vec<ProtocolConfigurationMarker> = tx_datums
             .into_iter()
@@ -100,6 +109,7 @@ mod test {
     };
 
     use crate::test::helper::{generate_configuration, generate_configuration_message};
+    use crate::test::test_tools::TestLogger;
 
     use super::*;
 
@@ -158,6 +168,7 @@ mod test {
             fake_address,
             Arc::new(chain_observer),
             markers_signer.create_verifier().to_verification_key(),
+            TestLogger::stdout(),
         );
         let configurations = cardano_chain_reader
             .read_configuration_markers()
@@ -200,6 +211,7 @@ mod test {
             fake_address,
             Arc::new(chain_observer),
             markers_signer.create_verifier().to_verification_key(),
+            TestLogger::stdout(),
         );
         cardano_chain_reader
             .read_configuration_markers()

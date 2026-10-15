@@ -199,7 +199,7 @@ impl<'a> DependenciesBuilder<'a> {
     ) -> Arc<dyn MithrilNetworkConfigurationProvider> {
         if let Some(config) = self.config.protocol_configuration_reader_adapter_config.clone() {
             let protocol_configuration_adapter =
-                build_protocol_configuration_adapter(config, chain_observer);
+                build_protocol_configuration_adapter(config, chain_observer, self.root_logger());
             Arc::new(MarkersMithrilNetworkConfigurationProvider::new(
                 self.root_logger(),
                 protocol_configuration_adapter,

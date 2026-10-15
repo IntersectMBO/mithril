@@ -3,6 +3,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use serde::Deserialize;
+use slog::Logger;
 
 use mithril_cardano_node_chain::{chain_observer::ChainObserver, entities::ChainAddress};
 use mithril_common::{
@@ -48,6 +49,7 @@ impl FromStr for AdapterConfig {
 pub fn build_protocol_configuration_adapter(
     adapter_config: AdapterConfig,
     chain_observer: Arc<dyn ChainObserver>,
+    logger: Logger,
 ) -> Arc<dyn ProtocolConfigurationMarkersReader> {
     match adapter_config {
         AdapterConfig::CardanoChain {
@@ -57,6 +59,7 @@ pub fn build_protocol_configuration_adapter(
             address,
             chain_observer,
             *verification_key,
+            logger,
         )),
         AdapterConfig::Fake {
             protocol_parameters,
