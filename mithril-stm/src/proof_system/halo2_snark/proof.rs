@@ -243,7 +243,7 @@ impl<D: MembershipDigest, R: RngCore + CryptoRng> SnarkAggregateSignatureProver<
             params: clerk.parameters,
             merkle_tree_depth: clerk
                 .closed_key_registration
-                .number_of_registered_parties()
+                .number_of_snark_leaves()
                 .next_power_of_two()
                 .trailing_zeros(),
             phantom: PhantomData,
@@ -427,7 +427,7 @@ mod tests {
 
             let current_merkle_tree_depth = clerk
                 .closed_key_registration
-                .number_of_registered_parties()
+                .number_of_snark_leaves()
                 .next_power_of_two()
                 .trailing_zeros();
             let mut prover = create_prover(params, [0u8; 32]);

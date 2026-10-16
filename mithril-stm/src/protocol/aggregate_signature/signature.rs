@@ -1710,7 +1710,7 @@ mod tests {
             let snark_clerk = clerk.get_snark_clerk().expect("SnarkClerk must be present");
             let merkle_tree_depth = snark_clerk
                 .closed_key_registration
-                .number_of_registered_parties()
+                .number_of_snark_leaves()
                 .next_power_of_two()
                 .trailing_zeros();
 

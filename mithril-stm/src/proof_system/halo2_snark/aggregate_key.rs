@@ -127,7 +127,7 @@ impl<D: MembershipDigest> From<&ClosedKeyRegistration> for AggregateVerification
             merkle_tree_commitment: registration
                 .to_merkle_tree::<D::SnarkHash, RegistrationEntryForSnark>()
                 .to_merkle_tree_commitment(),
-            total_stake: registration.get_total_stake(),
+            total_stake: registration.get_total_stake_for_snark(),
         }
     }
 }
