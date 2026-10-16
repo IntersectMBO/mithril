@@ -205,7 +205,7 @@ mod tests {
             for i in 0..nparties {
                 let stake = (i as u64 + 1) * 10;
                 let initializer = Initializer::new(params, stake, &mut rng);
-                key_registration.register_by_entry(&initializer.clone().try_into().unwrap()).unwrap();
+                key_registration.register_by_entry(&initializer.clone().try_into().unwrap());
                 initializers.push(initializer);
             }
 

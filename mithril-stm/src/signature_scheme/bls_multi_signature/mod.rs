@@ -195,7 +195,7 @@ mod tests {
                 let sk = BlsSigningKey::generate(&mut rng);
                 let vkpop = BlsVerificationKeyProofOfPossession::from(&sk);
                 let entry = RegistrationEntry::new(vkpop, 1, #[cfg(feature = "snark")] None).expect("Registration entry should be created");
-                kr.register_by_entry(&entry).expect("Valid VK pop should be registered");
+                kr.register_by_entry(&entry);
             }
             let error = RegistrationEntry::new(vkpop_infinity, 1, #[cfg(feature = "snark")] None).expect_err("Registration entry with VK pop infinity should not be created");
             assert!(

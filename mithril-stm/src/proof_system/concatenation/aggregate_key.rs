@@ -132,8 +132,8 @@ mod tests {
             )
             .unwrap();
 
-            key_reg.register_by_entry(&entry1).unwrap();
-            key_reg.register_by_entry(&entry2).unwrap();
+            key_reg.register_by_entry(&entry1);
+            key_reg.register_by_entry(&entry2);
             let closed_key_reg = key_reg.close_registration(&params).unwrap();
 
             let clerk = ConcatenationClerk::new_clerk_from_closed_key_registration(
@@ -226,8 +226,8 @@ mod tests {
             )
             .unwrap();
 
-            key_reg.register_by_entry(&entry1).unwrap();
-            key_reg.register_by_entry(&entry2).unwrap();
+            key_reg.register_by_entry(&entry1);
+            key_reg.register_by_entry(&entry2);
             let closed_key_reg = key_reg.close_registration(&params).unwrap();
 
             let clerk = ConcatenationClerk::new_clerk_from_closed_key_registration(

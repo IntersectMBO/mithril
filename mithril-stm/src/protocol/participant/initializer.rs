@@ -380,9 +380,7 @@ mod tests {
         fn close_registration(initializers: &[Initializer]) -> ClosedKeyRegistration {
             let mut key_registration = KeyRegistration::initialize();
             for initializer in initializers {
-                key_registration
-                    .register_by_entry(&initializer.clone().try_into().unwrap())
-                    .unwrap();
+                key_registration.register_by_entry(&initializer.clone().try_into().unwrap());
             }
 
             key_registration.close_registration(&test_parameters()).unwrap()

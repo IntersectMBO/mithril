@@ -127,7 +127,7 @@ mod tests {
             Some(schnorr_vk),
         )
         .unwrap();
-        key_reg.register_by_entry(&entry).unwrap();
+        key_reg.register_by_entry(&entry);
         let closed_reg = key_reg.close_registration(&params).unwrap();
 
         let merkle_tree = closed_reg

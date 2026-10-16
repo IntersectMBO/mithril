@@ -76,7 +76,7 @@ mod tests {
             .map(|stake| {
                 let p = Initializer::new(params, stake, rng);
                 let entry: RegistrationEntry = p.clone().try_into().unwrap();
-                kr.register_by_entry(&entry).unwrap();
+                kr.register_by_entry(&entry);
                 p
             })
             .collect::<Vec<_>>();
@@ -95,7 +95,7 @@ mod tests {
 
         let entry: RegistrationEntry = initializer.clone().try_into().unwrap();
         let mut kr = KeyRegistration::initialize();
-        kr.register_by_entry(&entry).unwrap();
+        kr.register_by_entry(&entry);
         let closed_reg = kr.close_registration(&params).unwrap();
 
         initializer.try_create_signer(&closed_reg).unwrap()
@@ -479,7 +479,7 @@ mod tests {
                         let mut kr = KeyRegistration::initialize();
                         let p = Initializer::new(wrong_params, 1 as Stake, &mut rng_wrong);
                         let entry: RegistrationEntry = p.clone().try_into().unwrap();
-                        kr.register_by_entry(&entry).unwrap();
+                        kr.register_by_entry(&entry);
                         let closed_reg = kr.close_registration(&wrong_params).unwrap();
                         AggregateVerificationKey::from(&closed_reg)
                     };
