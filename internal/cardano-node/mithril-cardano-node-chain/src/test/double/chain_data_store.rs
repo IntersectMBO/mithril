@@ -231,6 +231,18 @@ impl ChainDataStore for InMemoryChainDataStore {
             .map(|tx| ChainPoint::new(tx.slot_number, tx.block_number, tx.block_hash.clone())))
     }
 
+    async fn get_chain_points_by_block_numbers(
+        &self,
+        block_numbers: Vec<BlockNumber>,
+    ) -> StdResult<Vec<ChainPoint>> {
+        let txs = self.blocks_with_txs.lock().await;
+        Ok(txs
+            .iter()
+            .filter(|tx| block_numbers.contains(&tx.block_number))
+            .map(|tx| ChainPoint::new(tx.slot_number, tx.block_number, tx.block_hash.clone()))
+            .collect())
+    }
+
     async fn get_highest_block_range(&self) -> StdResult<Option<BlockRange>> {
         let roots = self.block_range_roots.lock().await;
         Ok(roots.iter().map(|record| record.range.clone()).max_by_key(|r| r.end))
@@ -1403,5 +1415,35 @@ mod tests {
                 .collect();
             assert_eq!(&test_data_set()[0..3], &stored_ranges);
         }
+    }
+
+    #[tokio::test]
+    async fn get_chain_points_by_block_numbers_returns_the_stored_blocks_only() {
+        let store = InMemoryChainDataStore::builder()
+            .with_blocks_and_transactions(&[
+                CardanoBlockWithTransactions::new(
+                    "hash-10",
+                    BlockNumber(10),
+                    SlotNumber(100),
+                    Vec::<String>::new(),
+                ),
+                CardanoBlockWithTransactions::new(
+                    "hash-11",
+                    BlockNumber(11),
+                    SlotNumber(110),
+                    Vec::<String>::new(),
+                ),
+            ])
+            .build();
+
+        let chain_points = store
+            .get_chain_points_by_block_numbers(vec![BlockNumber(11), BlockNumber(99)])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            vec![ChainPoint::new(SlotNumber(110), BlockNumber(11), "hash-11")],
+            chain_points
+        );
     }
 }

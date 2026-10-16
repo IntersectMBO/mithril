@@ -41,6 +41,18 @@ impl GetCardanoBlockQuery {
         Self { condition }
     }
 
+    /// Get the blocks with the given block numbers
+    pub fn by_block_numbers(block_numbers: Vec<BlockNumber>) -> Self {
+        let block_numbers_values = block_numbers
+            .into_iter()
+            .map(|block_number| Value::Integer(*block_number as i64))
+            .collect();
+
+        Self {
+            condition: WhereCondition::where_in("block_number", block_numbers_values),
+        }
+    }
+
     pub fn with_highest_block_number_below_slot_number(slot_number: SlotNumber) -> Self {
         Self {
             condition: WhereCondition::new(
@@ -133,6 +145,27 @@ mod tests {
             .fetch_collect(GetCardanoBlockQuery::with_highest_block_number())
             .unwrap();
         assert_eq!(vec![block_record(BlockNumber(30), SlotNumber(70))], records);
+    }
+
+    #[test]
+    fn by_block_numbers() {
+        let connection = connection_with_test_data_set();
+
+        let records: Vec<CardanoBlockRecord> = connection
+            .fetch_collect(GetCardanoBlockQuery::by_block_numbers(vec![
+                BlockNumber(30),
+                BlockNumber(15),
+                BlockNumber(99),
+            ]))
+            .unwrap();
+
+        assert_eq!(
+            vec![
+                block_record(BlockNumber(15), SlotNumber(55)),
+                block_record(BlockNumber(30), SlotNumber(70)),
+            ],
+            records
+        );
     }
 
     #[test]

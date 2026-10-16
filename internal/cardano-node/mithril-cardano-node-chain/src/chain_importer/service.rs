@@ -136,6 +136,14 @@ mod tests {
                 Ok(None)
             }
 
+            async fn get_chain_points_by_block_numbers(
+                &self,
+                _: Vec<BlockNumber>,
+            ) -> StdResult<Vec<ChainPoint>> {
+                self.block_thread();
+                Ok(vec![])
+            }
+
             async fn get_highest_block_range(&self) -> StdResult<Option<BlockRange>> {
                 self.block_thread();
                 Ok(None)

@@ -180,6 +180,24 @@ impl CardanoTransactionRepository {
         }))
     }
 
+    /// Get the [ChainPoint] of the stored blocks with the given block numbers
+    pub async fn get_chain_points_by_block_numbers(
+        &self,
+        block_numbers: Vec<BlockNumber>,
+    ) -> StdResult<Vec<ChainPoint>> {
+        let records: Vec<CardanoBlockRecord> = self
+            .connection_pool
+            .connection()?
+            .fetch_collect(GetCardanoBlockQuery::by_block_numbers(block_numbers))?;
+
+        Ok(records
+            .into_iter()
+            .map(|record| {
+                ChainPoint::new(record.slot_number, record.block_number, record.block_hash)
+            })
+            .collect())
+    }
+
     /// Get the threshold [BlockNumber] to prune the blocks and transactions below.
     ///
     /// To ensure that all new and legacy blocks range roots were computed and stored: This threshold
@@ -1037,6 +1055,54 @@ mod tests {
                 "block_hash-2"
             )),
             highest_beacon
+        );
+    }
+
+    #[tokio::test]
+    async fn repository_get_chain_points_by_block_numbers() {
+        let temp_dir = temp_dir_create!();
+        let repository = CardanoTransactionRepository::new(Arc::new(
+            cardano_tx_db_connection_builder(&temp_dir).build_pool(1).unwrap(),
+        ));
+        repository
+            .create_block_and_transactions(vec![
+                CardanoBlockWithTransactions::new(
+                    "block_hash-1",
+                    BlockNumber(10),
+                    SlotNumber(50),
+                    Vec::<String>::new(),
+                ),
+                CardanoBlockWithTransactions::new(
+                    "block_hash-2",
+                    BlockNumber(11),
+                    SlotNumber(51),
+                    Vec::<String>::new(),
+                ),
+                CardanoBlockWithTransactions::new(
+                    "block_hash-3",
+                    BlockNumber(12),
+                    SlotNumber(52),
+                    Vec::<String>::new(),
+                ),
+            ])
+            .await
+            .unwrap();
+
+        let chain_points = repository
+            .get_chain_points_by_block_numbers(vec![
+                BlockNumber(12),
+                BlockNumber(10),
+                BlockNumber(99),
+            ])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            vec![
+                ChainPoint::new(SlotNumber(50), BlockNumber(10), "block_hash-1"),
+                ChainPoint::new(SlotNumber(52), BlockNumber(12), "block_hash-3"),
+            ],
+            chain_points
         );
     }
 
