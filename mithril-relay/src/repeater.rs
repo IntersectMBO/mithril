@@ -76,7 +76,7 @@ mod tests {
     #[tokio::test]
     async fn should_repeat_message_when_exists() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let delay = Duration::from_millis(100);
+        let delay = Duration::from_millis(5);
         let repeater = MessageRepeater::new(tx, delay, &TestLogger::stdout());
 
         let message = "Hello, world!";
@@ -87,27 +87,33 @@ mod tests {
         assert_eq!(message, received);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn should_repeat_message_when_exists_with_expected_delay() {
-        let (tx, _rx) = mpsc::unbounded_channel();
-        let delay = Duration::from_secs(1);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let delay = Duration::from_millis(5);
         let repeater = MessageRepeater::new(tx, delay, &TestLogger::stdout());
 
         let message = "Hello, world!";
         repeater.set_message(message.to_string()).await;
+        let repeat_task = tokio::spawn(async move { repeater.repeat_message().await });
+        // Let the task start its wait before advancing the clock
+        tokio::task::yield_now().await;
 
-        let result = tokio::select! {
-            _ = time::sleep(delay - Duration::from_millis(100)) => {Err(anyhow!("Timeout"))}
-            _ = repeater.repeat_message() => {Ok(())}
-        };
+        time::advance(delay - Duration::from_millis(1)).await;
+        assert!(!repeat_task.is_finished(), "should wait for the delay");
 
-        result.expect_err("should have timed out");
+        time::advance(Duration::from_millis(1)).await;
+        repeat_task
+            .await
+            .expect("task should not panic")
+            .expect("repeat should succeed");
+        assert_eq!(message, rx.try_recv().unwrap());
     }
 
     #[tokio::test]
     async fn should_do_nothing_when_message_not_exists() {
         let (tx, rx) = mpsc::unbounded_channel::<String>();
-        let delay = Duration::from_millis(100);
+        let delay = Duration::from_millis(5);
         let repeater = MessageRepeater::new(tx, delay, &TestLogger::stdout());
 
         repeater.repeat_message().await.unwrap();
@@ -115,17 +121,23 @@ mod tests {
         assert!(rx.is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn should_do_nothing_when_message_not_exists_with_expected_delay() {
-        let (tx, _rx) = mpsc::unbounded_channel::<String>();
-        let delay = Duration::from_secs(1);
+        let (tx, rx) = mpsc::unbounded_channel::<String>();
+        let delay = Duration::from_millis(5);
         let repeater = MessageRepeater::new(tx, delay, &TestLogger::stdout());
+        let repeat_task = tokio::spawn(async move { repeater.repeat_message().await });
+        // Let the task start its wait before advancing the clock
+        tokio::task::yield_now().await;
 
-        let result = tokio::select! {
-            _ = time::sleep(delay - Duration::from_millis(100)) => {Err(anyhow!("Timeout"))}
-            _ = repeater.repeat_message() => {Ok(())}
-        };
+        time::advance(delay - Duration::from_millis(1)).await;
+        assert!(!repeat_task.is_finished(), "should wait for the delay");
 
-        result.expect_err("should have timed out");
+        time::advance(Duration::from_millis(1)).await;
+        repeat_task
+            .await
+            .expect("task should not panic")
+            .expect("repeat should succeed");
+        assert!(rx.is_empty());
     }
 }

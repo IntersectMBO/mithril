@@ -42,7 +42,7 @@ impl SequentialSignatureProcessor {
         certifier: Arc<dyn CertifierService>,
         stop_rx: Receiver<()>,
         metrics_service: Arc<MetricsService>,
-        wait_delay_on_error_in_seconds: Duration,
+        wait_delay_on_error: Duration,
         logger: Logger,
     ) -> Self {
         Self {
@@ -50,7 +50,7 @@ impl SequentialSignatureProcessor {
             certifier,
             stop_rx,
             metrics_service,
-            wait_delay_on_error: wait_delay_on_error_in_seconds,
+            wait_delay_on_error,
             logger: logger.new_with_component_name::<Self>(),
         }
     }
@@ -159,8 +159,8 @@ mod tests {
     use anyhow::anyhow;
     use mockall::predicate::eq;
     use tokio::{
-        sync::watch::channel,
-        time::{Duration, sleep},
+        sync::{mpsc::unbounded_channel, watch::channel},
+        time::{Duration, advance, timeout},
     };
 
     use mithril_common::{
@@ -502,6 +502,7 @@ mod tests {
                 SignedEntityType::MithrilStakeDistribution(Epoch(1)),
             )]),
         ]);
+        let (registered_tx, mut registered_rx) = unbounded_channel();
         let mock_certifier = MockBuilder::<MockCertifierService>::configure(|mock| {
             mock.expect_register_single_signature()
                 .with(
@@ -511,10 +512,13 @@ mod tests {
                         ..fake_data::single_signature(vec![1, 2, 3])
                     }),
                 )
-                .returning(|_, _| Ok(SignatureRegistrationStatus::Registered))
+                .returning(move |_, _| {
+                    registered_tx.send(()).unwrap();
+                    Ok(SignatureRegistrationStatus::Registered)
+                })
                 .times(1);
         });
-        let (stop_tx, stop_rx) = channel(());
+        let (_stop_tx, stop_rx) = channel(());
         let metrics_service = MetricsService::new(logger.clone()).unwrap();
         let processor = SequentialSignatureProcessor::new(
             Arc::new(fake_consumer),
@@ -526,15 +530,14 @@ mod tests {
         );
 
         select!(
-            _res =  processor.run() => {},
-            _res = sleep(Duration::from_millis(500)) => {
-                println!("Stopping signature processor...");
-                stop_tx.send(()).unwrap();
+            _ = processor.run() => panic!("processor should not stop on its own"),
+            res = timeout(Duration::from_secs(5), registered_rx.recv()) => {
+                res.expect("the processor should have registered the signature after resuming");
             },
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn processor_run_waits_before_resuming_if_processing_signatures_fails() {
         let logger = TestLogger::stdout();
         let fake_consumer = FakeSignatureConsumer::new(vec![
@@ -547,23 +550,24 @@ mod tests {
         let mock_certifier = MockBuilder::<MockCertifierService>::configure(|mock| {
             mock.expect_register_single_signature().never();
         });
-        let (stop_tx, stop_rx) = channel(());
+        let wait_delay_on_error = Duration::from_millis(1000);
+        let (_stop_tx, stop_rx) = channel(());
         let metrics_service = MetricsService::new(logger.clone()).unwrap();
         let processor = SequentialSignatureProcessor::new(
             Arc::new(fake_consumer),
             mock_certifier,
             stop_rx,
             Arc::new(metrics_service),
-            Duration::from_millis(1000),
+            wait_delay_on_error,
             logger,
         );
 
         select!(
-            _res =  processor.run() => {},
-            _res = sleep(Duration::from_millis(500)) => {
-                println!("Stopping signature processor...");
-                stop_tx.send(()).unwrap();
-            },
+            // `biased` makes sure `run()` starts its wait delay before the clock is advanced
+            biased;
+            _ = processor.run() => panic!("processor should not stop on its own"),
+            // Stop just before the end of the wait delay that follows the error
+            _ = advance(wait_delay_on_error - Duration::from_millis(1)) => {},
         );
     }
 }

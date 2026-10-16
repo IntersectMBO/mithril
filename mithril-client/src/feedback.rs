@@ -582,14 +582,16 @@ impl FeedbackReceiver for StackFeedbackReceiver {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::feedback::MithrilEvent::{SnapshotDownloadCompleted, SnapshotDownloadStarted};
-    use crate::test_utils::TestLogger;
-    use std::time::Duration;
+    use tokio::sync::Notify;
     use tokio::task::JoinSet;
 
+    use crate::feedback::MithrilEvent::{SnapshotDownloadCompleted, SnapshotDownloadStarted};
+    use crate::test_utils::TestLogger;
+
+    use super::*;
+
     #[tokio::test]
-    async fn send_event_same_thread() {
+    async fn send_event_same_task() {
         let receiver = Arc::new(StackFeedbackReceiver::new());
         let receiver_clone = receiver.clone() as Arc<dyn FeedbackReceiver>;
         let sender = FeedbackSender::new(&[receiver_clone]);
@@ -623,61 +625,74 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_event_multiple_thread() {
+    async fn send_event_multiple_tasks() {
         let receiver = Arc::new(StackFeedbackReceiver::new());
         let sender = FeedbackSender::new(&[
             receiver.clone(),
             Arc::new(SlogFeedbackReceiver::new(TestLogger::stdout())),
         ]);
         let sender2 = sender.clone();
+        // Hand the turn back and forth between the two tasks
+        let first_turn = Arc::new(Notify::new());
+        let second_turn = Arc::new(Notify::new());
         let mut join_set = JoinSet::new();
 
-        join_set.spawn(async move {
-            // Step 1:
-            sender
-                .send_event(SnapshotDownloadStarted {
-                    digest: "digest1".to_string(),
-                    download_id: "download1".to_string(),
-                    size: 1,
-                })
-                .await;
-            tokio::time::sleep(Duration::from_millis(2)).await;
-            // Step 3:
-            sender
-                .send_event(SnapshotDownloadCompleted {
-                    download_id: "download3".to_string(),
-                })
-                .await;
-            sender
-                .send_event(SnapshotDownloadStarted {
-                    digest: "digest2".to_string(),
-                    download_id: "download2".to_string(),
-                    size: 2,
-                })
-                .await;
+        join_set.spawn({
+            let (first_turn, second_turn) = (first_turn.clone(), second_turn.clone());
+            async move {
+                // Step 1:
+                sender
+                    .send_event(SnapshotDownloadStarted {
+                        digest: "digest1".to_string(),
+                        download_id: "download1".to_string(),
+                        size: 1,
+                    })
+                    .await;
+                second_turn.notify_one();
+                first_turn.notified().await;
+                // Step 3:
+                sender
+                    .send_event(SnapshotDownloadCompleted {
+                        download_id: "download3".to_string(),
+                    })
+                    .await;
+                sender
+                    .send_event(SnapshotDownloadStarted {
+                        digest: "digest2".to_string(),
+                        download_id: "download2".to_string(),
+                        size: 2,
+                    })
+                    .await;
+                second_turn.notify_one();
+            }
         });
 
-        join_set.spawn(async move {
-            // Step 2:
-            sender2
-                .send_event(SnapshotDownloadCompleted {
-                    download_id: "download1".to_string(),
-                })
-                .await;
-            sender2
-                .send_event(SnapshotDownloadStarted {
-                    digest: "digest3".to_string(),
-                    download_id: "download3".to_string(),
-                    size: 3,
-                })
-                .await;
-            tokio::time::sleep(Duration::from_millis(5)).await;
-            // Step 4:
-            sender2
-                .send_event(SnapshotDownloadCompleted {
-                    download_id: "download2".to_string(),
-                })
-                .await;
+        join_set.spawn({
+            let (first_turn, second_turn) = (first_turn.clone(), second_turn.clone());
+            async move {
+                second_turn.notified().await;
+                // Step 2:
+                sender2
+                    .send_event(SnapshotDownloadCompleted {
+                        download_id: "download1".to_string(),
+                    })
+                    .await;
+                sender2
+                    .send_event(SnapshotDownloadStarted {
+                        digest: "digest3".to_string(),
+                        download_id: "download3".to_string(),
+                        size: 3,
+                    })
+                    .await;
+                first_turn.notify_one();
+                second_turn.notified().await;
+                // Step 4:
+                sender2
+                    .send_event(SnapshotDownloadCompleted {
+                        download_id: "download2".to_string(),
+                    })
+                    .await;
+            }
         });
 
         while let Some(res) = join_set.join_next().await {
@@ -716,123 +731,138 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_event_in_one_thread_and_receive_in_another_thread() {
+    async fn send_event_in_one_task_and_receive_in_another_task() {
         let receiver = Arc::new(StackFeedbackReceiver::new());
         let receiver_clone = receiver.clone() as Arc<dyn FeedbackReceiver>;
         let receiver2 = receiver.clone();
         let sender = FeedbackSender::new(&[receiver_clone]);
+        // The sender waits for each step to be checked before sending the next one
+        let step_sent = Arc::new(Notify::new());
+        let step_checked = Arc::new(Notify::new());
         let mut join_set = JoinSet::new();
 
-        join_set.spawn(async move {
-            // Step 1:
-            sender
-                .send_event(SnapshotDownloadStarted {
-                    digest: "digest1".to_string(),
-                    download_id: "download1".to_string(),
-                    size: 1,
-                })
-                .await;
-            tokio::time::sleep(Duration::from_millis(10)).await;
-
-            // Step 2:
-            sender
-                .send_event(SnapshotDownloadCompleted {
-                    download_id: "download1".to_string(),
-                })
-                .await;
-            sender
-                .send_event(SnapshotDownloadStarted {
-                    digest: "digest2".to_string(),
-                    download_id: "download2".to_string(),
-                    size: 2,
-                })
-                .await;
-            tokio::time::sleep(Duration::from_millis(10)).await;
-
-            // Step 3:
-            sender
-                .send_event(SnapshotDownloadCompleted {
-                    download_id: "download2".to_string(),
-                })
-                .await;
-            sender
-                .send_event(SnapshotDownloadStarted {
-                    digest: "digest3".to_string(),
-                    download_id: "download3".to_string(),
-                    size: 3,
-                })
-                .await;
-            tokio::time::sleep(Duration::from_millis(10)).await;
-
-            // Final step:
-            sender
-                .send_event(SnapshotDownloadCompleted {
-                    download_id: "download3".to_string(),
-                })
-                .await;
-        });
-
-        join_set.spawn(async move {
-            // Little sleep to wait for step 1 completion
-            tokio::time::sleep(Duration::from_millis(3)).await;
-            assert_eq!(
-                receiver2.stacked_events(),
-                vec![SnapshotDownloadStarted {
-                    digest: "digest1".to_string(),
-                    download_id: "download1".to_string(),
-                    size: 1
-                },]
-            );
-
-            // Wait for step 2 completion
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            assert_eq!(
-                receiver2.stacked_events(),
-                vec![
-                    SnapshotDownloadStarted {
+        join_set.spawn({
+            let (step_sent, step_checked) = (step_sent.clone(), step_checked.clone());
+            async move {
+                // Step 1:
+                sender
+                    .send_event(SnapshotDownloadStarted {
                         digest: "digest1".to_string(),
                         download_id: "download1".to_string(),
-                        size: 1
-                    },
-                    SnapshotDownloadCompleted {
-                        download_id: "download1".to_string()
-                    },
-                    SnapshotDownloadStarted {
-                        digest: "digest2".to_string(),
-                        download_id: "download2".to_string(),
-                        size: 2
-                    },
-                ]
-            );
+                        size: 1,
+                    })
+                    .await;
+                step_sent.notify_one();
+                step_checked.notified().await;
 
-            // Wait for step 3 completion
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            assert_eq!(
-                receiver2.stacked_events(),
-                vec![
-                    SnapshotDownloadStarted {
-                        digest: "digest1".to_string(),
+                // Step 2:
+                sender
+                    .send_event(SnapshotDownloadCompleted {
                         download_id: "download1".to_string(),
-                        size: 1
-                    },
-                    SnapshotDownloadCompleted {
-                        download_id: "download1".to_string()
-                    },
-                    SnapshotDownloadStarted {
+                    })
+                    .await;
+                sender
+                    .send_event(SnapshotDownloadStarted {
                         digest: "digest2".to_string(),
                         download_id: "download2".to_string(),
-                        size: 2
-                    },
-                    SnapshotDownloadCompleted {
-                        download_id: "download2".to_string()
-                    },
-                    SnapshotDownloadStarted {
+                        size: 2,
+                    })
+                    .await;
+                step_sent.notify_one();
+                step_checked.notified().await;
+
+                // Step 3:
+                sender
+                    .send_event(SnapshotDownloadCompleted {
+                        download_id: "download2".to_string(),
+                    })
+                    .await;
+                sender
+                    .send_event(SnapshotDownloadStarted {
                         digest: "digest3".to_string(),
                         download_id: "download3".to_string(),
-                        size: 3
-                    },
-                ]
-            );
+                        size: 3,
+                    })
+                    .await;
+                step_sent.notify_one();
+                step_checked.notified().await;
+
+                // Final step:
+                sender
+                    .send_event(SnapshotDownloadCompleted {
+                        download_id: "download3".to_string(),
+                    })
+                    .await;
+            }
+        });
+
+        join_set.spawn({
+            let (step_sent, step_checked) = (step_sent.clone(), step_checked.clone());
+            async move {
+                // Wait for step 1 completion
+                step_sent.notified().await;
+                assert_eq!(
+                    receiver2.stacked_events(),
+                    vec![SnapshotDownloadStarted {
+                        digest: "digest1".to_string(),
+                        download_id: "download1".to_string(),
+                        size: 1
+                    },]
+                );
+
+                // Let the sender send step 2, then wait for it
+                step_checked.notify_one();
+                step_sent.notified().await;
+                assert_eq!(
+                    receiver2.stacked_events(),
+                    vec![
+                        SnapshotDownloadStarted {
+                            digest: "digest1".to_string(),
+                            download_id: "download1".to_string(),
+                            size: 1
+                        },
+                        SnapshotDownloadCompleted {
+                            download_id: "download1".to_string()
+                        },
+                        SnapshotDownloadStarted {
+                            digest: "digest2".to_string(),
+                            download_id: "download2".to_string(),
+                            size: 2
+                        },
+                    ]
+                );
+
+                // Let the sender send step 3, then wait for it
+                step_checked.notify_one();
+                step_sent.notified().await;
+                assert_eq!(
+                    receiver2.stacked_events(),
+                    vec![
+                        SnapshotDownloadStarted {
+                            digest: "digest1".to_string(),
+                            download_id: "download1".to_string(),
+                            size: 1
+                        },
+                        SnapshotDownloadCompleted {
+                            download_id: "download1".to_string()
+                        },
+                        SnapshotDownloadStarted {
+                            digest: "digest2".to_string(),
+                            download_id: "download2".to_string(),
+                            size: 2
+                        },
+                        SnapshotDownloadCompleted {
+                            download_id: "download2".to_string()
+                        },
+                        SnapshotDownloadStarted {
+                            digest: "digest3".to_string(),
+                            download_id: "download3".to_string(),
+                            size: 3
+                        },
+                    ]
+                );
+                step_checked.notify_one();
+            }
         });
 
         while let Some(res) = join_set.join_next().await {
