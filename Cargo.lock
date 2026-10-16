@@ -4930,6 +4930,19 @@ dependencies = [
 [[package]]
 name = "mithril-setup"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "config",
+ "mithril-doc",
+ "serde",
+ "serde_json",
+ "slog",
+ "slog-async",
+ "slog-bunyan",
+ "slog-term",
+ "tokio",
+]
 
 [[package]]
 name = "mithril-signed-entity-lock"

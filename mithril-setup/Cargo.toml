@@ -11,3 +11,14 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+config = { workspace = true }
+mithril-doc = { path = "../internal/mithril-doc" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+slog = { workspace = true, features = ["max_level_trace", "release_max_level_debug"] }
+slog-async = { workspace = true }
+slog-bunyan = { workspace = true }
+slog-term = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
