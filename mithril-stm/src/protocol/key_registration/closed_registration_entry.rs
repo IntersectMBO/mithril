@@ -302,10 +302,14 @@ impl Ord for ClosedRegistrationEntry {
     /// (`VerificationKeyForSnark`, `LotteryTargetValue`), as we do not need them for ordering
     /// the Merkle tree leaves.
     fn cmp(&self, other: &Self) -> Ordering {
-        self.stake.cmp(&other.stake).then(
+        let ordering = self.stake.cmp(&other.stake).then(
             self.verification_key_for_concatenation
                 .cmp(&other.verification_key_for_concatenation),
-        )
+        );
+        #[cfg(feature = "snark")]
+        let ordering =
+            ordering.then(self.verification_key_for_snark.cmp(&other.verification_key_for_snark));
+        ordering
     }
 }
 

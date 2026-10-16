@@ -120,7 +120,10 @@ impl PartialOrd for RegistrationEntry {
 impl Ord for RegistrationEntry {
     /// Compares the registration entries by comparing the stake first, then the verification key.
     fn cmp(&self, other: &Self) -> Ordering {
-        self.1.cmp(&other.1).then(self.0.cmp(&other.0))
+        let ordering = self.1.cmp(&other.1).then(self.0.cmp(&other.0));
+        #[cfg(feature = "snark")]
+        let ordering = ordering.then(self.2.cmp(&other.2));
+        ordering
     }
 }
 
