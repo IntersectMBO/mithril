@@ -57,17 +57,55 @@ Ratatui provides it natively with the `Gauge` widget.
 
 ### Crate comparison
 
-| Name                               | Downloads¹ | Size (KiB)² | Dependencies³ | Testable                                                                                            | Q&A mode | Grid edit mode                                               | Mouse support |
-| ---------------------------------- | ---------- | ----------- | ------------- | --------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------ | ------------- |
-| Ratatui (core, widgets, crossterm) | 59 106 231 | 70.7 + 18.4 | 207⁴          | ✅ [UI output unit test](https://ratatui.rs/tutorials/counter-app/basic-app/#testing-the-ui-output) | ✅       | ✅ (grid and cell)                                           | ✅            |
-| inquire                            | 21 997 939 | 98.9        | 6             | no specific tooling                                                                                 | ✅       | ❌ no real support                                           | ❌            |
-| dialoguer                          | 87 789 311 | 30.5        | 22            | no specific tooling                                                                                 | ✅       | ❌ no real support, can be done manually with row formatting | ❌            |
-| cliclack                           | 3 863 258  | 37.2        | 8             | no specific tooling                                                                                 | ✅       | ❌ no real support                                           | ❌            |
+#### Ratatui (core, widgets, crossterm)
+
+- Downloads¹: 59 106 231
+- Size²: 70.7 + 18.4 KiB
+- Dependencies³: 207 (including color-eyre)
+- Testable: ✅ [UI output unit test](https://ratatui.rs/tutorials/counter-app/basic-app/#testing-the-ui-output)
+- Q&A mode: ✅
+- Grid edit mode: ✅ Offer widgets Row and Cell structure to design tables
+- Mouse support: ✅
+- Ease of development : **Medium**. Lot of things are possible with Ratatui so it offer a lot of options and can bring complexity. ([Q&A Prototype](https://github.com/IntersectMBO/mithril/blob/ctl/3618-identify-a-TUI-crate-for-setup-command/ratatui-question-answer/src/main.rs), [Grid Edit Prototype](https://github.com/IntersectMBO/mithril/blob/ctl/3618-identify-a-TUI-crate-for-setup-command/ratatui-grid-edit-mode/src/main.rs))
+
+#### dialoguer
+
+- Downloads¹: 87 789 311
+- Size²: 30.5 KiB
+- Dependencies³: 22
+- Testable: no specific tooling
+- Q&A mode: ✅
+- Grid edit mode: ❌ no real support, can be done manually with row formatting and/or by using the FuzzySelect feature
+- Mouse support: ❌
+- Ease of development : **Easy** for basic Q&A. Can be complex for implementing a custom Grid/table edit view ([Grid edit Prototype](https://github.com/IntersectMBO/mithril/blob/ctl/3618-identify-a-TUI-crate-for-setup-command/dialoguer-example/src/main.rs))
+
+#### inquire
+
+- Downloads¹: 21 997 939
+- Size²: 98.9 KiB
+- Dependencies³: 6
+- Testable: no specific tooling
+- Q&A mode: ✅
+- Grid edit mode: ❌ no real support
+- Mouse support: ❌
+- Ease of development : **Easy** for basic Q&A. Can be complex for implementing a custom Grid/table edit view ([Documentation](https://docs.rs/inquire/latest/inquire/index.html))
+
+#### cliclack
+
+- Downloads¹: 3 863 258
+- Size²: 37.2 KiB
+- Dependencies³: 8
+- Testable: no specific tooling
+- Q&A mode: ✅
+- Grid edit mode: ❌ no real support
+- Mouse support: ❌
+- Ease of development : **Easy** for basic Q&A. Can be complex for implementing a custom Grid/table edit view ([Documentation](https://docs.rs/cliclack/latest/cliclack/))
+
+**Notes:**
 
 1. Total downloads on crates.io as of 2026-10-12.
 2. Crate size as displayed on crates.io.
 3. Number of packages in the `Cargo.lock` of a minimal project using the crate (`grep -c '^\[\[package\]\]$' Cargo.lock`).
-4. Includes `color-eyre`, used in the proof of concept.
 
 ## Decision
 
