@@ -91,11 +91,12 @@ impl SnarkProverInput {
             .iter()
             .filter_map(|sig| {
                 let snark_sig = sig.snark_signature.as_ref()?;
-                let reg_entry = match clerk.get_snark_registration_entry(sig.signer_index) {
-                    Ok(Some(entry)) => entry,
-                    Ok(None) => return None,
-                    Err(_) => return None,
-                };
+                let reg_entry =
+                    match clerk.get_snark_registration_entry(snark_sig.get_snark_signer_index()) {
+                        Ok(Some(entry)) => entry,
+                        Ok(None) => return None,
+                        Err(_) => return None,
+                    };
                 snark_sig
                     .verify_with_prepared_message(&reg_entry.0, message_to_sign)
                     .ok()?;
@@ -127,8 +128,9 @@ impl SnarkProverInput {
     /// The returned vector is sorted by lottery index (guaranteed by `BTreeMap` iteration order of
     /// `unique_index_signature_map`).
     ///
-    /// Returns an error if a Merkle path cannot be converted to the circuit representation, or
-    /// if any witness entry cannot be assembled (missing signer data or SNARK signature).
+    /// Returns an error if a Merkle path cannot be converted to the circuit representation, if a
+    /// signer with a SNARK leaf has no index in the SNARK Merkle tree, or if any witness entry
+    /// cannot be assembled (missing signer data or SNARK signature).
     fn create_witness<D: MembershipDigest>(
         unique_index_signature_map: BTreeMap<LotteryIndex, SingleSignature>,
         clerk: &SnarkClerk,
@@ -139,14 +141,17 @@ impl SnarkProverInput {
             BTreeMap::new();
 
         for sig in unique_index_signature_map.values() {
-            if let Entry::Vacant(vacant) = unique_signers.entry(sig.signer_index) {
-                let leaf = match clerk.get_snark_registration_entry(sig.signer_index) {
+            let Some(snark_signer_index) = sig.get_snark_signer_index() else {
+                continue;
+            };
+            if let Entry::Vacant(vacant) = unique_signers.entry(snark_signer_index) {
+                let leaf = match clerk.get_snark_registration_entry(snark_signer_index) {
                     Ok(Some(entry)) => entry,
                     Ok(None) => continue,
                     Err(_) => continue,
                 };
                 let merkle_path = merkle_tree.compute_merkle_tree_path_fixed_length(
-                    sig.signer_index as usize,
+                    snark_signer_index as usize,
                     MERKLE_TREE_DEPTH_FOR_SNARK,
                 );
                 let merkle_path_circuit: Halo2MerklePath = Halo2MerklePath::try_from(&merkle_path)?;
@@ -157,19 +162,19 @@ impl SnarkProverInput {
         unique_index_signature_map
             .into_iter()
             .map(|(lottery_index, sig)| {
-                let (leaf, merkle_path) = unique_signers
-                    .get(&sig.signer_index)
-                    .ok_or(AggregationError::MissingSnarkSignerData(sig.signer_index))?;
-                let schnorr_sig = sig
+                let snark_signature = sig
                     .snark_signature
                     .as_ref()
-                    .ok_or(AggregationError::MissingSnarkSignature(lottery_index))?
-                    .get_schnorr_signature();
+                    .ok_or(AggregationError::MissingSnarkSignature(lottery_index))?;
+                let snark_signer_index = snark_signature.get_snark_signer_index();
+                let (leaf, merkle_path) = unique_signers
+                    .get(&snark_signer_index)
+                    .ok_or(AggregationError::MissingSnarkSignerData(snark_signer_index))?;
                 let circuit_leaf = CircuitMerkleTreeLeaf(leaf.0, leaf.1.into());
                 Ok(CircuitWitnessEntry {
                     leaf: circuit_leaf,
                     merkle_path: merkle_path.clone(),
-                    unique_schnorr_signature: schnorr_sig,
+                    unique_schnorr_signature: snark_signature.get_schnorr_signature(),
                     lottery_index,
                 })
             })

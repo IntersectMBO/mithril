@@ -157,7 +157,8 @@ impl Initializer {
             self.parameters.phi_f,
         ))
         .ok()?;
-        closed_key_registration.get_snark_index_for_registration(&snark_registration_entry)?;
+        let signer_index =
+            closed_key_registration.get_snark_index_for_registration(&snark_registration_entry)?;
         let lottery_target_value = snark_registration_entry.get_lottery_target_value()?;
         let key_registration_commitment = closed_key_registration
             .to_merkle_tree::<D::SnarkHash, RegistrationEntryForSnark>()
@@ -169,6 +170,7 @@ impl Initializer {
             schnorr_verification_key,
             lottery_target_value,
             key_registration_commitment,
+            signer_index,
         ))
     }
 
@@ -440,6 +442,74 @@ mod tests {
                 copier_signer.snark_proof_signer.is_none(),
                 "the loser of a SNARK key collision should not get a SNARK signer"
             );
+        }
+
+        #[cfg(feature = "snark")]
+        #[test]
+        fn the_snark_signer_index_opens_the_signer_own_leaf() {
+            use crate::membership_commitment::{MerkleTree, MerkleTreeSnarkLeaf};
+
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            // The parties with the lowest stakes come first in both orderings, so they shift the
+            // positions of the other parties differently in the Concatenation and SNARK entries:
+            // - without a SNARK key: a Concatenation entry but no SNARK leaf,
+            // - SNARK key collision loser: a Concatenation entry but no SNARK leaf,
+            // - BLS key collision loser keeping its own SNARK key: a SNARK leaf but no
+            //   Concatenation entry.
+            let mut without_snark_key = Initializer::new(test_parameters(), 1, &mut rng);
+            without_snark_key.strip_snark_keys();
+            let mut snark_key_collision_loser = Initializer::new(test_parameters(), 2, &mut rng);
+            let mut bls_key_collision_loser = Initializer::new(test_parameters(), 3, &mut rng);
+            let holders_of_a_snark_leaf: Vec<Initializer> = (4..9)
+                .map(|stake| Initializer::new(test_parameters(), stake, &mut rng))
+                .collect();
+            snark_key_collision_loser.schnorr_signing_key =
+                holders_of_a_snark_leaf[2].schnorr_signing_key.clone();
+            snark_key_collision_loser.schnorr_verification_key =
+                holders_of_a_snark_leaf[2].schnorr_verification_key;
+            bls_key_collision_loser.bls_signing_key =
+                holders_of_a_snark_leaf[3].bls_signing_key.clone();
+            bls_key_collision_loser.bls_verification_key_proof_of_possession =
+                holders_of_a_snark_leaf[3].bls_verification_key_proof_of_possession;
+
+            let initializers: Vec<Initializer> = [
+                without_snark_key.clone(),
+                snark_key_collision_loser.clone(),
+                bls_key_collision_loser.clone(),
+            ]
+            .into_iter()
+            .chain(holders_of_a_snark_leaf.clone())
+            .collect();
+            let closed_key_registration = close_registration(&initializers);
+            let merkle_tree: MerkleTree<
+                <MithrilMembershipDigest as MembershipDigest>::SnarkHash,
+                MerkleTreeSnarkLeaf,
+            > = closed_key_registration.to_merkle_tree();
+            let commitment = merkle_tree.to_merkle_tree_commitment();
+
+            assert_eq!(
+                holders_of_a_snark_leaf.len() + 1,
+                closed_key_registration.number_of_snark_leaves(),
+                "the SNARK leaves should be the holders and the BLS key collision loser"
+            );
+            for holder in holders_of_a_snark_leaf {
+                let signer = holder
+                    .try_create_signer::<MithrilMembershipDigest>(&closed_key_registration)
+                    .expect("a party holding a SNARK leaf should get a signer");
+                let snark_proof_signer = signer
+                    .snark_proof_signer
+                    .expect("a party holding a SNARK leaf should get a SNARK signer");
+                let leaf = MerkleTreeSnarkLeaf(
+                    snark_proof_signer.get_verification_key(),
+                    snark_proof_signer.get_lottery_target_value(),
+                );
+                let path = merkle_tree
+                    .compute_merkle_tree_path(snark_proof_signer.get_snark_signer_index() as usize);
+
+                commitment
+                    .verify_leaf_membership_from_path(&leaf, &path)
+                    .expect("the SNARK signer index should open the signer's own leaf");
+            }
         }
     }
 

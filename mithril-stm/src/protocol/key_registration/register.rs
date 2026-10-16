@@ -265,6 +265,19 @@ impl ClosedKeyRegistration {
             .position(|registered_entry| registered_entry == entry)
             .map(|index| index as SignerIndex)
     }
+
+    /// Get the closed registration entry for a given index in the deduplicated SNARK entries.
+    #[cfg(feature = "snark")]
+    pub(crate) fn get_snark_registration_entry_for_index(
+        &self,
+        snark_index: &SignerIndex,
+    ) -> StmResult<ClosedRegistrationEntry> {
+        self.deduplicated_entries_for_snark
+            .iter()
+            .nth(*snark_index as usize)
+            .cloned()
+            .ok_or_else(|| RegisterError::UnregisteredIndex.into())
+    }
 }
 
 /// Selects the closed registration entries the Merkle tree of a proof system is built from.

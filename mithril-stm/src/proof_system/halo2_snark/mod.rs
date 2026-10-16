@@ -105,11 +105,13 @@ mod tests {
             .to_merkle_tree::<<D as crate::MembershipDigest>::SnarkHash, RegistrationEntryForSnark>(
             )
             .to_merkle_tree_commitment();
-        let lottery_target_value =
-            ClosedRegistrationEntry::try_from((entry, closed_reg.get_total_stake(), params.phi_f))
-                .unwrap()
-                .get_lottery_target_value()
-                .unwrap();
+        let closed_entry = ClosedRegistrationEntry::try_from((
+            entry,
+            closed_reg.get_total_stake_for_snark(),
+            params.phi_f,
+        ))
+        .unwrap();
+        let lottery_target_value = closed_entry.get_lottery_target_value().unwrap();
 
         let snark_signer = SnarkProofSigner::<D>::new(
             params,
@@ -117,6 +119,7 @@ mod tests {
             first_schnorr_vk.unwrap(),
             lottery_target_value,
             merkle_tree,
+            closed_reg.get_snark_index_for_registration(&closed_entry).unwrap(),
         );
 
         let aggregate_key = AggregateVerificationKeyForSnark::<D>::from(&closed_reg);

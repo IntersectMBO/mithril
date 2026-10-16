@@ -45,10 +45,10 @@ impl SnarkClerk {
 
     /// Create a `SnarkClerk` by extracting the parameters and closed key registration from `Signer`
     pub fn new_clerk_from_signer<D: MembershipDigest>(signer: &Signer<D>) -> Self {
-        Self {
-            parameters: signer.parameters,
-            closed_key_registration: signer.closed_key_registration.clone(),
-        }
+        Self::new_clerk_from_closed_key_registration(
+            &signer.parameters,
+            &signer.closed_key_registration,
+        )
     }
 
     /// Compute the `AggregateVerificationKeyForSnark` from the closed key registration.
@@ -59,13 +59,16 @@ impl SnarkClerk {
     }
 
     /// Look up and convert the registration entry for a signer into its SNARK representation.
+    ///
+    /// Returns `None` when the signer has no leaf in the SNARK Merkle tree, because it registered
+    /// without a SNARK key or lost its SNARK key to an entry with more stake.
     pub fn get_snark_registration_entry(
         &self,
-        signer_index: LotteryIndex,
+        snark_signer_index: SignerIndex,
     ) -> StmResult<Option<RegistrationEntryForSnark>> {
         let closed_registration_entry = self
             .closed_key_registration
-            .get_registration_entry_for_index(&signer_index)?;
+            .get_snark_registration_entry_for_index(&snark_signer_index)?;
         Ok(closed_registration_entry.into())
     }
 
@@ -95,14 +98,18 @@ impl SnarkClerk {
         let seed: [u8; 32] = seed_hasher.finalize().into();
 
         // Collect all valid signatures grouped by lottery index.
-        let mut index_to_signatures: BTreeMap<LotteryIndex, Vec<SingleSignature>> = BTreeMap::new();
+        let mut index_to_signatures: BTreeMap<LotteryIndex, Vec<(SignerIndex, SingleSignature)>> =
+            BTreeMap::new();
         for signature in signatures {
-            let Some(snark_indices) = signature.get_snark_signature_indices() else {
+            let Some(snark_signature) = signature.snark_signature.as_ref() else {
                 continue;
             };
 
-            for index in snark_indices {
-                index_to_signatures.entry(index).or_default().push(signature.clone());
+            for &index in snark_signature.get_indices() {
+                index_to_signatures
+                    .entry(index)
+                    .or_default()
+                    .push((snark_signature.get_snark_signer_index(), signature.clone()));
             }
         }
 
@@ -128,9 +135,9 @@ impl SnarkClerk {
                     "Unexpected deduplication state: signature map missing lottery index {lottery_index}"
                 )
             })?;
-            let winner = candidates
+            let (_, winner) = candidates
                 .into_iter()
-                .min_by_key(|sig| HashedKey::for_signer_index(&seed, lottery_index, sig.signer_index))
+                .min_by_key(|(snark_signer_index, _)| HashedKey::for_signer_index(&seed, lottery_index, *snark_signer_index))
                 .ok_or_else(|| {
                     anyhow!(
                         "Unexpected deduplication state: no candidates for lottery index {lottery_index}"
