@@ -185,6 +185,7 @@ mod tests {
             phi_f in 1u32..100,
             num_invalid_sigs_per_party in 0_usize..3,
         ) {
+            prop_assume!(k <= m);
             let params = Parameters { m, k, phi_f: (phi_f as f64) / 100.0f64 };
             let mut rng = ChaCha20Rng::from_seed(seed);
 

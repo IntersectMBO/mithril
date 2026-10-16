@@ -266,8 +266,9 @@ mod tests {
     #[test]
     fn fails_when_not_enough_signatures() {
         let mut rng = ChaCha20Rng::from_seed([1u8; 32]);
+        // Two parties cannot win `k` distinct lottery indices out of `m` with this `phi_f`.
         let params = Parameters {
-            m: 5,
+            m: 100,
             k: 100,
             phi_f: 0.2,
         };

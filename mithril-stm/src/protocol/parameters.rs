@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::codec;
 use crate::{PhiFValue, StmResult};
 
-use super::RegisterError;
+use super::{ProtocolError, RegisterError};
 
 /// Byte width of the rigid-slot encoding produced by [Parameters::to_rigid_bytes]. Matches the
 /// rigid protocol message slot for the next protocol parameters.
@@ -28,6 +28,25 @@ pub struct Parameters {
 }
 
 impl Parameters {
+    /// Checks that the parameters are usable by the proof systems.
+    pub fn validate(&self) -> StmResult<()> {
+        if !(self.phi_f > 0.0 && self.phi_f <= 1.0) {
+            return Err(ProtocolError::PhiFValueOutOfRange(self.phi_f).into());
+        }
+        if self.k == 0 {
+            return Err(ProtocolError::QuorumParameterIsZero.into());
+        }
+        if self.k > self.m {
+            return Err(ProtocolError::QuorumParameterGreaterThanSecurityParameter {
+                k: self.k,
+                m: self.m,
+            }
+            .into());
+        }
+
+        Ok(())
+    }
+
     /// Convert to CBOR bytes with a version prefix.
     ///
     /// Legacy readers that encounter the version prefix byte will fail
@@ -79,6 +98,47 @@ impl Parameters {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod validate {
+        use super::*;
+
+        #[test]
+        fn accepts_valid_parameters() {
+            Parameters {
+                m: 10,
+                k: 10,
+                phi_f: 1.0,
+            }
+            .validate()
+            .expect("k equal to m and phi_f equal to 1 should be valid");
+        }
+
+        #[test]
+        fn rejects_invalid_parameters() {
+            for parameters in [
+                Parameters {
+                    m: 20,
+                    k: 10,
+                    phi_f: 0.0,
+                },
+                Parameters {
+                    m: 20,
+                    k: 0,
+                    phi_f: 0.2,
+                },
+                Parameters {
+                    m: 20,
+                    k: 21,
+                    phi_f: 0.2,
+                },
+            ] {
+                assert!(
+                    parameters.validate().is_err(),
+                    "{parameters:?} should be invalid"
+                );
+            }
+        }
+    }
 
     mod golden {
         use super::*;

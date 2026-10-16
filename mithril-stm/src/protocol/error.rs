@@ -42,6 +42,10 @@ pub enum RegisterError {
     /// Total stake of the key registration is zero.
     #[error("Cannot run the protocol if total stake is zero.")]
     ZeroTotalStake,
+
+    /// The registration has no entry.
+    #[error("Cannot close a registration without any entry.")]
+    EmptyRegistration,
 }
 
 /// Errors which are due to an error in the protocol.
@@ -50,4 +54,12 @@ pub enum ProtocolError {
     /// Value of phi_f is out of the (0,1] range
     #[error("phi_f must be in the range (0, 1], got {0}")]
     PhiFValueOutOfRange(f64),
+
+    /// The quorum parameter `k` is zero.
+    #[error("k must be greater than 0")]
+    QuorumParameterIsZero,
+
+    /// The quorum parameter `k` is greater than the security parameter `m`.
+    #[error("k ({k}) must not be greater than m ({m})")]
+    QuorumParameterGreaterThanSecurityParameter { k: u64, m: u64 },
 }

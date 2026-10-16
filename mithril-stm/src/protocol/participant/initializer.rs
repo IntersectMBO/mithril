@@ -121,9 +121,11 @@ impl Initializer {
             closed_key_registration.get_total_stake(),
             self.parameters.phi_f,
         ))?;
+
         let signer_index = closed_key_registration
             .get_signer_index_for_registration(&closed_registration_entry)
             .ok_or_else(|| anyhow!(RegisterError::UnregisteredInitializer))?;
+
         let key_registration_commitment = closed_key_registration
             .to_merkle_tree::<D::ConcatenationHash, RegistrationEntryForConcatenation>()
             .to_merkle_tree_batch_commitment();
@@ -151,15 +153,19 @@ impl Initializer {
     ) -> Option<SnarkProofSigner<D>> {
         let schnorr_signing_key = self.schnorr_signing_key.clone()?;
         let schnorr_verification_key = self.schnorr_verification_key?;
+
         let snark_registration_entry = ClosedRegistrationEntry::try_from((
             registration_entry,
             closed_key_registration.get_total_stake_for_snark(),
             self.parameters.phi_f,
         ))
         .ok()?;
+
         let signer_index =
             closed_key_registration.get_snark_index_for_registration(&snark_registration_entry)?;
+
         let lottery_target_value = snark_registration_entry.get_lottery_target_value()?;
+
         let key_registration_commitment = closed_key_registration
             .to_merkle_tree::<D::SnarkHash, RegistrationEntryForSnark>()
             .to_merkle_tree_commitment();
