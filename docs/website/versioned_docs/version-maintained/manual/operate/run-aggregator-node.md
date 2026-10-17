@@ -27,7 +27,7 @@ For more information about the **Mithril protocol**, see the [About Mithril](../
 On a Mithril network, there exist two types of aggregator nodes:
 
 - **Leader aggregator node**: this node is managed by the entity that generates genesis certificates of the Mithril network (Input Output for all networks specified in the [Network configurations](../getting-started/network-configurations.md). It is responsible for collecting signer registrations (which is still a centralized process) and broadcasting them to other nodes of the network. It provides also a bootstrap point for other aggregator nodes to synchronize the certificate chain.
-- **Follower aggregator node**: this node is managed by any entity willing to contribute to the Mithril network reliability or to provide additional availability guarantees to an infrastructure (eg, for a bridge powered by Mithril). This document explains how to set up and run such a follower Mithril aggregator node.
+- **Follower aggregator node**: this node is managed by any entity willing to contribute to the Mithril network reliability or to provide additional availability guarantees to an infrastructure (eg, for a bridge powered by Mithril). This document explains how to set up and run such a follower Mithril aggregator node. A follower aggregator synchronizes its certificate chain from the leader aggregator by default, or from any other aggregator producing certificates with a compatible aggregate signature type (eg, another follower aggregator).
 
 :::info
 
@@ -259,6 +259,7 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
 - `SERVER_PORT`: Listening server port (default: `8080`)
 - `PUBLIC_SERVER_URL`: Public URL of your aggregator (eg, `https://aggregator.example.com/aggregator`)
 - `LEADER_AGGREGATOR_ENDPOINT`: Endpoint of the leader aggregator to synchronize with (required for follower aggregators, can be found in the [Network configurations](../getting-started/network-configurations.md))
+- `CERTIFICATE_CHAIN_AGGREGATOR_ENDPOINT`: Endpoint of the aggregator to synchronize the certificate chain from (optional, defaults to the leader aggregator endpoint)
 - `RUN_INTERVAL`: Interval between two runtime cycles in milliseconds (eg, `60000` for 60 seconds)
 - `AGGREGATE_SIGNATURE_TYPE`: Type of aggregate signature to use (default: `Concatenation`)
 - `STORE_RETENTION_LIMIT`: Maximum number of records to keep in internal stores. If not set, no limit is applied. A value of `5` is recommended to limit disk usage
@@ -269,6 +270,7 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
 - `CHAIN_OBSERVER_TYPE`: Type of chain observer (default: `pallas`)
 - `ERA_READER_ADAPTER_TYPE`: Type of era reader adapter to use (default: `bootstrap`, use `cardano-chain` for production networks as specified in [Network configurations](../getting-started/network-configurations.md))
 - `ERA_READER_ADAPTER_PARAMS`: JSON encoded parameters for the era reader adapter. For `cardano-chain` type, compute using: `jq -nc --arg address $(wget -q -O - **YOUR_ERA_READER_ADDRESS**) --arg verification_key $(wget -q -O - **YOUR_ERA_READER_VERIFICATION_KEY**) '{"address": $address, "verification_key": $verification_key}'` (URLs can be found in the [Network configurations](../getting-started/network-configurations.md))
+- `PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG`: JSON encoded parameters for the protocol configuration reader adapter. For `cardano-chain` type, compute using: `jq -nc --arg address $(wget -q -O - **YOUR_PROTOCOL_CONFIGURATION_READER_ADDRESS**) --arg verification_key $(wget -q -O - **YOUR_PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY**) '{"type": "cardano-chain", "address": $address, "verification_key": $verification_key}'` (URLs can be found in the [Network configurations](../getting-started/network-configurations.md))
 - `GENESIS_VERIFICATION_KEY`: Genesis verification key for the Mithril network. Fetch using: `wget -q -O - **YOUR_GENESIS_VERIFICATION_KEY**` (URL can be found in the [Network configurations](../getting-started/network-configurations.md))
 - `DMQ_NODE_SOCKET_PATH`: Path to the IPC file of the DMQ node
 - `CUSTOM_ORIGIN_TAG_WHITE_LIST`: Comma-separated list of custom origin tags to whitelist for client requests (default: `EXPLORER,BENCHMARK,CI,NA`).
@@ -287,10 +289,10 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
   - `SNAPSHOT_UPLOADER_TYPE`: Type of snapshot uploader (`gcp` for Google Cloud Storage or `local` for local storage)
   - `SNAPSHOT_BUCKET_NAME`: Name of the GCP bucket where snapshots are stored (required if `SNAPSHOT_UPLOADER_TYPE` is `gcp`)
   - `SNAPSHOT_USE_CDN_DOMAIN`: Set to `true` to use CDN domain for constructing snapshot URLs (default: `false`, only relevant for GCP)
-  - `SNAPSHOT_COMPRESSION_ALGORITHM`: Compression algorithm for snapshot archives (default: `zstandard`, can also be `gzip`)
+  - `SNAPSHOT_COMPRESSION_ALGORITHM`: Compression algorithm for snapshot archives (default: `zstandard`)
   - `ZSTANDARD_PARAMETERS__LEVEL`: Zstandard compression level (eg, `9` for maximum compression, range 1-22)
   - `ZSTANDARD_PARAMETERS__NUMBER_OF_WORKERS`: Number of worker threads for Zstandard compression (eg, `4`)
-  - `ANCILLARY_FILES_SIGNER_CONFIG`: JSON configuration for signing ancillary files. Can be either a secret key or a GCP KMS key. Example with secret key: `{"type": "secret-key", "secret_key": "your_hex_encoded_secret_key"}`.
+  - `ANCILLARY_FILES_SIGNER_CONFIG`: JSON configuration for signing ancillary files. Can be either a secret key or a GCP KMS key. Keypair can be generated using Mithril Aggregator command `tools generate-keypair ed25519`. Example with secret key: `{"type": "secret-key", "secret_key": "your_hex_encoded_secret_key"}`.
 
 - The **Cardano transactions** configuration values are (only needed if supporting Cardano transactions certification):
   - `CARDANO_TRANSACTIONS_PROVER_CACHE_POOL_SIZE`: Size of the prover cache pool (default: `10`). This configuration can have a significant impact on the aggregator's memory usage. In particular, on `mainnet`, we recommend avoiding values higher than `10`.
@@ -318,6 +320,7 @@ Here is an **example** set of values for **release-mainnet** that will be used i
   - **CHAIN_OBSERVER_TYPE**: `pallas`
   - **ERA_READER_ADAPTER_TYPE**: `cardano-chain`
   - **ERA_READER_ADAPTER_PARAMS**: `$(jq -nc --arg address $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/era.addr) --arg verification_key $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/era.vkey) '{"address": $address, "verification_key": $verification_key}')`
+  - **PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG**: `$(jq -nc --arg address $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/protocol-config.addr) --arg verification_key $(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/protocol-config.vkey) '{"type": "cardano-chain", "address": $address, "verification_key": $verification_key}')`
   - **GENESIS_VERIFICATION_KEY**: `$(wget -q -O - https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/release-mainnet/genesis.vkey)`
   - **DMQ_NODE_SOCKET_PATH**: `/dmq/ipc/node.socket`
   - **CUSTOM_ORIGIN_TAG_WHITE_LIST**: `EXPLORER,BENCHMARK,CI,NA`
@@ -366,6 +369,7 @@ CARDANO_NODE_VERSION=**YOUR_CARDANO_IMAGE_ID**
 CHAIN_OBSERVER_TYPE=**YOUR_CHAIN_OBSERVER_TYPE**
 ERA_READER_ADAPTER_TYPE=**YOUR_ERA_READER_ADAPTER_TYPE**
 ERA_READER_ADAPTER_PARAMS=**YOUR_ERA_READER_ADAPTER_PARAMS**
+PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG=**YOUR_PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG**
 GENESIS_VERIFICATION_KEY=**YOUR_GENESIS_VERIFICATION_KEY**
 DMQ_NODE_SOCKET_PATH=**YOUR_DMQ_NODE_SOCKET_PATH**
 CUSTOM_ORIGIN_TAG_WHITE_LIST=**YOUR_CUSTOM_ORIGIN_TAG_WHITE_LIST**
@@ -432,6 +436,7 @@ CARDANO_NODE_VERSION=10.7.1
 CHAIN_OBSERVER_TYPE=pallas
 ERA_READER_ADAPTER_TYPE=cardano-chain
 ERA_READER_ADAPTER_PARAMS={"address": "addr1qy72kwgm6kypyc5maw0h8mfagwag8wjnx6emgfnsnhqaml6gx7gg4tzplw9l32nsgclqax7stc4u6c5dn0ctljwscm2sqv0teg", "verification_key": "5b31312c3133342c3231352c37362c3134312c3232302c3131312c3135342c36332c3233302c3131342c31322c38372c37342c39342c3137322c3133322c32372c39362c3138362c3132362c3137382c31392c3131342c33302c3234332c36342c3134312c3131302c38332c38362c31395d"}
+PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG={"type":"cardano-chain", "address": "addr1v9lsegaw82vh9w37km08s8szleet6adw82xzl8wjujpcyxq84hq9a", "verification_key": "5b3134392c3133392c38352c38302c32342c3130352c3130382c3138332c33352c33382c33382c34342c37332c3130312c3136392c35352c372c37382c302c3136372c3231302c31392c31392c3138372c3134312c37352c3134352c36392c31312c3234382c3132322c31305d"}
 DMQ_NODE_SOCKET_PATH=/dmq/ipc/node.socket
 CUSTOM_ORIGIN_TAG_WHITE_LIST=EXPLORER,BENCHMARK,CI,NA
 EOF'
@@ -1260,7 +1265,7 @@ EOF'
 After installing and starting your Mithril aggregator node, you should verify that it is operating correctly. The verification process includes checking that your aggregator is:
 
 1. Synchronizing signer registrations with the leader aggregator
-2. Synchronizing the certificate chain with the leader aggregator
+2. Synchronizing the certificate chain with the followed aggregator (the leader aggregator by default)
 3. Producing new certificates.
 
 :::info
@@ -1268,7 +1273,7 @@ After installing and starting your Mithril aggregator node, you should verify th
 As a follower aggregator, your node will:
 
 - Fetch and store signer registrations from the leader aggregator
-- Synchronize the certificate chain from the leader aggregator
+- Synchronize the certificate chain from the leader aggregator, or from the aggregator set in `CERTIFICATE_CHAIN_AGGREGATOR_ENDPOINT`
 - Produce its own certificates using signatures collected via the DMQ protocol (once DMQ is stable and widely deployed).
 
 :::
