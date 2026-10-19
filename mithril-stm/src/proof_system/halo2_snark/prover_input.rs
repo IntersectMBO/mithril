@@ -134,7 +134,7 @@ impl SnarkProverInput {
         clerk: &SnarkClerk,
     ) -> StmResult<CircuitWitness> {
         let merkle_tree: MerkleTree<D::SnarkHash, MerkleTreeSnarkLeaf> =
-            clerk.closed_key_registration.to_merkle_tree();
+            clerk.closed_key_registration_for_snark.to_merkle_tree();
         let mut unique_signers: BTreeMap<SignerIndex, (MerkleTreeSnarkLeaf, Halo2MerklePath)> =
             BTreeMap::new();
 
@@ -222,7 +222,7 @@ mod tests {
             .map(|init| init.try_create_signer::<D>(&closed_reg).unwrap())
             .collect();
 
-        let clerk = SnarkClerk::new_clerk_from_signer(&signers[0]);
+        let clerk = SnarkClerk::new_clerk_from_signer(&signers[0]).unwrap();
         (signers, clerk)
     }
 

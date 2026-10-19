@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ClosedKeyRegistration, MembershipDigest, RegistrationEntryForSnark, Stake, StmResult, codec,
+    MembershipDigest, RegistrationEntryForSnark, Stake, StmResult, codec,
     membership_commitment::{MerkleTreeCommitment, MerkleTreeError, MerkleTreeSnarkLeaf},
+    protocol::ClosedRegistrationForProofSystem,
 };
 
 /// Byte width of the rigid-slot encoding produced by
@@ -121,11 +122,13 @@ impl<D: MembershipDigest> PartialEq for AggregateVerificationKeyForSnark<D> {
 
 impl<D: MembershipDigest> Eq for AggregateVerificationKeyForSnark<D> {}
 
-impl<D: MembershipDigest> From<&ClosedKeyRegistration> for AggregateVerificationKeyForSnark<D> {
-    fn from(registration: &ClosedKeyRegistration) -> Self {
+impl<D: MembershipDigest> From<&ClosedRegistrationForProofSystem<RegistrationEntryForSnark>>
+    for AggregateVerificationKeyForSnark<D>
+{
+    fn from(registration: &ClosedRegistrationForProofSystem<RegistrationEntryForSnark>) -> Self {
         Self {
             merkle_tree_commitment: registration
-                .to_merkle_tree::<D::SnarkHash, RegistrationEntryForSnark>()
+                .to_merkle_tree::<D::SnarkHash>()
                 .to_merkle_tree_commitment(),
             total_stake: registration.get_total_stake(),
         }
@@ -186,7 +189,8 @@ mod tests {
             let clerk = SnarkClerk::new_clerk_from_closed_key_registration(
                 &parameters,
                 &closed_registration,
-            );
+            )
+            .unwrap();
 
             clerk.compute_aggregate_verification_key_for_snark()
         }
@@ -430,7 +434,8 @@ mod tests {
             let clerk = SnarkClerk::new_clerk_from_closed_key_registration(
                 &parameters,
                 &closed_registration,
-            );
+            )
+            .unwrap();
 
             clerk.compute_aggregate_verification_key_for_snark()
         }

@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use crate::{
     AggregationError, ClosedKeyRegistration, LotteryIndex, MembershipDigest, Parameters,
     RegistrationEntryForSnark, Signer, SignerIndex, SingleSignature, StmResult,
-    signature_scheme::BaseFieldElement,
+    protocol::ClosedRegistrationForProofSystem, signature_scheme::BaseFieldElement,
 };
 
 use super::AggregateVerificationKeyForSnark;
@@ -25,37 +25,44 @@ const DOMAIN_SEPARATION_TAG_SELECTION_DEDUP: &[u8] = b"MITHRIL_SNARK_SELECTION_D
 /// `ConcatenationClerk`.
 #[derive(Debug, Clone)]
 pub struct SnarkClerk {
-    /// The closed key registration associated with this clerk.
-    pub(crate) closed_key_registration: ClosedKeyRegistration,
+    /// The closed registration of the SNARK proof system associated with this clerk.
+    pub(crate) closed_key_registration_for_snark:
+        ClosedRegistrationForProofSystem<RegistrationEntryForSnark>,
     /// Protocol parameters
     pub(crate) parameters: Parameters,
 }
 
 impl SnarkClerk {
     /// Create a `SnarkClerk` from a closed key registration and protocol parameters.
+    ///
+    /// Returns `None` when the closed key registration has no SNARK proof system.
     pub fn new_clerk_from_closed_key_registration(
         parameters: &Parameters,
         closed_key_registration: &ClosedKeyRegistration,
-    ) -> Self {
-        Self {
-            parameters: *parameters,
-            closed_key_registration: closed_key_registration.clone(),
-        }
+    ) -> Option<Self> {
+        closed_key_registration.get_closed_key_registration_for_snark().map(
+            |closed_key_registration_for_snark| Self {
+                parameters: *parameters,
+                closed_key_registration_for_snark: closed_key_registration_for_snark.clone(),
+            },
+        )
     }
 
     /// Create a `SnarkClerk` by extracting the parameters and closed key registration from `Signer`
-    pub fn new_clerk_from_signer<D: MembershipDigest>(signer: &Signer<D>) -> Self {
-        Self {
-            parameters: signer.parameters,
-            closed_key_registration: signer.closed_key_registration.clone(),
-        }
+    ///
+    /// Returns `None` when the closed key registration has no SNARK proof system.
+    pub fn new_clerk_from_signer<D: MembershipDigest>(signer: &Signer<D>) -> Option<Self> {
+        Self::new_clerk_from_closed_key_registration(
+            &signer.parameters,
+            &signer.closed_key_registration,
+        )
     }
 
     /// Compute the `AggregateVerificationKeyForSnark` from the closed key registration.
     pub fn compute_aggregate_verification_key_for_snark<D: MembershipDigest>(
         &self,
     ) -> AggregateVerificationKeyForSnark<D> {
-        AggregateVerificationKeyForSnark::from(&self.closed_key_registration)
+        AggregateVerificationKeyForSnark::from(&self.closed_key_registration_for_snark)
     }
 
     /// Look up and convert the registration entry for a signer into its SNARK representation.
@@ -64,7 +71,7 @@ impl SnarkClerk {
         signer_index: LotteryIndex,
     ) -> StmResult<Option<RegistrationEntryForSnark>> {
         let closed_registration_entry = self
-            .closed_key_registration
+            .closed_key_registration_for_snark
             .get_registration_entry_for_index(&signer_index)?;
         Ok(closed_registration_entry.into())
     }
@@ -238,7 +245,7 @@ mod tests {
             .map(|init| init.try_create_signer::<D>(&closed_reg).unwrap())
             .collect();
 
-        let clerk = SnarkClerk::new_clerk_from_signer(&signers[0]);
+        let clerk = SnarkClerk::new_clerk_from_signer(&signers[0]).unwrap();
         (signers, clerk)
     }
 
@@ -296,7 +303,7 @@ mod tests {
             let clerk_from_registration = SnarkClerk::new_clerk_from_closed_key_registration(
                 &parameters,
                 &signers[0].closed_key_registration,
-            );
+            ).unwrap();
 
             let avk_from_registration: AggregateVerificationKeyForSnark<D> =
                 clerk_from_registration.compute_aggregate_verification_key_for_snark();

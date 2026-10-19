@@ -21,8 +21,8 @@ use crate::{
     },
 };
 use crate::{
-    AggregateVerificationKey, ClosedKeyRegistration, LotteryIndex, MembershipDigest, Parameters,
-    Signer, SingleSignature, Stake, StmResult, VerificationKeyForConcatenation,
+    AggregateVerificationKey, ClosedKeyRegistration, MembershipDigest, Parameters, Signer,
+    SignerIndex, SingleSignature, Stake, StmResult, VerificationKeyForConcatenation,
     proof_system::{ConcatenationClerk, ConcatenationProof},
 };
 
@@ -54,10 +54,7 @@ impl<D: MembershipDigest> Clerk<D> {
         Self {
             concatenation_proof_clerk: ConcatenationClerk::new_clerk_from_signer(signer),
             #[cfg(feature = "snark")]
-            snark_proof_clerk: signer
-                .closed_key_registration
-                .has_snark_verification_keys()
-                .then(|| SnarkClerk::new_clerk_from_signer(signer)),
+            snark_proof_clerk: SnarkClerk::new_clerk_from_signer(signer),
             #[cfg(feature = "snark")]
             snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory::new(
                 SnarkProverSetupReuse::Enabled,
@@ -79,9 +76,10 @@ impl<D: MembershipDigest> Clerk<D> {
                 closed_registration,
             ),
             #[cfg(feature = "snark")]
-            snark_proof_clerk: closed_registration.has_snark_verification_keys().then(|| {
-                SnarkClerk::new_clerk_from_closed_key_registration(parameters, closed_registration)
-            }),
+            snark_proof_clerk: SnarkClerk::new_clerk_from_closed_key_registration(
+                parameters,
+                closed_registration,
+            ),
             #[cfg(feature = "snark")]
             snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory::new(
                 SnarkProverSetupReuse::Enabled,
@@ -267,11 +265,12 @@ impl<D: MembershipDigest> Clerk<D> {
     /// Get the concatenation registered party for a given index.
     pub fn get_concatenation_registered_party_for_index(
         &self,
-        party_index: &LotteryIndex,
+        party_index: &SignerIndex,
     ) -> StmResult<(VerificationKeyForConcatenation, Stake)> {
         let entry = self
             .get_concatenation_clerk()
             .closed_key_registration
+            .get_closed_key_registration_for_concatenation()
             .get_registration_entry_for_index(party_index)?;
         Ok((
             entry.get_verification_key_for_concatenation(),
@@ -834,7 +833,7 @@ mod tests {
         let signer = setup_single_party(PARAMS);
         let message: &[u8] = &[7, 7, 7];
 
-        let snark_clerk = SnarkClerk::new_clerk_from_signer(&signer);
+        let snark_clerk = SnarkClerk::new_clerk_from_signer(&signer).unwrap();
         let expected_proof_bytes = dummy_snark_proof(PARAMS).to_bytes().unwrap();
         let expected_avk = snark_clerk.compute_aggregate_verification_key_for_snark();
 

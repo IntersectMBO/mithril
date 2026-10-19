@@ -49,7 +49,6 @@ mod tests {
         RegistrationEntry, VerificationKeyForSnark,
         VerificationKeyProofOfPossessionForConcatenation,
         proof_system::halo2_snark::eligibility::{check_lottery_for_index, compute_lottery_prefix},
-        protocol::RegistrationEntryForSnark,
         signature_scheme::{BlsSigningKey, SchnorrSigningKey},
     };
 
@@ -102,14 +101,20 @@ mod tests {
         let entry = first_entry.unwrap();
 
         let merkle_tree = closed_reg
-            .to_merkle_tree::<<D as crate::MembershipDigest>::SnarkHash, RegistrationEntryForSnark>(
-            )
+            .get_closed_key_registration_for_snark()
+            .unwrap()
+            .to_merkle_tree::<<D as crate::MembershipDigest>::SnarkHash>()
             .to_merkle_tree_commitment();
-        let lottery_target_value =
-            ClosedRegistrationEntry::try_from((entry, closed_reg.get_total_stake(), params.phi_f))
-                .unwrap()
-                .get_lottery_target_value()
-                .unwrap();
+        let lottery_target_value = ClosedRegistrationEntry::try_from((
+            entry,
+            closed_reg
+                .get_closed_key_registration_for_concatenation()
+                .get_total_stake(),
+            params.phi_f,
+        ))
+        .unwrap()
+        .get_lottery_target_value()
+        .unwrap();
 
         let snark_signer = SnarkProofSigner::<D>::new(
             params,
@@ -119,7 +124,9 @@ mod tests {
             merkle_tree,
         );
 
-        let aggregate_key = AggregateVerificationKeyForSnark::<D>::from(&closed_reg);
+        let aggregate_key = AggregateVerificationKeyForSnark::<D>::from(
+            closed_reg.get_closed_key_registration_for_snark().unwrap(),
+        );
 
         (snark_signer, aggregate_key)
     }

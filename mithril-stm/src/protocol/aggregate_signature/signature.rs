@@ -1074,7 +1074,10 @@ mod tests {
                     params,
                     sk_1,
                     pk_1.vk,
-                    closed_key_reg.to_merkle_tree().to_merkle_tree_batch_commitment(),
+                    closed_key_reg
+                        .get_closed_key_registration_for_concatenation()
+                        .to_merkle_tree()
+                        .to_merkle_tree_batch_commitment(),
                 ),
                 closed_key_reg.clone(),
                 params,
@@ -1091,7 +1094,10 @@ mod tests {
                     params,
                     sk_2,
                     pk_2.vk,
-                    closed_key_reg.to_merkle_tree().to_merkle_tree_batch_commitment(),
+                    closed_key_reg
+                        .get_closed_key_registration_for_concatenation()
+                        .to_merkle_tree()
+                        .to_merkle_tree_batch_commitment(),
                 ),
                 closed_key_reg.clone(),
                 params,
@@ -1709,8 +1715,8 @@ mod tests {
                 Clerk::new_clerk_from_closed_key_registration(&params, &closed_reg);
             let snark_clerk = clerk.get_snark_clerk().expect("SnarkClerk must be present");
             let merkle_tree_depth = snark_clerk
-                .closed_key_registration
-                .number_of_registered_parties()
+                .closed_key_registration_for_snark
+                .number_of_leaves()
                 .next_power_of_two()
                 .trailing_zeros();
 

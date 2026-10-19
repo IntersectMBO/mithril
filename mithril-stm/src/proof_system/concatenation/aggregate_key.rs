@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ClosedKeyRegistration, MembershipDigest, RegistrationEntryForConcatenation, Stake, StmResult,
-    codec,
+    MembershipDigest, RegistrationEntryForConcatenation, Stake, StmResult, codec,
     membership_commitment::{
         MerkleBatchPath, MerkleTreeBatchCommitment, MerkleTreeConcatenationLeaf, MerkleTreeError,
     },
+    protocol::ClosedRegistrationForProofSystem,
 };
 
 /// Aggregate verification key of the concatenation proof system.
@@ -69,15 +69,17 @@ impl<D: MembershipDigest> PartialEq for AggregateVerificationKeyForConcatenation
 
 impl<D: MembershipDigest> Eq for AggregateVerificationKeyForConcatenation<D> {}
 
-impl<D: MembershipDigest> From<&ClosedKeyRegistration>
+impl<D: MembershipDigest> From<&ClosedRegistrationForProofSystem<RegistrationEntryForConcatenation>>
     for AggregateVerificationKeyForConcatenation<D>
 {
-    fn from(reg: &ClosedKeyRegistration) -> Self {
+    fn from(
+        registration: &ClosedRegistrationForProofSystem<RegistrationEntryForConcatenation>,
+    ) -> Self {
         Self {
-            mt_commitment: reg
-                .to_merkle_tree::<D::ConcatenationHash, RegistrationEntryForConcatenation>()
+            mt_commitment: registration
+                .to_merkle_tree::<D::ConcatenationHash>()
                 .to_merkle_tree_batch_commitment(),
-            total_stake: reg.get_total_stake(),
+            total_stake: registration.get_total_stake(),
         }
     }
 }

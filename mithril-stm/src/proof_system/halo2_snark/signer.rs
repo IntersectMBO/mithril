@@ -82,7 +82,6 @@ mod tests {
         SignatureError, VerificationKeyForSnark, VerificationKeyProofOfPossessionForConcatenation,
         membership_commitment::{MerkleTreeCommitment, MerkleTreeSnarkLeaf},
         proof_system::halo2_snark::eligibility::{check_lottery_for_index, compute_lottery_prefix},
-        protocol::RegistrationEntryForSnark,
         signature_scheme::{
             BaseFieldElement, BlsSigningKey, SchnorrSigningKey, compute_poseidon_digest,
         },
@@ -119,7 +118,9 @@ mod tests {
         let closed_reg = key_reg.close_registration(&params).unwrap();
 
         let merkle_tree = closed_reg
-            .to_merkle_tree::<<D as MembershipDigest>::SnarkHash, RegistrationEntryForSnark>()
+            .get_closed_key_registration_for_snark()
+            .unwrap()
+            .to_merkle_tree::<<D as MembershipDigest>::SnarkHash>()
             .to_merkle_tree_commitment();
 
         SnarkProofSigner::<D>::new(params, schnorr_sk, schnorr_vk, target, merkle_tree)

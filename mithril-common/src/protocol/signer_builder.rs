@@ -224,10 +224,10 @@ mod test {
     }
 
     #[test]
-    fn cant_construct_signer_builder_if_a_signer_registration_fail() {
-        // To make this test fail we try to build a SignerBuilder with signers from two
-        // different stake distributions, this will pass the individual check but not the
-        // register check.
+    fn can_construct_signer_builder_with_signers_colliding_on_their_keys() {
+        // Signers from two different stake distributions share their keys. The key collisions
+        // are resolved when closing the registration, so they don't prevent building a
+        // SignerBuilder.
         let fixture = MithrilFixtureBuilder::default().with_signers(3).build();
         let colliding_party_stake = fixture.signers_with_stake()[0].stake;
         let fixture_with_another_stake_distribution = MithrilFixtureBuilder::default()
@@ -239,15 +239,22 @@ mod test {
         let mut signers = fixture.signers_with_stake();
         signers.append(&mut fixture_with_another_stake_distribution.signers_with_stake());
 
-        let error = SignerBuilder::new(&signers, &fixture.protocol_parameters(), Epoch::default())
-            .expect_err(
-                "We should not be able to construct a signer builder if a signer registration fail",
+        let signer_builder =
+            SignerBuilder::new(&signers, &fixture.protocol_parameters(), Epoch::default()).expect(
+                "signers colliding on their keys should not prevent building a signer builder",
             );
+        let signer_builder_without_collision = SignerBuilder::new(
+            &fixture.signers_with_stake(),
+            &fixture.protocol_parameters(),
+            Epoch::default(),
+        )
+        .unwrap();
 
-        match error.downcast_ref::<RegisterError>() {
-            Some(RegisterError::EntryAlreadyRegistered) => (),
-            _ => panic!("Expected an CoreRegister error, got: {error:?}"),
-        }
+        assert_eq!(
+            signer_builder_without_collision.compute_aggregate_verification_key(),
+            signer_builder.compute_aggregate_verification_key(),
+            "the colliding signer duplicates an existing one, so it should not change the AVK"
+        );
     }
 
     #[test]
@@ -355,26 +362,36 @@ mod test {
 
     #[cfg(feature = "snark")]
     #[test]
-    fn signer_builder_fails_to_register_two_signers_sharing_a_snark_key() {
+    fn signer_builder_registers_two_signers_sharing_a_snark_key() {
         let epoch = Epoch(10);
         let [lower_stake_signer, higher_stake_signer] =
             create_signers_with_stake_sharing_snark_key(
                 [100, 200],
                 epoch,
-                "signer_builder_fails_to_register_two_signers_sharing_a_snark_key",
+                "signer_builder_registers_two_signers_sharing_a_snark_key",
             )
             .unwrap();
 
-        let error = SignerBuilder::new(
-            &[lower_stake_signer, higher_stake_signer],
-            &ProtocolParameters::new(5, 5, 1.0),
+        let protocol_parameters = ProtocolParameters::new(5, 5, 1.0);
+        let avk = SignerBuilder::new(
+            &[lower_stake_signer, higher_stake_signer.clone()],
+            &protocol_parameters,
             epoch,
         )
-        .expect_err("registering two signers that share a SNARK key should fail");
+        .expect("two signers sharing a SNARK key should not prevent building a signer builder")
+        .compute_aggregate_verification_key();
+        let avk_of_the_higher_stake_signer =
+            SignerBuilder::new(&[higher_stake_signer], &protocol_parameters, epoch)
+                .unwrap()
+                .compute_aggregate_verification_key();
 
-        match error.downcast_ref::<RegisterError>() {
-            Some(RegisterError::EntryAlreadyRegistered) => (),
-            _ => panic!("Expected an EntryAlreadyRegistered error, got: {error:?}"),
-        }
+        assert_eq!(
+            avk_of_the_higher_stake_signer
+                .to_snark_aggregate_verification_key()
+                .expect("the higher stake signer should have a SNARK AVK"),
+            avk.to_snark_aggregate_verification_key()
+                .expect("the signers sharing a SNARK key should have a SNARK AVK"),
+            "the SNARK key should only be kept by the signer with the higher stake"
+        );
     }
 }

@@ -246,8 +246,7 @@ mod tests {
     #[cfg(feature = "snark")]
     use crate::{
         ClosedRegistrationEntry, MembershipDigest, VerificationKeyForSnark,
-        proof_system::SnarkProofSigner, protocol::RegistrationEntryForSnark,
-        signature_scheme::SchnorrSigningKey,
+        proof_system::SnarkProofSigner, signature_scheme::SchnorrSigningKey,
     };
 
     use crate::{
@@ -341,6 +340,7 @@ mod tests {
                     sk_1,
                     pk_1.vk,
                     closed_key_registration
+                        .get_closed_key_registration_for_concatenation()
                         .to_merkle_tree()
                         .to_merkle_tree_batch_commitment(),
                 );
@@ -350,11 +350,15 @@ mod tests {
             #[cfg(feature = "snark")]
             let snark_signature = {
                 let key_registration_commitment = closed_key_registration
-                    .to_merkle_tree::<<D as MembershipDigest>::SnarkHash, RegistrationEntryForSnark>(
-                ).to_merkle_tree_commitment();
+                    .get_closed_key_registration_for_snark()
+                    .unwrap()
+                    .to_merkle_tree::<<D as MembershipDigest>::SnarkHash>()
+                    .to_merkle_tree_commitment();
                 let closed_registration_entry = ClosedRegistrationEntry::try_from((
                     entry1,
-                    closed_key_registration.get_total_stake(),
+                    closed_key_registration
+                        .get_closed_key_registration_for_concatenation()
+                        .get_total_stake(),
                     params.phi_f,
                 ))
                 .unwrap();
@@ -548,6 +552,7 @@ mod tests {
                     sk_1,
                     pk_1.vk,
                     closed_key_registration
+                        .get_closed_key_registration_for_concatenation()
                         .to_merkle_tree()
                         .to_merkle_tree_batch_commitment(),
                 );
@@ -557,11 +562,15 @@ mod tests {
             #[cfg(feature = "snark")]
             let snark_signature = {
                 let key_registration_commitment = closed_key_registration
-                    .to_merkle_tree::<<D as MembershipDigest>::SnarkHash, RegistrationEntryForSnark>(
-                ).to_merkle_tree_commitment();
+                    .get_closed_key_registration_for_snark()
+                    .unwrap()
+                    .to_merkle_tree::<<D as MembershipDigest>::SnarkHash>()
+                    .to_merkle_tree_commitment();
                 let closed_registration_entry = ClosedRegistrationEntry::try_from((
                     entry1,
-                    closed_key_registration.get_total_stake(),
+                    closed_key_registration
+                        .get_closed_key_registration_for_concatenation()
+                        .get_total_stake(),
                     params.phi_f,
                 ))
                 .unwrap();
@@ -679,6 +688,7 @@ mod tests {
                     sk_1,
                     vk_1.vk,
                     closed_key_registration
+                        .get_closed_key_registration_for_concatenation()
                         .to_merkle_tree()
                         .to_merkle_tree_batch_commitment(),
                 ),

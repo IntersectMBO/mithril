@@ -242,8 +242,8 @@ impl<D: MembershipDigest, R: RngCore + CryptoRng> SnarkAggregateSignatureProver<
             circuit_proof,
             params: clerk.parameters,
             merkle_tree_depth: clerk
-                .closed_key_registration
-                .number_of_registered_parties()
+                .closed_key_registration_for_snark
+                .number_of_leaves()
                 .next_power_of_two()
                 .trailing_zeros(),
             phantom: PhantomData,
@@ -294,7 +294,7 @@ mod tests {
             .map(|init| init.try_create_signer::<D>(&closed_reg).unwrap())
             .collect();
 
-        let clerk = SnarkClerk::new_clerk_from_signer(&signers[0]);
+        let clerk = SnarkClerk::new_clerk_from_signer(&signers[0]).unwrap();
         (signers, clerk)
     }
 
@@ -426,8 +426,8 @@ mod tests {
             let avk = clerk.compute_aggregate_verification_key_for_snark::<D>();
 
             let current_merkle_tree_depth = clerk
-                .closed_key_registration
-                .number_of_registered_parties()
+                .closed_key_registration_for_snark
+                .number_of_leaves()
                 .next_power_of_two()
                 .trailing_zeros();
             let mut prover = create_prover(params, [0u8; 32]);

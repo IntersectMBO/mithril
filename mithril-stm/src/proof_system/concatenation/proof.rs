@@ -54,6 +54,7 @@ impl<D: MembershipDigest> ConcatenationProof<D> {
             .map(|sig| {
                 clerk
                     .closed_key_registration
+                    .get_closed_key_registration_for_concatenation()
                     .get_registration_entry_for_index(&sig.signer_index)
                     .map(|reg_party| {
                         #[cfg(feature = "snark")]
@@ -89,7 +90,8 @@ impl<D: MembershipDigest> ConcatenationProof<D> {
 
         let batch_proof = clerk
             .closed_key_registration
-            .to_merkle_tree::<D::ConcatenationHash, RegistrationEntryForConcatenation>()
+            .get_closed_key_registration_for_concatenation()
+            .to_merkle_tree::<D::ConcatenationHash>()
             .compute_merkle_tree_batch_path(mt_index_list);
 
         Ok(Self {
@@ -397,7 +399,10 @@ mod tests {
                     params,
                     sk_1,
                     pk_1.vk,
-                    closed_key_reg.to_merkle_tree().to_merkle_tree_batch_commitment(),
+                    closed_key_reg
+                        .get_closed_key_registration_for_concatenation()
+                        .to_merkle_tree()
+                        .to_merkle_tree_batch_commitment(),
                 ),
                 closed_key_reg.clone(),
                 params,
@@ -414,7 +419,10 @@ mod tests {
                     params,
                     sk_2,
                     pk_2.vk,
-                    closed_key_reg.to_merkle_tree().to_merkle_tree_batch_commitment(),
+                    closed_key_reg
+                        .get_closed_key_registration_for_concatenation()
+                        .to_merkle_tree()
+                        .to_merkle_tree_batch_commitment(),
                 ),
                 closed_key_reg.clone(),
                 params,
