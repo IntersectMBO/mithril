@@ -304,16 +304,20 @@ impl PartialOrd for ClosedRegistrationEntry {
 }
 
 impl Ord for ClosedRegistrationEntry {
-    /// Orders by stake first, then by Verification key for concatenation.
+    /// Orders by stake first, then by verification key for concatenation, then (with the `snark`
+    /// feature) by verification key for SNARK.
     ///
-    /// Note: this ordering intentionally excludes the snark fields
-    /// (`VerificationKeyForSnark`, `LotteryTargetValue`), as we do not need them for ordering
-    /// the Merkle tree leaves.
+    /// The verification key for SNARK only breaks ties between entries with the same stake and
+    /// the same verification key for concatenation.
     fn cmp(&self, other: &Self) -> Ordering {
-        self.stake.cmp(&other.stake).then(
+        let ordering = self.stake.cmp(&other.stake).then(
             self.verification_key_for_concatenation
                 .cmp(&other.verification_key_for_concatenation),
-        )
+        );
+        #[cfg(feature = "snark")]
+        let ordering =
+            ordering.then(self.verification_key_for_snark.cmp(&other.verification_key_for_snark));
+        ordering
     }
 }
 
@@ -623,6 +627,130 @@ mod tests {
                 array.len(),
                 "full entry should serialize as a 4-element tuple"
             );
+        }
+    }
+
+    mod golden_ordering {
+        use super::*;
+
+        /// Creation index of each entry, in the sorted order.
+        const GOLDEN_ORDER: [usize; 8] = [6, 3, 1, 2, 5, 4, 0, 7];
+
+        fn entries() -> Vec<ClosedRegistrationEntry> {
+            let mut concatenation_rng = ChaCha20Rng::from_seed([2u8; 32]);
+            #[cfg(feature = "snark")]
+            let mut snark_rng = ChaCha20Rng::from_seed([1u8; 32]);
+
+            [300, 100, 200, 100, 300, 200, 100, 500]
+                .into_iter()
+                .map(|stake| {
+                    ClosedRegistrationEntry::new(
+                        VerificationKeyProofOfPossessionForConcatenation::from(
+                            &BlsSigningKey::generate(&mut concatenation_rng),
+                        )
+                        .vk,
+                        stake,
+                        #[cfg(feature = "snark")]
+                        Some(VerificationKeyForSnark::new_from_signing_key(
+                            SchnorrSigningKey::generate(&mut snark_rng),
+                        )),
+                        #[cfg(feature = "snark")]
+                        Some(LotteryTargetValue::get_one()),
+                    )
+                })
+                .collect()
+        }
+
+        #[test]
+        fn ordering_is_stable() {
+            let entries = entries();
+            let mut sorted_entries = entries.clone();
+            sorted_entries.sort();
+
+            let order: Vec<usize> = sorted_entries
+                .iter()
+                .map(|sorted_entry| entries.iter().position(|entry| entry == sorted_entry).unwrap())
+                .collect();
+
+            assert_eq!(GOLDEN_ORDER.as_slice(), order.as_slice());
+        }
+    }
+
+    mod ordering_properties {
+        use proptest::{collection::vec, prelude::*};
+
+        use super::*;
+
+        /// Picks a stake, a verification key for concatenation and a verification key for SNARK
+        /// from small pools, so that entries often tie on their stake and on their verification
+        /// key for concatenation. The last SNARK key choice stands for no SNARK key.
+        fn entry_choice() -> impl Strategy<Value = (Stake, usize, usize)> {
+            (0..3u64, 0..3usize, 0..4usize)
+        }
+
+        fn entries(choices: &[(Stake, usize, usize)]) -> Vec<ClosedRegistrationEntry> {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let concatenation_keys: Vec<_> = (0..3)
+                .map(|_| {
+                    VerificationKeyProofOfPossessionForConcatenation::from(
+                        &BlsSigningKey::generate(&mut rng),
+                    )
+                })
+                .collect();
+            #[cfg(feature = "snark")]
+            let snark_keys: Vec<_> = (0..3)
+                .map(|_| {
+                    VerificationKeyForSnark::new_from_signing_key(SchnorrSigningKey::generate(
+                        &mut rng,
+                    ))
+                })
+                .collect();
+
+            choices
+                .iter()
+                .map(|&(stake, concatenation_key, snark_key)| {
+                    #[cfg(not(feature = "snark"))]
+                    let _ = snark_key;
+                    ClosedRegistrationEntry::new(
+                        concatenation_keys[concatenation_key].vk,
+                        stake,
+                        #[cfg(feature = "snark")]
+                        snark_keys.get(snark_key).copied(),
+                        #[cfg(feature = "snark")]
+                        Some(LotteryTargetValue::get_one()),
+                    )
+                })
+                .collect()
+        }
+
+        proptest! {
+            #[test]
+            fn only_equal_entries_compare_equal(choices in vec(entry_choice(), 2)) {
+                let entries = entries(&choices);
+
+                prop_assert_eq!(entries[0] == entries[1], entries[0].cmp(&entries[1]).is_eq());
+            }
+
+            #[test]
+            fn a_higher_stake_sorts_after_a_lower_stake(choices in vec(entry_choice(), 2)) {
+                let entries = entries(&choices);
+                prop_assume!(entries[0].get_stake() < entries[1].get_stake());
+
+                prop_assert!(entries[0] < entries[1]);
+            }
+
+            #[test]
+            fn sorting_does_not_depend_on_the_input_order(
+                (choices, shuffled_choices) in vec(entry_choice(), 1..10)
+                    .prop_flat_map(|choices| (Just(choices.clone()), Just(choices).prop_shuffle()))
+            ) {
+                let mut sorted_entries = entries(&choices);
+                sorted_entries.sort();
+                let mut sorted_shuffled_entries = entries(&shuffled_choices);
+                sorted_shuffled_entries.sort();
+
+                prop_assert_eq!(sorted_entries, sorted_shuffled_entries);
+            }
         }
     }
 }

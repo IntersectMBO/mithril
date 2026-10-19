@@ -118,9 +118,13 @@ impl PartialOrd for RegistrationEntry {
 }
 
 impl Ord for RegistrationEntry {
-    /// Compares the registration entries by comparing the stake first, then the verification key.
+    /// Compares the registration entries by comparing the stake first, then the verification key
+    /// for concatenation, then (with the `snark` feature) the verification key for SNARK.
     fn cmp(&self, other: &Self) -> Ordering {
-        self.1.cmp(&other.1).then(self.0.cmp(&other.0))
+        let ordering = self.1.cmp(&other.1).then(self.0.cmp(&other.0));
+        #[cfg(feature = "snark")]
+        let ordering = ordering.then(self.2.cmp(&other.2));
+        ordering
     }
 }
 
@@ -179,5 +183,129 @@ mod tests {
         assert!(cmp_result == Ordering::Less || cmp_result == Ordering::Greater);
 
         assert_eq!(entry2.cmp(&entry1), cmp_result.reverse());
+    }
+
+    mod golden_ordering {
+        use super::*;
+
+        /// Creation index of each entry, in the sorted order.
+        const GOLDEN_ORDER: [usize; 8] = [6, 3, 1, 2, 5, 4, 0, 7];
+
+        /// Entries with repeated stakes, so that their order also depends on the verification key
+        /// for concatenation. Each key comes from its own random generator, so the verification
+        /// keys for concatenation do not depend on the `snark` feature.
+        fn entries() -> Vec<RegistrationEntry> {
+            let mut concatenation_rng = ChaCha20Rng::from_seed([2u8; 32]);
+            #[cfg(feature = "snark")]
+            let mut snark_rng = ChaCha20Rng::from_seed([1u8; 32]);
+
+            [300, 100, 200, 100, 300, 200, 100, 500]
+                .into_iter()
+                .map(|stake| {
+                    RegistrationEntry::new(
+                        VerificationKeyProofOfPossessionForConcatenation::from(
+                            &BlsSigningKey::generate(&mut concatenation_rng),
+                        ),
+                        stake,
+                        #[cfg(feature = "snark")]
+                        Some(VerificationKeyForSnark::new_from_signing_key(
+                            SchnorrSigningKey::generate(&mut snark_rng),
+                        )),
+                    )
+                    .unwrap()
+                })
+                .collect()
+        }
+
+        #[test]
+        fn ordering_is_stable() {
+            let entries = entries();
+            let mut sorted_entries = entries.clone();
+            sorted_entries.sort();
+
+            let order: Vec<usize> = sorted_entries
+                .iter()
+                .map(|sorted_entry| entries.iter().position(|entry| entry == sorted_entry).unwrap())
+                .collect();
+
+            assert_eq!(GOLDEN_ORDER.as_slice(), order.as_slice());
+        }
+    }
+
+    mod ordering_properties {
+        use proptest::{collection::vec, prelude::*};
+
+        use super::*;
+
+        /// Picks a stake, a verification key for concatenation and a verification key for SNARK
+        /// from small pools, so that entries often tie on their stake and on their verification
+        /// key for concatenation. The last SNARK key choice stands for no SNARK key.
+        fn entry_choice() -> impl Strategy<Value = (Stake, usize, usize)> {
+            (0..3u64, 0..3usize, 0..4usize)
+        }
+
+        fn entries(choices: &[(Stake, usize, usize)]) -> Vec<RegistrationEntry> {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let concatenation_keys: Vec<_> = (0..3)
+                .map(|_| {
+                    VerificationKeyProofOfPossessionForConcatenation::from(
+                        &BlsSigningKey::generate(&mut rng),
+                    )
+                })
+                .collect();
+            #[cfg(feature = "snark")]
+            let snark_keys: Vec<_> = (0..3)
+                .map(|_| {
+                    VerificationKeyForSnark::new_from_signing_key(SchnorrSigningKey::generate(
+                        &mut rng,
+                    ))
+                })
+                .collect();
+
+            choices
+                .iter()
+                .map(|&(stake, concatenation_key, snark_key)| {
+                    #[cfg(not(feature = "snark"))]
+                    let _ = snark_key;
+                    RegistrationEntry::new(
+                        concatenation_keys[concatenation_key],
+                        stake,
+                        #[cfg(feature = "snark")]
+                        snark_keys.get(snark_key).copied(),
+                    )
+                    .unwrap()
+                })
+                .collect()
+        }
+
+        proptest! {
+            #[test]
+            fn only_equal_entries_compare_equal(choices in vec(entry_choice(), 2)) {
+                let entries = entries(&choices);
+
+                prop_assert_eq!(entries[0] == entries[1], entries[0].cmp(&entries[1]).is_eq());
+            }
+
+            #[test]
+            fn a_higher_stake_sorts_after_a_lower_stake(choices in vec(entry_choice(), 2)) {
+                let entries = entries(&choices);
+                prop_assume!(entries[0].get_stake() < entries[1].get_stake());
+
+                prop_assert!(entries[0] < entries[1]);
+            }
+
+            #[test]
+            fn sorting_does_not_depend_on_the_input_order(
+                (choices, shuffled_choices) in vec(entry_choice(), 1..10)
+                    .prop_flat_map(|choices| (Just(choices.clone()), Just(choices).prop_shuffle()))
+            ) {
+                let mut sorted_entries = entries(&choices);
+                sorted_entries.sort();
+                let mut sorted_shuffled_entries = entries(&shuffled_choices);
+                sorted_shuffled_entries.sort();
+
+                prop_assert_eq!(sorted_entries, sorted_shuffled_entries);
+            }
+        }
     }
 }
