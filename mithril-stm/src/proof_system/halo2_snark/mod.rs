@@ -88,7 +88,7 @@ mod tests {
                 Some(schnorr_vk),
             )
             .unwrap();
-            key_reg.register_by_entry(&entry).unwrap();
+            key_reg.register_by_entry(&entry);
 
             if i == 0 {
                 first_schnorr_sk = Some(schnorr_sk);

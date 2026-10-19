@@ -169,7 +169,7 @@ mod tests {
                 initializer.schnorr_verification_key,
             )
             .unwrap();
-            key_registration.register_by_entry(&entry).unwrap();
+            key_registration.register_by_entry(&entry);
         }
 
         let closed_registration = key_registration.close_registration(&parameters).unwrap();

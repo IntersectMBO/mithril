@@ -244,8 +244,8 @@ mod tests {
                 Some(schnorr_vk_2),
             )
             .unwrap();
-            key_reg.register_by_entry(&entry1).unwrap();
-            key_reg.register_by_entry(&entry2).unwrap();
+            key_reg.register_by_entry(&entry1);
+            key_reg.register_by_entry(&entry2);
             let closed_key_reg: ClosedKeyRegistration =
                 key_reg.close_registration(&params).unwrap();
             let total_stake = closed_key_reg

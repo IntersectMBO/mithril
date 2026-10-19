@@ -284,7 +284,7 @@ mod tests {
 
         for _ in 0..nparties {
             let init = Initializer::new(params, 1, rng);
-            key_reg.register_by_entry(&init.clone().try_into().unwrap()).unwrap();
+            key_reg.register_by_entry(&init.clone().try_into().unwrap());
             initializers.push(init);
         }
 

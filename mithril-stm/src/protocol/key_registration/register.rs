@@ -46,10 +46,8 @@ impl KeyRegistration {
     /// obtained without that verification (e.g. via deserialization), so external registration
     /// must go through [`KeyRegistration::register`] instead, which always constructs the entry
     /// itself via `RegistrationEntry::new`.
-    pub(crate) fn register_by_entry(&mut self, entry: &RegistrationEntry) -> StmResult<()> {
+    pub(crate) fn register_by_entry(&mut self, entry: &RegistrationEntry) {
         self.registration_entries.insert(*entry);
-
-        Ok(())
     }
 
     /// Registers a new signer with the given verification key proof of possession and stake.
@@ -67,7 +65,9 @@ impl KeyRegistration {
             #[cfg(feature = "snark")]
             schnorr_verification_key,
         )?;
-        self.register_by_entry(&entry)
+        self.register_by_entry(&entry);
+
+        Ok(())
     }
 
     /// Closes the registration.
@@ -381,8 +381,7 @@ mod tests {
             let schnorr_vk =
                 SchnorrVerificationKey::new_from_signing_key(SchnorrSigningKey::generate(&mut rng));
             let entry = RegistrationEntry::new(bls_vk, stake, Some(schnorr_vk)).unwrap();
-            kr.register_by_entry(&entry)
-                .expect("Registering an entry in tests should succeed.");
+            kr.register_by_entry(&entry);
         }
         kr
     }
@@ -490,7 +489,7 @@ mod tests {
                 init.get_verification_key_for_snark(),
             )
             .unwrap();
-            kr.register_by_entry(&entry).unwrap();
+            kr.register_by_entry(&entry);
             initializers.push(init);
         }
 
@@ -526,8 +525,7 @@ mod tests {
             None,
         )
         .unwrap();
-        kr.register_by_entry(&first_entry)
-            .expect("registering a new verification key should succeed");
+        kr.register_by_entry(&first_entry);
 
         let second_entry = RegistrationEntry::new(
             vk_pop,
@@ -537,8 +535,7 @@ mod tests {
         )
         .unwrap();
 
-        kr.register_by_entry(&second_entry)
-            .expect("a verification key shared with another entry should not prevent registration");
+        kr.register_by_entry(&second_entry);
     }
 
     #[cfg(feature = "snark")]
@@ -553,16 +550,14 @@ mod tests {
             &BlsSigningKey::generate(&mut rng),
         );
         let first_entry = RegistrationEntry::new(first_vk_pop, 100, Some(schnorr_vk)).unwrap();
-        kr.register_by_entry(&first_entry)
-            .expect("registering a new verification key pair should succeed");
+        kr.register_by_entry(&first_entry);
 
         let second_vk_pop = VerificationKeyProofOfPossessionForConcatenation::from(
             &BlsSigningKey::generate(&mut rng),
         );
         let second_entry = RegistrationEntry::new(second_vk_pop, 200, Some(schnorr_vk)).unwrap();
 
-        kr.register_by_entry(&second_entry)
-            .expect("a SNARK key shared with another party should not prevent registration");
+        kr.register_by_entry(&second_entry);
     }
 
     mod deduplicate_concatenation_keys {
@@ -709,7 +704,7 @@ mod tests {
         fn close(entries: &[RegistrationEntry]) -> ClosedKeyRegistration {
             let mut key_registration = KeyRegistration::initialize();
             for entry in entries {
-                key_registration.register_by_entry(entry).unwrap();
+                key_registration.register_by_entry(entry);
             }
             let params = Parameters {
                 m: 20,
@@ -1011,7 +1006,7 @@ mod tests {
 
                 match entry_result {
                     Ok(entry) => {
-                        kr.register_by_entry(&entry).unwrap();
+                        kr.register_by_entry(&entry);
                         registered_entries.insert(entry);
                     },
                     Err(error) =>  match error.downcast_ref::<RegisterError>(){
@@ -1086,9 +1081,7 @@ mod tests {
             let mut key_reg = KeyRegistration::initialize();
             for stake in 0..number_of_parties {
                 let initializer = Initializer::new(params, stake, &mut rng);
-                key_reg
-                    .register_by_entry(&initializer.clone().try_into().unwrap())
-                    .unwrap();
+                key_reg.register_by_entry(&initializer.clone().try_into().unwrap());
             }
 
             let closed_key_reg: ClosedKeyRegistration =
@@ -1141,9 +1134,7 @@ mod tests {
             let mut key_reg = KeyRegistration::initialize();
             for stake in 0..number_of_parties {
                 let initializer = Initializer::new(params, stake, &mut rng);
-                key_reg
-                    .register_by_entry(&initializer.clone().try_into().unwrap())
-                    .unwrap();
+                key_reg.register_by_entry(&initializer.clone().try_into().unwrap());
             }
 
             let closed_key_reg: ClosedKeyRegistration =
@@ -1227,9 +1218,7 @@ mod tests {
                 // from modifying the AVK
                 let mut rng = ChaCha20Rng::seed_from_u64(stake);
                 let initializer = Initializer::new(params, stake, &mut rng);
-                key_reg
-                    .register_by_entry(&initializer.clone().try_into().unwrap())
-                    .unwrap();
+                key_reg.register_by_entry(&initializer.clone().try_into().unwrap());
             }
 
             key_reg.close_registration(&params).unwrap()
@@ -1265,7 +1254,7 @@ mod tests {
 
             let mut key_reg = KeyRegistration::initialize();
             for initializer in initializers {
-                key_reg.register_by_entry(&initializer.try_into().unwrap()).unwrap();
+                key_reg.register_by_entry(&initializer.try_into().unwrap());
             }
 
             key_reg.close_registration(&params).unwrap()
@@ -1300,7 +1289,7 @@ mod tests {
 
             let mut key_reg = KeyRegistration::initialize();
             for initializer in initializers {
-                key_reg.register_by_entry(&initializer.try_into().unwrap()).unwrap();
+                key_reg.register_by_entry(&initializer.try_into().unwrap());
             }
 
             key_reg.close_registration(&params).unwrap()
@@ -1341,7 +1330,7 @@ mod tests {
 
             let mut key_reg = KeyRegistration::initialize();
             for initializer in initializers {
-                key_reg.register_by_entry(&initializer.try_into().unwrap()).unwrap();
+                key_reg.register_by_entry(&initializer.try_into().unwrap());
             }
 
             key_reg.close_registration(&params).unwrap()

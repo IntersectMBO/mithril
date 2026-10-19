@@ -811,7 +811,7 @@ mod tests {
             let mut kr = KeyRegistration::initialize();
             let p = Initializer::new(params, 1, &mut rng);
             let entry: RegistrationEntry = p.clone().try_into().unwrap();
-            kr.register_by_entry(&entry).unwrap();
+            kr.register_by_entry(&entry);
             let closed_reg = kr.close_registration(&params).unwrap();
             AggregateVerificationKey::from(&closed_reg)
         }
@@ -1060,8 +1060,8 @@ mod tests {
             )
             .unwrap();
 
-            key_reg.register_by_entry(&entry1).unwrap();
-            key_reg.register_by_entry(&entry2).unwrap();
+            key_reg.register_by_entry(&entry1);
+            key_reg.register_by_entry(&entry2);
             let closed_key_reg = key_reg.close_registration(&params).unwrap();
 
             let clerk = Clerk::new_clerk_from_closed_key_registration(&params, &closed_key_reg);
@@ -1683,7 +1683,7 @@ mod tests {
             let mut initializers = Vec::with_capacity(nparties);
             for _ in 0..nparties {
                 let init = Initializer::new(params, 1, &mut rng);
-                key_reg.register_by_entry(&init.clone().try_into().unwrap()).unwrap();
+                key_reg.register_by_entry(&init.clone().try_into().unwrap());
                 initializers.push(init);
             }
             let closed_reg = key_reg.close_registration(&params).unwrap();

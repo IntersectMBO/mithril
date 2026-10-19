@@ -346,8 +346,8 @@ mod tests {
                 Some(schnorr_vk_2),
             )
             .unwrap();
-            registration.register_by_entry(&entry1).unwrap();
-            registration.register_by_entry(&entry2).unwrap();
+            registration.register_by_entry(&entry1);
+            registration.register_by_entry(&entry2);
             let closed_key_registration = registration.close_registration(&params).unwrap();
 
             let concatenation_proof_signer: ConcatenationProofSigner<D> =
@@ -565,8 +565,8 @@ mod tests {
                 Some(schnorr_vk_2),
             )
             .unwrap();
-            registration.register_by_entry(&entry1).unwrap();
-            registration.register_by_entry(&entry2).unwrap();
+            registration.register_by_entry(&entry1);
+            registration.register_by_entry(&entry2);
 
             let closed_key_registration = registration.close_registration(&params).unwrap();
 
@@ -698,7 +698,7 @@ mod tests {
                     None,
                 )
                 .unwrap();
-                registration.register_by_entry(&entry).unwrap();
+                registration.register_by_entry(&entry);
             }
 
             let closed_key_registration = registration.close_registration(&params).unwrap();

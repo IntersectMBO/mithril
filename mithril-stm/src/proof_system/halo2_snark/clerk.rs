@@ -243,7 +243,7 @@ mod tests {
                 init.schnorr_verification_key,
             )
             .unwrap();
-            key_reg.register_by_entry(&entry).unwrap();
+            key_reg.register_by_entry(&entry);
             initializers.push(init);
         }
 
