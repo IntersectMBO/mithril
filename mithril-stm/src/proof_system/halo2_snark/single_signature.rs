@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
 use crate::{
-    BaseFieldElement, LotteryIndex, MembershipDigest, StmResult, UniqueSchnorrSignature,
-    VerificationKeyForSnark,
+    BaseFieldElement, LotteryIndex, MembershipDigest, SignerIndex, StmResult,
+    UniqueSchnorrSignature, VerificationKeyForSnark,
 };
 
 use super::{AggregateVerificationKeyForSnark, build_snark_message};
@@ -16,6 +16,8 @@ pub(crate) struct SingleSignatureForSnark {
     schnorr_signature: UniqueSchnorrSignature,
     /// Winning lottery indices. Empty at signing time; populated later during aggregation.
     indices: Vec<LotteryIndex>,
+    /// Index of the signer in the SNARK Merkle tree.
+    snark_signer_index: SignerIndex,
 }
 
 impl SingleSignatureForSnark {
@@ -24,10 +26,12 @@ impl SingleSignatureForSnark {
     pub(crate) fn new(
         schnorr_signature: UniqueSchnorrSignature,
         indices: Vec<LotteryIndex>,
+        snark_signer_index: SignerIndex,
     ) -> Self {
         Self {
             schnorr_signature,
             indices,
+            snark_signer_index,
         }
     }
 
@@ -76,8 +80,6 @@ impl SingleSignatureForSnark {
     }
 
     /// Set `indices` of single signature to given value
-    // TODO: remove this allow dead_code directive when function is called or snark is activated
-    #[allow(dead_code)]
     pub(crate) fn set_indices(&mut self, indices: &[LotteryIndex]) {
         self.indices = indices.to_vec();
     }
@@ -85,6 +87,11 @@ impl SingleSignatureForSnark {
     /// Return `schnorr_signature` of single signature
     pub(crate) fn get_schnorr_signature(&self) -> UniqueSchnorrSignature {
         self.schnorr_signature
+    }
+
+    /// Return the index of the signer in the SNARK Merkle tree
+    pub(crate) fn get_snark_signer_index(&self) -> SignerIndex {
+        self.snark_signer_index
     }
 }
 

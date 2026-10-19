@@ -66,13 +66,16 @@ impl SnarkClerk {
     }
 
     /// Look up and convert the registration entry for a signer into its SNARK representation.
+    ///
+    /// Returns `None` when the signer has no leaf in the SNARK Merkle tree, because it registered
+    /// without a SNARK key or lost its SNARK key to an entry with more stake.
     pub fn get_snark_registration_entry(
         &self,
-        signer_index: LotteryIndex,
+        snark_signer_index: SignerIndex,
     ) -> StmResult<Option<RegistrationEntryForSnark>> {
         let closed_registration_entry = self
             .closed_key_registration_for_snark
-            .get_registration_entry_for_index(&signer_index)?;
+            .get_registration_entry_for_index(&snark_signer_index)?;
         Ok(closed_registration_entry.into())
     }
 
@@ -83,7 +86,8 @@ impl SnarkClerk {
     ///    lottery index independent of who signed it. The `k` indices with the smallest
     ///    hashes are selected.
     /// 2. **Deduplication:** for each selected index claimed by multiple signers,
-    ///    `SHA-256(seed || lottery_index || signer_index)` picks the winner.
+    ///    `SHA-256(seed || lottery_index || signer_index)` picks the winner, `signer_index` being
+    ///    the SNARK signer index carried in the signature.
     ///
     /// The selection is fully deterministic from public inputs, publicly verifiable, and immune to
     /// grinding. The returned `BTreeMap` preserves strictly increasing lottery index order.
@@ -102,14 +106,18 @@ impl SnarkClerk {
         let seed: [u8; 32] = seed_hasher.finalize().into();
 
         // Collect all valid signatures grouped by lottery index.
-        let mut index_to_signatures: BTreeMap<LotteryIndex, Vec<SingleSignature>> = BTreeMap::new();
+        let mut index_to_signatures: BTreeMap<LotteryIndex, Vec<(SignerIndex, SingleSignature)>> =
+            BTreeMap::new();
         for signature in signatures {
-            let Some(snark_indices) = signature.get_snark_signature_indices() else {
+            let Some(snark_signature) = signature.snark_signature.as_ref() else {
                 continue;
             };
 
-            for index in snark_indices {
-                index_to_signatures.entry(index).or_default().push(signature.clone());
+            for &index in snark_signature.get_indices() {
+                index_to_signatures
+                    .entry(index)
+                    .or_default()
+                    .push((snark_signature.get_snark_signer_index(), signature.clone()));
             }
         }
 
@@ -135,9 +143,9 @@ impl SnarkClerk {
                     "Unexpected deduplication state: signature map missing lottery index {lottery_index}"
                 )
             })?;
-            let winner = candidates
+            let (_, winner) = candidates
                 .into_iter()
-                .min_by_key(|sig| HashedKey::for_signer_index(&seed, lottery_index, sig.signer_index))
+                .min_by_key(|(snark_signer_index, _)| HashedKey::for_signer_index(&seed, lottery_index, *snark_signer_index))
                 .ok_or_else(|| {
                     anyhow!(
                         "Unexpected deduplication state: no candidates for lottery index {lottery_index}"
@@ -155,7 +163,7 @@ impl SnarkClerk {
 /// Used in two contexts:
 /// - **Index selection:** hash is `SHA-256(seed || lottery_index)`, tie-breaker is the lottery index.
 /// - **Deduplication:** hash is `SHA-256(seed || lottery_index || signer_index)`, tie-breaker is
-///   the signer index.
+///   the SNARK signer index.
 ///
 /// Ordering is by hash first, then by the tie-breaker to ensure a total ordering.
 #[derive(Eq, PartialEq, Ord, PartialOrd)]

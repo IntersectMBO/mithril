@@ -170,7 +170,7 @@ impl Initializer {
         ))
         .ok()?;
 
-        closed_key_registration_for_snark
+        let signer_index = closed_key_registration_for_snark
             .get_signer_index_for_registration(&snark_registration_entry)?;
 
         let lottery_target_value = snark_registration_entry.get_lottery_target_value()?;
@@ -185,6 +185,7 @@ impl Initializer {
             schnorr_verification_key,
             lottery_target_value,
             key_registration_commitment,
+            signer_index,
         ))
     }
 
@@ -383,6 +384,8 @@ mod tests {
         use rand_chacha::ChaCha20Rng;
         use rand_core::SeedableRng;
 
+        #[cfg(feature = "snark")]
+        use crate::membership_commitment::{MerkleTree, MerkleTreeSnarkLeaf};
         use crate::{KeyRegistration, MithrilMembershipDigest};
 
         use super::*;
@@ -460,6 +463,71 @@ mod tests {
                 copier_signer.snark_proof_signer.is_none(),
                 "the loser of a SNARK key collision should not get a SNARK signer"
             );
+        }
+
+        #[cfg(feature = "snark")]
+        #[test]
+        fn snark_signer_index_opens_correct_signer_leaf() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+
+            let mut without_snark_key = Initializer::new(test_parameters(), 1, &mut rng);
+            without_snark_key.strip_snark_keys();
+            let mut snark_key_copier = Initializer::new(test_parameters(), 2, &mut rng);
+            let mut bls_key_copier = Initializer::new(test_parameters(), 3, &mut rng);
+            let snark_key_owner = Initializer::new(test_parameters(), 4, &mut rng);
+            let bls_key_owner = Initializer::new(test_parameters(), 5, &mut rng);
+            let unrelated = Initializer::new(test_parameters(), 6, &mut rng);
+
+            snark_key_copier.schnorr_signing_key = snark_key_owner.schnorr_signing_key.clone();
+            snark_key_copier.schnorr_verification_key = snark_key_owner.schnorr_verification_key;
+            bls_key_copier.bls_signing_key = bls_key_owner.bls_signing_key.clone();
+            bls_key_copier.bls_verification_key_proof_of_possession =
+                bls_key_owner.bls_verification_key_proof_of_possession;
+
+            let snark_signers = [snark_key_owner, bls_key_owner, unrelated];
+            let initializers: Vec<Initializer> =
+                [without_snark_key, snark_key_copier, bls_key_copier]
+                    .into_iter()
+                    .chain(snark_signers.clone())
+                    .collect();
+
+            let closed_key_registration = close_registration(&initializers);
+            let closed_key_registration_for_snark = closed_key_registration
+                .get_closed_key_registration_for_snark()
+                .unwrap();
+            let merkle_tree: MerkleTree<
+                <MithrilMembershipDigest as MembershipDigest>::SnarkHash,
+                MerkleTreeSnarkLeaf,
+            > = closed_key_registration_for_snark.to_merkle_tree();
+            let commitment = merkle_tree.to_merkle_tree_commitment();
+
+            assert_eq!(
+                snark_signers.len() + 1,
+                closed_key_registration_for_snark.number_of_leaves(),
+                "the SNARK leaves should be the SNARK signers and the BLS key copier"
+            );
+            for snark_signer in snark_signers {
+                let signer = snark_signer
+                    .try_create_signer::<MithrilMembershipDigest>(&closed_key_registration)
+                    .expect("a party holding a SNARK leaf should get a signer");
+                let snark_proof_signer = signer
+                    .snark_proof_signer
+                    .expect("a party holding a SNARK leaf should get a SNARK signer");
+                let snark_signer_index = snark_proof_signer.get_snark_signer_index();
+                assert_ne!(
+                    signer.signer_index, snark_signer_index,
+                    "the setup should give different Concatenation and SNARK indices"
+                );
+                let leaf = MerkleTreeSnarkLeaf(
+                    snark_proof_signer.get_verification_key(),
+                    snark_proof_signer.get_lottery_target_value(),
+                );
+                let path = merkle_tree.compute_merkle_tree_path(snark_signer_index as usize);
+
+                commitment
+                    .verify_leaf_membership_from_path(&leaf, &path)
+                    .expect("the SNARK signer index should open the signer's own leaf");
+            }
         }
     }
 

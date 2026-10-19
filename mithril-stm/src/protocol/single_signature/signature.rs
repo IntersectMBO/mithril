@@ -161,9 +161,20 @@ impl SingleSignature {
                     snark_idx_offset = snark_index_end;
                 }
 
+                let snark_signer_index_end = snark_idx_offset
+                    .checked_add(8)
+                    .ok_or(SignatureError::SerializationError)?;
+                u64_bytes.copy_from_slice(
+                    bytes
+                        .get(snark_idx_offset..snark_signer_index_end)
+                        .ok_or(SignatureError::SerializationError)?,
+                );
+                let snark_signer_index = u64::from_be_bytes(u64_bytes);
+
                 Some(SingleSignatureForSnark::new(
                     schnorr_signature,
                     snark_indices,
+                    snark_signer_index,
                 ))
             } else {
                 None
@@ -205,6 +216,12 @@ impl SingleSignature {
     #[cfg(feature = "snark")]
     pub fn get_snark_signature_indices(&self) -> Option<Vec<LotteryIndex>> {
         self.snark_signature.as_ref().map(|s| s.get_indices().to_vec())
+    }
+
+    /// Get the index of the signer in the SNARK Merkle tree, if the signature has a SNARK part.
+    #[cfg(feature = "snark")]
+    pub fn get_snark_signer_index(&self) -> Option<SignerIndex> {
+        self.snark_signature.as_ref().map(|s| s.get_snark_signer_index())
     }
 }
 
@@ -270,7 +287,7 @@ mod tests {
         ];
 
         #[cfg(feature = "snark")]
-        const GOLDEN_BYTES: &[u8; 208] = &[
+        const GOLDEN_BYTES: &[u8; 216] = &[
             0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0,
             0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 7, 140, 18, 156, 86, 86, 16, 179,
             117, 148, 17, 195, 177, 207, 235, 93, 252, 78, 244, 112, 94, 47, 18, 158, 15, 78, 76,
@@ -280,7 +297,8 @@ mod tests {
             213, 240, 167, 170, 112, 55, 133, 230, 77, 152, 75, 125, 125, 140, 50, 209, 26, 39, 77,
             222, 22, 151, 154, 211, 199, 117, 140, 195, 138, 128, 19, 51, 97, 22, 9, 64, 43, 120,
             106, 139, 149, 46, 30, 92, 183, 226, 86, 249, 200, 186, 65, 180, 72, 197, 138, 36, 200,
-            215, 161, 206, 23, 73, 237, 141, 195, 252, 26, 0, 0, 0, 0, 0, 0, 0, 0,
+            215, 161, 206, 23, 73, 237, 141, 195, 252, 26, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0,
         ];
 
         fn golden_value() -> SingleSignature {
@@ -357,7 +375,8 @@ mod tests {
                 let closed_registration_entry = ClosedRegistrationEntry::try_from((
                     entry1,
                     closed_key_registration
-                        .get_closed_key_registration_for_concatenation()
+                        .get_closed_key_registration_for_snark()
+                        .unwrap()
                         .get_total_stake(),
                     params.phi_f,
                 ))
@@ -370,6 +389,11 @@ mod tests {
                     schnorr_vk_1,
                     lottery_target_value,
                     key_registration_commitment,
+                    closed_key_registration
+                        .get_closed_key_registration_for_snark()
+                        .unwrap()
+                        .get_signer_index_for_registration(&closed_registration_entry)
+                        .unwrap(),
                 );
                 Some(
                     snark_proof_signer
@@ -411,7 +435,7 @@ mod tests {
         ];
 
         #[cfg(feature = "snark")]
-        const GOLDEN_CBOR_BYTES: &[u8; 398] = &[
+        const GOLDEN_CBOR_BYTES: &[u8; 418] = &[
             1, 191, 101, 115, 105, 103, 109, 97, 152, 48, 24, 140, 18, 24, 156, 24, 86, 24, 86, 16,
             24, 179, 24, 117, 24, 148, 17, 24, 195, 24, 177, 24, 207, 24, 235, 24, 93, 24, 252, 24,
             78, 24, 244, 24, 112, 24, 94, 24, 47, 18, 24, 158, 15, 24, 78, 24, 76, 24, 80, 24, 43,
@@ -419,7 +443,7 @@ mod tests {
             201, 24, 62, 24, 40, 24, 190, 21, 24, 183, 24, 178, 24, 186, 24, 196, 24, 136, 103,
             105, 110, 100, 101, 120, 101, 115, 133, 3, 4, 5, 6, 7, 108, 115, 105, 103, 110, 101,
             114, 95, 105, 110, 100, 101, 120, 1, 111, 115, 110, 97, 114, 107, 95, 115, 105, 103,
-            110, 97, 116, 117, 114, 101, 162, 113, 115, 99, 104, 110, 111, 114, 114, 95, 115, 105,
+            110, 97, 116, 117, 114, 101, 163, 113, 115, 99, 104, 110, 111, 114, 114, 95, 115, 105,
             103, 110, 97, 116, 117, 114, 101, 163, 112, 99, 111, 109, 109, 105, 116, 109, 101, 110,
             116, 95, 112, 111, 105, 110, 116, 152, 32, 24, 104, 24, 141, 21, 24, 151, 14, 24, 254,
             24, 246, 24, 226, 24, 209, 16, 24, 198, 24, 219, 24, 197, 24, 206, 24, 255, 10, 24, 99,
@@ -432,7 +456,8 @@ mod tests {
             120, 24, 106, 24, 139, 24, 149, 24, 46, 24, 30, 24, 92, 24, 183, 24, 226, 24, 86, 24,
             249, 24, 200, 24, 186, 24, 65, 24, 180, 24, 72, 24, 197, 24, 138, 24, 36, 24, 200, 24,
             215, 24, 161, 24, 206, 23, 24, 73, 24, 237, 24, 141, 24, 195, 24, 252, 24, 26, 103,
-            105, 110, 100, 105, 99, 101, 115, 128, 255,
+            105, 110, 100, 105, 99, 101, 115, 128, 114, 115, 110, 97, 114, 107, 95, 115, 105, 103,
+            110, 101, 114, 95, 105, 110, 100, 101, 120, 0, 255,
         ];
 
         #[test]
@@ -490,7 +515,8 @@ mod tests {
                         64, 43, 120, 106, 139, 149, 46, 30, 92, 183, 226, 86, 249, 200, 186, 65, 180, 72, 197, 138, 36, 200, 215, 161, 206, 23, 73, 237, 141, 195, 252, 26
                     ]
                 },
-                "indices": []
+                "indices": [],
+                "snark_signer_index": 0
             }
         }"#;
 
@@ -569,7 +595,8 @@ mod tests {
                 let closed_registration_entry = ClosedRegistrationEntry::try_from((
                     entry1,
                     closed_key_registration
-                        .get_closed_key_registration_for_concatenation()
+                        .get_closed_key_registration_for_snark()
+                        .unwrap()
                         .get_total_stake(),
                     params.phi_f,
                 ))
@@ -582,6 +609,11 @@ mod tests {
                     schnorr_vk_1,
                     lottery_target_value,
                     key_registration_commitment,
+                    closed_key_registration
+                        .get_closed_key_registration_for_snark()
+                        .unwrap()
+                        .get_signer_index_for_registration(&closed_registration_entry)
+                        .unwrap(),
                 );
                 Some(
                     snark_proof_signer

@@ -1,7 +1,7 @@
 use rand_core::{CryptoRng, RngCore};
 
 use crate::{
-    LotteryTargetValue, MembershipDigest, Parameters, SchnorrSigningKey, StmResult,
+    LotteryTargetValue, MembershipDigest, Parameters, SchnorrSigningKey, SignerIndex, StmResult,
     VerificationKeyForSnark, membership_commitment::MerkleTreeCommitment,
     protocol::RegistrationEntryForSnark,
 };
@@ -17,17 +17,20 @@ pub(crate) struct SnarkProofSigner<D: MembershipDigest> {
     verification_key: VerificationKeyForSnark,
     lottery_target_value: LotteryTargetValue,
     key_registration_commitment: MerkleTreeCommitment<D::SnarkHash, RegistrationEntryForSnark>,
+    snark_signer_index: SignerIndex,
 }
 
 impl<D: MembershipDigest> SnarkProofSigner<D> {
     /// Creates a new `SnarkProofSigner` with the given protocol parameters, keys,
-    /// lottery target value, and Merkle tree commitment of the key registration.
+    /// lottery target value, Merkle tree commitment of the key registration, and index of the
+    /// signer in the SNARK Merkle tree.
     pub fn new(
         parameters: Parameters,
         signing_key: SchnorrSigningKey,
         verification_key: VerificationKeyForSnark,
         lottery_target_value: LotteryTargetValue,
         key_registration_commitment: MerkleTreeCommitment<D::SnarkHash, RegistrationEntryForSnark>,
+        snark_signer_index: SignerIndex,
     ) -> Self {
         Self {
             parameters,
@@ -35,6 +38,7 @@ impl<D: MembershipDigest> SnarkProofSigner<D> {
             verification_key,
             lottery_target_value,
             key_registration_commitment,
+            snark_signer_index,
         }
     }
 
@@ -58,7 +62,11 @@ impl<D: MembershipDigest> SnarkProofSigner<D> {
             self.lottery_target_value,
         )?;
 
-        Ok(SingleSignatureForSnark::new(signature, vec![]))
+        Ok(SingleSignatureForSnark::new(
+            signature,
+            vec![],
+            self.get_snark_signer_index(),
+        ))
     }
 
     /// Gets the lottery target value
@@ -69,6 +77,11 @@ impl<D: MembershipDigest> SnarkProofSigner<D> {
     /// Gets the verification key for SNARK.
     pub fn get_verification_key(&self) -> VerificationKeyForSnark {
         self.verification_key
+    }
+
+    /// Gets the index of the signer in the SNARK Merkle tree.
+    pub fn get_snark_signer_index(&self) -> SignerIndex {
+        self.snark_signer_index
     }
 }
 
@@ -123,7 +136,8 @@ mod tests {
             .to_merkle_tree::<<D as MembershipDigest>::SnarkHash>()
             .to_merkle_tree_commitment();
 
-        SnarkProofSigner::<D>::new(params, schnorr_sk, schnorr_vk, target, merkle_tree)
+        // The registration holds a single entry, so its SNARK signer index is 0.
+        SnarkProofSigner::<D>::new(params, schnorr_sk, schnorr_vk, target, merkle_tree, 0)
     }
 
     #[test]
