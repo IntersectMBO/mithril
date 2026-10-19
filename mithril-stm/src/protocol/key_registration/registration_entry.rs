@@ -20,7 +20,12 @@ pub(crate) struct RegistrationEntry(
 
 impl RegistrationEntry {
     /// Creates a new registration entry. Verifies the proof of possession of verification key for
-    /// concatenation and validates the schnorr verification key before creating the entry.
+    /// concatenation before creating the entry.
+    ///
+    /// An invalid schnorr verification key is dropped, so the entry is still registered for the
+    /// Concatenation proof system, without a SNARK key. This behavior is temporary and here to
+    /// support the ramp-up adoption of SNARK capable signers. It will be removed once enough
+    /// signers adopt the SNARK variant.
     pub(crate) fn new(
         bls_verification_key_proof_of_possession: VerificationKeyProofOfPossessionForConcatenation,
         stake: Stake,
@@ -34,14 +39,11 @@ impl RegistrationEntry {
                 ))
             })?;
 
+        // TODO: Once the SNARK registration is mandatory, return `RegisterError::SnarkKeyInvalid`
+        // instead of dropping the key.
         #[cfg(feature = "snark")]
-        schnorr_verification_key
-            .map(|schnorr_vk| {
-                schnorr_vk
-                    .is_valid()
-                    .map_err(|_| RegisterError::SnarkKeyInvalid(Box::new(schnorr_vk)))
-            })
-            .transpose()?;
+        let schnorr_verification_key =
+            schnorr_verification_key.filter(|schnorr_vk| schnorr_vk.is_valid().is_ok());
 
         Ok(RegistrationEntry(
             bls_verification_key_proof_of_possession.vk,
@@ -183,6 +185,25 @@ mod tests {
         assert!(cmp_result == Ordering::Less || cmp_result == Ordering::Greater);
 
         assert_eq!(entry2.cmp(&entry1), cmp_result.reverse());
+    }
+
+    #[cfg(feature = "snark")]
+    #[test]
+    fn an_invalid_snark_key_is_dropped() {
+        use crate::signature_scheme::ScalarFieldElement;
+
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let vk_pop = VerificationKeyProofOfPossessionForConcatenation::from(
+            &BlsSigningKey::generate(&mut rng),
+        );
+        let invalid_schnorr_vk = VerificationKeyForSnark::new_from_signing_key(SchnorrSigningKey(
+            ScalarFieldElement::get_zero(),
+        ));
+
+        let entry = RegistrationEntry::new(vk_pop, 100, Some(invalid_schnorr_vk))
+            .expect("an invalid SNARK key should not prevent the registration");
+
+        assert_eq!(None, entry.get_verification_key_for_snark());
     }
 
     mod golden_ordering {
