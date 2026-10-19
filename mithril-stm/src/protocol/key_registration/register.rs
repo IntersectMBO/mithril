@@ -77,9 +77,17 @@ impl KeyRegistration {
     /// is absent when no entry with a SNARK key has any stake.
     ///
     /// # Error
-    /// The function fails when the Concatenation total stake overflows or is zero, or when the
-    /// lottery target of a Concatenation entry cannot be computed.
+    /// The function fails when there is no entry, when the parameters are invalid, when the total
+    /// stake of all the entries overflows or when the Concatenation total stake is zero.
     pub fn close_registration(self, params: &Parameters) -> StmResult<ClosedKeyRegistration> {
+        // TODO: decide whether entries with a zero stake should be rejected at registration. They
+        // never win a lottery, but still get a leaf in the Merkle trees.
+        if self.registration_entries.is_empty() {
+            return Err(RegisterError::EmptyRegistration.into());
+        }
+        params.validate()?;
+        self.check_total_stake_registered()?;
+
         let deduplicated_entries_for_concatenation =
             Self::deduplicate_concatenation_keys_from_entries(&self.registration_entries);
 
@@ -136,6 +144,18 @@ impl KeyRegistration {
             })
             .cloned()
             .collect()
+    }
+
+    /// Checks that the total stake registered does not overflow the `u64` limit
+    fn check_total_stake_registered(&self) -> StmResult<()> {
+        self.registration_entries.iter().try_fold(0u64, |acc, entry| {
+            acc.checked_add(entry.get_stake())
+                .ok_or(RegisterError::TotalStakeOverflow {
+                    accumulated_stake: acc,
+                    stake: entry.get_stake(),
+                })
+        })?;
+        Ok(())
     }
 }
 
@@ -195,19 +215,13 @@ impl<L: MerkleTreeLeaf> ClosedRegistrationForProofSystem<L> {
     /// Computes the total stake of the given deduplicated entries and closes them with it.
     ///
     /// # Error
-    /// The function fails when the total stake overflows or is zero, or when a lottery target
-    /// cannot be computed.
+    /// The function fails when the total stake is zero, or when a lottery target cannot be
+    /// computed.
     pub(crate) fn try_new(
         params: &Parameters,
         deduplicated_entries: &BTreeSet<RegistrationEntry>,
     ) -> StmResult<Self> {
-        let total_stake: Stake = deduplicated_entries.iter().try_fold(0u64, |acc, entry| {
-            acc.checked_add(entry.get_stake())
-                .ok_or(RegisterError::TotalStakeOverflow {
-                    accumulated_stake: acc,
-                    stake: entry.get_stake(),
-                })
-        })?;
+        let total_stake: Stake = deduplicated_entries.iter().map(|entry| entry.get_stake()).sum();
 
         if total_stake == 0 {
             return Err(RegisterError::ZeroTotalStake.into());
@@ -445,7 +459,6 @@ mod tests {
         assert!(closed_registration.is_err());
     }
 
-    #[cfg(feature = "snark")]
     #[test]
     fn closing_registration_without_entries_fails() {
         let kr = KeyRegistration::initialize();
@@ -455,9 +468,62 @@ mod tests {
             phi_f: 0.2,
         };
 
-        let closed_registration = kr.close_registration(&params);
+        let error = kr
+            .close_registration(&params)
+            .expect_err("closing a registration without entry should fail");
 
-        assert!(closed_registration.is_err());
+        assert!(matches!(
+            error.downcast_ref::<RegisterError>(),
+            Some(RegisterError::EmptyRegistration)
+        ));
+    }
+
+    #[test]
+    fn closing_registration_with_invalid_parameters_fails() {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let mut kr = KeyRegistration::initialize();
+        kr.register_by_entry(&entry(new_vk_pop(&mut rng), 100));
+        let params = Parameters {
+            m: 20,
+            k: 10,
+            phi_f: 1.5,
+        };
+
+        let error = kr
+            .close_registration(&params)
+            .expect_err("closing a registration with invalid parameters should fail");
+
+        assert!(matches!(
+            error.downcast_ref::<crate::protocol::ProtocolError>(),
+            Some(crate::protocol::ProtocolError::PhiFValueOutOfRange(_))
+        ));
+    }
+
+    #[test]
+    fn closing_registration_fails_when_the_total_stake_of_all_entries_overflows() {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let shared_vk_pop = new_vk_pop(&mut rng);
+        // The BLS key collision loser is dropped from the Concatenation entries, so the
+        // deduplicated total stake alone would not overflow.
+        let winner = entry(shared_vk_pop, u64::MAX);
+        let loser = entry(shared_vk_pop, 1);
+        let mut kr = KeyRegistration::initialize();
+        kr.register_by_entry(&winner);
+        kr.register_by_entry(&loser);
+        let params = Parameters {
+            m: 20,
+            k: 10,
+            phi_f: 0.2,
+        };
+
+        let error = kr
+            .close_registration(&params)
+            .expect_err("an overflowing total stake should be rejected");
+
+        assert!(matches!(
+            error.downcast_ref::<RegisterError>(),
+            Some(RegisterError::TotalStakeOverflow { .. })
+        ));
     }
 
     #[cfg(feature = "snark")]

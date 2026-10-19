@@ -268,7 +268,7 @@ mod tests {
     fn fails_when_not_enough_signatures() {
         let mut rng = ChaCha20Rng::from_seed([1u8; 32]);
         let params = Parameters {
-            m: 5,
+            m: 100,
             k: 100,
             phi_f: 0.2,
         };

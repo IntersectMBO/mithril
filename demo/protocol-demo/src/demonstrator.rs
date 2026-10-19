@@ -624,8 +624,8 @@ mod tests {
     #[test]
     fn test_demonstrator_issue_certificates_ko() {
         let mut config = default_config();
-        config.k = 10000;
-        config.m = 10;
+        config.k = 100;
+        config.m = 100;
         let seed = [0u8; 32];
         let mut rng = ChaCha20Rng::from_seed(seed);
         let mut demo = Demonstrator::new(&config, &mut rng);
@@ -656,8 +656,8 @@ mod tests {
     #[test]
     fn test_demonstrator_verify_certificates_ko() {
         let mut config = default_config();
-        config.k = 10000;
-        config.m = 10;
+        config.k = 100;
+        config.m = 100;
         let seed = [0u8; 32];
         let mut rng = ChaCha20Rng::from_seed(seed);
         let mut demo = Demonstrator::new(&config, &mut rng);

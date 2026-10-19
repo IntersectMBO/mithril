@@ -215,15 +215,15 @@ mod tests {
     #[tokio::test]
     async fn retrieves_correct_protocol_parameters_from_epoch_service() {
         let current_epoch_settings = AggregatorEpochSettings {
-            protocol_parameters: ProtocolParameters::new(101, 10, 0.5),
+            protocol_parameters: ProtocolParameters::new(10, 101, 0.5),
             ..AggregatorEpochSettings::dummy()
         };
         let next_epoch_settings = AggregatorEpochSettings {
-            protocol_parameters: ProtocolParameters::new(102, 20, 0.5),
+            protocol_parameters: ProtocolParameters::new(20, 102, 0.5),
             ..AggregatorEpochSettings::dummy()
         };
         let signer_registration_epoch_settings = AggregatorEpochSettings {
-            protocol_parameters: ProtocolParameters::new(103, 30, 0.5),
+            protocol_parameters: ProtocolParameters::new(30, 103, 0.5),
             ..AggregatorEpochSettings::dummy()
         };
 
