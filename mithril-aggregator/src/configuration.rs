@@ -127,6 +127,11 @@ pub trait ConfigurationSource {
         panic!("ipfs_rpc_server_config is not implemented.");
     }
 
+    /// Advertised share of immutables to download through IPFS from the clients (0-100 inclusive)
+    fn ipfs_share(&self) -> u8 {
+        panic!("ipfs_share is not implemented.");
+    }
+
     /// Server listening IP
     fn server_ip(&self) -> String {
         panic!("server_ip is not implemented.");
@@ -513,6 +518,9 @@ pub struct ServeCommandConfiguration {
     )]
     pub ipfs_rpc_server_config: Option<IpfsRpcServerConfig>,
 
+    /// Advertised share of immutables to download through IPFS from the clients (0-100 inclusive)
+    pub ipfs_share: u8,
+
     /// Server listening IP
     pub server_ip: String,
 
@@ -734,6 +742,11 @@ impl IpfsRpcServerConfig {
         SanitizedUrlWithTrailingSlash::parse(&self.url)
             .with_context(|| "Invalid IPFS RPC server URL")
     }
+
+    /// Return the value of `ipns_key_name`, if any, but prefixed with `/ipns/`
+    pub fn ipns_record_path(&self) -> Option<String> {
+        self.ipns_key_name.as_ref().map(|key| format!("/ipns/{key}"))
+    }
 }
 
 fn default_mfs_folder_name() -> String {
@@ -825,6 +838,7 @@ impl ServeCommandConfiguration {
             snapshot_bucket_name: None,
             snapshot_use_cdn_domain: false,
             ipfs_rpc_server_config: None,
+            ipfs_share: 5,
             server_ip: "0.0.0.0".to_string(),
             server_port: 8000,
             public_server_url: None,
@@ -941,6 +955,10 @@ impl ConfigurationSource for ServeCommandConfiguration {
 
     fn ipfs_rpc_server_config(&self) -> Option<IpfsRpcServerConfig> {
         self.ipfs_rpc_server_config.clone()
+    }
+
+    fn ipfs_share(&self) -> u8 {
+        self.ipfs_share
     }
 
     fn server_ip(&self) -> String {
@@ -1150,6 +1168,9 @@ pub struct DefaultConfiguration {
     /// Use CDN domain to construct snapshot urls default setting (if snapshot_uploader_type is Gcp)
     pub snapshot_use_cdn_domain: String,
 
+    /// Advertised share of immutables to download through IPFS from the clients (0-100 inclusive)
+    pub ipfs_share: u8,
+
     /// Signer importer run interval default setting
     pub signer_importer_run_interval: u64,
 
@@ -1218,6 +1239,7 @@ impl Default for DefaultConfiguration {
             disable_digests_cache: "false".to_string(),
             snapshot_compression_algorithm: "zstandard".to_string(),
             snapshot_use_cdn_domain: "false".to_string(),
+            ipfs_share: 5,
             signer_importer_run_interval: 720,
             allow_unparsable_block: "false".to_string(),
             cardano_blocks_transactions_prover_cache_pool_size: 10,
@@ -1275,6 +1297,7 @@ impl Source for DefaultConfiguration {
         register_config_value!(result, &namespace, myself.disable_digests_cache);
         register_config_value!(result, &namespace, myself.snapshot_compression_algorithm);
         register_config_value!(result, &namespace, myself.snapshot_use_cdn_domain);
+        register_config_value!(result, &namespace, myself.ipfs_share);
         register_config_value!(result, &namespace, myself.signer_importer_run_interval);
         register_config_value!(result, &namespace, myself.allow_unparsable_block);
         register_config_value!(
@@ -1523,6 +1546,25 @@ mod test {
         };
 
         assert_eq!(None, config.certificate_chain_aggregator_endpoint());
+    }
+
+    #[test]
+    fn ipns_record_path_add_the_slash_ipns_slash_prefix_to_the_key_name() {
+        let mut config = IpfsRpcServerConfig {
+            url: "whatever".to_string(),
+            mfs_folder_name: "whatever".to_string(),
+            ipns_key_name: None,
+        };
+        assert_eq!(None, config.ipns_record_path());
+
+        config.ipns_key_name =
+            Some("k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66".to_string());
+        assert_eq!(
+            Some(
+                "/ipns/k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66".to_string()
+            ),
+            config.ipns_record_path()
+        );
     }
 
     #[test]
