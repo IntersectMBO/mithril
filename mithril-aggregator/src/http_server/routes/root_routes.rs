@@ -23,6 +23,9 @@ fn root(
         .and(middlewares::extract_config(router_state, |config| {
             config.cardano_prover_max_hashes_allowed_by_request
         }))
+        .and(middlewares::extract_config(router_state, |config| {
+            config.ipfs_config.clone()
+        }))
         .and_then(handlers::root)
 }
 
@@ -37,10 +40,12 @@ mod handlers {
     use mithril_common::api_version::APIVersionProvider;
     use mithril_common::entities::SignedEntityTypeDiscriminants;
     use mithril_common::messages::{
-        AggregatorCapabilities, AggregatorFeaturesMessage, CardanoTransactionsProverCapabilities,
+        AggregatorCapabilities, AggregatorFeaturesMessage, CardanoDatabaseDistribution,
+        CardanoTransactionsProverCapabilities,
     };
 
     use crate::http_server::routes::reply::json;
+    use crate::http_server::routes::router::IpfsConfig;
     use crate::unwrap_to_internal_server_error;
 
     /// Root
@@ -50,6 +55,7 @@ mod handlers {
         allowed_signed_entity_type_discriminants: BTreeSet<SignedEntityTypeDiscriminants>,
         aggregate_signature_type: AggregateSignatureType,
         max_hashes_allowed_by_request: usize,
+        ipfs_config: Option<IpfsConfig>,
     ) -> Result<impl warp::Reply, Infallible> {
         let open_api_version = unwrap_to_internal_server_error!(
             api_version_provider.compute_current_version(),
@@ -75,12 +81,21 @@ mod handlers {
                 });
         }
 
+        let mut cardano_database_distribution = None;
+
+        if let Some(ipfs_conf) = ipfs_config {
+            cardano_database_distribution = Some(CardanoDatabaseDistribution {
+                ipns_record: ipfs_conf.ipns_record,
+                ipfs_share: Some(ipfs_conf.ipfs_share),
+            });
+        }
+
         Ok(json(
             &AggregatorFeaturesMessage {
                 open_api_version: open_api_version.to_string(),
                 documentation_url: env!("CARGO_PKG_HOMEPAGE").to_string(),
                 capabilities,
-                cardano_database_distribution: None,
+                cardano_database_distribution,
             },
             StatusCode::OK,
         ))
@@ -99,11 +114,12 @@ mod tests {
     use mithril_common::AggregateSignatureType;
     use mithril_common::entities::SignedEntityTypeDiscriminants;
     use mithril_common::messages::{
-        AggregatorCapabilities, AggregatorFeaturesMessage, CardanoTransactionsProverCapabilities,
+        AggregatorCapabilities, AggregatorFeaturesMessage, CardanoDatabaseDistribution,
+        CardanoTransactionsProverCapabilities,
     };
     use mithril_common::test::double::Dummy;
 
-    use crate::http_server::routes::router::RouterConfig;
+    use crate::http_server::routes::router::{IpfsConfig, RouterConfig};
     use crate::initialize_dependencies;
 
     use super::*;
@@ -220,6 +236,53 @@ mod tests {
             response_body.capabilities.cardano_transactions_prover,
             Some(CardanoTransactionsProverCapabilities {
                 max_hashes_allowed_by_request: 99
+            })
+        );
+
+        APISpec::verify_conformity(
+            APISpec::get_default_spec_file_from(crate::http_server::API_SPEC_LOCATION),
+            method,
+            path,
+            "application/json",
+            &Null,
+            &response,
+            &StatusCode::OK,
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_root_route_ok_with_ipfs_config_enabled() {
+        let method = Method::GET.as_str();
+        let path = "/";
+        let config = RouterConfig {
+            ipfs_config: Some(IpfsConfig {
+                ipfs_share: 33,
+                ipns_record: Some("/ipns/test".to_string()),
+            }),
+            ..RouterConfig::dummy()
+        };
+        let dependency_manager = initialize_dependencies!().await;
+
+        let response = request()
+            .method(method)
+            .path(path)
+            .reply(&setup_router(RouterState::new(
+                Arc::new(dependency_manager),
+                config,
+            )))
+            .await;
+
+        let response_body: AggregatorFeaturesMessage =
+            serde_json::from_slice(response.body()).unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        assert_eq!(
+            response_body.cardano_database_distribution,
+            Some(CardanoDatabaseDistribution {
+                ipns_record: Some("/ipns/test".to_string()),
+                ipfs_share: Some(33)
             })
         );
 

@@ -36,6 +36,14 @@ pub struct RouterConfig {
     pub aggregate_signature_type: AggregateSignatureType,
     pub leader_aggregator_endpoint: Option<String>,
     pub certificate_chain_aggregator_endpoint: Option<String>,
+    pub ipfs_config: Option<IpfsConfig>,
+}
+
+/// Configuration for IPFS metadata
+#[derive(Debug, Clone)]
+pub struct IpfsConfig {
+    pub ipfs_share: u8,
+    pub ipns_record: Option<String>,
 }
 
 #[cfg(test)]
@@ -56,6 +64,7 @@ impl Dummy for RouterConfig {
             aggregate_signature_type: AggregateSignatureType::Concatenation,
             leader_aggregator_endpoint: None,
             certificate_chain_aggregator_endpoint: None,
+            ipfs_config: None,
         }
     }
 }

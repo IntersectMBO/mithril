@@ -59,7 +59,7 @@ use crate::{
     dependency_injection::ProtocolConfigurationCommandDependenciesContainer,
     event_store::{EventMessage, TransmitterService},
     file_uploaders::FileUploader,
-    http_server::routes::router::{self, RouterConfig, RouterState},
+    http_server::routes::router::{self, IpfsConfig, RouterConfig, RouterState},
     services::{
         AggregatorChainDataImporter, CertificateChainSynchronizer, CertifierService,
         LegacyProverService, MessageService, MithrilSignerRegistrationFollower, ProverService,
@@ -506,6 +506,10 @@ impl DependenciesBuilder {
                             .certificate_chain_aggregator_endpoint()
                             .unwrap_or(leader_aggregator_endpoint)
                     }),
+                ipfs_config: self.configuration.ipfs_rpc_server_config().map(|ic| IpfsConfig {
+                    ipns_record: ic.ipns_record_path(),
+                    ipfs_share: self.configuration.ipfs_share(),
+                }),
             },
         );
 
