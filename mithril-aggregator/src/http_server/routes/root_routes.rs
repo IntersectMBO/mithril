@@ -80,6 +80,7 @@ mod handlers {
                 open_api_version: open_api_version.to_string(),
                 documentation_url: env!("CARGO_PKG_HOMEPAGE").to_string(),
                 capabilities,
+                cardano_database_distribution: None,
             },
             StatusCode::OK,
         ))
@@ -172,6 +173,7 @@ mod tests {
                         max_hashes_allowed_by_request: 500
                     }),
                 },
+                cardano_database_distribution: None,
             }
         );
 

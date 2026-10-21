@@ -325,6 +325,7 @@ mod messages {
                     aggregate_signature_type: AggregateSignatureType::Concatenation,
                     cardano_transactions_prover: None,
                 },
+                cardano_database_distribution: None,
             }
         }
     }

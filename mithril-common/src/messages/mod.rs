@@ -26,7 +26,8 @@ mod register_signature;
 mod register_signer;
 
 pub use aggregator_features::{
-    AggregatorCapabilities, AggregatorFeaturesMessage, CardanoTransactionsProverCapabilities,
+    AggregatorCapabilities, AggregatorFeaturesMessage, CardanoDatabaseDistribution,
+    CardanoTransactionsProverCapabilities,
 };
 pub use aggregator_status::AggregatorStatusMessage;
 pub use cardano_blocks_transactions_snapshot::CardanoBlocksTransactionsSnapshotMessage;
