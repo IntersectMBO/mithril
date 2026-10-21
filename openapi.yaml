@@ -961,6 +961,20 @@ components:
                   description: Maximum number of hashes allowed for a single request
                   type: integer
                   format: int64
+        cardano_database_distribution:
+          description: Distribution configuration for the Cardano database's immutable files
+          type: object
+          additionalProperties: false
+          properties:
+            ipns_record:
+              description: |
+                IPFS path of the IPNS record linking to an IPFS directory containing the cardano database immutables files
+
+                Only set if the aggregator is configured to distribute immutable files via IPFS and the IPNS publication is enabled.
+              type: string
+            ipfs_share:
+              description: Share of the immutables files to distribute through IPFS (0-100 inclusive)
+              type: integer
       examples:
         - {
             "open_api_version": "0.1.17",
@@ -976,6 +990,11 @@ components:
                 "aggregate_signature_type": "Concatenation",
                 "cardano_transactions_prover":
                   { "max_hashes_allowed_by_request": 100 }
+              },
+            "cardano_database_distribution":
+              {
+                "ipns_record": "/ipns/k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66",
+                "ipfs_share": 30
               }
           }
 
