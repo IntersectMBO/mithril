@@ -502,7 +502,7 @@ To expose metrics on the endpoint, append the following environment variable to 
 ```bash
 sudo bash -c 'cat >> /opt/mithril/mithril-signer.env << EOF
 ENABLE_METRICS_SERVER=true
-EOF`
+EOF'
 ```
 
 You can also specify a custom listen IP address and port for the metrics server:
@@ -512,7 +512,7 @@ sudo bash -c 'cat >> /opt/mithril/mithril-signer.env << EOF
 ENABLE_METRICS_SERVER=true
 METRICS_SERVER_IP=**YOUR_METRICS_SERVER_IP**
 METRICS_SERVER_PORT=**YOUR_METRICS_SERVER_PORT**
-EOF`
+EOF'
 ```
 
 :::tip
@@ -524,7 +524,7 @@ sudo bash -c 'cat >> /opt/mithril/mithril-signer.env << EOF
 ENABLE_METRICS_SERVER=true
 METRICS_SERVER_IP=0.0.0.0
 METRICS_SERVER_PORT=9090
-EOF`
+EOF'
 ```
 
 :::
