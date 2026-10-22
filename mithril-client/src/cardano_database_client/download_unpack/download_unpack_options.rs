@@ -19,6 +19,26 @@ pub struct DownloadUnpackOptions {
 
     /// Maximum number of parallel downloads
     pub max_parallel_downloads: usize,
+
+    /// Options to override the IPFS share ratio to download immutable files
+    ///
+    /// Only effective if IPFS download is enabled.
+    ///
+    /// If unspecified, the ratio will be retrieved from the aggregator.
+    pub ipfs_share: Option<IpfsShare>,
+}
+
+/// Options to override the IPFS share ratio to download immutable files
+#[derive(Debug, Copy, Clone)]
+pub enum IpfsShare {
+    /// Use a custom share ratio for the immutables files to download through IPFS (0-100 inclusive)
+    Ratio(u8),
+    /// Download files from IPFS first, falling back to other sources only if IPFS fails (equivalent to `Ratio(100)`).
+    Prefer,
+    /// Only download files from IPFS if other sources fail (equivalent to `Ratio(0)`)
+    Fallback,
+    /// Disable downloading files from IPFS
+    Disabled,
 }
 
 impl Default for DownloadUnpackOptions {
@@ -27,6 +47,7 @@ impl Default for DownloadUnpackOptions {
             allow_override: false,
             include_ancillary: false,
             max_parallel_downloads: 20,
+            ipfs_share: None,
         }
     }
 }
