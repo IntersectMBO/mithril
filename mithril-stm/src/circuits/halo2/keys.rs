@@ -39,6 +39,7 @@ pub(crate) struct NonRecursiveCircuitProvingKey(MidnightPK<CertificateCircuit>);
 
 impl NonRecursiveCircuitVerifyingKey {
     /// Wraps a Midnight verifying key.
+    #[cfg(any(test, feature = "benchmark-internals"))]
     pub(crate) fn new(midnight_vk: MidnightVK) -> Self {
         Self(midnight_vk)
     }

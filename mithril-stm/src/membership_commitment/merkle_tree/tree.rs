@@ -266,7 +266,6 @@ mod tests {
                 assert_eq!(tree_commitment.root, decoded.root);
             }
 
-            #[cfg(feature = "snark")]
             #[test]
             fn test_bytes_tree_commitment_batch_compat((t, values) in arb_tree(5)) {
                 let encoded = t.to_merkle_tree_batch_commitment().to_bytes().expect("MerkleTreeBatchCommitment serialization should not fail");
@@ -363,7 +362,6 @@ mod tests {
             }
         }
 
-        #[cfg(feature = "snark")]
         mod golden {
             use super::*;
 
@@ -411,7 +409,6 @@ mod tests {
             }
         }
 
-        #[cfg(feature = "snark")]
         mod golden_json {
             use super::*;
             const GOLDEN_JSON: &str = r#"
@@ -569,7 +566,6 @@ mod tests {
             // Test the relation that t.get_path(i) is a valid
             // proof for i
             #![proptest_config(ProptestConfig::with_cases(100))]
-            #[cfg(feature = "snark")]
             #[test]
             fn test_create_proof((t, values) in arb_tree_poseidon(30)) {
                 values.iter().enumerate().for_each(|(i, _v)| {
@@ -578,7 +574,6 @@ mod tests {
                 })
             }
 
-            #[cfg(feature = "snark")]
             #[test]
             fn test_bytes_path((t, values) in arb_tree_poseidon(30)) {
                 values.iter().enumerate().for_each(|(i, _v)| {
@@ -589,7 +584,6 @@ mod tests {
                 })
             }
 
-            #[cfg(feature = "snark")]
             #[test]
             fn test_bytes_tree_commitment((t, values) in arb_tree_poseidon(5)) {
                 let encoded = t.to_merkle_tree_commitment().to_bytes().expect("MerkleTreeCommitment serialization should not fail");
@@ -616,7 +610,6 @@ mod tests {
             use super::*;
 
             proptest! {
-                #[cfg(feature = "snark")]
                 #[test]
                 fn test_create_invalid_proof(
                     i in any::<usize>(),
@@ -631,7 +624,6 @@ mod tests {
             }
         }
 
-        #[cfg(feature = "snark")]
         mod golden {
             use super::*;
 
@@ -671,7 +663,6 @@ mod tests {
             }
         }
 
-        #[cfg(feature = "snark")]
         mod golden_json {
             use super::*;
             const GOLDEN_JSON: &str = r#"

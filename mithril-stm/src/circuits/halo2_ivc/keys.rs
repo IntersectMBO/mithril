@@ -39,11 +39,13 @@ pub(crate) struct RecursiveCircuitProvingKey(MidnightPK<IvcCircuit>);
 
 impl RecursiveCircuitVerifyingKey {
     /// Wraps a Midnight verifying key.
+    #[cfg(any(test, feature = "benchmark-internals"))]
     pub(crate) fn new(midnight_vk: MidnightVK) -> Self {
         Self(midnight_vk)
     }
 
     /// Borrows the wrapped Midnight verifying key.
+    #[cfg(test)]
     pub(crate) fn midnight_vk(&self) -> &MidnightVK {
         &self.0
     }
@@ -186,6 +188,7 @@ impl AsRef<VerifyingKey<NativeField, KZGCommitmentScheme<PairingEngine>>>
 
 impl RecursiveCircuitProvingKey {
     /// Wraps a Midnight proving key.
+    #[cfg(test)]
     pub(crate) fn new(midnight_pk: MidnightPK<IvcCircuit>) -> Self {
         Self(midnight_pk)
     }

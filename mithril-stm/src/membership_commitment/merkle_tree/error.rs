@@ -5,9 +5,7 @@ pub enum MerkleTreeError {
     #[error("Serialization of a merkle tree failed")]
     SerializationError,
 
-    #[cfg(feature = "snark")]
-    // TODO: remove this allow dead_code directive when function is called or snark is activated
-    #[allow(dead_code)]
+    #[cfg(all(feature = "snark", test))]
     /// Invalid merkle path
     #[error("Path does not verify against root")]
     PathInvalid(Vec<u8>),

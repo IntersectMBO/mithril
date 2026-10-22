@@ -21,8 +21,6 @@ use crate::{
 /// exposed to the verifier. The **witness** contains one entry per winning lottery index,
 /// each providing the Schnorr signature, Merkle leaf, and authentication path that the circuit
 /// checks privately.
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct SnarkProverInput {
     /// Public inputs to the SNARK circuit.
@@ -31,8 +29,6 @@ pub struct SnarkProverInput {
     witness: CircuitWitness,
 }
 
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
 impl SnarkProverInput {
     /// Build the SNARK prover input from a set of single signatures.
     ///
