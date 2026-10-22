@@ -93,7 +93,7 @@ jobs:
             cardano_network: mainnet
             mithril_use_p2p_network: false
             mithril_p2p_use_dmq_protocol: false
-            mithril_ipfs_enabled: false
+            mithril_ipfs_enabled: true
             mithril_api_domain: api.mithril.network
             mithril_era_reader_adapter_type: bootstrap
             mithril_signers: |
