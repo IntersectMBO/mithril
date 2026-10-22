@@ -136,10 +136,37 @@ mod tests {
         warp::any().and(routes(&state).with(cors))
     }
 
+    macro_rules! test_root_route {
+        ($config:expr, $dependency_manager:expr, |$response:ident| $response_check:block) => {{
+            let method = Method::GET.as_str();
+            let path = "/";
+
+            let $response = request()
+                .method(method)
+                .path(path)
+                .reply(&setup_router(RouterState::new(
+                    Arc::new($dependency_manager),
+                    $config,
+                )))
+                .await;
+
+            $response_check
+
+            APISpec::verify_conformity(
+                APISpec::get_default_spec_file_from(crate::http_server::API_SPEC_LOCATION),
+                method,
+                path,
+                "application/json",
+                &Null,
+                &$response,
+                &StatusCode::OK,
+            )
+            .unwrap();
+        }};
+    }
+
     #[tokio::test]
     async fn test_root_route_ok() {
-        let method = Method::GET.as_str();
-        let path = "/";
         let config = RouterConfig {
             allowed_discriminants: BTreeSet::from([
                 SignedEntityTypeDiscriminants::CardanoStakeDistribution,
@@ -159,57 +186,37 @@ mod tests {
             .unwrap()
             .to_string();
 
-        let response = request()
-            .method(method)
-            .path(path)
-            .reply(&setup_router(RouterState::new(
-                Arc::new(dependency_manager),
-                config,
-            )))
-            .await;
+        test_root_route!(config, dependency_manager, |response| {
+            let response_body: AggregatorFeaturesMessage =
+                serde_json::from_slice(response.body()).unwrap();
 
-        let response_body: AggregatorFeaturesMessage =
-            serde_json::from_slice(response.body()).unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
 
-        assert_eq!(response.status(), StatusCode::OK);
-
-        assert_eq!(
-            response_body,
-            AggregatorFeaturesMessage {
-                open_api_version: expected_open_api_version,
-                documentation_url: env!("CARGO_PKG_HOMEPAGE").to_string(),
-                capabilities: AggregatorCapabilities {
-                    signed_entity_types: BTreeSet::from_iter([
-                        SignedEntityTypeDiscriminants::CardanoStakeDistribution.into(),
-                        SignedEntityTypeDiscriminants::MithrilStakeDistribution.into(),
-                        SignedEntityTypeDiscriminants::CardanoTransactions.into(),
-                        SignedEntityTypeDiscriminants::CardanoDatabase.into(),
-                    ]),
-                    aggregate_signature_type: AggregateSignatureType::Concatenation,
-                    cardano_transactions_prover: Some(CardanoTransactionsProverCapabilities {
-                        max_hashes_allowed_by_request: 500
-                    }),
-                },
-                cardano_database_distribution: None,
-            }
-        );
-
-        APISpec::verify_conformity(
-            APISpec::get_default_spec_file_from(crate::http_server::API_SPEC_LOCATION),
-            method,
-            path,
-            "application/json",
-            &Null,
-            &response,
-            &StatusCode::OK,
-        )
-        .unwrap();
+            assert_eq!(
+                response_body,
+                AggregatorFeaturesMessage {
+                    open_api_version: expected_open_api_version,
+                    documentation_url: env!("CARGO_PKG_HOMEPAGE").to_string(),
+                    capabilities: AggregatorCapabilities {
+                        signed_entity_types: BTreeSet::from_iter([
+                            SignedEntityTypeDiscriminants::CardanoStakeDistribution.into(),
+                            SignedEntityTypeDiscriminants::MithrilStakeDistribution.into(),
+                            SignedEntityTypeDiscriminants::CardanoTransactions.into(),
+                            SignedEntityTypeDiscriminants::CardanoDatabase.into(),
+                        ]),
+                        aggregate_signature_type: AggregateSignatureType::Concatenation,
+                        cardano_transactions_prover: Some(CardanoTransactionsProverCapabilities {
+                            max_hashes_allowed_by_request: 500
+                        }),
+                    },
+                    cardano_database_distribution: None,
+                }
+            );
+        });
     }
 
     #[tokio::test]
     async fn test_root_route_ok_with_cardano_transactions_enabled() {
-        let method = Method::GET.as_str();
-        let path = "/";
         let config = RouterConfig {
             allowed_discriminants: BTreeSet::from([
                 SignedEntityTypeDiscriminants::CardanoTransactions,
@@ -219,43 +226,23 @@ mod tests {
         };
         let dependency_manager = initialize_dependencies!().await;
 
-        let response = request()
-            .method(method)
-            .path(path)
-            .reply(&setup_router(RouterState::new(
-                Arc::new(dependency_manager),
-                config,
-            )))
-            .await;
+        test_root_route!(config, dependency_manager, |response| {
+            let response_body: AggregatorFeaturesMessage =
+                serde_json::from_slice(response.body()).unwrap();
 
-        let response_body: AggregatorFeaturesMessage =
-            serde_json::from_slice(response.body()).unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
 
-        assert_eq!(response.status(), StatusCode::OK);
-
-        assert_eq!(
-            response_body.capabilities.cardano_transactions_prover,
-            Some(CardanoTransactionsProverCapabilities {
-                max_hashes_allowed_by_request: 99
-            })
-        );
-
-        APISpec::verify_conformity(
-            APISpec::get_default_spec_file_from(crate::http_server::API_SPEC_LOCATION),
-            method,
-            path,
-            "application/json",
-            &Null,
-            &response,
-            &StatusCode::OK,
-        )
-        .unwrap();
+            assert_eq!(
+                response_body.capabilities.cardano_transactions_prover,
+                Some(CardanoTransactionsProverCapabilities {
+                    max_hashes_allowed_by_request: 99
+                })
+            );
+        });
     }
 
     #[tokio::test]
     async fn test_root_route_ok_with_ipfs_config_enabled() {
-        let method = Method::GET.as_str();
-        let path = "/";
         let config = RouterConfig {
             ipfs_config: Some(IpfsConfig {
                 ipfs_share: 33,
@@ -265,38 +252,20 @@ mod tests {
         };
         let dependency_manager = initialize_dependencies!().await;
 
-        let response = request()
-            .method(method)
-            .path(path)
-            .reply(&setup_router(RouterState::new(
-                Arc::new(dependency_manager),
-                config,
-            )))
-            .await;
+        test_root_route!(config, dependency_manager, |response| {
+            let response_body: AggregatorFeaturesMessage =
+                serde_json::from_slice(response.body()).unwrap();
 
-        let response_body: AggregatorFeaturesMessage =
-            serde_json::from_slice(response.body()).unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
 
-        assert_eq!(response.status(), StatusCode::OK);
-
-        assert_eq!(
-            response_body.cardano_database_distribution,
-            Some(CardanoDatabaseDistribution {
-                supported_locations: vec![],
-                ipns_record: Some("/ipns/test".to_string()),
-                ipfs_share: Some(33)
-            })
-        );
-
-        APISpec::verify_conformity(
-            APISpec::get_default_spec_file_from(crate::http_server::API_SPEC_LOCATION),
-            method,
-            path,
-            "application/json",
-            &Null,
-            &response,
-            &StatusCode::OK,
-        )
-        .unwrap();
+            assert_eq!(
+                response_body.cardano_database_distribution,
+                Some(CardanoDatabaseDistribution {
+                    supported_locations: vec![],
+                    ipns_record: Some("/ipns/test".to_string()),
+                    ipfs_share: Some(33)
+                })
+            );
+        });
     }
 }
