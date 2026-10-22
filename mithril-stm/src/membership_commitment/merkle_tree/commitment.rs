@@ -7,15 +7,11 @@ use serde::{Deserialize, Serialize};
 use crate::StmResult;
 use crate::codec;
 
-#[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
+#[cfg(all(feature = "snark", test))]
 use super::MerklePath;
 use super::{MerkleBatchPath, MerkleTree, MerkleTreeError, MerkleTreeLeaf, parent, sibling};
 
 #[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
 /// `MerkleTree` commitment.
 /// This structure differs from `MerkleTree` in that it does not contain all elements, which are not always necessary.
 /// Instead, it only contains the root of the tree.
@@ -29,8 +25,6 @@ pub struct MerkleTreeCommitment<D: Digest, L: MerkleTreeLeaf> {
 }
 
 #[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
 impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeCommitment<D, L> {
     pub(crate) fn new(root: Vec<u8>) -> Self {
         MerkleTreeCommitment {
@@ -43,6 +37,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeCommitment<D, L> {
     /// Check an inclusion proof that `val` is part of the tree by traveling the whole path until the root.
     /// # Error
     /// If the merkle tree path is invalid, then the function fails.
+    #[cfg(test)]
     pub(crate) fn verify_leaf_membership_from_path(
         &self,
         val: &L,
@@ -71,6 +66,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeCommitment<D, L> {
     }
 
     /// Convert to bytes
+    #[cfg(test)]
     pub fn to_bytes(&self) -> StmResult<Vec<u8>> {
         codec::to_cbor_bytes(self)
     }
@@ -81,6 +77,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeCommitment<D, L> {
     /// so the first byte can be any value — including `0x01` which is also the CBOR
     /// version prefix. To handle this ambiguity, this method tries CBOR decoding
     /// first and falls back to legacy if CBOR decoding fails.
+    #[cfg(test)]
     pub fn from_bytes(bytes: &[u8]) -> StmResult<MerkleTreeCommitment<D, L>> {
         if codec::has_cbor_v1_prefix(bytes) {
             codec::from_cbor_bytes::<Self>(&bytes[1..]).or_else(|_| Self::from_bytes_legacy(bytes))
@@ -92,6 +89,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeCommitment<D, L> {
     /// Extract a `MerkleTreeCommitment` from a byte slice using the legacy format.
     /// # Layout
     /// * Root of the Merkle commitment
+    #[cfg(test)]
     fn from_bytes_legacy(bytes: &[u8]) -> StmResult<MerkleTreeCommitment<D, L>> {
         let root = bytes.to_vec();
 
@@ -127,9 +125,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeBatchCommitment<D, L>
         }
     }
 
-    #[cfg(feature = "snark")]
-    // TODO: remove this allow dead_code directive when function is called or snark is activated
-    #[allow(dead_code)]
+    #[cfg(test)]
     /// Used in property test of `tree`: `test_bytes_tree_commitment_batch_compat`
     pub(crate) fn get_number_of_leaves(&self) -> usize {
         self.nr_leaves
@@ -270,8 +266,7 @@ impl<D: Digest + FixedOutput, L: MerkleTreeLeaf> MerkleTreeBatchCommitment<D, L>
     }
 
     /// Convert to bytes.
-    // TODO: remove this once the 'to_bytes' function is used.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn to_bytes(&self) -> StmResult<Vec<u8>> {
         codec::to_cbor_bytes(self)
     }

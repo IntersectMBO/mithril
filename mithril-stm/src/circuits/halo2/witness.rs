@@ -31,6 +31,7 @@ pub struct CircuitMerkleTreeLeaf(pub SchnorrVerificationKey, pub LotteryTargetVa
 
 impl CircuitMerkleTreeLeaf {
     /// Returns the signer's verification key stored in this witness leaf.
+    #[cfg(test)]
     pub fn verification_key(&self) -> SchnorrVerificationKey {
         self.0
     }

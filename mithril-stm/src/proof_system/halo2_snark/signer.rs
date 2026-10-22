@@ -120,13 +120,7 @@ mod tests {
         let schnorr_vk = VerificationKeyForSnark::new_from_signing_key(schnorr_sk.clone());
 
         let mut key_reg = KeyRegistration::initialize();
-        let entry = RegistrationEntry::new(
-            bls_vk,
-            1,
-            #[cfg(feature = "snark")]
-            Some(schnorr_vk),
-        )
-        .unwrap();
+        let entry = RegistrationEntry::new(bls_vk, 1, Some(schnorr_vk)).unwrap();
         key_reg.register_by_entry(&entry);
         let closed_reg = key_reg.close_registration(&params).unwrap();
 

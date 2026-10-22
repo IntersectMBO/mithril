@@ -64,11 +64,8 @@ pub use signature_scheme::{
     UniqueSchnorrSignature,
 };
 
-#[cfg(all(feature = "snark", not(feature = "benchmark-internals")))]
+#[cfg(feature = "snark")]
 use hash::poseidon::MidnightPoseidonDigest;
-
-#[cfg(feature = "benchmark-internals")]
-pub use hash::poseidon::MidnightPoseidonDigest;
 
 #[cfg(feature = "snark")]
 pub use circuits::{CIRCUIT_VERIFICATION_KEY_DIGEST_SIZE, CircuitVerificationKeyDigest};

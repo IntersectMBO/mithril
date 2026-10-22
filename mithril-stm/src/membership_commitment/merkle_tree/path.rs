@@ -9,8 +9,6 @@ use crate::codec;
 use super::MerkleTreeError;
 
 #[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
 /// Path of hashes from root to leaf in a Merkle Tree.
 /// Contains all hashes on the path, and the index of the leaf.
 /// Used to verify that signatures come from eligible signers.
@@ -22,8 +20,6 @@ pub struct MerklePath<D: Digest> {
 }
 
 #[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
 impl<D: Digest + FixedOutput> MerklePath<D> {
     pub(crate) fn new(values: Vec<Vec<u8>>, index: usize) -> Self {
         Self {
@@ -34,6 +30,7 @@ impl<D: Digest + FixedOutput> MerklePath<D> {
     }
 
     /// Convert to bytes
+    #[cfg(test)]
     pub fn to_bytes(&self) -> StmResult<Vec<u8>> {
         codec::to_cbor_bytes(self)
     }
@@ -41,6 +38,7 @@ impl<D: Digest + FixedOutput> MerklePath<D> {
     /// Extract a `Path` from a byte slice.
     /// # Error
     /// This function fails if the bytes cannot retrieve path.
+    #[cfg(test)]
     pub fn from_bytes(bytes: &[u8]) -> StmResult<MerklePath<D>> {
         codec::from_versioned_bytes(bytes, Self::from_bytes_legacy)
     }
@@ -50,6 +48,7 @@ impl<D: Digest + FixedOutput> MerklePath<D> {
     /// * Index representing the position in the Merkle Tree
     /// * Size of the Path
     /// * Path of hashes
+    #[cfg(test)]
     fn from_bytes_legacy(bytes: &[u8]) -> StmResult<MerklePath<D>> {
         let mut u64_bytes = [0u8; 8];
         u64_bytes.copy_from_slice(bytes.get(..8).ok_or(MerkleTreeError::SerializationError)?);
