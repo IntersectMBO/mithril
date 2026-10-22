@@ -65,6 +65,7 @@ pub struct CardanoDatabaseDistribution {
 
 /// Types of locations for the immutable files.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ImmutablesLocationType {
     /// IPFS location.
     Ipfs,
@@ -222,7 +223,7 @@ mod tests {
             }
         },
         "cardano_database_distribution": {
-            "supported_locations": ["CloudStorage", "Ipfs"],
+            "supported_locations": ["cloud_storage", "ipfs"],
             "ipns_record": "/ipns/k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66",
             "ipfs_share": 30
         }

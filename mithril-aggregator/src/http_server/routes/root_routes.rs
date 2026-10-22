@@ -41,7 +41,7 @@ mod handlers {
     use mithril_common::entities::SignedEntityTypeDiscriminants;
     use mithril_common::messages::{
         AggregatorCapabilities, AggregatorFeaturesMessage, CardanoDatabaseDistribution,
-        CardanoTransactionsProverCapabilities,
+        CardanoTransactionsProverCapabilities, ImmutablesLocationType,
     };
 
     use crate::http_server::routes::reply::json;
@@ -81,15 +81,28 @@ mod handlers {
                 });
         }
 
-        let mut cardano_database_distribution = None;
+        let cardano_database_distribution = capabilities
+            .signed_entity_types
+            .contains(&SignedEntityTypeDiscriminants::CardanoDatabase.into())
+            .then(|| {
+                let mut distribution_metadata = CardanoDatabaseDistribution {
+                    // "local" is also considered cloud storage, and since the configuration choice is
+                    // between GCP and local, CloudStorage is guaranteed to be supported.
+                    supported_locations: vec![ImmutablesLocationType::CloudStorage],
+                    ipns_record: None,
+                    ipfs_share: None,
+                };
 
-        if let Some(ipfs_conf) = ipfs_config {
-            cardano_database_distribution = Some(CardanoDatabaseDistribution {
-                supported_locations: vec![],
-                ipns_record: ipfs_conf.ipns_record,
-                ipfs_share: Some(ipfs_conf.ipfs_share),
+                if let Some(ipfs_conf) = ipfs_config {
+                    distribution_metadata
+                        .supported_locations
+                        .push(ImmutablesLocationType::Ipfs);
+                    distribution_metadata.ipns_record = ipfs_conf.ipns_record;
+                    distribution_metadata.ipfs_share = Some(ipfs_conf.ipfs_share);
+                }
+
+                distribution_metadata
             });
-        }
 
         Ok(json(
             &AggregatorFeaturesMessage {
@@ -116,7 +129,7 @@ mod tests {
     use mithril_common::entities::SignedEntityTypeDiscriminants;
     use mithril_common::messages::{
         AggregatorCapabilities, AggregatorFeaturesMessage, CardanoDatabaseDistribution,
-        CardanoTransactionsProverCapabilities,
+        CardanoTransactionsProverCapabilities, ImmutablesLocationType,
     };
     use mithril_common::test::double::Dummy;
 
@@ -172,7 +185,6 @@ mod tests {
                 SignedEntityTypeDiscriminants::CardanoStakeDistribution,
                 SignedEntityTypeDiscriminants::MithrilStakeDistribution,
                 SignedEntityTypeDiscriminants::CardanoTransactions,
-                SignedEntityTypeDiscriminants::CardanoDatabase,
             ]),
             cardano_prover_max_hashes_allowed_by_request: 500,
             ..RouterConfig::dummy()
@@ -202,7 +214,6 @@ mod tests {
                             SignedEntityTypeDiscriminants::CardanoStakeDistribution.into(),
                             SignedEntityTypeDiscriminants::MithrilStakeDistribution.into(),
                             SignedEntityTypeDiscriminants::CardanoTransactions.into(),
-                            SignedEntityTypeDiscriminants::CardanoDatabase.into(),
                         ]),
                         aggregate_signature_type: AggregateSignatureType::Concatenation,
                         cardano_transactions_prover: Some(CardanoTransactionsProverCapabilities {
@@ -242,8 +253,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_root_route_ok_with_ipfs_config_enabled() {
+    async fn test_root_route_ok_with_cardano_database_enabled_and_without_ipfs() {
         let config = RouterConfig {
+            allowed_discriminants: BTreeSet::from([SignedEntityTypeDiscriminants::CardanoDatabase]),
+            ..RouterConfig::dummy()
+        };
+        let dependency_manager = initialize_dependencies!().await;
+
+        test_root_route!(config, dependency_manager, |response| {
+            let response_body: AggregatorFeaturesMessage =
+                serde_json::from_slice(response.body()).unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+            assert!(
+                response_body
+                    .capabilities
+                    .signed_entity_types
+                    .contains(&SignedEntityTypeDiscriminants::CardanoDatabase.into())
+            );
+
+            assert_eq!(
+                response_body.cardano_database_distribution,
+                Some(CardanoDatabaseDistribution {
+                    supported_locations: vec![ImmutablesLocationType::CloudStorage],
+                    ipns_record: None,
+                    ipfs_share: None,
+                })
+            );
+        });
+    }
+
+    #[tokio::test]
+    async fn test_root_route_ok_with_cardano_database_enabled_and_with_ipfs() {
+        let config = RouterConfig {
+            allowed_discriminants: BTreeSet::from([SignedEntityTypeDiscriminants::CardanoDatabase]),
             ipfs_config: Some(IpfsConfig {
                 ipfs_share: 33,
                 ipns_record: Some("/ipns/test".to_string()),
@@ -261,7 +304,10 @@ mod tests {
             assert_eq!(
                 response_body.cardano_database_distribution,
                 Some(CardanoDatabaseDistribution {
-                    supported_locations: vec![],
+                    supported_locations: vec![
+                        ImmutablesLocationType::CloudStorage,
+                        ImmutablesLocationType::Ipfs
+                    ],
                     ipns_record: Some("/ipns/test".to_string()),
                     ipfs_share: Some(33)
                 })

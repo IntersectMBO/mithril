@@ -965,6 +965,8 @@ components:
           description: Distribution configuration for the Cardano database's immutable files
           type: object
           additionalProperties: false
+          required:
+            - supported_locations
           properties:
             supported_locations:
               description: List of the supported locations type for the cardano database immutables files
@@ -972,8 +974,8 @@ components:
               items:
                 type: string
                 enum:
-                  - Ipfs
-                  - CloudStorage
+                  - ipfs
+                  - cloud_storage
             ipns_record:
               description: |
                 IPFS path of the IPNS record linking to an IPFS directory containing the cardano database immutables files
@@ -1001,6 +1003,7 @@ components:
               },
             "cardano_database_distribution":
               {
+                "supported_locations": ["cloud_storage", "ipfs"],
                 "ipns_record": "/ipns/k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66",
                 "ipfs_share": 30
               }
