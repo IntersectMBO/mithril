@@ -106,6 +106,7 @@ mod test {
         entities::{TxDatum, TxDatumBuilder, TxDatumFieldValue},
         test::double::FakeChainObserver,
     };
+    use mithril_common::test::logging::MemoryDrainForTestInspector;
     use mithril_common::{crypto_helper::ProtocolConfigurationMarkersSigner, entities::Epoch};
 
     use crate::cardano_chain::{
@@ -131,6 +132,39 @@ mod test {
                     .unwrap()
             })
             .collect()
+    }
+
+    fn signed_markers_payload(
+        signer: &ProtocolConfigurationMarkersSigner,
+    ) -> SignedProtocolConfigurationMarkersPayloadCardanoChain {
+        ProtocolConfigurationMarkersPayloadCardanoChain {
+            markers: vec![ProtocolConfigurationMarker::new(
+                Epoch(41),
+                generate_configuration_message('A').to_cbor_hex().unwrap(),
+            )],
+        }
+        .sign(signer)
+        .unwrap()
+    }
+
+    async fn read_markers_and_inspect_logs(tx_datums: Vec<TxDatum>) -> MemoryDrainForTestInspector {
+        let markers_signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
+        let chain_observer = FakeChainObserver::default();
+        chain_observer.set_datums(tx_datums).await;
+        let (logger, log_inspector) = TestLogger::memory();
+        let cardano_chain_reader = CardanoChainProtocolConfigurationMarkersReader::new(
+            "addr_test_123456".to_string(),
+            Arc::new(chain_observer),
+            markers_signer.create_verifier().to_verification_key(),
+            logger,
+        );
+
+        cardano_chain_reader
+            .read_configuration_markers()
+            .await
+            .expect("read_configuration_markers should not fail");
+
+        log_inspector
     }
 
     #[tokio::test]
@@ -229,6 +263,102 @@ mod test {
                 .iter()
                 .any(|log| log.contains("signature")),
             "Expected a warning about the invalid signature, logs:\n{log_inspector}"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_signature_datum_after_a_valid_one_is_logged() {
+        let valid_payload = signed_markers_payload(
+            &ProtocolConfigurationMarkersSigner::create_deterministic_signer(),
+        );
+        let invalid_payload = signed_markers_payload(
+            &ProtocolConfigurationMarkersSigner::create_non_deterministic_signer(),
+        );
+
+        let log_inspector =
+            read_markers_and_inspect_logs(dummy_tx_datums_from_markers_payload(vec![
+                valid_payload,
+                invalid_payload,
+            ]))
+            .await;
+
+        let warnings = log_inspector.search_logs("WARN");
+        assert_eq!(
+            1,
+            warnings.len(),
+            "Expected a single warning, logs:\n{log_inspector}"
+        );
+        assert!(
+            warnings[0].contains("invalid_signature_datums_count=1")
+                && warnings[0].contains("undecodable_datums_count=0"),
+            "Expected one datum discarded for an invalid signature, logs:\n{log_inspector}"
+        );
+    }
+
+    #[tokio::test]
+    async fn discarded_datums_are_logged_once_per_read() {
+        let bad_markers_signer =
+            ProtocolConfigurationMarkersSigner::create_non_deterministic_signer();
+        let invalid_payloads: Vec<_> =
+            (0..3).map(|_| signed_markers_payload(&bad_markers_signer)).collect();
+
+        let log_inspector =
+            read_markers_and_inspect_logs(dummy_tx_datums_from_markers_payload(invalid_payloads))
+                .await;
+
+        let warnings = log_inspector.search_logs("WARN");
+        assert_eq!(
+            1,
+            warnings.len(),
+            "Expected a single warning for the discarded datums, logs:\n{log_inspector}"
+        );
+        assert!(
+            warnings[0].contains("invalid_signature_datums_count=3"),
+            "Expected three datums discarded for an invalid signature, logs:\n{log_inspector}"
+        );
+    }
+
+    #[tokio::test]
+    async fn undecodable_datum_is_logged() {
+        let undecodable_datum = TxDatumBuilder::new()
+            .add_field(TxDatumFieldValue::Bytes("not-a-signed-payload".to_string()))
+            .build()
+            .unwrap();
+
+        let log_inspector = read_markers_and_inspect_logs(vec![undecodable_datum]).await;
+
+        let warnings = log_inspector.search_logs("WARN");
+        assert_eq!(
+            1,
+            warnings.len(),
+            "Expected a single warning, logs:\n{log_inspector}"
+        );
+        assert!(
+            warnings[0].contains("undecodable_datums_count=1")
+                && warnings[0].contains("invalid_signature_datums_count=0"),
+            "Expected one undecodable datum discarded, logs:\n{log_inspector}"
+        );
+    }
+
+    #[tokio::test]
+    async fn undecodable_datum_is_logged_with_its_decoding_error() {
+        let undecodable_datum = TxDatumBuilder::new()
+            .add_field(TxDatumFieldValue::Bytes("not-a-signed-payload".to_string()))
+            .build()
+            .unwrap();
+
+        let log_inspector = read_markers_and_inspect_logs(vec![undecodable_datum]).await;
+
+        let discarded_logs =
+            log_inspector.search_logs("Discarded undecodable protocol configuration markers datum");
+        assert_eq!(
+            1,
+            discarded_logs.len(),
+            "Expected a single discarded datum log, logs:\n{log_inspector}"
+        );
+        assert!(
+            discarded_logs[0].contains("error="),
+            "Expected the decoding error in the discarded datum log, logs:\n{log_inspector}"
         );
     }
 
