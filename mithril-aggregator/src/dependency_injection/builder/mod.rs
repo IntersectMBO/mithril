@@ -3,7 +3,7 @@ mod protocol;
 mod support;
 
 use anyhow::Context;
-use slog::{Logger, debug};
+use slog::{Logger, debug, error, warn};
 use std::{path::PathBuf, sync::Arc};
 use tokio::{
     sync::{
@@ -51,7 +51,7 @@ use crate::{
     ProtocolParametersRetriever, ServeCommandDependenciesContainer, SignerRegisterer,
     SignerRegistrationRoundOpener, SignerRegistrationVerifier, SingleSignatureAuthenticator,
     VerificationKeyStorer,
-    configuration::ConfigurationSource,
+    configuration::{ConfigurationSource, IpfsRpcServerConfig},
     database::repository::{
         AggregatorCardanoChainDataRepository, CertificateRepository, EpochSettingsStore,
         OpenMessageRepository, SignedEntityStorer, SignerStore, StakePoolStore,
@@ -66,6 +66,7 @@ use crate::{
         SignedEntityService, SignerSynchronizer, Snapshotter, StakeDistributionService,
         UpkeepService,
     },
+    tools::kubo_rpc_client::query::IpfsKeyLsQuery,
 };
 
 use super::{
@@ -481,6 +482,14 @@ impl DependenciesBuilder {
         impl Filter<Extract = (impl warp::Reply + use<>,), Error = warp::Rejection> + Clone + use<>,
     > {
         let dependency_container = Arc::new(self.build_serve_dependencies_container().await?);
+        let ipfs_config = match self.configuration.ipfs_rpc_server_config() {
+            Some(ipfs_rpc_config) => Some(IpfsConfig {
+                ipns_record: self.resolve_ipns_record(&ipfs_rpc_config).await?,
+                ipfs_share: self.configuration.ipfs_share(),
+            }),
+            None => None,
+        };
+
         let router_state = RouterState::new(
             dependency_container.clone(),
             RouterConfig {
@@ -506,14 +515,46 @@ impl DependenciesBuilder {
                             .certificate_chain_aggregator_endpoint()
                             .unwrap_or(leader_aggregator_endpoint)
                     }),
-                ipfs_config: self.configuration.ipfs_rpc_server_config().map(|ic| IpfsConfig {
-                    ipns_record: ic.ipns_record_path(),
-                    ipfs_share: self.configuration.ipfs_share(),
-                }),
+                ipfs_config,
             },
         );
 
         Ok(router::routes(Arc::new(router_state)))
+    }
+
+    /// Resolve the IPNS record path (`/ipns/<key id>`) of the configured IPNS key by querying
+    /// the IPFS node keystore.
+    ///
+    /// Returns `None` if no IPNS key is configured or if it can't be resolved (the error is
+    /// logged but doesn't prevent the aggregator from starting).
+    async fn resolve_ipns_record(
+        &self,
+        ipfs_rpc_config: &IpfsRpcServerConfig,
+    ) -> Result<Option<String>> {
+        let Some(ipns_key_name) = &ipfs_rpc_config.ipns_key_name else {
+            return Ok(None);
+        };
+        let kubo_rpc_client = self.build_kubo_rpc_client(ipfs_rpc_config)?;
+
+        match kubo_rpc_client.send(IpfsKeyLsQuery::new()).await {
+            Ok(keys) => match keys.into_iter().find(|key| &key.name == ipns_key_name) {
+                Some(key) => Ok(Some(format!("/ipns/{}", key.id))),
+                None => {
+                    warn!(
+                        self.root_logger, "IPNS key not found in the IPFS node keystore, IPNS record won't be advertised";
+                        "ipns_key_name" => ipns_key_name
+                    );
+                    Ok(None)
+                }
+            },
+            Err(err) => {
+                error!(
+                    self.root_logger, "Failed to list the IPFS node keys, IPNS record won't be advertised";
+                    "ipns_key_name" => ipns_key_name, "error" => ?err
+                );
+                Ok(None)
+            }
+        }
     }
 
     /// Create dependencies for genesis commands

@@ -742,11 +742,6 @@ impl IpfsRpcServerConfig {
         SanitizedUrlWithTrailingSlash::parse(&self.url)
             .with_context(|| "Invalid IPFS RPC server URL")
     }
-
-    /// Return the value of `ipns_key_name`, if any, but prefixed with `/ipns/`
-    pub fn ipns_record_path(&self) -> Option<String> {
-        self.ipns_key_name.as_ref().map(|key| format!("/ipns/{key}"))
-    }
 }
 
 fn default_mfs_folder_name() -> String {
@@ -1546,25 +1541,6 @@ mod test {
         };
 
         assert_eq!(None, config.certificate_chain_aggregator_endpoint());
-    }
-
-    #[test]
-    fn ipns_record_path_add_the_slash_ipns_slash_prefix_to_the_key_name() {
-        let mut config = IpfsRpcServerConfig {
-            url: "whatever".to_string(),
-            mfs_folder_name: "whatever".to_string(),
-            ipns_key_name: None,
-        };
-        assert_eq!(None, config.ipns_record_path());
-
-        config.ipns_key_name =
-            Some("k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66".to_string());
-        assert_eq!(
-            Some(
-                "/ipns/k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66".to_string()
-            ),
-            config.ipns_record_path()
-        );
     }
 
     #[test]
