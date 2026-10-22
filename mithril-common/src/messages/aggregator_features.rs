@@ -48,6 +48,9 @@ pub struct CardanoTransactionsProverCapabilities {
 /// Distribution configuration for the Cardano database's immutable files.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CardanoDatabaseDistribution {
+    /// List of the supported locations type for the cardano database immutables files
+    pub supported_locations: Vec<ImmutablesLocationType>,
+
     /// IPFS path of the IPNS record linking to an IPFS directory containing the cardano database immutables files
     ///
     /// Only set if the aggregator is configured to distribute immutable files via IPFS and the IPNS
@@ -58,6 +61,18 @@ pub struct CardanoDatabaseDistribution {
     /// Share of the immutables files to distribute through IPFS (0-100 inclusive)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ipfs_share: Option<u8>,
+}
+
+/// Types of locations for the immutable files.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum ImmutablesLocationType {
+    /// IPFS location.
+    Ipfs,
+    /// Cloud storage location.
+    CloudStorage,
+    /// Catchall for unknown location variants.
+    #[serde(other)]
+    Unknown,
 }
 
 #[cfg(test)]
@@ -183,6 +198,10 @@ mod tests {
                 }),
             },
             cardano_database_distribution: Some(CardanoDatabaseDistribution {
+                supported_locations: vec![
+                    ImmutablesLocationType::CloudStorage,
+                    ImmutablesLocationType::Ipfs,
+                ],
                 ipns_record: Some(
                     "/ipns/k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66"
                         .to_string(),
@@ -203,6 +222,7 @@ mod tests {
             }
         },
         "cardano_database_distribution": {
+            "supported_locations": ["CloudStorage", "Ipfs"],
             "ipns_record": "/ipns/k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66",
             "ipfs_share": 30
         }
@@ -238,5 +258,11 @@ mod tests {
         let message: AggregatorFeaturesMessage = serde_json::from_str(json).unwrap();
 
         assert_eq!(golden_message_current(), message);
+    }
+
+    #[test]
+    fn catch_unknown_immutables_location_type() {
+        let unknown: ImmutablesLocationType = serde_json::from_str("\"unknown_type\"").unwrap();
+        assert_eq!(unknown, ImmutablesLocationType::Unknown);
     }
 }

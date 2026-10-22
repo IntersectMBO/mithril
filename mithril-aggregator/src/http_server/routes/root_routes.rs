@@ -85,6 +85,7 @@ mod handlers {
 
         if let Some(ipfs_conf) = ipfs_config {
             cardano_database_distribution = Some(CardanoDatabaseDistribution {
+                supported_locations: vec![],
                 ipns_record: ipfs_conf.ipns_record,
                 ipfs_share: Some(ipfs_conf.ipfs_share),
             });
@@ -281,6 +282,7 @@ mod tests {
         assert_eq!(
             response_body.cardano_database_distribution,
             Some(CardanoDatabaseDistribution {
+                supported_locations: vec![],
                 ipns_record: Some("/ipns/test".to_string()),
                 ipfs_share: Some(33)
             })
