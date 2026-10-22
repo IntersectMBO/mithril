@@ -2,12 +2,12 @@
 
 use anyhow::Context;
 use async_trait::async_trait;
-use slog::{Logger, debug, warn};
+use slog::{Logger, debug, info, warn};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserver;
-use mithril_cardano_node_chain::entities::{ChainAddress, TxDatumFieldTypeName};
+use mithril_cardano_node_chain::entities::{ChainAddress, TxDatum, TxDatumFieldTypeName};
 use mithril_common::StdResult;
 use mithril_common::crypto_helper::ProtocolConfigurationMarkersVerifierVerificationKey;
 use mithril_common::entities::Epoch;
@@ -43,44 +43,67 @@ impl CardanoChainProtocolConfigurationMarkersReader {
             logger: logger.new_with_component_name::<Self>(),
         }
     }
+
+    /// Decode the signed markers payload held by the bytes fields of a datum.
+    fn decode_signed_payload(
+        tx_datum: &TxDatum,
+    ) -> StdResult<SignedProtocolConfigurationMarkersPayload> {
+        let payload = tx_datum
+            .get_fields_by_type(&TxDatumFieldTypeName::Bytes)?
+            .iter()
+            .filter_map(|field_value| field_value.as_str().map(|s| s.to_string()))
+            .collect::<Vec<String>>()
+            .join("");
+
+        SignedProtocolConfigurationMarkersPayload::from_json_hex(&payload)
+    }
 }
 
 #[async_trait]
 impl ProtocolConfigurationMarkersReader for CardanoChainProtocolConfigurationMarkersReader {
     async fn read_configuration_markers(&self) -> StdResult<ConfigurationResolverFromMarkers> {
         let tx_datums = self.chain_observer.get_current_datums(&self.address).await?;
-        debug!(
+        info!(
             self.logger, "Read protocol configuration markers datums";
             "address" => &self.address, "datums_count" => tx_datums.len()
         );
 
-        let last_markers: Vec<ProtocolConfigurationMarker> = tx_datums
-            .into_iter()
-            .filter_map(|datum| datum.get_fields_by_type(&TxDatumFieldTypeName::Bytes).ok())
-            .map(|fields| {
-                fields
-                    .iter()
-                    .filter_map(|field_value| field_value.as_str().map(|s| s.to_string()))
-                    .collect::<Vec<String>>()
-                    .join("")
-            })
-            .filter_map(|field_value_str| {
-                SignedProtocolConfigurationMarkersPayload::from_json_hex(&field_value_str).ok()
-            })
-            .filter_map(|signed_payload| {
-                match signed_payload.verify_signature(self.verification_key) {
-                    Ok(()) => Some(signed_payload.markers_payload.markers),
-                    Err(error) => {
-                        warn!(
-                            self.logger, "Discarded protocol configuration markers datum with an invalid signature";
-                            "address" => &self.address, "error" => ?error
-                        );
-                        None
+        let mut verified_markers = Vec::new();
+        let mut invalid_signature_datums_count = 0;
+        let mut undecodable_datums_count = 0;
+        for tx_datum in tx_datums {
+            match Self::decode_signed_payload(&tx_datum) {
+                Ok(signed_payload) => {
+                    match signed_payload.verify_signature(self.verification_key) {
+                        Ok(()) => verified_markers.push(signed_payload.markers_payload.markers),
+                        Err(error) => {
+                            debug!(
+                                self.logger, "Discarded protocol configuration markers datum with an invalid signature";
+                                "error" => ?error
+                            );
+                            invalid_signature_datums_count += 1;
+                        }
                     }
                 }
-            })
-            .next()
-            .unwrap_or_default();
+                Err(error) => {
+                    debug!(
+                        self.logger, "Discarded undecodable protocol configuration markers datum";
+                        "error" => ?error
+                    );
+                    undecodable_datums_count += 1;
+                }
+            }
+        }
+        if invalid_signature_datums_count > 0 || undecodable_datums_count > 0 {
+            warn!(
+                self.logger, "Discarded protocol configuration markers datums with an invalid signature or an undecodable payload";
+                "address" => &self.address,
+                "invalid_signature_datums_count" => invalid_signature_datums_count,
+                "undecodable_datums_count" => undecodable_datums_count
+            );
+        }
+        let last_markers: Vec<ProtocolConfigurationMarker> =
+            verified_markers.into_iter().next().unwrap_or_default();
 
         let mut markers_map: BTreeMap<Epoch, ProtocolConfigurationForEpoch> = BTreeMap::new();
         for marker in last_markers {
@@ -359,6 +382,46 @@ mod test {
         assert!(
             discarded_logs[0].contains("error="),
             "Expected the decoding error in the discarded datum log, logs:\n{log_inspector}"
+        );
+    }
+
+    #[tokio::test]
+    async fn discarded_datums_before_the_valid_one_do_not_prevent_its_selection() {
+        let markers_signer = ProtocolConfigurationMarkersSigner::create_deterministic_signer();
+        let invalid_payload = signed_markers_payload(
+            &ProtocolConfigurationMarkersSigner::create_non_deterministic_signer(),
+        );
+        let valid_payload = ProtocolConfigurationMarkersPayloadCardanoChain {
+            markers: vec![ProtocolConfigurationMarker::new(
+                Epoch(42),
+                generate_configuration_message('B').to_cbor_hex().unwrap(),
+            )],
+        }
+        .sign(&markers_signer)
+        .unwrap();
+        let mut tx_datums = vec![TxDatum("not_valid_datum".to_string())];
+        tx_datums.extend(dummy_tx_datums_from_markers_payload(vec![
+            invalid_payload,
+            valid_payload,
+        ]));
+        let chain_observer = FakeChainObserver::default();
+        chain_observer.set_datums(tx_datums).await;
+        let cardano_chain_reader = CardanoChainProtocolConfigurationMarkersReader::new(
+            "addr_test_123456".to_string(),
+            Arc::new(chain_observer),
+            markers_signer.create_verifier().to_verification_key(),
+            TestLogger::stdout(),
+        );
+
+        let configurations = cardano_chain_reader
+            .read_configuration_markers()
+            .await
+            .expect("read_configuration_markers should not fail");
+
+        assert_eq!(1, configurations.markers.len());
+        assert_eq!(
+            Some(&generate_configuration('B')),
+            configurations.markers.get(&Epoch(42))
         );
     }
 
