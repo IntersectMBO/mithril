@@ -27,13 +27,6 @@ export CARDANO_NODE_SOCKET_PATH=**PATH_TO_YOUR_NODE_SOCKET**
 export CARDANO_WALLET_PATH=**PATH_TO_YOUR_KEYPAIRS**
 export ERA_ACTIVATION_SECRET_KEY=**YOUR_ERA_ACTIVATION_SECRET_KEY**
 export ASSETS_PATH=**YOUR_ASSETS_PATH**
-export SCRIPT_TX_VALUE=**MINIUM_SCRIPT_TX_VALUE**
-```
-
-A common value for the transaction amount used when a script transaction is made is:
-
-```bash
-export SCRIPT_TX_VALUE=2100000
 ```
 
 Compute the network magic parameter that handles both the Cardano mainnet and Cardano test networks:
@@ -118,6 +111,19 @@ An example output of the command is:
   ],
   "signature": "fdcd45debabc148ef11c0bf71e42b7e583102dd5b8e486cd621a18e56136a57ff4f7bf9d036aed6148328a30a20eb6e79422ea4d1cc613e0bf97e14da64a5f00"
 }
+```
+
+#### Compute the transaction amount
+
+Compute the minimum amount of the transaction output holding the datum, which depends on the size of the datum:
+
+```bash
+$CARDANO_CLI $CARDANO_ERA query protocol-parameters $CARDANO_NETWORK_MAGIC --socket-path $CARDANO_NODE_SOCKET_PATH --out-file $ASSETS_PATH/protocol-parameters.json
+export SCRIPT_TX_VALUE=$($CARDANO_CLI $CARDANO_ERA transaction calculate-min-required-utxo \
+    --protocol-params-file $ASSETS_PATH/protocol-parameters.json \
+    --tx-out "$(cat $CARDANO_WALLET_PATH/payment.addr)+0" \
+    --tx-out-inline-datum-file $ASSETS_PATH/mithril-era-datum.json | awk '{print $2}')
+echo $SCRIPT_TX_VALUE
 ```
 
 ## Bootstrap Era Markers: Write a transaction with the first version of datum on chain
