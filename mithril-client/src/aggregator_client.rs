@@ -13,10 +13,11 @@ use mithril_aggregator_client::query::{
 };
 
 use mithril_aggregator_client::query::{
-    GetAggregatorStatusQuery, GetCardanoDatabaseListQuery, GetCardanoDatabaseQuery,
-    GetCardanoStakeDistributionQuery, GetCardanoStakeDistributionsListQuery,
-    GetCardanoTransactionProofQuery, GetCardanoTransactionQuery, GetCardanoTransactionsListQuery,
-    GetCertificateQuery, GetCertificatesListQuery, GetMithrilStakeDistributionQuery,
+    GetAggregatorFeaturesQuery, GetAggregatorStatusQuery, GetCardanoDatabaseListQuery,
+    GetCardanoDatabaseQuery, GetCardanoStakeDistributionQuery,
+    GetCardanoStakeDistributionsListQuery, GetCardanoTransactionProofQuery,
+    GetCardanoTransactionQuery, GetCardanoTransactionsListQuery, GetCertificateQuery,
+    GetCertificatesListQuery, GetMithrilStakeDistributionQuery,
     GetMithrilStakeDistributionsListQuery,
     PostIncrementCardanoDatabaseAncillaryRestoredStatisticQuery,
     PostIncrementCardanoDatabaseImmutablesRestoredStatisticQuery,
@@ -102,6 +103,17 @@ impl CardanoDatabaseAggregatorRequest for AggregatorHttpClient {
             .with_context(
                 || "Failed to increment Cardano database ancillary files restored statistic",
             )
+    }
+
+    async fn get_ipfs_share(&self) -> MithrilResult<Option<u8>> {
+        let aggregator_features = self
+            .send(GetAggregatorFeaturesQuery::current())
+            .await
+            .with_context(|| "Failed to get aggregator features")?;
+
+        Ok(aggregator_features
+            .cardano_database_distribution
+            .and_then(|cdd| cdd.ipfs_share))
     }
 }
 
@@ -278,7 +290,9 @@ mod tests {
     use httpmock::MockServer;
     use serde_json::json;
 
-    use mithril_common::messages::AggregatorStatusMessage;
+    use mithril_common::messages::{
+        AggregatorFeaturesMessage, AggregatorStatusMessage, CardanoDatabaseDistribution,
+    };
 
     use crate::common::{SupportedEra, test::Dummy};
     use crate::test_utils::TestLogger;
@@ -308,5 +322,24 @@ mod tests {
 
         let mithril_era = client.fetch_current_era().await.unwrap();
         assert_eq!(mithril_era.era, SupportedEra::Lagrange.to_string());
+    }
+
+    #[tokio::test]
+    async fn extract_cardano_database_distribution_from_feature_response() {
+        let (server, client) = setup_server_and_client();
+        server.mock(|when, then| {
+            when.any_request();
+            then.status(200).json_body(json!(AggregatorFeaturesMessage {
+                cardano_database_distribution: Some(CardanoDatabaseDistribution {
+                    supported_locations: vec![],
+                    ipns_record: None,
+                    ipfs_share: Some(35),
+                }),
+                ..Dummy::dummy()
+            }));
+        });
+
+        let share = client.get_ipfs_share().await.unwrap();
+        assert_eq!(Some(35), share);
     }
 }
