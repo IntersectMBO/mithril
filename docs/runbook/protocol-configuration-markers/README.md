@@ -69,7 +69,7 @@ export PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG="{\"type\":\"$PROTOCOL_CONFI
 Export latest active configurations from the Cardano chain:
 
 ```bash
-./mithril-aggregator protocol-configuration export-markers --target-path $ASSETS_PATH/protocol-configurations.json
+./mithril-aggregator -vv protocol-configuration export-markers --target-path $ASSETS_PATH/protocol-configurations.json
 ```
 
 Execution of previous command must return the following information:
@@ -81,7 +81,7 @@ Successfully wrote JSON protocol configurations file at **YOUR_ASSETS_PATH**/pro
 ```
 
 > [!IMPORTANT]
-> The command fails if no protocol configuration markers verified by `PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY` are found at `PROTOCOL_CONFIGURATION_READER_ADDRESS`: check both values.
+> The command fails if no protocol configuration markers verified by `PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY` are found at `PROTOCOL_CONFIGURATION_READER_ADDRESS`: check that the Cardano node is synchronized and both values. The log line `Read protocol configuration markers datums` gives the number of datums found at the address, and a warning gives the number of datums discarded for an invalid signature or an undecodable payload.
 
 If it's the first time on the targeted environment and there are no protocol configurations on-chain, export the default protocol configurations instead:
 
@@ -152,7 +152,7 @@ Manually edit previously exported JSON file written at `$ASSETS_PATH/protocol-co
 Generate Tx Datum payload file by using previously edited JSON file
 
 ```bash
-./mithril-aggregator protocol-configuration import-markers --import-path $ASSETS_PATH/protocol-configurations.json --target-path $ASSETS_PATH/protocol-configurations-datum.json
+./mithril-aggregator -vv protocol-configuration import-markers --import-path $ASSETS_PATH/protocol-configurations.json --target-path $ASSETS_PATH/protocol-configurations-datum.json
 ```
 
 Execution of previous command must return the following information:
@@ -168,6 +168,9 @@ Datum size: 3.09 KB
 Generating Tx datum output file...
 Successfully wrote Tx datum file at **YOUR_ASSETS_PATH**/protocol-configurations-datum.json
 ```
+
+> [!NOTE]
+> On the first publication, the warnings `No previous configuration was found on chain` are expected for the epochs of the verification window.
 
 > [!IMPORTANT]
 > You may encounter errors if JSON is not valid, contains zero values or contains inconsistent configurations regarding the chain configurations of the targeted environment.
@@ -377,7 +380,7 @@ $CARDANO_CLI $CARDANO_ERA query utxo --address $(cat $CARDANO_WALLET_PATH/paymen
 Optional : We can also validate what has been written on chain by re-running the export command :
 
 ```bash
-./mithril-aggregator protocol-configuration export-markers --target-path $ASSETS_PATH/protocol-configurations.json
+./mithril-aggregator -vv protocol-configuration export-markers --target-path $ASSETS_PATH/protocol-configurations.json
 ```
 
 ```json
