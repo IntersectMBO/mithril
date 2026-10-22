@@ -10,9 +10,6 @@ use mithril_stm::{
     SingleSignature,
 };
 
-#[cfg(feature = "snark")]
-use mithril_stm::MidnightPoseidonDigest;
-
 fn size<D>(k: u64, m: u64, nparties: usize, hash_name: &str)
 where
     D: MembershipDigest,
@@ -97,7 +94,7 @@ pub struct MembershipDigestConcatenationHashU64 {}
 impl MembershipDigest for MembershipDigestConcatenationHashU64 {
     type ConcatenationHash = Blake2b<U64>;
     #[cfg(feature = "snark")]
-    type SnarkHash = MidnightPoseidonDigest;
+    type SnarkHash = <MithrilMembershipDigest as MembershipDigest>::SnarkHash;
 }
 
 fn main() {

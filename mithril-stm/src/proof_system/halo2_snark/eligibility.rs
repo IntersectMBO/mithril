@@ -1,10 +1,9 @@
 use anyhow::anyhow;
 
-use crate::{PhiFValue, RegisterError, protocol::ProtocolError};
-
-#[cfg(feature = "snark")]
 use crate::{
-    LotteryIndex, LotteryTargetValue, SignatureError, StmResult, UniqueSchnorrSignature,
+    LotteryIndex, LotteryTargetValue, PhiFValue, RegisterError, SignatureError, StmResult,
+    UniqueSchnorrSignature,
+    protocol::ProtocolError,
     signature_scheme::{BaseFieldElement, DOMAIN_SEPARATION_TAG_LOTTERY, compute_poseidon_digest},
 };
 
@@ -14,7 +13,6 @@ cfg_num_integer! {
     use num_rational::Ratio;
     use num_traits::{Num, One};
 
-    #[cfg(feature = "snark")]
     use crate::Stake;
 
     /// Modulus of the Jubjub Base Field as a hexadecimal number
@@ -42,7 +40,6 @@ cfg_num_integer! {
     /// 4. Approximates `phi_f` as an exact `Ratio<i64>`, promotes to `Ratio<BigInt>`.
     /// 5. Computes `ln(1 - phi_f)` via Taylor expansion (`ln_1p_taylor_expansion`).
     /// 6. Delegates to `compute_target_value_for_snark_lottery_given_ln_approximation` for the final field-element computation.
-    #[cfg(feature = "snark")]
     pub fn compute_target_value_for_snark_lottery(phi_f: PhiFValue, stake: Stake, total_stake: Stake) -> StmResult<LotteryTargetValue> {
         if total_stake == 0 {
             return Err(RegisterError::ZeroTotalStake.into());
@@ -72,7 +69,6 @@ cfg_num_integer! {
         Ok(compute_target_value_for_snark_lottery_given_ln_approximation(&ln_one_minus_phi_f, stake, total_stake))
     }
 
-    #[cfg(feature = "snark")]
     /// Computes the lottery target value for a party from its stake, the system's total stake, and
     /// and `ln(1 - phi_f)` where `phi_f` is a protocol parameter.
     ///
@@ -202,7 +198,6 @@ cfg_num_integer! {
 /// Derives the lottery prefix from the message, then checks each index via
 /// [`check_lottery_for_index`]. Returns the collected winning indices, or
 /// `SignatureError::LotteryLost` if none win.
-#[cfg(feature = "snark")]
 pub(crate) fn compute_winning_lottery_indices(
     m: u64,
     msg: &[BaseFieldElement],
@@ -235,7 +230,6 @@ pub(crate) fn compute_winning_lottery_indices(
 /// The evaluation is computed as:
 /// `ev = Poseidon(prefix, commitment_point_x, commitment_point_y, index)` where
 /// `(commitment_point_x, commitment_point_y)` are coordinates of signature's commitment point.
-#[cfg(feature = "snark")]
 pub(crate) fn check_lottery_for_index(
     signature: &UniqueSchnorrSignature,
     lottery_index: LotteryIndex,
@@ -262,7 +256,6 @@ pub(crate) fn check_lottery_for_index(
 /// Computes the lottery prefix by hashing the message with the lottery DST.
 /// The prefix is computed by prepending `DOMAIN_SEPARATION_TAG_LOTTERY` to the message and hashing the result
 /// using `compute_poseidon_digest`.
-#[cfg(feature = "snark")]
 pub(crate) fn compute_lottery_prefix(
     message_as_base_field_element: &[BaseFieldElement],
 ) -> BaseFieldElement {
@@ -272,7 +265,6 @@ pub(crate) fn compute_lottery_prefix(
 }
 
 #[cfg(any(feature = "num-integer-backend", target_family = "wasm", windows))]
-#[cfg(feature = "snark")]
 #[cfg(test)]
 mod tests {
     use num_bigint::BigInt;
