@@ -315,11 +315,8 @@ impl IvcBenchEnv {
             TransitionPath::Genesis => unreachable!("genesis handled by prepare_genesis_step"),
         };
 
-        let snark_proof: SnarkProof<MithrilMembershipDigest> = SnarkProof::new(
-            asset.certificate_proof.clone().into_vec(),
-            benchmark_parameters(),
-            merkle_tree_depth(),
-        );
+        let snark_proof: SnarkProof<MithrilMembershipDigest> =
+            SnarkProof::new(asset.certificate_proof.clone().into_vec());
         let aggregate_verification_key =
             aggregate_verification_key_for_root(&asset.aggregate_verification_key_merkle_root)?;
         let preimage = ProtocolMessagePreimage(asset.message_preimage);
