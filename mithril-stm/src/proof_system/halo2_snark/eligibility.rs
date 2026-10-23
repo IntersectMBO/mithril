@@ -1,196 +1,219 @@
 use anyhow::anyhow;
+use num_bigint::BigInt;
+use num_integer::Integer;
+use num_rational::Ratio;
+use num_traits::{Num, One};
 
 use crate::{
-    LotteryIndex, LotteryTargetValue, PhiFValue, RegisterError, SignatureError, StmResult,
+    LotteryIndex, LotteryTargetValue, PhiFValue, RegisterError, SignatureError, Stake, StmResult,
     UniqueSchnorrSignature,
     protocol::ProtocolError,
     signature_scheme::{BaseFieldElement, DOMAIN_SEPARATION_TAG_LOTTERY, compute_poseidon_digest},
 };
 
-cfg_num_integer! {
-    use num_bigint::BigInt;
-    use num_integer::Integer;
-    use num_rational::Ratio;
-    use num_traits::{Num, One};
+/// Modulus of the Jubjub Base Field as a hexadecimal number
+const JUBJUB_BASE_FIELD_MODULUS: &str =
+    "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001";
+/// Set the number of iterations of the Taylor expansions. The higher the number, the more precise
+/// the value is. A value of 30 provides ~69 bits precision for phi_f=0.2
+const TAYLOR_EXPANSION_ITERATIONS: usize = 30;
 
-    use crate::Stake;
-
-    /// Modulus of the Jubjub Base Field as a hexadecimal number
-    const JUBJUB_BASE_FIELD_MODULUS: &str = "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001";
-    /// Set the number of iterations of the Taylor expansions. The higher the number, the more precise
-    /// the value is. A value of 30 provides ~69 bits precision for phi_f=0.2
-    const TAYLOR_EXPANSION_ITERATIONS: usize = 30;
-
-    /// Computes the lottery target value for a party from its stake, the system's total stake, and
-    /// the protocol parameter `phi_f`.
-    ///
-    /// This function validates inputs and prepares the `ln(1 - phi_f)` approximation before
-    /// delegating the core arithmetic to `compute_target_value_for_snark_lottery_given_ln_approximation`. The logarithm is computed here
-    /// (rather than inside `compute_target_value_for_snark_lottery_given_ln_approximation`) because the lower-level function accepts a
-    /// pre-computed `ln(1 - phi_f)`, allowing callers that need targets for many stake values
-    /// (during registration closing) to compute it once.
-    ///
-    /// # Steps
-    /// 1. Rejects `total_stake == 0` with `RegisterError::ZeroTotalStake`.
-    /// 2. Short-circuits `phi_f ≈ 1.0` to `p - 1` (all indices win), matching the concatenation
-    ///    proof system and avoiding `ln(0)`.
-    /// 3. Rejects `phi_f` outside `(0, 1]`, since `Ratio::approximate_float` only rejects
-    ///    infinite/NaN values and the Taylor expansion below silently diverges (or converges to a
-    ///    value for a semantically invalid negative `phi_f`) otherwise.
-    /// 4. Approximates `phi_f` as an exact `Ratio<i64>`, promotes to `Ratio<BigInt>`.
-    /// 5. Computes `ln(1 - phi_f)` via Taylor expansion (`ln_1p_taylor_expansion`).
-    /// 6. Delegates to `compute_target_value_for_snark_lottery_given_ln_approximation` for the final field-element computation.
-    pub fn compute_target_value_for_snark_lottery(phi_f: PhiFValue, stake: Stake, total_stake: Stake) -> StmResult<LotteryTargetValue> {
-        if total_stake == 0 {
-            return Err(RegisterError::ZeroTotalStake.into());
-        }
-
-        if (phi_f - 1.0).abs() < PhiFValue::EPSILON {
-            // This returns the maximal target possible Jubjub modulus - 1
-            // to ensure every participant wins the lottery
-            return Ok(&LotteryTargetValue::default() - &LotteryTargetValue::get_one());
-        }
-
-        if !(phi_f > 0.0 && phi_f <= 1.0) {
-            return Err(ProtocolError::PhiFValueOutOfRange(phi_f).into());
-        }
-
-        let phi_f_ratio_int: Ratio<i64> =
-            Ratio::approximate_float(phi_f).ok_or_else(|| anyhow!("Approximation of float as a Ratio failed because it is infinite or NaN."))?;
-        let phi_f_ratio = Ratio::new_raw(
-            BigInt::from(*phi_f_ratio_int.numer()),
-            BigInt::from(*phi_f_ratio_int.denom()),
-        );
-        let ln_one_minus_phi_f = ln_1p_taylor_expansion(
-            TAYLOR_EXPANSION_ITERATIONS,
-            phi_f_ratio.numer(),
-            phi_f_ratio.denom(),
-        );
-        Ok(compute_target_value_for_snark_lottery_given_ln_approximation(&ln_one_minus_phi_f, stake, total_stake))
+/// Computes the lottery target value for a party from its stake, the system's total stake, and
+/// the protocol parameter `phi_f`.
+///
+/// This function validates inputs and prepares the `ln(1 - phi_f)` approximation before
+/// delegating the core arithmetic to `compute_target_value_for_snark_lottery_given_ln_approximation`. The logarithm is computed here
+/// (rather than inside `compute_target_value_for_snark_lottery_given_ln_approximation`) because the lower-level function accepts a
+/// pre-computed `ln(1 - phi_f)`, allowing callers that need targets for many stake values
+/// (during registration closing) to compute it once.
+///
+/// # Steps
+/// 1. Rejects `total_stake == 0` with `RegisterError::ZeroTotalStake`.
+/// 2. Short-circuits `phi_f ≈ 1.0` to `p - 1` (all indices win), matching the concatenation
+///    proof system and avoiding `ln(0)`.
+/// 3. Rejects `phi_f` outside `(0, 1]`, since `Ratio::approximate_float` only rejects
+///    infinite/NaN values and the Taylor expansion below silently diverges (or converges to a
+///    value for a semantically invalid negative `phi_f`) otherwise.
+/// 4. Approximates `phi_f` as an exact `Ratio<i64>`, promotes to `Ratio<BigInt>`.
+/// 5. Computes `ln(1 - phi_f)` via Taylor expansion (`ln_1p_taylor_expansion`).
+/// 6. Delegates to `compute_target_value_for_snark_lottery_given_ln_approximation` for the final field-element computation.
+pub fn compute_target_value_for_snark_lottery(
+    phi_f: PhiFValue,
+    stake: Stake,
+    total_stake: Stake,
+) -> StmResult<LotteryTargetValue> {
+    if total_stake == 0 {
+        return Err(RegisterError::ZeroTotalStake.into());
     }
 
-    /// Computes the lottery target value for a party from its stake, the system's total stake, and
-    /// and `ln(1 - phi_f)` where `phi_f` is a protocol parameter.
-    ///
-    /// The target value determines the probability of winning the lottery based on the
-    /// participant's stake relative to the total stake. A higher stake results in a higher
-    /// target value, increasing the probability of eligibility.
-    ///
-    /// The target value is computed using the following formula, we need to check that:
-    /// signer_lottery_hash < p * (1 - (1 - phi_f)^w)
-    /// where p is the modulus of the field, phi_f is the protocol security parameter constant comprised in ]0,1],
-    /// w = stake/total_stake and signer_lottery_hash is the hash computed using the
-    /// signer's signature and the index tested for the lottery.
-    /// Since the modulus is a 255 bits number, we need to compute (1 - (1 - phi_f)^w) with enough precision
-    /// to maintain the lottery functional, i.e. have different targets for different stakes
-    /// and maintain the same order, however close they are.
-    /// In addition, we need this computation to be deterministic as it will be computed by all signers to create
-    /// the merkle_tree. The output should be the same no matter where it is computed (i.e. different config, OS, ...).
-    ///
-    /// In order to do that we change the expression:
-    /// 1 - (1 - phi_f)^w = 1 - exp(w * ln(1 - phi_f))
-    /// and we use Taylor expansion to approximate the exponential and natural logarithm functions to a given precision.
-    ///
-    /// # Steps
-    /// 1. Compute the taylor expansion of the expression `exp(w * ln(1 - phi_f))`.
-    /// 2. Compute the target as a ratio of `BigInt`.
-    /// 3. Use a euclidean division to extract the final target as a `BigInt`.
-    /// 4. Convert the `BigInt` to a `BaseFieldElement`.
-    pub fn compute_target_value_for_snark_lottery_given_ln_approximation(ln_one_minus_phi_f: &Ratio<BigInt>, stake: Stake, total_stake: Stake) -> LotteryTargetValue {
-        // It is safe to use .expect() as the value used is a constant so the creation of
-        // the BigInt will never fail
-        let modulus = BigInt::from_str_radix(
-            JUBJUB_BASE_FIELD_MODULUS,
-            16,
-        )
+    if (phi_f - 1.0).abs() < PhiFValue::EPSILON {
+        // This returns the maximal target possible Jubjub modulus - 1
+        // to ensure every participant wins the lottery
+        return Ok(&LotteryTargetValue::default() - &LotteryTargetValue::get_one());
+    }
+
+    if !(phi_f > 0.0 && phi_f <= 1.0) {
+        return Err(ProtocolError::PhiFValueOutOfRange(phi_f).into());
+    }
+
+    let phi_f_ratio_int: Ratio<i64> = Ratio::approximate_float(phi_f).ok_or_else(|| {
+        anyhow!("Approximation of float as a Ratio failed because it is infinite or NaN.")
+    })?;
+    let phi_f_ratio = Ratio::new_raw(
+        BigInt::from(*phi_f_ratio_int.numer()),
+        BigInt::from(*phi_f_ratio_int.denom()),
+    );
+    let ln_one_minus_phi_f = ln_1p_taylor_expansion(
+        TAYLOR_EXPANSION_ITERATIONS,
+        phi_f_ratio.numer(),
+        phi_f_ratio.denom(),
+    );
+    Ok(
+        compute_target_value_for_snark_lottery_given_ln_approximation(
+            &ln_one_minus_phi_f,
+            stake,
+            total_stake,
+        ),
+    )
+}
+
+/// Computes the lottery target value for a party from its stake, the system's total stake, and
+/// and `ln(1 - phi_f)` where `phi_f` is a protocol parameter.
+///
+/// The target value determines the probability of winning the lottery based on the
+/// participant's stake relative to the total stake. A higher stake results in a higher
+/// target value, increasing the probability of eligibility.
+///
+/// The target value is computed using the following formula, we need to check that:
+/// signer_lottery_hash < p * (1 - (1 - phi_f)^w)
+/// where p is the modulus of the field, phi_f is the protocol security parameter constant comprised in ]0,1],
+/// w = stake/total_stake and signer_lottery_hash is the hash computed using the
+/// signer's signature and the index tested for the lottery.
+/// Since the modulus is a 255 bits number, we need to compute (1 - (1 - phi_f)^w) with enough precision
+/// to maintain the lottery functional, i.e. have different targets for different stakes
+/// and maintain the same order, however close they are.
+/// In addition, we need this computation to be deterministic as it will be computed by all signers to create
+/// the merkle_tree. The output should be the same no matter where it is computed (i.e. different config, OS, ...).
+///
+/// In order to do that we change the expression:
+/// 1 - (1 - phi_f)^w = 1 - exp(w * ln(1 - phi_f))
+/// and we use Taylor expansion to approximate the exponential and natural logarithm functions to a given precision.
+///
+/// # Steps
+/// 1. Compute the taylor expansion of the expression `exp(w * ln(1 - phi_f))`.
+/// 2. Compute the target as a ratio of `BigInt`.
+/// 3. Use a euclidean division to extract the final target as a `BigInt`.
+/// 4. Convert the `BigInt` to a `BaseFieldElement`.
+pub fn compute_target_value_for_snark_lottery_given_ln_approximation(
+    ln_one_minus_phi_f: &Ratio<BigInt>,
+    stake: Stake,
+    total_stake: Stake,
+) -> LotteryTargetValue {
+    // It is safe to use .expect() as the value used is a constant so the creation of
+    // the BigInt will never fail
+    let modulus = BigInt::from_str_radix(JUBJUB_BASE_FIELD_MODULUS, 16)
         .expect("Hardcoded modulus of the Jubjub base field hex string is valid");
 
-        let stake_ratio = Ratio::new_raw(BigInt::from(stake), BigInt::from(total_stake));
+    let stake_ratio = Ratio::new_raw(BigInt::from(stake), BigInt::from(total_stake));
 
-        let exp_ln_one_minus_phi_f_stake_ratio = compute_exponential_taylor_expansion(ln_one_minus_phi_f, &stake_ratio, TAYLOR_EXPANSION_ITERATIONS);
+    let exp_ln_one_minus_phi_f_stake_ratio = compute_exponential_taylor_expansion(
+        ln_one_minus_phi_f,
+        &stake_ratio,
+        TAYLOR_EXPANSION_ITERATIONS,
+    );
 
-        let modulus_ratio = Ratio::from(modulus);
-        let target_as_ratio = modulus_ratio.clone() - modulus_ratio * exp_ln_one_minus_phi_f_stake_ratio;
+    let modulus_ratio = Ratio::from(modulus);
+    let target_as_ratio =
+        modulus_ratio.clone() - modulus_ratio * exp_ln_one_minus_phi_f_stake_ratio;
 
-        // Euclidean division
-        let (target_as_int, _) = target_as_ratio.numer().div_rem(target_as_ratio.denom());
+    // Euclidean division
+    let (target_as_int, _) = target_as_ratio.numer().div_rem(target_as_ratio.denom());
 
-        let (_, mut bytes) = target_as_int.to_bytes_le();
-        bytes.resize(32, 0);
-        // It is safe to use .expect() as the value resulting from the computation is always lower than
-        // the Jubjub modulus
-        BaseFieldElement::from_canonical_bytes(&bytes).expect("Input bytes are always lower than the Jubjub modulus hence canonical.")
-    }
+    let (_, mut bytes) = target_as_int.to_bytes_le();
+    bytes.resize(32, 0);
+    // It is safe to use .expect() as the value resulting from the computation is always lower than
+    // the Jubjub modulus
+    BaseFieldElement::from_canonical_bytes(&bytes)
+        .expect("Input bytes are always lower than the Jubjub modulus hence canonical.")
+}
 
-    /// Computes a Taylor expansion of the exponential exp(c*w) up to the (N-1)th term
-    /// where N corresponds to the number of iterations
-    /// exp(c*w) = 1 + c*w + (c*w)^2/2! + (c*w)^3/3! + ... + (c*w)^{N-1}/(N-1)! + O((c*w)^N)
-    /// We want to stop when the next term is less than our precision target epsilon
-    /// Hence we stop when |(c*w)^N / N!| < epsilon
-    /// We can check instead (c * w)^N < epsilon which gives us the bound N < log(epsilon) / log(|c*w|)
-    /// Setting epsilon to a specific precision gives use the number of iterations we need to do
-    ///
-    /// Since the value c * w is a float between 0 and 1, it is expressed as a Ratio of BigInt and the exponential
-    /// approximation is adapted to that form
-    pub fn compute_exponential_taylor_expansion(c: &Ratio<BigInt>, w: &Ratio<BigInt>, iterations: usize) -> Ratio<BigInt> {
-        let cw = c * w;
-        let (num, denom, _) = exponential_approximation(0, iterations, cw.numer(), cw.denom());
+/// Computes a Taylor expansion of the exponential exp(c*w) up to the (N-1)th term
+/// where N corresponds to the number of iterations
+/// exp(c*w) = 1 + c*w + (c*w)^2/2! + (c*w)^3/3! + ... + (c*w)^{N-1}/(N-1)! + O((c*w)^N)
+/// We want to stop when the next term is less than our precision target epsilon
+/// Hence we stop when |(c*w)^N / N!| < epsilon
+/// We can check instead (c * w)^N < epsilon which gives us the bound N < log(epsilon) / log(|c*w|)
+/// Setting epsilon to a specific precision gives use the number of iterations we need to do
+///
+/// Since the value c * w is a float between 0 and 1, it is expressed as a Ratio of BigInt and the exponential
+/// approximation is adapted to that form
+pub fn compute_exponential_taylor_expansion(
+    c: &Ratio<BigInt>,
+    w: &Ratio<BigInt>,
+    iterations: usize,
+) -> Ratio<BigInt> {
+    let cw = c * w;
+    let (num, denom, _) = exponential_approximation(0, iterations, cw.numer(), cw.denom());
 
-        Ratio::new_raw(num, denom)
-    }
+    Ratio::new_raw(num, denom)
+}
 
-
-    /// Function that computes an approximation of exp(a/b) using a binomial splitting
-    /// to compute the taylor expansion terms between first_term and last_term,
-    /// i.e. between (a/b)^first_term * (1/first_term!) and (a/b)^last_term * (1/last_term!)
-    ///
-    /// We have that exp(a/b) = 1 + a/b + (a/b)^2/2! + (a/b)^3/3! + ... + (a/b)^{N-1}/(N-1)! + O((a/b)^N)
-    /// This function splits this computation in the middle and recursively compute each side by finding the quotient
-    /// X/Y that equals the sum of the terms in the split. Those terms are recursively combined to obtain the final
-    /// approximation of exp(a/b)
-    pub fn exponential_approximation(first_term: usize, last_term: usize, a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
-        if last_term - first_term == 1 {
-            if first_term == 0 {
-                return (BigInt::one(), BigInt::one(), BigInt::one());
-            }
-            return (a.clone(), b * BigInt::from(first_term), a.clone());
+/// Function that computes an approximation of exp(a/b) using a binomial splitting
+/// to compute the taylor expansion terms between first_term and last_term,
+/// i.e. between (a/b)^first_term * (1/first_term!) and (a/b)^last_term * (1/last_term!)
+///
+/// We have that exp(a/b) = 1 + a/b + (a/b)^2/2! + (a/b)^3/3! + ... + (a/b)^{N-1}/(N-1)! + O((a/b)^N)
+/// This function splits this computation in the middle and recursively compute each side by finding the quotient
+/// X/Y that equals the sum of the terms in the split. Those terms are recursively combined to obtain the final
+/// approximation of exp(a/b)
+pub fn exponential_approximation(
+    first_term: usize,
+    last_term: usize,
+    a: &BigInt,
+    b: &BigInt,
+) -> (BigInt, BigInt, BigInt) {
+    if last_term - first_term == 1 {
+        if first_term == 0 {
+            return (BigInt::one(), BigInt::one(), BigInt::one());
         }
-
-        let middle = (first_term + last_term) / 2;
-        // Computes the terms to the left of the middle
-        let (numerator_left, denominator_left, auxiliary_value_left) = exponential_approximation(first_term, middle, a, b);
-        // Computes the terms to the right of the middle
-        let (numerator_right, denominator_right, auxiliary_value_right) = exponential_approximation(middle, last_term, a, b);
-
-        let numerator = &numerator_left * &denominator_right + &auxiliary_value_left * &numerator_right;
-        let denominator = &denominator_left * &denominator_right;
-        let auxiliary_value = auxiliary_value_left * auxiliary_value_right;
-
-        // returns the numerator and denominator of the computed terms
-        // as well as an additional value to help with the rest of the computation
-        (numerator, denominator, auxiliary_value)
+        return (a.clone(), b * BigInt::from(first_term), a.clone());
     }
 
-    /// Function that computes an approximation of ln(1 - a/b) using a taylor expansion
-    /// for a given number N of iterations
-    /// ln(1 - a/b) = -a/b - ((a/b)^2)/2) - ((a/b)^3)/3) - ... - ((a/b)^(N))/N) + o((a/b)^(N+1))
-    ///
-    /// It performs a straighforward for loop in a naive way updating the numerator and denominator
-    /// every loop and the accumulator using the new values. The numerator stores the power of a and
-    /// the denominator the power of b.
-    fn ln_1p_taylor_expansion(iterations: usize, a: &BigInt, b: &BigInt) -> Ratio<BigInt> {
-        let mut numerator = a.clone();
-        let mut denominator = b.clone();
-        let mut accumulator = Ratio::new_raw(a.clone(),b.clone());
-        for i in 2..(iterations + 1) {
-            numerator *= a;
-            denominator *= b;
-            accumulator += Ratio::new_raw(numerator.clone(), denominator.clone() * i);
-        }
+    let middle = (first_term + last_term) / 2;
+    // Computes the terms to the left of the middle
+    let (numerator_left, denominator_left, auxiliary_value_left) =
+        exponential_approximation(first_term, middle, a, b);
+    // Computes the terms to the right of the middle
+    let (numerator_right, denominator_right, auxiliary_value_right) =
+        exponential_approximation(middle, last_term, a, b);
 
-        -accumulator
+    let numerator = &numerator_left * &denominator_right + &auxiliary_value_left * &numerator_right;
+    let denominator = &denominator_left * &denominator_right;
+    let auxiliary_value = auxiliary_value_left * auxiliary_value_right;
+
+    // returns the numerator and denominator of the computed terms
+    // as well as an additional value to help with the rest of the computation
+    (numerator, denominator, auxiliary_value)
+}
+
+/// Function that computes an approximation of ln(1 - a/b) using a taylor expansion
+/// for a given number N of iterations
+/// ln(1 - a/b) = -a/b - ((a/b)^2)/2) - ((a/b)^3)/3) - ... - ((a/b)^(N))/N) + o((a/b)^(N+1))
+///
+/// It performs a straighforward for loop in a naive way updating the numerator and denominator
+/// every loop and the accumulator using the new values. The numerator stores the power of a and
+/// the denominator the power of b.
+fn ln_1p_taylor_expansion(iterations: usize, a: &BigInt, b: &BigInt) -> Ratio<BigInt> {
+    let mut numerator = a.clone();
+    let mut denominator = b.clone();
+    let mut accumulator = Ratio::new_raw(a.clone(), b.clone());
+    for i in 2..(iterations + 1) {
+        numerator *= a;
+        denominator *= b;
+        accumulator += Ratio::new_raw(numerator.clone(), denominator.clone() * i);
     }
 
+    -accumulator
 }
 
 /// Computes all winning lottery indices in `0..m` for a given signature and target value.
@@ -264,7 +287,6 @@ pub(crate) fn compute_lottery_prefix(
     compute_poseidon_digest(&prefix)
 }
 
-#[cfg(any(feature = "num-integer-backend", target_family = "wasm", windows))]
 #[cfg(test)]
 mod tests {
     use num_bigint::BigInt;
