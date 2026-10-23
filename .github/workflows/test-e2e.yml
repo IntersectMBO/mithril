@@ -32,12 +32,10 @@ on:
         description: "Additional arguments to pass to the Mithril nodes build command"
         required: false
         type: string
-        default: "--features snark"
       additional-e2e-runner-build-args:
         description: "Additional arguments to pass to the end-to-end runner build command"
         required: false
         type: string
-        default: "--features snark"
   workflow_call:
     inputs:
       cardano-node-versions:
@@ -59,12 +57,10 @@ on:
         description: "Additional arguments to pass to the Mithril nodes build command"
         required: false
         type: string
-        default: "--features snark"
       additional-e2e-runner-build-args:
         description: "Additional arguments to pass to the end-to-end runner build command"
         required: false
         type: string
-        default: "--features snark"
     secrets:
       E2E_RUNNER_GCP_CREDENTIALS:
         description: "Credentials of the service account starting and stopping the self-hosted runner"

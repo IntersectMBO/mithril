@@ -10,7 +10,7 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [features]
-default = ["rustls"]
+default = ["rustls", "snark"]
 rustls = ["reqwest/rustls", "mithril-circuit-key-registry?/rustls"]
 
 # The SRS download needs a TLS backend, which the removal of the `mithril-stm` TLS features no

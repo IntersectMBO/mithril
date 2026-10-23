@@ -16,11 +16,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
-            test-args: --features full,unstable --workspace
+            test-args: --features full,unstable --workspace --exclude mithril-stm
             cargo-profile: ci-tests
           - os: ubuntu-24.04
-            test-args: --features snark -p mithril-stm -p mithril-common -p mithril-circuit-key-registry -p mithril-aggregator -p mithril-signer -p mithril-relay -p mithril-setup
-            artifact-suffix: -snark
+            test-args: -p mithril-stm
+            artifact-suffix: -stm
             # Default to the fast profile; the `prepare` step upgrades to `slow-cargo-profile`
             # only when the slow SNARK tests are actually in scope for this run (so we don't pay
             # the opt-level 3 build cost on PRs that filter those tests out).
@@ -31,9 +31,11 @@ jobs:
           - os: ubuntu-24.04-arm
             test-args: --features full,unstable --workspace
             cargo-profile: ci-tests
+            exclude-slow-tests: true
           # Exclude nodes not officially supported on Windows and macOS (only mithril-client is supported)
           - os: macos-15
             cargo-profile: ci-tests
+            exclude-slow-tests: true
             test-args: >
               --features full,unstable --workspace
               --exclude mithril-aggregator
@@ -74,7 +76,10 @@ jobs:
         name: Prepare
         shell: bash
         run: |
-          if [[ "${{ inputs.include-slow-tests }}" == "true" ]]; then
+          if [[ "${{ matrix.exclude-slow-tests }}" == "true" ]]; then
+            FILTERSET="not test(#*slow::*)"
+            SLOW_TESTS=false
+          elif [[ "${{ inputs.include-slow-tests }}" == "true" ]]; then
             FILTERSET="$(.github/workflows/scripts/filter-slow-tests.sh --all)"
             SLOW_TESTS=true
           else
