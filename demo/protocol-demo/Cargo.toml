@@ -9,6 +9,7 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [features]
+default = ["snark"]
 # Enable experimental SNARK support in mithril-stm and mithril-common.
 snark = ["mithril-stm/snark", "mithril-common/snark"]
 

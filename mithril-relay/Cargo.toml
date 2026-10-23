@@ -10,7 +10,7 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [features]
-default = ["rustls"]
+default = ["rustls", "snark"]
 # For activating snark features
 snark = ["mithril-common/snark"]
 rustls = ["reqwest/rustls"]

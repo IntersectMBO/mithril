@@ -14,6 +14,7 @@ include = ["**/*.rs", "Cargo.toml", "README.md", ".gitignore"]
 all-features = true
 
 [features]
+default = ["snark"]
 # Enables the registry, which requires the SNARK implementation of the `mithril-common` dependency
 snark = ["mithril-common/snark"]
 

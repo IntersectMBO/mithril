@@ -18,7 +18,7 @@ clippy_all_crates() {
         fi
 
         if [[ " mithril-stm " == *" ${package_name} "* ]]; then
-            additional_args+=(--features "snark,benchmark-internals")
+            additional_args+=(--features "benchmark-internals")
         fi
         
         echo -e " Running clippy for package: ${package_name}"
