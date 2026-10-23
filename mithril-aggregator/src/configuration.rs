@@ -12,7 +12,8 @@ use mithril_cli_helper::{register_config_value, serde_deserialization};
 use mithril_common::crypto_helper::{GenesisEd25519Signer, ManifestSigner};
 use mithril_common::entities::{
     BlockNumber, CompressionAlgorithm, ConfigSecret, HexEncodedGenesisVerificationKey,
-    HexEncodedKey, ProtocolParameters, SignedEntityConfig, SignedEntityTypeDiscriminants,
+    HexEncodedKey, Percentage, ProtocolParameters, SignedEntityConfig,
+    SignedEntityTypeDiscriminants,
 };
 use mithril_common::{AggregateSignatureType, CardanoNetwork, StdResult};
 use mithril_dmq::DmqNetwork;
@@ -128,7 +129,7 @@ pub trait ConfigurationSource {
     }
 
     /// Advertised share of immutables to download through IPFS from the clients (0-100 inclusive)
-    fn ipfs_share(&self) -> u8 {
+    fn ipfs_share(&self) -> Percentage {
         panic!("ipfs_share is not implemented.");
     }
 
@@ -519,7 +520,7 @@ pub struct ServeCommandConfiguration {
     pub ipfs_rpc_server_config: Option<IpfsRpcServerConfig>,
 
     /// Advertised share of immutables to download through IPFS from the clients (0-100 inclusive)
-    pub ipfs_share: u8,
+    pub ipfs_share: Percentage,
 
     /// Server listening IP
     pub server_ip: String,
@@ -833,7 +834,7 @@ impl ServeCommandConfiguration {
             snapshot_bucket_name: None,
             snapshot_use_cdn_domain: false,
             ipfs_rpc_server_config: None,
-            ipfs_share: 5,
+            ipfs_share: Percentage::new(5),
             server_ip: "0.0.0.0".to_string(),
             server_port: 8000,
             public_server_url: None,
@@ -952,7 +953,7 @@ impl ConfigurationSource for ServeCommandConfiguration {
         self.ipfs_rpc_server_config.clone()
     }
 
-    fn ipfs_share(&self) -> u8 {
+    fn ipfs_share(&self) -> Percentage {
         self.ipfs_share
     }
 

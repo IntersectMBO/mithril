@@ -6,7 +6,7 @@ use crate::http_server::routes::{
 };
 
 use mithril_common::api_version::APIVersionProvider;
-use mithril_common::entities::SignedEntityTypeDiscriminants;
+use mithril_common::entities::{Percentage, SignedEntityTypeDiscriminants};
 #[cfg(test)]
 use mithril_common::test::double::Dummy;
 use mithril_common::{
@@ -42,7 +42,7 @@ pub struct RouterConfig {
 /// Configuration for IPFS metadata
 #[derive(Debug, Clone)]
 pub struct IpfsConfig {
-    pub ipfs_share: u8,
+    pub ipfs_share: Percentage,
     pub ipns_record: Option<String>,
 }
 

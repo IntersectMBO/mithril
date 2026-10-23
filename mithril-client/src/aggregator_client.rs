@@ -37,7 +37,9 @@ use crate::{
     CardanoStakeDistributionListItem, CardanoTransactionSnapshot,
     CardanoTransactionSnapshotListItem, CardanoTransactionsProofs, MithrilCertificate,
     MithrilCertificateListItem, MithrilResult, MithrilStakeDistribution,
-    MithrilStakeDistributionListItem, common::EpochSpecifier, era::FetchedEra,
+    MithrilStakeDistributionListItem,
+    common::{EpochSpecifier, Percentage},
+    era::FetchedEra,
 };
 
 use crate::{
@@ -105,7 +107,7 @@ impl CardanoDatabaseAggregatorRequest for AggregatorHttpClient {
             )
     }
 
-    async fn get_ipfs_share(&self) -> MithrilResult<Option<u8>> {
+    async fn get_ipfs_share(&self) -> MithrilResult<Option<Percentage>> {
         let aggregator_features = self
             .send(GetAggregatorFeaturesQuery::current())
             .await
@@ -333,13 +335,13 @@ mod tests {
                 cardano_database_distribution_settings: Some(CardanoDatabaseDistributionSettings {
                     supported_locations: vec![],
                     ipns_record: None,
-                    ipfs_share: Some(35),
+                    ipfs_share: Some(Percentage::new(35)),
                 }),
                 ..Dummy::dummy()
             }));
         });
 
         let share = client.get_ipfs_share().await.unwrap();
-        assert_eq!(Some(35), share);
+        assert_eq!(Some(Percentage::new(35)), share);
     }
 }

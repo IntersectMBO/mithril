@@ -985,6 +985,8 @@ components:
             ipfs_share:
               description: Share of the immutables files to distribute through IPFS (0-100 inclusive)
               type: integer
+              minimum: 0
+              maximum: 100
       examples:
         - {
             "open_api_version": "0.1.17",

@@ -6,7 +6,7 @@ use anyhow::anyhow;
 use mithril_cardano_node_internal_database::{IMMUTABLE_DIR, LEDGER_DIR, VOLATILE_DIR};
 
 use crate::MithrilResult;
-use crate::common::ImmutableFileNumber;
+use crate::common::{ImmutableFileNumber, Percentage};
 
 /// Options for downloading and unpacking a Cardano database
 #[derive(Debug, Copy, Clone)]
@@ -31,11 +31,11 @@ pub struct DownloadUnpackOptions {
 /// Options to override the IPFS share ratio to download immutable files
 #[derive(Debug, Copy, Clone)]
 pub enum IpfsShare {
-    /// Use a custom share ratio for the immutables files to download through IPFS (0-100 inclusive)
-    Ratio(u8),
-    /// Download files from IPFS first, falling back to other sources only if IPFS fails (equivalent to `Ratio(100)`).
+    /// Use a custom share ratio for the immutables files to download through IPFS
+    Ratio(Percentage),
+    /// Download files from IPFS first, falling back to other sources only if IPFS fails (equivalent to `Ratio(Percentage::HUNDRED)`).
     Prefer,
-    /// Only download files from IPFS if other sources fail (equivalent to `Ratio(0)`)
+    /// Only download files from IPFS if other sources fail (equivalent to `Ratio(Percentage::ZERO)`)
     Fallback,
     /// Disable downloading files from IPFS
     Disabled,

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use mithril_stm::AggregateSignatureType;
 
+use crate::entities::Percentage;
 use crate::messages::SignedEntityTypeDiscriminantsMessage;
 
 /// Message advertised by an Aggregator to inform about its features
@@ -60,7 +61,7 @@ pub struct CardanoDatabaseDistributionSettings {
 
     /// Share of the immutables files to distribute through IPFS (0-100 inclusive)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ipfs_share: Option<u8>,
+    pub ipfs_share: Option<Percentage>,
 }
 
 /// Types of locations for the immutable files.
@@ -207,7 +208,7 @@ mod tests {
                     "/ipns/k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66"
                         .to_string(),
                 ),
-                ipfs_share: Some(30),
+                ipfs_share: Some(Percentage::new(30)),
             }),
         }
     }

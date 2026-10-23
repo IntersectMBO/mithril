@@ -12,7 +12,7 @@ use mithril_common::{crypto_helper::MKProof, messages::CertificateMessage};
 
 #[cfg(feature = "fs")]
 use crate::cardano_database_client::{VerifiedDigests, proving::CardanoDatabaseVerificationError};
-use crate::common::{Epoch, EpochSpecifier};
+use crate::common::{Epoch, EpochSpecifier, Percentage};
 #[cfg(feature = "fs")]
 use crate::feedback::FeedbackSender;
 #[cfg(feature = "fs")]
@@ -72,7 +72,7 @@ pub trait CardanoDatabaseAggregatorRequest: Send + Sync {
     async fn increment_ancillary_downloaded_statistic(&self) -> MithrilResult<()>;
 
     /// Get the ipfs share for the Cardano database download.
-    async fn get_ipfs_share(&self) -> MithrilResult<Option<u8>>;
+    async fn get_ipfs_share(&self) -> MithrilResult<Option<Percentage>>;
 }
 
 impl CardanoDatabaseClient {

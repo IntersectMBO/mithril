@@ -126,7 +126,7 @@ mod tests {
 
     use mithril_api_spec::APISpec;
     use mithril_common::AggregateSignatureType;
-    use mithril_common::entities::SignedEntityTypeDiscriminants;
+    use mithril_common::entities::{Percentage, SignedEntityTypeDiscriminants};
     use mithril_common::messages::{
         AggregatorCapabilities, AggregatorFeaturesMessage, CardanoDatabaseDistributionSettings,
         CardanoTransactionsProverCapabilities, ImmutablesLocationType,
@@ -288,7 +288,7 @@ mod tests {
         let config = RouterConfig {
             allowed_discriminants: BTreeSet::from([SignedEntityTypeDiscriminants::CardanoDatabase]),
             ipfs_config: Some(IpfsConfig {
-                ipfs_share: 33,
+                ipfs_share: Percentage::new(33),
                 ipns_record: Some("/ipns/test".to_string()),
             }),
             ..RouterConfig::dummy()
@@ -309,7 +309,7 @@ mod tests {
                         ImmutablesLocationType::Ipfs
                     ],
                     ipns_record: Some("/ipns/test".to_string()),
-                    ipfs_share: Some(33)
+                    ipfs_share: Some(Percentage::new(33))
                 })
             );
         });
