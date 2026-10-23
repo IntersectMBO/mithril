@@ -10,6 +10,8 @@ use mithril_cardano_node_internal_database::entities::ImmutableFile;
 #[cfg(feature = "fs")]
 use mithril_common::{crypto_helper::MKProof, messages::CertificateMessage};
 
+#[cfg(all(feature = "fs", feature = "unstable"))]
+pub use crate::cardano_database_client::download_unpack::IpfsShare;
 #[cfg(feature = "fs")]
 use crate::cardano_database_client::{VerifiedDigests, proving::CardanoDatabaseVerificationError};
 use crate::common::{Epoch, EpochSpecifier, Percentage};
@@ -101,6 +103,8 @@ impl CardanoDatabaseClient {
                 ancillary_verifier,
                 feedback_sender.clone(),
                 logger.clone(),
+                #[cfg(feature = "unstable")]
+                aggregator_requester.clone(),
             ),
             #[cfg(feature = "fs")]
             artifact_prover: InternalArtifactProver::new(
@@ -162,6 +166,34 @@ impl CardanoDatabaseClient {
                 immutable_file_range,
                 target_dir,
                 download_unpack_options,
+                #[cfg(all(feature = "fs", feature = "unstable"))]
+                IpfsShare::default(),
+            )
+            .await
+    }
+
+    /// Download and unpack the given Cardano database parts data by hash, with IPFS share control.
+    ///
+    /// IPFS control is only effective if IPFS download is enabled.
+    ///
+    /// Hidden: this control is only needed for testing until IPFS is fully deployed.
+    #[cfg(all(feature = "fs", feature = "unstable"))]
+    #[doc(hidden)]
+    pub async fn download_unpack_with_ipfs_control(
+        &self,
+        cardano_database_snapshot: &CardanoDatabaseSnapshot,
+        immutable_file_range: &ImmutableFileRange,
+        target_dir: &Path,
+        download_unpack_options: DownloadUnpackOptions,
+        ipfs_share: IpfsShare,
+    ) -> MithrilResult<()> {
+        self.artifact_downloader
+            .download_unpack(
+                cardano_database_snapshot,
+                immutable_file_range,
+                target_dir,
+                download_unpack_options,
+                ipfs_share,
             )
             .await
     }

@@ -13,6 +13,10 @@ use mithril_common::messages::{
 
 use crate::MithrilResult;
 use crate::cardano_database_client::ImmutableFileRange;
+#[cfg(feature = "unstable")]
+use crate::cardano_database_client::{
+    CardanoDatabaseAggregatorRequest, download_unpack::IpfsShare,
+};
 use crate::feedback::{FeedbackSender, MithrilEvent, MithrilEventCardanoDatabase};
 use crate::file_downloader::{DownloadEvent, FileDownloader, FileDownloaderUri};
 use crate::utils::{
@@ -32,6 +36,8 @@ pub struct InternalArtifactDownloader {
     ancillary_verifier: Option<Arc<AncillaryVerifier>>,
     feedback_sender: FeedbackSender,
     logger: slog::Logger,
+    #[cfg(feature = "unstable")]
+    _aggregator_requester: Arc<dyn CardanoDatabaseAggregatorRequest>,
 }
 
 impl InternalArtifactDownloader {
@@ -42,6 +48,9 @@ impl InternalArtifactDownloader {
         ancillary_verifier: Option<Arc<AncillaryVerifier>>,
         feedback_sender: FeedbackSender,
         logger: slog::Logger,
+        #[cfg(feature = "unstable")] aggregator_requester: Arc<
+            dyn CardanoDatabaseAggregatorRequest,
+        >,
     ) -> Self {
         Self {
             http_file_downloader,
@@ -50,6 +59,8 @@ impl InternalArtifactDownloader {
             ancillary_verifier,
             feedback_sender,
             logger,
+            #[cfg(feature = "unstable")]
+            _aggregator_requester: aggregator_requester,
         }
     }
 
@@ -60,6 +71,7 @@ impl InternalArtifactDownloader {
         immutable_file_range: &ImmutableFileRange,
         target_dir: &Path,
         download_unpack_options: DownloadUnpackOptions,
+        #[cfg(feature = "unstable")] _ipfs_share: IpfsShare,
     ) -> MithrilResult<()> {
         let download_id = MithrilEvent::new_snapshot_download_id();
         let last_immutable_file_number = cardano_database_snapshot.beacon.immutable_file_number;
@@ -661,8 +673,12 @@ mod tests {
     }
 
     mod building_download_tasks {
+        #[cfg(feature = "unstable")]
+        use mithril_common::entities::Percentage;
         use mithril_common::{entities::CompressionAlgorithm, test::double::fake_keys};
 
+        #[cfg(feature = "unstable")]
+        use crate::cardano_database_client::api::MockCardanoDatabaseAggregatorRequest;
         use crate::file_downloader::MockFileDownloader;
 
         use super::*;
@@ -671,19 +687,25 @@ mod tests {
             AncillaryVerifier::new(fake_keys::manifest_verification_key()[0].try_into().unwrap())
         }
 
-        #[tokio::test]
-        async fn building_immutables_download_tasks_fails_if_all_locations_are_unknown() {
-            let total_immutable_files = 2;
-            let immutable_file_range = ImmutableFileRange::Range(1, total_immutable_files);
-            let target_dir = temp_dir_create!();
-            let artifact_downloader = InternalArtifactDownloader::new(
+        fn artifact_downloader_for_test() -> InternalArtifactDownloader {
+            InternalArtifactDownloader::new(
                 Arc::new(MockFileDownloader::new()),
                 #[cfg(feature = "unstable")]
                 None,
                 None,
                 FeedbackSender::new(&[]),
                 TestLogger::stdout(),
-            );
+                #[cfg(feature = "unstable")]
+                Arc::new(MockCardanoDatabaseAggregatorRequest::new()),
+            )
+        }
+
+        #[tokio::test]
+        async fn building_immutables_download_tasks_fails_if_all_locations_are_unknown() {
+            let total_immutable_files = 2;
+            let immutable_file_range = ImmutableFileRange::Range(1, total_immutable_files);
+            let target_dir = temp_dir_create!();
+            let artifact_downloader = artifact_downloader_for_test();
 
             let build_tasks_result = artifact_downloader.build_download_tasks_for_immutables(
                 &ImmutablesMessagePart {
@@ -709,14 +731,11 @@ mod tests {
             let total_immutable_files = 2;
             let immutable_file_range = ImmutableFileRange::Range(1, total_immutable_files);
             let target_dir = temp_dir_create!();
-            let artifact_downloader = InternalArtifactDownloader::new(
-                Arc::new(MockFileDownloader::new()),
+            let artifact_downloader = InternalArtifactDownloader {
                 #[cfg(feature = "unstable")]
-                None,
-                None,
-                FeedbackSender::new(&[]),
-                TestLogger::stdout(),
-            );
+                ipfs_file_downloader: None,
+                ..artifact_downloader_for_test()
+            };
 
             let build_tasks_result = artifact_downloader.build_download_tasks_for_immutables(
                 &ImmutablesMessagePart {
@@ -749,19 +768,17 @@ mod tests {
             let total_immutable_files = 2;
             let immutable_file_range = ImmutableFileRange::Range(1, total_immutable_files);
             let target_dir = temp_dir_create!();
-            let artifact_downloader = InternalArtifactDownloader::new(
-                Arc::new(
+            let artifact_downloader = InternalArtifactDownloader {
+                http_file_downloader: Arc::new(
                     MockFileDownloaderBuilder::default()
                         .with_times(total_immutable_files as usize)
                         .with_compression(Some(CompressionAlgorithm::Zstandard))
                         .with_success()
                         .build(),
                 ),
-                None,
-                None,
-                FeedbackSender::new(&[]),
                 logger,
-            );
+                ..artifact_downloader_for_test()
+            };
             let cardano_database_snapshot = CardanoDatabaseSnapshot {
                 hash: "hash-123".to_string(),
                 beacon: CardanoDbBeacon {
@@ -797,6 +814,7 @@ mod tests {
                         include_ancillary: false,
                         ..DownloadUnpackOptions::default()
                     },
+                    IpfsShare::Ratio(10.into()),
                 )
                 .await
                 .unwrap();
@@ -811,14 +829,10 @@ mod tests {
             let total_immutable_files = 2;
             let immutable_file_range = ImmutableFileRange::Range(1, total_immutable_files);
             let target_dir = temp_dir_create!();
-            let artifact_downloader = InternalArtifactDownloader::new(
-                Arc::new(MockFileDownloader::new()),
-                #[cfg(feature = "unstable")]
-                None,
-                None,
-                FeedbackSender::new(&[]),
+            let artifact_downloader = InternalArtifactDownloader {
                 logger,
-            );
+                ..artifact_downloader_for_test()
+            };
 
             let download_unpack_options = DownloadUnpackOptions {
                 include_ancillary: true,
@@ -852,6 +866,8 @@ mod tests {
                     &immutable_file_range,
                     target_dir.as_path(),
                     download_unpack_options,
+                    #[cfg(feature = "unstable")]
+                    IpfsShare::Ratio(Percentage::ZERO),
                 )
                 .await;
 
@@ -867,14 +883,10 @@ mod tests {
             let total_immutable_files = 2;
             let immutable_file_range = ImmutableFileRange::Range(1, total_immutable_files);
             let target_dir = temp_dir_create!();
-            let artifact_downloader = InternalArtifactDownloader::new(
-                Arc::new(MockFileDownloader::new()),
-                #[cfg(feature = "unstable")]
-                None,
-                None,
-                FeedbackSender::new(&[]),
+            let artifact_downloader = InternalArtifactDownloader {
                 logger,
-            );
+                ..artifact_downloader_for_test()
+            };
 
             let download_unpack_options = DownloadUnpackOptions {
                 include_ancillary: false,
@@ -908,6 +920,8 @@ mod tests {
                     &immutable_file_range,
                     target_dir.as_path(),
                     download_unpack_options,
+                    #[cfg(feature = "unstable")]
+                    IpfsShare::Ratio(Percentage::ZERO),
                 )
                 .await;
 
@@ -919,14 +933,10 @@ mod tests {
         #[tokio::test]
         async fn building_ancillary_download_tasks_fails_if_all_locations_are_unknown() {
             let target_dir = temp_dir_create!();
-            let artifact_downloader = InternalArtifactDownloader::new(
-                Arc::new(MockFileDownloader::new()),
-                #[cfg(feature = "unstable")]
-                None,
-                Some(Arc::new(fake_ancillary_verifier())),
-                FeedbackSender::new(&[]),
-                TestLogger::stdout(),
-            );
+            let artifact_downloader = InternalArtifactDownloader {
+                ancillary_verifier: Some(Arc::new(fake_ancillary_verifier())),
+                ..artifact_downloader_for_test()
+            };
 
             let build_tasks_result = artifact_downloader.new_ancillary_download_task(
                 &AncillaryMessagePart {
