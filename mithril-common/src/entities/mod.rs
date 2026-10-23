@@ -25,6 +25,7 @@ mod http_server_error;
 mod mithril_network;
 mod mithril_stake_distribution;
 mod mk_set_proof;
+mod percentage;
 mod protocol_message;
 mod protocol_parameters;
 mod signable_manifest;
@@ -67,6 +68,7 @@ pub use http_server_error::{ClientError, ServerError};
 pub use mithril_network::MithrilNetwork;
 pub use mithril_stake_distribution::MithrilStakeDistribution;
 pub use mk_set_proof::*;
+pub use percentage::Percentage;
 #[cfg(feature = "snark")]
 pub use protocol_message::RigidProtocolMessageIntegrityError;
 pub use protocol_message::{
