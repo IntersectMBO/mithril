@@ -78,9 +78,12 @@
           isFakeAggregatorDefaultData = lib.hasInfix "/mithril-aggregator-fake/default_data/" path;
           isTestsAsset = lib.hasInfix "/tests/assets/" path;
           isGoldenVector = lib.hasInfix "/golden_vectors/" path;
+          isCircuitKeyOrAsset =
+            lib.hasInfix "/mithril-stm/src/circuits/" path
+            && lib.any (suffix: lib.hasSuffix suffix base) [".asset" ".vkey"];
         in
           type == "directory" || matchesSuffix || isCargoFile || isCargoConfig || isOpenApiYaml
-                || isFakeAggregatorDefaultData || isTestsAsset || isGoldenVector;
+                || isFakeAggregatorDefaultData || isTestsAsset || isGoldenVector || isCircuitKeyOrAsset;
 
         clean = root:
           lib.cleanSourceWith {
