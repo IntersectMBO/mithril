@@ -4,8 +4,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
+use slog::warn;
 use tokio::task::JoinSet;
 
+#[cfg(feature = "unstable")]
+use mithril_common::entities::Percentage;
 use mithril_common::entities::{AncillaryLocation, ImmutableFileNumber, ImmutablesLocation};
 use mithril_common::messages::{
     AncillaryMessagePart, CardanoDatabaseSnapshotMessage, ImmutablesMessagePart,
@@ -29,6 +32,11 @@ use super::DownloadUnpackOptions;
 use super::download_task::CircuitBreaker;
 use super::download_task::{DownloadKind, DownloadTask, LocationToDownload};
 
+/// Percentage of immutable files to download through IPFS if IPFS is enabled, but the query to
+/// fetch the aggregator ratio fails.
+#[cfg(feature = "unstable")]
+const IPFS_FALLBACK_RATIO: Percentage = Percentage::new(15);
+
 pub struct InternalArtifactDownloader {
     http_file_downloader: Arc<dyn FileDownloader>,
     #[cfg(feature = "unstable")]
@@ -37,7 +45,7 @@ pub struct InternalArtifactDownloader {
     feedback_sender: FeedbackSender,
     logger: slog::Logger,
     #[cfg(feature = "unstable")]
-    _aggregator_requester: Arc<dyn CardanoDatabaseAggregatorRequest>,
+    aggregator_requester: Arc<dyn CardanoDatabaseAggregatorRequest>,
 }
 
 impl InternalArtifactDownloader {
@@ -60,7 +68,7 @@ impl InternalArtifactDownloader {
             feedback_sender,
             logger,
             #[cfg(feature = "unstable")]
-            _aggregator_requester: aggregator_requester,
+            aggregator_requester,
         }
     }
 
@@ -71,7 +79,7 @@ impl InternalArtifactDownloader {
         immutable_file_range: &ImmutableFileRange,
         target_dir: &Path,
         download_unpack_options: DownloadUnpackOptions,
-        #[cfg(feature = "unstable")] _ipfs_share: IpfsShare,
+        #[cfg(feature = "unstable")] ipfs_share: IpfsShare,
     ) -> MithrilResult<()> {
         let download_id = MithrilEvent::new_snapshot_download_id();
         let last_immutable_file_number = cardano_database_snapshot.beacon.immutable_file_number;
@@ -109,27 +117,41 @@ impl InternalArtifactDownloader {
                 .iter()
                 .any(|l| matches!(l, ImmutablesLocation::Ipfs { .. }))
         {
-            slog::warn!(
+            warn!(
                 self.logger,
                 "IPFS locations are available for immutable files but no IPFS downloader is configured (no `ipfs_rpc_base_url` set); those locations will be skipped."
             );
         }
+
+        #[cfg(feature = "unstable")]
+        let ipfs_ratio = self
+            .expand_ipfs_share_to_percentage(
+                ipfs_share,
+                cardano_database_snapshot
+                    .immutables
+                    .locations
+                    .iter()
+                    .any(|l| matches!(l, ImmutablesLocation::Ipfs { .. })),
+            )
+            .await;
 
         let mut tasks = VecDeque::from(self.build_download_tasks_for_immutables(
             &cardano_database_snapshot.immutables,
             immutable_file_number_range,
             target_dir,
             &download_id,
+            #[cfg(feature = "unstable")]
+            ipfs_ratio,
         )?);
         if download_unpack_options.include_ancillary {
-            slog::warn!(self.logger, "{}", ANCILLARIES_NOT_SIGNED_BY_MITHRIL);
+            warn!(self.logger, "{}", ANCILLARIES_NOT_SIGNED_BY_MITHRIL);
             tasks.push_back(self.new_ancillary_download_task(
                 &cardano_database_snapshot.ancillary,
                 target_dir,
                 &download_id,
             )?);
         } else {
-            slog::warn!(
+            warn!(
                 self.logger,
                 "The fast bootstrap of the Cardano node is not available with the current parameters used in this command: the ledger state will be recomputed from genesis at startup of the Cardano node. Set the include_ancillary entry to true in the DownloadUnpackOptions."
             );
@@ -161,6 +183,7 @@ impl InternalArtifactDownloader {
         immutable_file_number_range: RangeInclusive<ImmutableFileNumber>,
         target_dir: &Path,
         download_id: &str,
+        #[cfg(feature = "unstable")] ipfs_ratio: Percentage,
     ) -> MithrilResult<Vec<DownloadTask>> {
         let immutable_file_numbers_to_download = immutable_file_number_range
             .map(|n| n.to_owned())
@@ -177,6 +200,8 @@ impl InternalArtifactDownloader {
                 download_id,
                 #[cfg(feature = "unstable")]
                 ipfs_circuit_breaker.clone(),
+                #[cfg(feature = "unstable")]
+                ipfs_ratio,
             )?);
         }
         Ok(immutable_tasks)
@@ -189,6 +214,7 @@ impl InternalArtifactDownloader {
         immutable_files_target_dir: &Path,
         download_id: &str,
         #[cfg(feature = "unstable")] ipfs_circuit_breaker: CircuitBreaker,
+        #[cfg(feature = "unstable")] _ipfs_ratio: Percentage,
     ) -> MithrilResult<DownloadTask> {
         let mut locations_sorted = immutable_locations.sanitized_locations()?;
         locations_sorted.sort();
@@ -326,6 +352,32 @@ impl InternalArtifactDownloader {
 
         Ok(())
     }
+
+    #[cfg(feature = "unstable")]
+    async fn expand_ipfs_share_to_percentage(
+        &self,
+        ipfs_share: IpfsShare,
+        locations_have_ipfs: bool,
+    ) -> Percentage {
+        if !locations_have_ipfs {
+            return Percentage::ZERO;
+        }
+
+        match ipfs_share {
+            IpfsShare::Ratio(percentage) => percentage,
+            IpfsShare::AggregatorRatio => match self.aggregator_requester.get_ipfs_share().await {
+                Ok(Some(percentage)) => percentage,
+                Ok(None) => IPFS_FALLBACK_RATIO,
+                Err(err) => {
+                    warn!(
+                        self.logger, "failed to fetch IPFS share from aggregator";
+                        "error" => ?err, "ipfs_share" => ?ipfs_share, "locations_have_ipfs" => locations_have_ipfs,
+                    );
+                    IPFS_FALLBACK_RATIO
+                }
+            },
+        }
+    }
 }
 
 #[cfg(test)]
@@ -340,11 +392,26 @@ mod tests {
     };
 
     use crate::cardano_database_client::CardanoDatabaseClientDependencyInjector;
+    #[cfg(feature = "unstable")]
+    use crate::cardano_database_client::api::MockCardanoDatabaseAggregatorRequest;
     use crate::common::test::Dummy;
-    use crate::file_downloader::MockFileDownloaderBuilder;
+    use crate::file_downloader::{MockFileDownloader, MockFileDownloaderBuilder};
     use crate::test_utils::TestLogger;
 
     use super::*;
+
+    fn artifact_downloader_for_test() -> InternalArtifactDownloader {
+        InternalArtifactDownloader::new(
+            Arc::new(MockFileDownloader::new()),
+            #[cfg(feature = "unstable")]
+            None,
+            None,
+            FeedbackSender::new(&[]),
+            TestLogger::stdout(),
+            #[cfg(feature = "unstable")]
+            Arc::new(MockCardanoDatabaseAggregatorRequest::new()),
+        )
+    }
 
     mod download_unpack {
         use mithril_cardano_node_internal_database::IMMUTABLE_DIR;
@@ -586,11 +653,12 @@ mod tests {
                 .build_cardano_database_client();
 
             client
-                .download_unpack(
+                .download_unpack_with_ipfs_control(
                     &cardano_db_snapshot,
                     &immutable_file_range,
                     &target_dir,
                     download_unpack_options,
+                    IpfsShare::Ratio(Percentage::HUNDRED),
                 )
                 .await
                 .unwrap();
@@ -673,31 +741,12 @@ mod tests {
     }
 
     mod building_download_tasks {
-        #[cfg(feature = "unstable")]
-        use mithril_common::entities::Percentage;
         use mithril_common::{entities::CompressionAlgorithm, test::double::fake_keys};
-
-        #[cfg(feature = "unstable")]
-        use crate::cardano_database_client::api::MockCardanoDatabaseAggregatorRequest;
-        use crate::file_downloader::MockFileDownloader;
 
         use super::*;
 
         fn fake_ancillary_verifier() -> AncillaryVerifier {
             AncillaryVerifier::new(fake_keys::manifest_verification_key()[0].try_into().unwrap())
-        }
-
-        fn artifact_downloader_for_test() -> InternalArtifactDownloader {
-            InternalArtifactDownloader::new(
-                Arc::new(MockFileDownloader::new()),
-                #[cfg(feature = "unstable")]
-                None,
-                None,
-                FeedbackSender::new(&[]),
-                TestLogger::stdout(),
-                #[cfg(feature = "unstable")]
-                Arc::new(MockCardanoDatabaseAggregatorRequest::new()),
-            )
         }
 
         #[tokio::test]
@@ -717,6 +766,8 @@ mod tests {
                     .unwrap(),
                 &target_dir,
                 "download_id",
+                #[cfg(feature = "unstable")]
+                Percentage::ZERO,
             );
 
             assert!(
@@ -752,6 +803,8 @@ mod tests {
                     .unwrap(),
                 &target_dir,
                 "download_id",
+                #[cfg(feature = "unstable")]
+                Percentage::ZERO,
             );
 
             assert!(
@@ -951,6 +1004,128 @@ mod tests {
                 build_tasks_result.is_err(),
                 "building tasks should fail if all location are unknown"
             );
+        }
+    }
+
+    #[cfg(feature = "unstable")]
+    mod expanding_ipfs_share {
+        use anyhow::anyhow;
+
+        use mithril_common::test::mock_extensions::MockBuilder;
+
+        use crate::cardano_database_client::api::MockCardanoDatabaseAggregatorRequest;
+        use crate::file_downloader::MockFileDownloader;
+
+        use super::*;
+
+        #[tokio::test]
+        async fn fetch_ratio_from_network_if_set_to_aggregator_ratio() {
+            let locations_have_ipfs = true;
+            let artifact_downloader = InternalArtifactDownloader {
+                ipfs_file_downloader: Some(Arc::new(MockFileDownloader::new())),
+                aggregator_requester:
+                    MockBuilder::<MockCardanoDatabaseAggregatorRequest>::configure(|mock| {
+                        mock.expect_get_ipfs_share()
+                            .returning(|| Ok(Some(Percentage::new(57))))
+                            .once();
+                    }),
+                ..artifact_downloader_for_test()
+            };
+
+            let expanded = artifact_downloader
+                .expand_ipfs_share_to_percentage(IpfsShare::AggregatorRatio, locations_have_ipfs)
+                .await;
+
+            assert_eq!(Percentage::new(57), expanded);
+        }
+
+        #[tokio::test]
+        async fn use_fallback_ratio_if_set_to_aggregator_ratio_and_remote_query_succeed_but_there_is_no_ratio_in_the_response()
+         {
+            let locations_have_ipfs = true;
+            let artifact_downloader = InternalArtifactDownloader {
+                ipfs_file_downloader: Some(Arc::new(MockFileDownloader::new())),
+                aggregator_requester:
+                    MockBuilder::<MockCardanoDatabaseAggregatorRequest>::configure(|mock| {
+                        mock.expect_get_ipfs_share().returning(|| Ok(None)).once();
+                    }),
+                ..artifact_downloader_for_test()
+            };
+
+            let expanded = artifact_downloader
+                .expand_ipfs_share_to_percentage(IpfsShare::AggregatorRatio, locations_have_ipfs)
+                .await;
+
+            assert_eq!(IPFS_FALLBACK_RATIO, expanded);
+        }
+
+        #[tokio::test]
+        async fn log_warning_and_use_fallback_ratio_if_set_to_aggregator_ratio_and_remote_query_fails()
+         {
+            let locations_have_ipfs = true;
+            let (logger, log_inspector) = TestLogger::memory();
+            let artifact_downloader = InternalArtifactDownloader {
+                ipfs_file_downloader: Some(Arc::new(MockFileDownloader::new())),
+                aggregator_requester:
+                    MockBuilder::<MockCardanoDatabaseAggregatorRequest>::configure(|mock| {
+                        mock.expect_get_ipfs_share()
+                            .returning(|| Err(anyhow!("failed to fetch from aggregator")))
+                            .once();
+                    }),
+                logger,
+                ..artifact_downloader_for_test()
+            };
+
+            let expanded = artifact_downloader
+                .expand_ipfs_share_to_percentage(IpfsShare::AggregatorRatio, locations_have_ipfs)
+                .await;
+
+            assert_eq!(IPFS_FALLBACK_RATIO, expanded);
+            assert!(log_inspector.contains_log("WARN failed to fetch IPFS share from aggregator"),);
+        }
+
+        #[tokio::test]
+        async fn use_provided_ratio_without_network_call_if_a_custom_value_is_provided() {
+            let locations_have_ipfs = true;
+            let artifact_downloader = InternalArtifactDownloader {
+                ipfs_file_downloader: Some(Arc::new(MockFileDownloader::new())),
+                aggregator_requester:
+                    MockBuilder::<MockCardanoDatabaseAggregatorRequest>::configure(|mock| {
+                        mock.expect_get_ipfs_share().never();
+                    }),
+                ..artifact_downloader_for_test()
+            };
+
+            let expanded = artifact_downloader
+                .expand_ipfs_share_to_percentage(
+                    IpfsShare::Ratio(Percentage::new(63)),
+                    locations_have_ipfs,
+                )
+                .await;
+
+            assert_eq!(Percentage::new(63), expanded);
+        }
+
+        #[tokio::test]
+        async fn return_ratio_0_if_locations_does_not_have_ipfs() {
+            let locations_have_ipfs = false;
+            let artifact_downloader = InternalArtifactDownloader {
+                ipfs_file_downloader: Some(Arc::new(MockFileDownloader::new())),
+                aggregator_requester:
+                    MockBuilder::<MockCardanoDatabaseAggregatorRequest>::configure(|mock| {
+                        mock.expect_get_ipfs_share().never();
+                    }),
+                ..artifact_downloader_for_test()
+            };
+
+            let expanded = artifact_downloader
+                .expand_ipfs_share_to_percentage(
+                    IpfsShare::Ratio(Percentage::new(63)),
+                    locations_have_ipfs,
+                )
+                .await;
+
+            assert_eq!(Percentage::ZERO, expanded);
         }
     }
 }
