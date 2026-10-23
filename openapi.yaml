@@ -961,8 +961,8 @@ components:
                   description: Maximum number of hashes allowed for a single request
                   type: integer
                   format: int64
-        cardano_database_distribution:
-          description: Distribution configuration for the Cardano database's immutable files
+        cardano_database_distribution_settings:
+          description: Distribution settings for the Cardano database's immutable files
           type: object
           additionalProperties: false
           required:
@@ -1001,7 +1001,7 @@ components:
                 "cardano_transactions_prover":
                   { "max_hashes_allowed_by_request": 100 }
               },
-            "cardano_database_distribution":
+            "cardano_database_distribution_settings":
               {
                 "supported_locations": ["cloud_storage", "ipfs"],
                 "ipns_record": "/ipns/k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66",

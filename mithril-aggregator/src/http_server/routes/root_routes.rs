@@ -40,7 +40,7 @@ mod handlers {
     use mithril_common::api_version::APIVersionProvider;
     use mithril_common::entities::SignedEntityTypeDiscriminants;
     use mithril_common::messages::{
-        AggregatorCapabilities, AggregatorFeaturesMessage, CardanoDatabaseDistribution,
+        AggregatorCapabilities, AggregatorFeaturesMessage, CardanoDatabaseDistributionSettings,
         CardanoTransactionsProverCapabilities, ImmutablesLocationType,
     };
 
@@ -81,11 +81,11 @@ mod handlers {
                 });
         }
 
-        let cardano_database_distribution = capabilities
+        let cdb_distribution_settings = capabilities
             .signed_entity_types
             .contains(&SignedEntityTypeDiscriminants::CardanoDatabase.into())
             .then(|| {
-                let mut distribution_metadata = CardanoDatabaseDistribution {
+                let mut distribution_metadata = CardanoDatabaseDistributionSettings {
                     // "local" is also considered cloud storage, and since the configuration choice is
                     // between GCP and local, CloudStorage is guaranteed to be supported.
                     supported_locations: vec![ImmutablesLocationType::CloudStorage],
@@ -109,7 +109,7 @@ mod handlers {
                 open_api_version: open_api_version.to_string(),
                 documentation_url: env!("CARGO_PKG_HOMEPAGE").to_string(),
                 capabilities,
-                cardano_database_distribution,
+                cardano_database_distribution_settings: cdb_distribution_settings,
             },
             StatusCode::OK,
         ))
@@ -128,7 +128,7 @@ mod tests {
     use mithril_common::AggregateSignatureType;
     use mithril_common::entities::SignedEntityTypeDiscriminants;
     use mithril_common::messages::{
-        AggregatorCapabilities, AggregatorFeaturesMessage, CardanoDatabaseDistribution,
+        AggregatorCapabilities, AggregatorFeaturesMessage, CardanoDatabaseDistributionSettings,
         CardanoTransactionsProverCapabilities, ImmutablesLocationType,
     };
     use mithril_common::test::double::Dummy;
@@ -220,7 +220,7 @@ mod tests {
                             max_hashes_allowed_by_request: 500
                         }),
                     },
-                    cardano_database_distribution: None,
+                    cardano_database_distribution_settings: None,
                 }
             );
         });
@@ -273,8 +273,8 @@ mod tests {
             );
 
             assert_eq!(
-                response_body.cardano_database_distribution,
-                Some(CardanoDatabaseDistribution {
+                response_body.cardano_database_distribution_settings,
+                Some(CardanoDatabaseDistributionSettings {
                     supported_locations: vec![ImmutablesLocationType::CloudStorage],
                     ipns_record: None,
                     ipfs_share: None,
@@ -302,8 +302,8 @@ mod tests {
             assert_eq!(response.status(), StatusCode::OK);
 
             assert_eq!(
-                response_body.cardano_database_distribution,
-                Some(CardanoDatabaseDistribution {
+                response_body.cardano_database_distribution_settings,
+                Some(CardanoDatabaseDistributionSettings {
                     supported_locations: vec![
                         ImmutablesLocationType::CloudStorage,
                         ImmutablesLocationType::Ipfs

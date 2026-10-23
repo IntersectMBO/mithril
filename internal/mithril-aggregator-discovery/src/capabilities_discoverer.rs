@@ -285,7 +285,7 @@ mod tests {
                 open_api_version: "1.0.0".to_string(),
                 documentation_url: "https://docs".to_string(),
                 capabilities,
-                cardano_database_distribution: None,
+                cardano_database_distribution_settings: None,
             }
         }
 

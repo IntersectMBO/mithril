@@ -112,7 +112,7 @@ impl CardanoDatabaseAggregatorRequest for AggregatorHttpClient {
             .with_context(|| "Failed to get aggregator features")?;
 
         Ok(aggregator_features
-            .cardano_database_distribution
+            .cardano_database_distribution_settings
             .and_then(|cdd| cdd.ipfs_share))
     }
 }
@@ -291,7 +291,7 @@ mod tests {
     use serde_json::json;
 
     use mithril_common::messages::{
-        AggregatorFeaturesMessage, AggregatorStatusMessage, CardanoDatabaseDistribution,
+        AggregatorFeaturesMessage, AggregatorStatusMessage, CardanoDatabaseDistributionSettings,
     };
 
     use crate::common::{SupportedEra, test::Dummy};
@@ -330,7 +330,7 @@ mod tests {
         server.mock(|when, then| {
             when.any_request();
             then.status(200).json_body(json!(AggregatorFeaturesMessage {
-                cardano_database_distribution: Some(CardanoDatabaseDistribution {
+                cardano_database_distribution_settings: Some(CardanoDatabaseDistributionSettings {
                     supported_locations: vec![],
                     ipns_record: None,
                     ipfs_share: Some(35),

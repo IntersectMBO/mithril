@@ -18,9 +18,9 @@ pub struct AggregatorFeaturesMessage {
     /// Capabilities of the Aggregator
     pub capabilities: AggregatorCapabilities,
 
-    /// Distribution configuration for the Cardano database's immutable files.
+    /// Distribution settings for the Cardano database's immutable files.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cardano_database_distribution: Option<CardanoDatabaseDistribution>,
+    pub cardano_database_distribution_settings: Option<CardanoDatabaseDistributionSettings>,
 }
 
 /// Capabilities of an Aggregator
@@ -45,9 +45,9 @@ pub struct CardanoTransactionsProverCapabilities {
     pub max_hashes_allowed_by_request: usize,
 }
 
-/// Distribution configuration for the Cardano database's immutable files.
+/// Distribution settings for the Cardano database's immutable files.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct CardanoDatabaseDistribution {
+pub struct CardanoDatabaseDistributionSettings {
     /// List of the supported locations type for the cardano database immutables files
     pub supported_locations: Vec<ImmutablesLocationType>,
 
@@ -198,7 +198,7 @@ mod tests {
                     max_hashes_allowed_by_request: 100,
                 }),
             },
-            cardano_database_distribution: Some(CardanoDatabaseDistribution {
+            cardano_database_distribution_settings: Some(CardanoDatabaseDistributionSettings {
                 supported_locations: vec![
                     ImmutablesLocationType::CloudStorage,
                     ImmutablesLocationType::Ipfs,
@@ -222,7 +222,7 @@ mod tests {
                 "max_hashes_allowed_by_request": 100
             }
         },
-        "cardano_database_distribution": {
+        "cardano_database_distribution_settings": {
             "supported_locations": ["cloud_storage", "ipfs"],
             "ipns_record": "/ipns/k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66",
             "ipfs_share": 30
