@@ -22,7 +22,8 @@ jobs:
         with:
           command: check advisories
           arguments: "--all-features --config .config/deny-full.toml"
-          log-level: error
+          command-arguments: "--warn advisory-ignored"
+          log-level: warn
 
       - name: Explain result
         if: always() && steps.deny.outcome != 'skipped'
@@ -39,7 +40,9 @@ jobs:
               echo ""
               echo "Unmaintained crates: if it is a direct dependency of Mithril, open an issue to replace it."
             else
-              echo "No advisories found ✅"
+              echo "No new advisories found ✅"
+              echo ""
+              echo "Ignored advisories are reported as warnings in the job log, see \`.config/deny-full.toml\` for what can be done."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

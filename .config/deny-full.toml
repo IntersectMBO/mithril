@@ -1,3 +1,21 @@
 [advisories]
 yanked = "deny"
 unmaintained = "all"
+ignore = [
+    # bincode is used directly by mithril-common (`SignedEntityType` bytes) and mithril-merkle-tree (`MKProof` and `MKMapProof` bytes), and by tests of mithril-dmq.
+    # It also comes through midnight-zk-stdlib (`snark` feature), whose latest release still depends on it.
+    # To do: replace our usages with a byte-identical encoding, then bump midnight-zk-stdlib once it drops bincode.
+    { id = "RUSTSEC-2025-0141", reason = "bincode is unmaintained, used directly and through midnight-zk-stdlib" },
+    # crypto-bigint 0.5 comes through midnight-curves 0.3 (`snark` feature) via elliptic-curve 0.13, the fix is only in crypto-bigint 0.7.6.
+    # To do: bump midnight-curves once it moves to elliptic-curve 0.14.
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 is pinned by midnight-curves through elliptic-curve 0.13" },
+    # hickory-proto 0.25 comes through libp2p-dns 0.44 (libp2p 0.56) in mithril-relay, the DNSSEC feature affected is not enabled.
+    # To do: remove once a fixed hickory-proto release is available and reachable from libp2p.
+    { id = "RUSTSEC-2026-0118", reason = "hickory-proto has no fixed release, the DNSSEC validation affected is not enabled" },
+    # hickory-proto 0.25 comes through libp2p-dns 0.44 (libp2p 0.56) in mithril-relay, the fix is in hickory-proto 0.26.1.
+    # To do: upgrade libp2p to 0.57 which depends on hickory-proto 0.26 through libp2p-dns 0.45.
+    { id = "RUSTSEC-2026-0119", reason = "hickory-proto 0.25 is pinned by libp2p-dns 0.44 (libp2p 0.56)" },
+    # paste is no longer a direct dependency, it comes through midnight-curves, binary-layout (pallas-hardano), netlink-packet-core and pallas-traverse.
+    # To do: remove once these crates move to a maintained alternative such as pastey.
+    { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained, only used by third party dependencies" },
+]
