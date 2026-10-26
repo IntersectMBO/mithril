@@ -22,5 +22,8 @@ cfg_fs! {
 }
 
 cfg_fs_unstable! {
+    mod weighted_coin;
     pub mod url;
+
+    pub(crate) use weighted_coin::WeightedCoin;
 }
