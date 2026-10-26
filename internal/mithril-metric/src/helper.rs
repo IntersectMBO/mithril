@@ -3,7 +3,7 @@
 /// Required re-exports to avoid requiring childs crates to depend on them when using the `build_metrics_service` macro.
 #[doc(hidden)]
 pub mod re_export {
-    pub use paste;
+    pub use pastey;
     pub use prometheus;
 }
 
@@ -13,8 +13,6 @@ pub mod re_export {
 /// Each metrics is defined by an attribute name, a type, a metric name and a help message.
 ///
 /// The attribute name will be used to create a getter method for the metric.
-///
-/// Crate that use this macro should have `paste` as dependency.
 ///
 /// # Example of 'build_metrics_service' and metrics usage
 ///
@@ -50,9 +48,9 @@ pub mod re_export {
 macro_rules! build_metrics_service {
 
     ($service:ident, $($metric_attribute:ident:$metric_type:ident ($name:literal, $help:literal $(, $labels:expr)?)),*) => {
-        use $crate::helper::re_export::paste;
+        use $crate::helper::re_export::pastey;
         use $crate::helper::re_export::prometheus;
-        paste::item! {
+        pastey::paste! {
             /// Metrics service which is responsible for recording and exposing metrics.
             pub struct $service {
                 registry: prometheus::Registry,

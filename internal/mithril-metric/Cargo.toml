@@ -12,7 +12,7 @@ repository = { workspace = true }
 anyhow = { workspace = true }
 axum = "0.8.9"
 mithril-common = { path = "../../mithril-common" }
-paste = "1.0.15"
+pastey = "0.2.3"
 prometheus = "0.14.0"
 reqwest = { workspace = true, features = ["charset", "http2", "system-proxy", "stream"] }
 slog = { workspace = true }
