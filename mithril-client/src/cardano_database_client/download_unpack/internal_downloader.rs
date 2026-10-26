@@ -4,6 +4,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
+#[cfg(feature = "unstable")]
+use chrono::Utc;
 use slog::warn;
 use tokio::task::JoinSet;
 
@@ -22,6 +24,8 @@ use crate::cardano_database_client::{
 };
 use crate::feedback::{FeedbackSender, MithrilEvent, MithrilEventCardanoDatabase};
 use crate::file_downloader::{DownloadEvent, FileDownloader, FileDownloaderUri};
+#[cfg(feature = "unstable")]
+use crate::utils::WeightedCoin;
 use crate::utils::{
     ANCILLARIES_NOT_SIGNED_BY_MITHRIL, AncillaryVerifier, UnexpectedDownloadedFileVerifier,
     VecDequeExtensions, create_bootstrap_node_files,
@@ -124,16 +128,25 @@ impl InternalArtifactDownloader {
         }
 
         #[cfg(feature = "unstable")]
-        let ipfs_ratio = self
-            .expand_ipfs_share_to_percentage(
-                ipfs_share,
-                cardano_database_snapshot
-                    .immutables
-                    .locations
-                    .iter()
-                    .any(|l| matches!(l, ImmutablesLocation::Ipfs { .. })),
-            )
-            .await;
+        let ipfs_coin = {
+            let ipfs_ratio = self
+                .expand_ipfs_share_to_percentage(
+                    ipfs_share,
+                    cardano_database_snapshot
+                        .immutables
+                        .locations
+                        .iter()
+                        .any(|l| matches!(l, ImmutablesLocation::Ipfs { .. })),
+                )
+                .await;
+
+            WeightedCoin::new(ipfs_ratio, {
+                let mut seed = [0u8; 32];
+                let timestamp = Utc::now().timestamp_nanos_opt().unwrap_or(0);
+                seed[..8].copy_from_slice(&timestamp.to_le_bytes());
+                seed
+            })
+        };
 
         let mut tasks = VecDeque::from(self.build_download_tasks_for_immutables(
             &cardano_database_snapshot.immutables,
@@ -141,7 +154,7 @@ impl InternalArtifactDownloader {
             target_dir,
             &download_id,
             #[cfg(feature = "unstable")]
-            ipfs_ratio,
+            ipfs_coin,
         )?);
         if download_unpack_options.include_ancillary {
             warn!(self.logger, "{}", ANCILLARIES_NOT_SIGNED_BY_MITHRIL);
@@ -183,7 +196,7 @@ impl InternalArtifactDownloader {
         immutable_file_number_range: RangeInclusive<ImmutableFileNumber>,
         target_dir: &Path,
         download_id: &str,
-        #[cfg(feature = "unstable")] ipfs_ratio: Percentage,
+        #[cfg(feature = "unstable")] mut ipfs_coin: WeightedCoin,
     ) -> MithrilResult<Vec<DownloadTask>> {
         let immutable_file_numbers_to_download = immutable_file_number_range
             .map(|n| n.to_owned())
@@ -201,7 +214,7 @@ impl InternalArtifactDownloader {
                 #[cfg(feature = "unstable")]
                 ipfs_circuit_breaker.clone(),
                 #[cfg(feature = "unstable")]
-                ipfs_ratio,
+                ipfs_coin.flip(),
             )?);
         }
         Ok(immutable_tasks)
@@ -214,10 +227,16 @@ impl InternalArtifactDownloader {
         immutable_files_target_dir: &Path,
         download_id: &str,
         #[cfg(feature = "unstable")] ipfs_circuit_breaker: CircuitBreaker,
-        #[cfg(feature = "unstable")] _ipfs_ratio: Percentage,
+        #[cfg(feature = "unstable")] ipfs_first: bool,
     ) -> MithrilResult<DownloadTask> {
         let mut locations_sorted = immutable_locations.sanitized_locations()?;
         locations_sorted.sort();
+        // IPFS locations are sorted first, move them last if they lost the coin flip.
+        // Note: `sort_by_key` is stable, so the other locations keep their order.
+        #[cfg(feature = "unstable")]
+        if !ipfs_first {
+            locations_sorted.sort_by_key(|l| matches!(l, ImmutablesLocation::Ipfs { .. }));
+        }
         let locations_to_try: Vec<_> = locations_sorted
             .into_iter()
             .filter_map(|location| {
@@ -767,7 +786,7 @@ mod tests {
                 &target_dir,
                 "download_id",
                 #[cfg(feature = "unstable")]
-                Percentage::ZERO,
+                WeightedCoin::new(Percentage::ZERO, [0; 32]),
             );
 
             assert!(
@@ -804,7 +823,7 @@ mod tests {
                 &target_dir,
                 "download_id",
                 #[cfg(feature = "unstable")]
-                Percentage::ZERO,
+                WeightedCoin::new(Percentage::ZERO, [0; 32]),
             );
 
             assert!(
@@ -1004,6 +1023,132 @@ mod tests {
                 build_tasks_result.is_err(),
                 "building tasks should fail if all location are unknown"
             );
+        }
+    }
+
+    #[cfg(feature = "unstable")]
+    mod ordering_ipfs_location {
+        use crate::file_downloader::MockFileDownloader;
+
+        use super::*;
+
+        fn immutable_locations() -> ImmutablesMessagePart {
+            let template_uri = |uri: &str| {
+                MultiFilesUri::Template(TemplateUri(format!(
+                    "{uri}/{{immutable_file_number}}.tar.zst"
+                )))
+            };
+
+            ImmutablesMessagePart {
+                locations: vec![
+                    ImmutablesLocation::CloudStorage {
+                        uri: template_uri("http://b"),
+                        compression_algorithm: None,
+                    },
+                    ImmutablesLocation::Ipfs {
+                        uri: template_uri("ipfs"),
+                        compression_algorithm: None,
+                    },
+                    ImmutablesLocation::CloudStorage {
+                        uri: template_uri("http://a"),
+                        compression_algorithm: None,
+                    },
+                ],
+                average_size_uncompressed: 0,
+            }
+        }
+
+        fn artifact_downloader_with_ipfs() -> InternalArtifactDownloader {
+            InternalArtifactDownloader {
+                ipfs_file_downloader: Some(Arc::new(MockFileDownloader::new())),
+                ..artifact_downloader_for_test()
+            }
+        }
+
+        fn locations_uris(task: &DownloadTask) -> Vec<&str> {
+            task.locations_to_try
+                .iter()
+                .map(|location| location.file_downloader_uri.as_str())
+                .collect()
+        }
+
+        #[test]
+        fn ipfs_location_is_tried_first_when_it_wins_the_coin_flip() {
+            let target_dir = temp_dir_create!();
+            let artifact_downloader = artifact_downloader_with_ipfs();
+
+            let task = artifact_downloader
+                .new_immutable_download_task(
+                    &immutable_locations(),
+                    1,
+                    &target_dir,
+                    "download_id",
+                    CircuitBreaker::default(),
+                    true,
+                )
+                .unwrap();
+
+            assert_eq!(
+                vec![
+                    "ipfs/00001.tar.zst",
+                    "http://a/00001.tar.zst",
+                    "http://b/00001.tar.zst"
+                ],
+                locations_uris(&task)
+            );
+        }
+
+        #[test]
+        fn ipfs_location_is_tried_last_when_it_loses_the_coin_flip() {
+            let target_dir = temp_dir_create!();
+            let artifact_downloader = artifact_downloader_with_ipfs();
+
+            let task = artifact_downloader
+                .new_immutable_download_task(
+                    &immutable_locations(),
+                    1,
+                    &target_dir,
+                    "download_id",
+                    CircuitBreaker::default(),
+                    false,
+                )
+                .unwrap();
+
+            assert_eq!(
+                vec![
+                    "http://a/00001.tar.zst",
+                    "http://b/00001.tar.zst",
+                    "ipfs/00001.tar.zst"
+                ],
+                locations_uris(&task)
+            );
+        }
+
+        #[test]
+        fn building_immutables_download_tasks_put_ipfs_first_following_the_coin_flips() {
+            let total_immutable_files = 20;
+            let target_dir = temp_dir_create!();
+            let artifact_downloader = artifact_downloader_with_ipfs();
+            let seed = [3; 32];
+            let mut reference_coin = WeightedCoin::new(Percentage::new(50), seed);
+
+            let tasks = artifact_downloader
+                .build_download_tasks_for_immutables(
+                    &immutable_locations(),
+                    1..=total_immutable_files,
+                    &target_dir,
+                    "download_id",
+                    WeightedCoin::new(Percentage::new(50), seed),
+                )
+                .unwrap();
+
+            let expected_ipfs_first: Vec<bool> =
+                (1..=total_immutable_files).map(|_| reference_coin.flip()).collect();
+            let ipfs_first: Vec<bool> = tasks
+                .iter()
+                .map(|task| locations_uris(task)[0].starts_with("ipfs/"))
+                .collect();
+            assert_eq!(expected_ipfs_first, ipfs_first);
         }
     }
 
