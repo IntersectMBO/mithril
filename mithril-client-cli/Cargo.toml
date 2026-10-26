@@ -52,7 +52,7 @@ slog-term = { workspace = true }
 tar = "0.4.46"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-zip = "8.6.0"
+zip = "9.1.1"
 
 [target.'cfg(all(not(target_os = "windows"), not(all(target_os = "linux", target_arch = "aarch64"))))'.dependencies]
 tikv-jemallocator = { version = "0.7.0" }
