@@ -27,3 +27,14 @@ cfg_fs_unstable! {
 
     pub(crate) use weighted_coin::WeightedCoin;
 }
+
+/// Create a 32 bytes seed for a random generator from the current timestamp.
+///
+/// The timestamp, in nanoseconds, is written in the first 8 bytes. The remaining bytes are zero.
+#[cfg(not(target_family = "wasm"))]
+pub(crate) fn timestamp_seed() -> [u8; 32] {
+    let mut seed = [0u8; 32];
+    let timestamp = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
+    seed[..8].copy_from_slice(&timestamp.to_le_bytes());
+    seed
+}

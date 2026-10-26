@@ -4,8 +4,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
-#[cfg(feature = "unstable")]
-use chrono::Utc;
 use slog::warn;
 use tokio::task::JoinSet;
 
@@ -24,12 +22,12 @@ use crate::cardano_database_client::{
 };
 use crate::feedback::{FeedbackSender, MithrilEvent, MithrilEventCardanoDatabase};
 use crate::file_downloader::{DownloadEvent, FileDownloader, FileDownloaderUri};
-#[cfg(feature = "unstable")]
-use crate::utils::WeightedCoin;
 use crate::utils::{
     ANCILLARIES_NOT_SIGNED_BY_MITHRIL, AncillaryVerifier, UnexpectedDownloadedFileVerifier,
     VecDequeExtensions, create_bootstrap_node_files,
 };
+#[cfg(feature = "unstable")]
+use crate::utils::{WeightedCoin, timestamp_seed};
 
 use super::DownloadUnpackOptions;
 #[cfg(feature = "unstable")]
@@ -140,12 +138,7 @@ impl InternalArtifactDownloader {
                 )
                 .await;
 
-            WeightedCoin::new(ipfs_ratio, {
-                let mut seed = [0u8; 32];
-                let timestamp = Utc::now().timestamp_nanos_opt().unwrap_or(0);
-                seed[..8].copy_from_slice(&timestamp.to_le_bytes());
-                seed
-            })
+            WeightedCoin::new(ipfs_ratio, timestamp_seed())
         };
 
         let mut tasks = VecDeque::from(self.build_download_tasks_for_immutables(
