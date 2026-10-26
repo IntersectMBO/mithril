@@ -74,19 +74,19 @@ impl ProtocolMessage {
         self.current_epoch = Some(current_epoch);
     }
 
-    /// Assembles the 190-byte rigid preimage that matches `mithril-common::ProtocolMessage::rigid_preimage()`.
+    /// Assembles the 186-byte rigid preimage that matches `mithril-common::ProtocolMessage::rigid_preimage()`.
     ///
     /// Layout:
     /// ```text
     /// "digest"                           (6 bytes)
     /// || SHA256(dynamic_parts)           (32 bytes)
     /// || "next_aggregate_verification_key" (31 bytes)
-    /// || avk_slot                        (44 bytes)
+    /// || avk_slot                        (40 bytes)
     /// || "next_protocol_parameters"      (24 bytes)
     /// || params_slot                     (32 bytes)
     /// || "current_epoch"                 (13 bytes)
     /// || epoch_slot                      (8 bytes)
-    /// = 190 bytes
+    /// = 186 bytes
     /// ```
     pub(crate) fn try_rigid_preimage(&self) -> StmResult<[u8; PREIMAGE_SIZE]> {
         let dynamic_hash = self.compute_dynamic_parts_hash();
@@ -117,25 +117,25 @@ impl ProtocolMessage {
             .copy_from_slice(RIGID_NEXT_AGGREGATE_VERIFICATION_KEY_LABEL);
         cursor += RIGID_NEXT_AGGREGATE_VERIFICATION_KEY_LABEL.len();
 
-        // offset 69..113 — AVK slot; circuit reads the next Merkle-tree commitment from PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES (69..101)
+        // offset 69..109 — AVK slot; circuit reads the next Merkle-tree commitment from PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES (69..101)
         preimage[cursor..cursor + avk_slot.len()].copy_from_slice(&avk_slot);
         cursor += avk_slot.len();
 
-        // offset 113..137
+        // offset 109..133
         preimage[cursor..cursor + RIGID_NEXT_PROTOCOL_PARAMETERS_LABEL.len()]
             .copy_from_slice(RIGID_NEXT_PROTOCOL_PARAMETERS_LABEL);
         cursor += RIGID_NEXT_PROTOCOL_PARAMETERS_LABEL.len();
 
-        // offset 137..169 — params slot; circuit reads from PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES (137..169)
+        // offset 133..165 — params slot; circuit reads from PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES (133..165)
         preimage[cursor..cursor + params_slot.len()].copy_from_slice(&params_slot);
         cursor += params_slot.len();
 
-        // offset 169..182
+        // offset 165..178
         preimage[cursor..cursor + RIGID_CURRENT_EPOCH_LABEL.len()]
             .copy_from_slice(RIGID_CURRENT_EPOCH_LABEL);
         cursor += RIGID_CURRENT_EPOCH_LABEL.len();
 
-        // offset 182..190 — epoch slot; circuit reads from PREIMAGE_CURRENT_EPOCH_BYTES (182..190)
+        // offset 178..186 — epoch slot; circuit reads from PREIMAGE_CURRENT_EPOCH_BYTES (178..186)
         preimage[cursor..cursor + epoch_slot.len()].copy_from_slice(&epoch_slot);
 
         Ok(preimage)

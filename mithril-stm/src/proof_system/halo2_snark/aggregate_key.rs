@@ -7,10 +7,9 @@ use crate::{
 };
 
 /// Byte width of the rigid-slot encoding produced by
-/// [AggregateVerificationKeyForSnark::to_rigid_slot_bytes]. Matches the layout consumed by the
-/// IVC test fixture's `From<AggregateVerificationKey> for Vec<u8>` and the rigid protocol
-/// message slot for the next SNARK aggregate verification key.
-pub const RIGID_SLOT_BYTES: usize = 44;
+/// [AggregateVerificationKeyForSnark::to_rigid_slot_bytes]. Matches the rigid protocol message
+/// slot for the next SNARK aggregate verification key.
+pub const RIGID_SLOT_BYTES: usize = 40;
 
 /// Aggregate verification key for the SNARK proof system.
 ///
@@ -39,18 +38,9 @@ impl<D: MembershipDigest> AggregateVerificationKeyForSnark<D> {
     /// Encode to the `RIGID_SLOT_BYTES`-byte rigid-slot layout consumed by the protocol message
     /// `next_aggregate_verification_key` rigid slot:
     ///
-    /// `merkle_tree_commitment_bytes_LE (32) || nr_leaves_LE_u32 (4) || total_stake_LE_u64 (8)`.
-    ///
-    /// The IVC circuit fixture's `From<AggregateVerificationKey> for Vec<u8>` writes a 4-byte
-    /// `nr_leaves` field between the commitment bytes and the total stake. This is a misconception of the
-    /// IVC fixture: production [AggregateVerificationKeyForSnark] does not carry the leaf
-    /// count, and the IVC circuit only consumes the first 32 bytes of the slot (the Merkle
-    /// tree commitment bytes) anyway. Until the IVC fixture is fixed to drop those 4 bytes (and the slot is
-    /// shrunk to 40 bytes), the projection here writes zero in `bytes[32..36]` so the host
-    /// preimage matches the IVC fixture layout byte-for-byte.
+    /// `merkle_tree_commitment_bytes_LE (32) || total_stake_LE_u64 (8)`.
     ///
     /// Returns an error when the Merkle tree commitment bytes do not have the expected 32-byte width.
-    // TODO: Refactor the IVC fixture to drop the 4-byte leaf count and remove the zero-padding here.
     pub fn to_rigid_slot_bytes(&self) -> StmResult<[u8; RIGID_SLOT_BYTES]> {
         let root = &self.merkle_tree_commitment.root;
         if root.len() != 32 {
@@ -58,7 +48,7 @@ impl<D: MembershipDigest> AggregateVerificationKeyForSnark<D> {
         }
         let mut buffer = [0u8; RIGID_SLOT_BYTES];
         buffer[0..32].copy_from_slice(root);
-        buffer[36..44].copy_from_slice(&self.total_stake.to_le_bytes());
+        buffer[32..40].copy_from_slice(&self.total_stake.to_le_bytes());
         Ok(buffer)
     }
 
@@ -235,8 +225,7 @@ mod tests {
 
         const GOLDEN_RIGID_SLOT_BYTES: &[u8; RIGID_SLOT_BYTES] = &[
             24, 146, 83, 128, 164, 40, 231, 45, 189, 40, 90, 83, 208, 118, 139, 107, 214, 38, 39,
-            149, 184, 21, 23, 219, 220, 149, 159, 190, 161, 201, 191, 42, 0, 0, 0, 0, 3, 0, 0, 0,
-            0, 0, 0, 0,
+            149, 184, 21, 23, 219, 220, 149, 159, 190, 161, 201, 191, 42, 3, 0, 0, 0, 0, 0, 0, 0,
         ];
 
         #[test]
@@ -358,7 +347,7 @@ mod tests {
             }
 
             #[test]
-            fn the_rigid_slot_carries_the_root_the_pad_and_the_little_endian_stake(
+            fn the_rigid_slot_carries_the_root_and_the_little_endian_stake(
                 root in any::<[u8; 32]>(),
                 total_stake in any::<u64>(),
                 sampled_invalid_width in (0usize..=64).prop_filter(
@@ -374,10 +363,9 @@ mod tests {
                 let slot = aggregate_key
                     .to_rigid_slot_bytes()
                     .expect("a 32-byte root should project");
-                prop_assert_eq!(slot.len(), 44);
+                prop_assert_eq!(slot.len(), 40);
                 prop_assert_eq!(&slot[0..32], &root);
-                prop_assert_eq!(&slot[32..36], &[0u8; 4]);
-                prop_assert_eq!(&slot[36..44], &total_stake.to_le_bytes());
+                prop_assert_eq!(&slot[32..40], &total_stake.to_le_bytes());
 
                 // The widths either side of 32, and the empty root, are forced: a width sampled
                 // from 0..=64 reaches each of them about once in sixty-four cases.

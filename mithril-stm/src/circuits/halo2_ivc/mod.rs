@@ -76,13 +76,13 @@ pub(crate) const RECURSIVE_CIRCUIT_DEGREE: u32 = 19;
 // the accumulator
 pub(crate) const RECURSIVE_CIRCUIT_PUBLIC_INPUT_COUNT: usize = 120;
 
-pub const PREIMAGE_SIZE: usize = 190;
+pub const PREIMAGE_SIZE: usize = 186;
 /// Byte range of the next Merkle-tree commitment within the protocol message preimage.
 pub const PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES: std::ops::Range<usize> = 69..101;
 /// Byte range of the next protocol parameters within the protocol message preimage.
-pub const PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES: std::ops::Range<usize> = 137..169;
+pub const PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES: std::ops::Range<usize> = 133..165;
 /// Byte range of the current epoch within the protocol message preimage.
-pub const PREIMAGE_CURRENT_EPOCH_BYTES: std::ops::Range<usize> = 182..190;
+pub const PREIMAGE_CURRENT_EPOCH_BYTES: std::ops::Range<usize> = 178..186;
 
 pub(crate) const CERTIFICATE_FIXED_BASES_PREFIX: &str = "cert_vk";
 pub(crate) const IVC_FIXED_BASES_PREFIX: &str = "ivc_one_vk";

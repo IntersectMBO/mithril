@@ -282,7 +282,7 @@ impl ProtocolMessage {
     ///
     /// The slot holds the SNARK-friendly aggregate verification key bytes (the value sourced from
     /// [ProtocolMessagePartKey::NextSnarkAggregateVerificationKey]).
-    const RIGID_NEXT_AGGREGATE_VERIFICATION_KEY_BYTES: usize = 44;
+    const RIGID_NEXT_AGGREGATE_VERIFICATION_KEY_BYTES: usize = 40;
 
     /// Byte length of the `next_protocol_parameters` value segment in the rigid preimage.
     const RIGID_NEXT_PROTOCOL_PARAMETERS_BYTES: usize = 32;
@@ -977,13 +977,13 @@ mod tests {
 
     #[cfg(feature = "snark")]
     #[test]
-    fn rigid_preimage_total_byte_length_is_pinned_to_one_hundred_ninety() {
+    fn rigid_preimage_total_byte_length_is_pinned_to_one_hundred_eighty_six() {
         let rigid = build_rigid_protocol_message_reference();
 
         assert_eq!(
             rigid.rigid_preimage().len(),
-            190,
-            "the rigid preimage must be 190 bytes: 4 ASCII labels (6+31+24+13) plus the four value segments (32+44+32+8)"
+            186,
+            "the rigid preimage must be 186 bytes: 4 ASCII labels (6+31+24+13) plus the four value segments (32+40+32+8)"
         );
     }
 
@@ -1000,12 +1000,12 @@ mod tests {
 
         let mut expected = [0u8; ProtocolMessage::RIGID_NEXT_AGGREGATE_VERIFICATION_KEY_BYTES];
         expected[0..32].copy_from_slice(&merkle_root);
-        expected[36..44].copy_from_slice(&total_stake.to_le_bytes());
+        expected[32..40].copy_from_slice(&total_stake.to_le_bytes());
 
         assert_eq!(
             message.rigid_next_aggregate_verification_key_field(),
             expected,
-            "the rigid AVK segment must be the canonical 44-byte projection of the SNARK AVK"
+            "the rigid AVK segment must be the canonical 40-byte projection of the SNARK AVK"
         );
     }
 
@@ -1133,7 +1133,7 @@ mod tests {
             use super::*;
 
             const GOLDEN_RIGID_HASH: &str =
-                "ce70921aa06b63b67e0c4c37c5afa0d0bf72f8944d34c8e6db96e84242a13ef2";
+                "11d1860064cf48bc112d372c718d26304c8be1945fb48f8f0f36480c658ad41c";
 
             fn golden_message() -> ProtocolMessage {
                 let mut snark_avk_wire_bytes = Vec::with_capacity(
@@ -1252,7 +1252,7 @@ mod tests {
 
         message.set_message_part(
             ProtocolMessagePartKey::NextSnarkAggregateVerificationKey,
-            hex::encode([0xABu8; 44]),
+            hex::encode([0xABu8; 40]),
         );
         assert!(message.has_next_snark_aggregate_verification_key());
     }
@@ -1299,7 +1299,7 @@ mod tests {
         let mut snark_avk_slot =
             [0u8; ProtocolMessage::RIGID_NEXT_AGGREGATE_VERIFICATION_KEY_BYTES];
         snark_avk_slot[0..32].copy_from_slice(&snark_avk_root);
-        snark_avk_slot[36..44].copy_from_slice(&snark_avk_total_stake.to_le_bytes());
+        snark_avk_slot[32..40].copy_from_slice(&snark_avk_total_stake.to_le_bytes());
 
         let mut expected = Vec::new();
         expected.extend_from_slice(b"digest");

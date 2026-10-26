@@ -27,7 +27,7 @@ pub type SchnorrSignature = StandardSchnorrSignature;
 /// Mirrors the in-circuit `PREIMAGE_SIZE` constant pinned by the IVC witness layout
 /// in `mithril-stm/src/circuits/halo2_ivc/mod.rs`. The genesis signer enforces this invariant
 /// before signing so layout drift surfaces at signing time, not deep inside the SNARK gadget.
-pub const PREIMAGE_SIZE: usize = 190;
+pub const PREIMAGE_SIZE: usize = 186;
 
 /// Errors raised by [SchnorrSigner] (signing) and [SchnorrVerifier]
 /// (verification).

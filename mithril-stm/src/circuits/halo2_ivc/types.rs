@@ -241,7 +241,7 @@ mod protocol_message_preimage_tests {
         assert_eq!(preimage.next_merkle_tree_commitment(), expected);
     }
 
-    /// Three fixed 190-byte preimages, each paired with the little-endian bytes of the
+    /// Three fixed 186-byte preimages, each paired with the little-endian bytes of the
     /// collision-resistant reduction of its SHA-256 digest. The values come from this
     /// implementation, so they pin the conversion against unintended changes rather than check it
     /// independently.
@@ -255,17 +255,17 @@ mod protocol_message_preimage_tests {
             (
                 "a zero preimage",
                 [0u8; PREIMAGE_SIZE],
-                "cfef0095bb2449fb6a39a7a6a50f5674b523df67cfeff562e1a34998875d850a",
+                "7843109425fcb7385f59584bea33c7b0291234838dd47942c547644bedc83b12",
             ),
             (
                 "an all-ones preimage",
                 [0xFFu8; PREIMAGE_SIZE],
-                "7d383eda1bb2a2f0c753dc1029c482b96d89763081c574ecbefd8938fd3ca744",
+                "dafcec19525b5a67cb01dc7cf55c2122ba13e6fa0c8e31a01a6acda4e3b9ca0d",
             ),
             (
                 "a byte-index ramp",
                 byte_index_ramp,
-                "2d3d241c3eb3ac91e3d4b25320a0d35395d35bdd4f9539e6e7c9053eaf4a2153",
+                "c1cd7d386ae4a340b684c2b98cc3991689f1968112df45876426b9baffac662a",
             ),
         ] {
             let message_hash = MessageHash::try_from(&ProtocolMessagePreimage::new(bytes))
