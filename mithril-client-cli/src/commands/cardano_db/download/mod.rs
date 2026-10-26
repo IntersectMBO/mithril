@@ -5,7 +5,10 @@ use v2::PreparedCardanoDbV2Download;
 use clap::Parser;
 use std::{collections::HashMap, path::PathBuf};
 
-use mithril_client::{MithrilResult, common::ImmutableFileNumber};
+use mithril_client::{
+    MithrilResult,
+    common::{ImmutableFileNumber, Percentage},
+};
 
 use crate::{
     CommandContext,
@@ -50,6 +53,17 @@ pub struct CardanoDbDownloadCommand {
     /// public internet.
     #[clap(long, env = "IPFS_RPC_URL")]
     ipfs_rpc_url: Option<String>,
+
+    /// `unstable` Share of the immutable files for which IPFS is tried first.
+    ///
+    /// Accepted values: a number from 0 to 100, `prefer` (alias of 100) or `fallback` (alias of
+    /// 0, IPFS is only tried when the other locations fail).
+    ///
+    /// If not set, the share advertised by the aggregator is used.
+    ///
+    /// Hidden: this parameter will be removed once the IPFS download is fully deployed.
+    #[clap(long, env = "IPFS_SHARE", hide = true, value_parser = parse_ipfs_share)]
+    ipfs_share: Option<Percentage>,
 
     /// Include ancillary files in the download, if set the `ancillary_verification_key` is required
     /// in order to verify the ancillary files.
@@ -110,6 +124,7 @@ impl CardanoDbDownloadCommand {
             include_ancillary: self.include_ancillary,
             ancillary_verification_key,
             ipfs_rpc_url: self.ipfs_rpc_url.clone(),
+            ipfs_share: self.ipfs_share,
             allow_override: self.allow_override,
         })
     }
@@ -146,6 +161,17 @@ For more information, please refer to the network configuration page of the docu
         let message = "Ancillary verification does not use the Mithril certification: as a mitigation, IOG owned keys are used to sign these files.";
 
         print_simple_warning(message, context.is_json_output_enabled());
+    }
+}
+
+fn parse_ipfs_share(value: &str) -> Result<Percentage, String> {
+    match value {
+        "prefer" => Ok(Percentage::HUNDRED),
+        "fallback" => Ok(Percentage::ZERO),
+        _ => match value.parse::<u8>() {
+            Ok(share) if share <= *Percentage::HUNDRED => Ok(Percentage::new(share)),
+            _ => Err("expected a number from 0 to 100, `prefer` or `fallback`".to_string()),
+        },
     }
 }
 
@@ -195,6 +221,7 @@ mod tests {
             download_dir: Some(std::path::PathBuf::from("whatever_dir")),
             genesis_verification_key: "whatever".to_string().into(),
             ipfs_rpc_url: None,
+            ipfs_share: None,
             include_ancillary: true,
             ancillary_verification_key: "whatever".to_string().into(),
             start: None,
@@ -224,6 +251,72 @@ mod tests {
             result.unwrap_err().to_string(),
             "Parameter 'ancillary_verification_key' is mandatory."
         );
+    }
+
+    mod ipfs_share {
+        use clap::CommandFactory;
+
+        use super::*;
+
+        fn parse_ipfs_share_arg(value: &str) -> Result<Option<Percentage>, clap::Error> {
+            CardanoDbDownloadCommand::try_parse_from([
+                "download",
+                "whatever_digest",
+                "--ipfs-share",
+                value,
+            ])
+            .map(|command| command.ipfs_share)
+        }
+
+        #[test]
+        fn accept_a_number_between_0_and_100() {
+            assert_eq!(Some(Percentage::ZERO), parse_ipfs_share_arg("0").unwrap());
+            assert_eq!(
+                Some(Percentage::new(42)),
+                parse_ipfs_share_arg("42").unwrap()
+            );
+            assert_eq!(
+                Some(Percentage::HUNDRED),
+                parse_ipfs_share_arg("100").unwrap()
+            );
+        }
+
+        #[test]
+        fn prefer_is_an_alias_of_100() {
+            assert_eq!(
+                Some(Percentage::HUNDRED),
+                parse_ipfs_share_arg("prefer").unwrap()
+            );
+        }
+
+        #[test]
+        fn fallback_is_an_alias_of_0() {
+            assert_eq!(
+                Some(Percentage::ZERO),
+                parse_ipfs_share_arg("fallback").unwrap()
+            );
+        }
+
+        #[test]
+        fn reject_invalid_values() {
+            for value in ["101", "-1", "4.2", "whatever", ""] {
+                assert!(
+                    parse_ipfs_share_arg(value).is_err(),
+                    "'{value}' should be rejected"
+                );
+            }
+        }
+
+        #[test]
+        fn ipfs_share_is_hidden() {
+            let command = CardanoDbDownloadCommand::command();
+            let arg = command
+                .get_arguments()
+                .find(|arg| arg.get_id() == "ipfs_share")
+                .unwrap();
+
+            assert!(arg.is_hide_set());
+        }
     }
 
     mod prepare_v2 {

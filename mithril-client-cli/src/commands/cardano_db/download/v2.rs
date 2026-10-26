@@ -8,8 +8,10 @@ use std::{
 
 use mithril_client::{
     CardanoDatabaseSnapshot, MithrilResult,
-    cardano_database_client::{CardanoDatabaseClient, DownloadUnpackOptions, ImmutableFileRange},
-    common::{ImmutableFileNumber, SignedEntityTypeDiscriminants},
+    cardano_database_client::{
+        CardanoDatabaseClient, DownloadUnpackOptions, ImmutableFileRange, IpfsShare,
+    },
+    common::{ImmutableFileNumber, Percentage, SignedEntityTypeDiscriminants},
 };
 
 use crate::{
@@ -20,7 +22,7 @@ use crate::{
     },
     utils::{
         CardanoDbDownloadChecker, CardanoDbUtils, ExpanderUtils, IndicatifFeedbackReceiver,
-        ProgressOutputType, ProgressPrinter,
+        ProgressOutputType, ProgressPrinter, print_simple_warning,
     },
 };
 
@@ -42,6 +44,7 @@ pub(super) struct PreparedCardanoDbV2Download {
     pub(super) include_ancillary: bool,
     pub(super) ancillary_verification_key: Option<String>,
     pub(super) ipfs_rpc_url: Option<String>,
+    pub(super) ipfs_share: Option<Percentage>,
     pub(super) allow_override: bool,
 }
 
@@ -54,6 +57,25 @@ impl PreparedCardanoDbV2Download {
                     "IPFS download requested with `--ipfs-rpc-url` or the `IPFS_RPC_URL` environment variable"
                 })?;
         }
+
+        if self.ipfs_share.is_some() {
+            context.require_unstable(
+                "cardano-db download --ipfs-rpc-url <url> --ipfs-share <share>",
+                None,
+            )?;
+
+            if self.ipfs_rpc_url.is_none() {
+                print_simple_warning(
+                    "`--ipfs-share` is ignored because `--ipfs-rpc-url` is not set.",
+                    context.is_json_output_enabled(),
+                );
+            }
+        }
+
+        let ipfs_share = self
+            .ipfs_share
+            .map(IpfsShare::Ratio)
+            .unwrap_or(IpfsShare::AggregatorRatio);
 
         let restoration_options = RestorationOptions {
             db_dir: Path::new(&self.download_dir).join(DB_DIRECTORY_NAME),
@@ -126,6 +148,7 @@ impl PreparedCardanoDbV2Download {
             client.cardano_database_v2(),
             &cardano_db_message,
             &restoration_options,
+            ipfs_share,
         )
         .await
         .with_context(|| {
@@ -266,17 +289,19 @@ impl PreparedCardanoDbV2Download {
         client: Arc<CardanoDatabaseClient>,
         cardano_database_snapshot: &CardanoDatabaseSnapshot,
         restoration_options: &RestorationOptions,
+        ipfs_share: IpfsShare,
     ) -> MithrilResult<()> {
         progress_printer.report_step(
             step_number,
             "Downloading and unpacking the cardano db snapshot",
         )?;
         client
-            .download_unpack(
+            .download_unpack_with_ipfs_control(
                 cardano_database_snapshot,
                 &restoration_options.immutable_file_range,
                 &restoration_options.db_dir,
                 restoration_options.download_unpack_options,
+                ipfs_share,
             )
             .await?;
 
@@ -318,7 +343,38 @@ mod tests {
     use mithril_client::common::test::Dummy;
     use mithril_client::common::{AncillaryMessagePart, DigestsMessagePart, ImmutablesMessagePart};
 
+    use crate::ConfigParameters;
+
     use super::*;
+
+    #[tokio::test]
+    async fn ipfs_share_requires_unstable() {
+        let prepared_command = PreparedCardanoDbV2Download {
+            hash: "whatever_hash".to_string(),
+            download_dir: "whatever_dir".to_string(),
+            start: None,
+            end: None,
+            include_ancillary: false,
+            ancillary_verification_key: None,
+            ipfs_rpc_url: None,
+            ipfs_share: Some(Percentage::new(42)),
+            allow_override: false,
+        };
+        let unstable_enabled = false;
+        let context = CommandContext::new(
+            ConfigParameters::default(),
+            unstable_enabled,
+            true,
+            Logger::root(slog::Discard, slog::o!()),
+        );
+
+        let error = prepared_command.execute(&context).await.unwrap_err();
+
+        assert!(
+            error.to_string().contains("--ipfs-share"),
+            "Expected error to mention '--ipfs-share', got: {error}"
+        );
+    }
 
     #[test]
     fn compute_required_disk_space_for_snapshot_when_full_restoration() {
