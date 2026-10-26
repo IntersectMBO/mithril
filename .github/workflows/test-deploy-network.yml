@@ -96,6 +96,8 @@ jobs:
             mithril_ipfs_enabled: true
             mithril_api_domain: api.mithril.network
             mithril_era_reader_adapter_type: bootstrap
+            mithril_protocol_configuration_reader_adapter_type: fake
+            mithril_protocol_configuration_reader_fake_configuration: 7b2270726f746f636f6c5f706172616d6574657273223a7b226b223a313934342c226d223a31363934382c227068695f66223a302e327d2c22656e61626c65645f7369676e65645f656e746974795f7479706573223a5b224d69746872696c5374616b65446973747269627574696f6e222c2243617264616e6f5374616b65446973747269627574696f6e222c2243617264616e6f4461746162617365222c2243617264616e6f5472616e73616374696f6e73222c2243617264616e6f426c6f636b735472616e73616374696f6e73225d2c2263617264616e6f5f7472616e73616374696f6e73223a7b2273656375726974795f706172616d65746572223a3130302c2273746570223a33307d2c2263617264616e6f5f626c6f636b735f7472616e73616374696f6e73223a7b2273656375726974795f706172616d65746572223a3130302c2273746570223a33307d7d
             mithril_signers: |
               {
                 "1" = {
@@ -165,6 +167,8 @@ jobs:
           mithril_era_reader_secret_key: ${{ secrets.ERA_READER_SECRET_KEY }}
           mithril_protocol_configuration_reader_address_url: ${{ vars.PROTOCOL_CONFIGURATION_READER_ADDRESS_URL }}
           mithril_protocol_configuration_reader_verification_key_url: ${{ vars.PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY_URL }}
+          mithril_protocol_configuration_reader_adapter_type: ${{ matrix.mithril_protocol_configuration_reader_adapter_type || 'cardano-chain' }}
+          mithril_protocol_configuration_reader_fake_configuration: ${{ matrix.mithril_protocol_configuration_reader_fake_configuration }}
           mithril_protocol_configuration_reader_secret_key: ${{ secrets.PROTOCOL_CONFIGURATION_READER_SECRET_KEY }}
           mithril_aggregator_signed_entity_types: ${{ vars.AGGREGATOR_SIGNED_ENTITY_TYPES }}
           mithril_aggregator_aggregate_signature_type: ${{ vars.AGGREGATOR_AGGREGATE_SIGNATURE_TYPE }}
