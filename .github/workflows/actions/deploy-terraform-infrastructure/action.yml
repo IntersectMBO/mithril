@@ -156,6 +156,10 @@ inputs:
   mithril_protocol_configuration_reader_verification_key_url:
     description: Mithril protocol configuration reader verification key url.
     required: true
+  mithril_protocol_configuration_reader_fake_configuration:
+    description: Mithril protocol configuration reader JSON hex encoded configuration for the 'fake' adapter (only for test networks).
+    required: false
+    default: ""
   mithril_protocol_configuration_reader_secret_key:
     description: Mithril protocol configuration reader secret key (only for test networks).
     required: false
@@ -337,6 +341,7 @@ runs:
           mithril_protocol_configuration_reader_adapter_type                           = "${{ inputs.mithril_protocol_configuration_reader_adapter_type }}"
           mithril_protocol_configuration_reader_address_url                            = "${{ inputs.mithril_protocol_configuration_reader_address_url }}"
           mithril_protocol_configuration_reader_verification_key_url                   = "${{ inputs.mithril_protocol_configuration_reader_verification_key_url }}"
+          mithril_protocol_configuration_reader_fake_configuration                     = "${{ inputs.mithril_protocol_configuration_reader_fake_configuration }}"
           mithril_protocol_configuration_reader_secret_key                             = "${{ inputs.mithril_protocol_configuration_reader_secret_key }}"
           mithril_aggregator_signed_entity_types                                       = "${{ inputs.mithril_aggregator_signed_entity_types }}"
           mithril_aggregator_aggregate_signature_type                                  = "${{ inputs.mithril_aggregator_aggregate_signature_type }}"

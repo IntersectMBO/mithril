@@ -9,17 +9,21 @@ use serde::Deserialize;
 
 use mithril_cardano_node_chain::chain_observer::ChainObserverType;
 use mithril_cli_helper::{register_config_value, serde_deserialization};
-use mithril_common::crypto_helper::{GenesisEd25519Signer, ManifestSigner};
+use mithril_common::crypto_helper::{GenesisEd25519Signer, ManifestSigner, key_encode_hex};
 use mithril_common::entities::{
-    BlockNumber, CompressionAlgorithm, ConfigSecret, HexEncodedGenesisVerificationKey,
-    HexEncodedKey, ProtocolParameters, SignedEntityConfig, SignedEntityTypeDiscriminants,
+    BlockNumber, BlockNumberOffset, CardanoBlocksTransactionsSigningConfig,
+    CardanoTransactionsSigningConfig, CompressionAlgorithm, ConfigSecret,
+    HexEncodedGenesisVerificationKey, HexEncodedKey, ProtocolParameters, SignedEntityConfig,
+    SignedEntityTypeDiscriminants,
 };
+use mithril_common::messages::SignedEntityTypeDiscriminantsMessage;
 use mithril_common::{AggregateSignatureType, CardanoNetwork, StdResult};
 use mithril_dmq::DmqNetwork;
 use mithril_doc::{Documenter, DocumenterDefault, StructDoc};
 use mithril_era::adapters::EraReaderAdapterType;
 use mithril_file_archiver::ZstandardCompressionParameters;
 use mithril_protocol_config::builder::AdapterConfig;
+use mithril_protocol_config::cardano_chain::message::ProtocolConfigurationForEpochMessage;
 
 use crate::http_server::SERVER_BASE_PATH;
 use crate::services::ancillary_signer::GcpCryptoKeyVersionResourceName;
@@ -845,11 +849,30 @@ impl ServeCommandConfiguration {
             era_reader_adapter_type: EraReaderAdapterType::Bootstrap,
             era_reader_adapter_params: None,
             protocol_configuration_reader_adapter_config: Some(AdapterConfig::Fake {
-                protocol_parameters: ProtocolParameters {
-                    k: 5,
-                    m: 100,
-                    phi_f: 0.95,
-                },
+                protocol_parameters: key_encode_hex(ProtocolConfigurationForEpochMessage {
+                    protocol_parameters: ProtocolParameters {
+                        k: 5,
+                        m: 100,
+                        phi_f: 0.95,
+                    }
+                    .into(),
+                    enabled_signed_entity_types: SignedEntityTypeDiscriminantsMessage::all_known(),
+                    cardano_transactions: Some(
+                        CardanoTransactionsSigningConfig {
+                            security_parameter: BlockNumberOffset(120),
+                            step: BlockNumber(15),
+                        }
+                        .into(),
+                    ),
+                    cardano_blocks_transactions: Some(
+                        CardanoBlocksTransactionsSigningConfig {
+                            security_parameter: BlockNumberOffset(120),
+                            step: BlockNumber(15),
+                        }
+                        .into(),
+                    ),
+                })
+                .unwrap(),
             }),
             ancillary_files_signer_config: AncillaryFilesSignerConfig::SecretKey {
                 secret_key: ancillary_files_signer_secret_key.to_json_hex().unwrap(),
