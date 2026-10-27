@@ -48,7 +48,11 @@ pub(super) struct PreparedCardanoDbV2Download {
 impl PreparedCardanoDbV2Download {
     pub async fn execute(&self, context: &CommandContext) -> MithrilResult<()> {
         if self.ipfs_rpc_url.is_some() {
-            context.require_unstable("cardano-db download --ipfs-rpc-url <url>", None)?;
+            context
+                .require_unstable("cardano-db download --ipfs-rpc-url <url>", None)
+                .with_context(|| {
+                    "IPFS download requested with `--ipfs-rpc-url` or the `IPFS_RPC_URL` environment variable"
+                })?;
         }
 
         let restoration_options = RestorationOptions {

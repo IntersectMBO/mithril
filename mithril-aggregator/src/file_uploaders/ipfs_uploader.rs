@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use slog::{Logger, debug, trace, warn};
+use slog::{Logger, debug, info, trace, warn};
 
 use mithril_common::StdResult;
 use mithril_common::entities::FileUri;
@@ -15,7 +15,7 @@ use crate::file_uploaders::FileUploadRetryPolicy;
 use crate::file_uploaders::interface::retry;
 use crate::tools::kubo_rpc_client::query::{
     IpfsAddQuery, IpfsFilesLsQuery, IpfsFilesMkdirQuery, IpfsFilesStatQuery, IpfsKeyLsQuery,
-    IpfsNamePublishQuery,
+    IpfsNamePublishQuery, IpfsVersionQuery,
 };
 use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcClient};
 
@@ -51,6 +51,18 @@ impl IpfsUploader {
             ipns_key_name,
             retry_policy,
             logger: logger.new_with_component_name::<Self>(),
+        }
+    }
+
+    /// Check that the IPFS backend answers, warning when it does not as uploads to IPFS fail until it does
+    pub async fn check_backend_availability(&self) {
+        match self.rpc_client.node_version().await {
+            Ok(version) => info!(self.logger, "IPFS backend available"; "version" => version),
+            Err(error) => warn!(
+                self.logger,
+                "IPFS backend unavailable, immutable files will not be uploaded to IPFS until it answers";
+                "error" => ?error
+            ),
         }
     }
 
@@ -232,6 +244,9 @@ pub trait IpfsBackendUploader: Sync + Send {
     /// Create a directory in IPFS
     async fn create_dir(&self, dir_path: &IpfsMfsDirPath) -> StdResult<()>;
 
+    /// Get the version of the IPFS node
+    async fn node_version(&self) -> StdResult<String>;
+
     /// List the names of all entries in an MFS directory
     async fn list_directory_files(&self, dir_path: &IpfsMfsDirPath) -> StdResult<HashSet<String>>;
 
@@ -259,6 +274,11 @@ pub trait IpfsBackendUploader: Sync + Send {
 impl IpfsBackendUploader for KuboRpcClient {
     async fn create_dir(&self, dir_path: &IpfsMfsDirPath) -> StdResult<()> {
         self.send(IpfsFilesMkdirQuery::create_mfs_directory(dir_path)).await
+    }
+
+    async fn node_version(&self) -> StdResult<String> {
+        let response = self.send(IpfsVersionQuery).await?;
+        Ok(response.version)
     }
 
     async fn list_directory_files(&self, dir_path: &IpfsMfsDirPath) -> StdResult<HashSet<String>> {
@@ -314,6 +334,7 @@ impl IpfsBackendUploader for KuboRpcClient {
 mod tests {
     use mockall::predicate::eq;
 
+    use mithril_common::test::logging::MemoryDrainForTestInspector;
     use mithril_common::test::mock_extensions::MockBuilder;
 
     use crate::test::TestLogger;
@@ -342,6 +363,49 @@ mod tests {
         fn with_logger(mut self, logger: Logger) -> Self {
             self.logger = logger;
             self
+        }
+    }
+
+    mod check_backend_availability {
+        use anyhow::anyhow;
+
+        use super::*;
+
+        fn uploader_with_memory_logger(
+            mock_config: impl FnOnce(&mut MockIpfsBackendUploader),
+        ) -> (IpfsUploader, MemoryDrainForTestInspector) {
+            let (logger, log_inspector) = TestLogger::memory();
+            let uploader =
+                IpfsUploader::new_for_test(IpfsMfsDirPath::from("/test/dir"), mock_config)
+                    .with_logger(logger);
+
+            (uploader, log_inspector)
+        }
+
+        #[tokio::test]
+        async fn logs_the_node_version_when_the_backend_answers() {
+            let (uploader, log_inspector) = uploader_with_memory_logger(|mock| {
+                mock.expect_node_version().returning(|| Ok("0.43.1".to_string()));
+            });
+
+            uploader.check_backend_availability().await;
+
+            assert!(log_inspector.contains_log("IPFS backend available"));
+            assert!(!log_inspector.contains_log("IPFS backend unavailable"));
+        }
+
+        #[tokio::test]
+        async fn warns_when_the_backend_does_not_answer() {
+            let (uploader, log_inspector) = uploader_with_memory_logger(|mock| {
+                mock.expect_node_version()
+                    .returning(|| Err(anyhow!("connection refused")));
+            });
+
+            uploader.check_backend_availability().await;
+
+            assert!(log_inspector.contains_log(
+                "IPFS backend unavailable, immutable files will not be uploaded to IPFS until it answers"
+            ));
         }
     }
 

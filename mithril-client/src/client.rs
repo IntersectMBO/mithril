@@ -11,6 +11,8 @@ use rand::SeedableRng;
 #[cfg(not(target_family = "wasm"))]
 use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
+#[cfg(all(feature = "unstable", feature = "fs"))]
+use slog::warn;
 use slog::{Logger, o};
 
 use mithril_aggregator_client::AggregatorHttpClient;
@@ -440,7 +442,7 @@ impl ClientBuilder {
             } else if let Some(ipfs_rpc_base_url) = self.ipfs_rpc_base_url {
                 // Note: no retry for IPFS downloads: retrying here would delay tripping the circuit breaker
                 // on the first unreachable file and waste time on every file after it's already tripped.
-                Some(Arc::new(
+                Self::available_ipfs_file_downloader(
                     IpfsFileDownloader::new(
                         reqwest::Url::parse(&ipfs_rpc_base_url)
                             .with_context(|| "Parsing IPFS rpc base url failed")?,
@@ -448,7 +450,8 @@ impl ClientBuilder {
                         logger.clone(),
                     )
                     .with_context(|| "Building IPFS file downloader failed")?,
-                ))
+                    &logger,
+                )
             } else {
                 None
             };
@@ -539,6 +542,29 @@ impl ClientBuilder {
                     .with_context(|| "Discovering aggregator endpoint failed")
             })
         })
+    }
+
+    /// Return the IPFS file downloader if its RPC base URL answers as a Kubo RPC API, or `None`
+    /// so that the downloads use the other locations of the artifacts.
+    #[cfg(all(feature = "unstable", feature = "fs"))]
+    fn available_ipfs_file_downloader(
+        ipfs_file_downloader: IpfsFileDownloader,
+        logger: &Logger,
+    ) -> Option<Arc<dyn FileDownloader>> {
+        let kubo_rpc_api_check = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(ipfs_file_downloader.check_kubo_rpc_api())
+        });
+
+        match kubo_rpc_api_check {
+            Ok(()) => Some(Arc::new(ipfs_file_downloader)),
+            Err(error) => {
+                warn!(
+                    logger, "IPFS RPC URL unavailable, the IPFS locations will be skipped";
+                    "error" => ?error
+                );
+                None
+            }
+        }
     }
 
     /// Default aggregator discoverer to use to find the aggregator endpoint when in automatic discovery.
@@ -677,6 +703,8 @@ impl ClientBuilder {
         /// download fails, the client tries the artifact's other available locations.
         ///
         /// The URL must point to a running and reachable Kubo node, for example, `http://127.0.0.1:5001/`.
+        /// It is checked when the client is built, and the IPFS locations are skipped if it does
+        /// not answer as a Kubo RPC API.
         ///
         /// Reminder: The Kubo RPC API provides admin-level access and must never be exposed to the
         /// public internet.
@@ -925,5 +953,57 @@ mod tests {
 
         assert!(matches!(from_str, GenesisVerificationKey::JsonHex(key) if key == "5b3132"));
         assert!(matches!(from_string, GenesisVerificationKey::JsonHex(key) if key == "5b3132"));
+    }
+
+    #[cfg(all(feature = "unstable", feature = "fs"))]
+    mod available_ipfs_file_downloader {
+        use httpmock::Method::POST;
+        use httpmock::MockServer;
+        use reqwest::Url;
+
+        use crate::test_utils::TestLogger;
+
+        use super::*;
+
+        fn ipfs_file_downloader(server: &MockServer) -> IpfsFileDownloader {
+            IpfsFileDownloader::new(
+                Url::parse(&server.base_url()).unwrap(),
+                FeedbackSender::new(&[]),
+                TestLogger::stdout(),
+            )
+            .unwrap()
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn returns_the_downloader_when_rpc_url_answers_as_a_kubo_rpc_api() {
+            let server = MockServer::start();
+            server.mock(|when, then| {
+                when.method(POST).path("/api/v0/version");
+                then.status(200).json_body(serde_json::json!({"Version": "0.43.1"}));
+            });
+
+            let ipfs_file_downloader = ClientBuilder::available_ipfs_file_downloader(
+                ipfs_file_downloader(&server),
+                &TestLogger::stdout(),
+            );
+
+            assert!(ipfs_file_downloader.is_some());
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn returns_none_when_rpc_url_does_not_answer_as_a_kubo_rpc_api() {
+            let server = MockServer::start();
+            server.mock(|when, then| {
+                when.method(POST).path("/api/v0/version");
+                then.status(200).body("<html><body>IPFS gateway</body></html>");
+            });
+
+            let ipfs_file_downloader = ClientBuilder::available_ipfs_file_downloader(
+                ipfs_file_downloader(&server),
+                &TestLogger::stdout(),
+            );
+
+            assert!(ipfs_file_downloader.is_none());
+        }
     }
 }
