@@ -19,6 +19,7 @@ use super::streaming::{self, DownloadedStream};
 use super::{FileDownloader, FileDownloaderUri, interface::DownloadEvent};
 
 const EXISTENCE_CHECK_DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
+const KUBO_RPC_API_CHECK_DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A file downloader that downloads content from IPFS through a Kubo node's RPC API.
 ///
@@ -26,12 +27,15 @@ const EXISTENCE_CHECK_DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 /// - requests are `POST`s.
 /// - a missing block is reported as a `500` response whose *body* explains the failure, not as a `404`.
 /// - Kubo does not set `content-length`, so the size must be retrieved with a separate RPC call.
+/// - the RPC base URL is checked with a `version` call, as any HTTP server accepts the other calls.
 pub struct IpfsFileDownloader {
     http_client: reqwest::Client,
     /// Base URL of the Kubo node's RPC API, e.g. `http://127.0.0.1:5001/`.
     rpc_base_url: Url,
     feedback_sender: FeedbackSender,
     existence_check_timeout: Duration,
+    /// Timeout of the check that the RPC base URL answers as a Kubo RPC API.
+    kubo_rpc_api_check_timeout: Duration,
     logger: Logger,
 }
 
@@ -42,6 +46,15 @@ pub struct IpfsFileDownloader {
 #[serde(rename_all = "PascalCase")]
 struct FilesStatResponse {
     size: u64,
+}
+
+/// Response body of a Kubo `version` call.
+///
+/// See: https://docs.ipfs.tech/reference/kubo/rpc/#api-v0-version
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct VersionResponse {
+    version: String,
 }
 
 impl IpfsFileDownloader {
@@ -60,6 +73,7 @@ impl IpfsFileDownloader {
             rpc_base_url: url::enforce_trailing_slash(rpc_base_url),
             feedback_sender,
             existence_check_timeout: EXISTENCE_CHECK_DEFAULT_TIMEOUT,
+            kubo_rpc_api_check_timeout: KUBO_RPC_API_CHECK_DEFAULT_TIMEOUT,
             logger: logger.new_with_component_name::<Self>(),
         })
     }
@@ -67,6 +81,12 @@ impl IpfsFileDownloader {
     #[cfg(test)]
     pub(crate) fn with_existence_check_timeout(mut self, timeout: Duration) -> Self {
         self.existence_check_timeout = timeout;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_kubo_rpc_api_check_timeout(mut self, timeout: Duration) -> Self {
+        self.kubo_rpc_api_check_timeout = timeout;
         self
     }
 
@@ -131,6 +151,53 @@ impl IpfsFileDownloader {
         }
     }
 
+    /// Check that the RPC base URL answers as a Kubo RPC API.
+    pub async fn check_kubo_rpc_api(&self) -> StdResult<()> {
+        let rpc_base_url = self.rpc_base_url_without_credentials();
+        match self.fetch_kubo_version().await {
+            Ok(version) => {
+                debug!(self.logger, "Kubo RPC API available"; "version" => version);
+                Ok(())
+            }
+            Err(error) => match error.downcast_ref::<reqwest::Error>() {
+                Some(error) if error.is_connect() => Err(anyhow!(
+                    "Cannot reach the Kubo RPC API at '{rpc_base_url}'"
+                )),
+                Some(error) if error.is_timeout() => Err(anyhow!(
+                    "Kubo RPC API at '{rpc_base_url}' did not answer within {:?}",
+                    self.kubo_rpc_api_check_timeout
+                )),
+                _ => Err(anyhow!(
+                    "IPFS RPC URL '{rpc_base_url}' does not answer as a Kubo RPC API: {error:#}"
+                )),
+            },
+        }
+    }
+
+    fn rpc_base_url_without_credentials(&self) -> Url {
+        let mut rpc_base_url = self.rpc_base_url.clone();
+        let _ = rpc_base_url.set_username("");
+        let _ = rpc_base_url.set_password(None);
+
+        rpc_base_url
+    }
+
+    async fn fetch_kubo_version(&self) -> StdResult<String> {
+        let response = self
+            .http_client
+            .post(self.endpoint("api/v0/version")?)
+            .timeout(self.kubo_rpc_api_check_timeout)
+            .send()
+            .await?
+            .error_for_status()?;
+        let version: VersionResponse = response
+            .json()
+            .await
+            .with_context(|| "Failed to deserialize Kubo version response")?;
+
+        Ok(version.version)
+    }
+
     async fn file_size(&self, ipfs_path: &str) -> StdResult<u64> {
         let response = self
             .post(
@@ -190,6 +257,7 @@ impl FileDownloader for IpfsFileDownloader {
 
 #[cfg(test)]
 mod tests {
+    use std::net::TcpListener;
     use std::sync::Arc;
 
     use httpmock::Method::POST;
@@ -336,6 +404,110 @@ mod tests {
                 uri: ipfs_path.to_string(),
             }),
             error.downcast_ref::<FileDownloaderUnreachable>()
+        );
+    }
+
+    #[tokio::test]
+    async fn kubo_rpc_api_check_succeeds_when_rpc_url_answers_as_a_kubo_rpc_api() {
+        let server = MockServer::start();
+        let version_mock = server.mock(|when, then| {
+            when.method(POST).path("/api/v0/version");
+            then.status(200)
+                .json_body(serde_json::json!({"Version": "0.43.1", "Commit": "", "Repo": "18"}));
+        });
+        let ipfs_file_downloader = downloader(&server, FeedbackSender::new(&[]));
+
+        ipfs_file_downloader.check_kubo_rpc_api().await.unwrap();
+
+        version_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn kubo_rpc_api_check_fails_when_rpc_url_does_not_answer_as_a_kubo_rpc_api() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/v0/version");
+            then.status(401).body("<html><body>Unauthorized</body></html>");
+        });
+        let ipfs_file_downloader = downloader(&server, FeedbackSender::new(&[]));
+
+        let error = ipfs_file_downloader.check_kubo_rpc_api().await.unwrap_err();
+
+        assert!(
+            error.to_string().contains("does not answer as a Kubo RPC API"),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn kubo_rpc_api_check_fails_without_credentials_when_rpc_url_answers_a_non_kubo_body() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/v0/version");
+            then.status(200).body("<html><body>IPFS gateway</body></html>");
+        });
+        let mut rpc_base_url = Url::parse(&server.base_url()).unwrap();
+        rpc_base_url.set_username("user").unwrap();
+        rpc_base_url.set_password(Some("secret-password")).unwrap();
+        let ipfs_file_downloader =
+            IpfsFileDownloader::new(rpc_base_url, FeedbackSender::new(&[]), TestLogger::stdout())
+                .unwrap();
+
+        let error = ipfs_file_downloader.check_kubo_rpc_api().await.unwrap_err();
+
+        assert!(
+            error.to_string().contains("does not answer as a Kubo RPC API"),
+            "unexpected error: {error:?}"
+        );
+        assert!(
+            !format!("{error:?}").contains("secret-password"),
+            "credentials leaked: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn kubo_rpc_api_check_fails_without_credentials_when_kubo_rpc_api_is_unreachable() {
+        let closed_port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let ipfs_file_downloader = IpfsFileDownloader::new(
+            Url::parse(&format!("http://user:secret-password@127.0.0.1:{closed_port}/")).unwrap(),
+            FeedbackSender::new(&[]),
+            TestLogger::stdout(),
+        )
+        .unwrap();
+
+        let error = ipfs_file_downloader.check_kubo_rpc_api().await.unwrap_err();
+
+        assert!(
+            error.to_string().contains("Cannot reach the Kubo RPC API"),
+            "unexpected error: {error:?}"
+        );
+        assert!(
+            !format!("{error:?}").contains("secret-password"),
+            "credentials leaked: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn kubo_rpc_api_check_fails_when_kubo_rpc_api_does_not_answer_in_time() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/v0/version");
+            then.delay(Duration::from_millis(100))
+                .status(200)
+                .json_body(serde_json::json!({"Version": "0.43.1"}));
+        });
+        let ipfs_file_downloader = downloader(&server, FeedbackSender::new(&[]))
+            .with_kubo_rpc_api_check_timeout(Duration::from_millis(10));
+
+        let error = ipfs_file_downloader.check_kubo_rpc_api().await.unwrap_err();
+
+        assert!(
+            error.to_string().contains("did not answer within"),
+            "unexpected error: {error:?}"
         );
     }
 
