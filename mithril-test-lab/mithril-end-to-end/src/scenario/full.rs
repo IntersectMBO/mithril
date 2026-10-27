@@ -263,6 +263,12 @@ impl FullScenario {
             );
             target_epoch
         } else {
+            self.verify_certificates_use_updated_protocol_parameters(
+                target_epoch,
+                aggregator,
+                infrastructure,
+            )
+            .await?;
             self.verify_artifacts_production(target_epoch, aggregator, infrastructure)
                 .await?
         };
@@ -302,6 +308,12 @@ impl FullScenario {
             }
 
             // Verify that artifacts are produced and signed correctly
+            self.verify_certificates_use_updated_protocol_parameters(
+                target_epoch,
+                aggregator,
+                infrastructure,
+            )
+            .await?;
             self.verify_artifacts_production(target_epoch, aggregator, infrastructure)
                 .await?;
         }
@@ -341,6 +353,27 @@ impl FullScenario {
         !conditions.is_leader_aggregator
             && conditions.aggregate_signature_type == AggregateSignatureType::IvcSnark
             && conditions.era_switch_with_regenesis_planned
+    }
+
+    /// Wait for the newest certificate to be at least of the epoch preceding the target epoch,
+    /// which the aggregator has just completed, and to use the updated protocol parameters.
+    async fn verify_certificates_use_updated_protocol_parameters(
+        &self,
+        target_epoch: Epoch,
+        aggregator: &Aggregator,
+        infrastructure: &MithrilInfrastructure,
+    ) -> StdResult<()> {
+        self.toolkit
+            .check
+            .certificate
+            .is_creating_certificate_with_protocol_parameters(
+                aggregator,
+                target_epoch - 1,
+                &Aggregator::updated_protocol_parameters(
+                    infrastructure.most_constraining_aggregate_signature_type(),
+                ),
+            )
+            .await
     }
 
     async fn verify_artifacts_production(

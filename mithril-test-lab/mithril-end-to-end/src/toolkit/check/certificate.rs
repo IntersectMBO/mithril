@@ -3,7 +3,7 @@ use slog_scope::info;
 
 use mithril_common::{
     StdResult,
-    entities::Epoch,
+    entities::{Epoch, ProtocolParameters},
     messages::{CertificateListItemMessage, CertificateMessage},
 };
 
@@ -40,6 +40,35 @@ impl CheckCertificateToolkit {
             },
         )
         .await
+    }
+
+    /// Wait for a certificate of at least the given epoch which uses the expected protocol parameters.
+    pub async fn is_creating_certificate_with_protocol_parameters(
+        &self,
+        aggregator: &Aggregator,
+        min_epoch_expected: Epoch,
+        expected_protocol_parameters: &ProtocolParameters,
+    ) -> StdResult<()> {
+        utils::wait_for_latest_artifact_with_condition(
+            &format!(
+                "Certificate for epoch {min_epoch_expected} with protocol parameters {expected_protocol_parameters:?}"
+            ),
+            "/certificates",
+            |c: &CertificateListItemMessage| c.hash.clone(),
+            &self.context,
+            aggregator,
+            |c| {
+                c.epoch >= min_epoch_expected
+                    && c.metadata.protocol_parameters == *expected_protocol_parameters
+            },
+            |last_invalid_cert| {
+                format!(
+                    "no certificate found with epoch >= {min_epoch_expected} and protocol parameters {expected_protocol_parameters:?}\nlast certificate: {last_invalid_cert:?}",
+                )
+            },
+        )
+        .await
+        .map(|_| ())
     }
 
     pub async fn is_creating_certificate_with_enough_signers(

@@ -383,7 +383,7 @@ sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 # Optional configuration
 BLOCKFROST_PARAMETERS=**YOUR_BLOCKFROST_PARAMETERS**
 SIGNER_IMPORTER_RUN_INTERVAL=**YOUR_SIGNER_IMPORTER_RUN_INTERVAL**
-EOF`
+EOF'
 ```
 
 If you want to support **Cardano database v2** certification, append the following variables to the `/opt/mithril/mithril-aggregator.env` file:
@@ -402,7 +402,7 @@ SNAPSHOT_COMPRESSION_ALGORITHM=**YOUR_SNAPSHOT_COMPRESSION_ALGORITHM**
 ZSTANDARD_PARAMETERS__LEVEL=**YOUR_ZSTANDARD_PARAMETERS__LEVEL**
 ZSTANDARD_PARAMETERS__NUMBER_OF_WORKERS=**YOUR_ZSTANDARD_PARAMETERS__NUMBER_OF_WORKERS**
 ANCILLARY_FILES_SIGNER_CONFIG=**YOUR_ANCILLARY_FILES_SIGNER_CONFIG**
-EOF`
+EOF'
 ```
 
 If you want to support **Cardano transaction** certification, append the following variables to the `/opt/mithril/mithril-aggregator.env` file:
@@ -412,7 +412,7 @@ sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 # Cardano transactions configuration
 CARDANO_TRANSACTIONS_PROVER_CACHE_POOL_SIZE=**YOUR_CARDANO_TRANSACTIONS_PROVER_CACHE_POOL_SIZE**
 CARDANO_TRANSACTIONS_DATABASE_CONNECTION_POOL_SIZE=**YOUR_CARDANO_TRANSACTIONS_DATABASE_CONNECTION_POOL_SIZE**
-EOF`
+EOF'
 ```
 
 :::tip
@@ -497,7 +497,7 @@ Restart=always
 RestartSec=60
 User=cardano
 EnvironmentFile=/opt/mithril/mithril-aggregator.env
-ExecStart=/opt/mithril/mithril-aggregator -vvv
+ExecStart=/opt/mithril/mithril-aggregator -vvv serve
 
 [Install]
 WantedBy=multi-user.target
@@ -571,7 +571,7 @@ To expose metrics on the endpoint, append the following environment variable to 
 ```bash
 sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 ENABLE_METRICS_SERVER=true
-EOF`
+EOF'
 ```
 
 You can also specify a custom listen IP address and port for the metrics server:
@@ -581,7 +581,7 @@ sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 ENABLE_METRICS_SERVER=true
 METRICS_SERVER_IP=**YOUR_METRICS_SERVER_IP**
 METRICS_SERVER_PORT=**YOUR_METRICS_SERVER_PORT**
-EOF`
+EOF'
 ```
 
 :::tip
@@ -593,7 +593,7 @@ sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 ENABLE_METRICS_SERVER=true
 METRICS_SERVER_IP=0.0.0.0
 METRICS_SERVER_PORT=9090
-EOF`
+EOF'
 ```
 
 :::

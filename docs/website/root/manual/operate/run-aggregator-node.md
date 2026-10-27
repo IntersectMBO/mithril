@@ -266,6 +266,11 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
 - `NETWORK`: Cardano network name (eg, `mainnet`, `preprod`, or `preview`)
 - `NETWORK_MAGIC`: Cardano network magic number (required only if not using `mainnet`, `preprod` or `preview`)
 - `CARDANO_NODE_SOCKET_PATH`: Path to the IPC file of the Cardano node
+- `CARDANO_CLI_PATH`: Path to the `cardano-cli` executable
+- `DB_DIRECTORY`: Directory of the Cardano node database stores (same as the `--database-path` setting of the Cardano node)
+- `DATA_STORES_DIRECTORY`: Directory where the aggregator will store its databases (eg, `/opt/mithril/stores`)
+- `SNAPSHOT_UPLOADER_TYPE`: Type of snapshot uploader (`gcp` for Google Cloud Storage or `local` for local storage, use `local` if not supporting Cardano database certification)
+- `ANCILLARY_FILES_SIGNER_CONFIG`: JSON configuration for signing ancillary files. Can be either a secret key or a GCP KMS key. Keypair can be generated using Mithril Aggregator command `tools generate-keypair ed25519`. Example with secret key: `{"type": "secret-key", "secret_key": "your_hex_encoded_secret_key"}`.
 - `CARDANO_NODE_VERSION`: Version of the Cardano node running (eg, `10.7.1`)
 - `CHAIN_OBSERVER_TYPE`: Type of chain observer (default: `pallas`)
 - `ERA_READER_ADAPTER_TYPE`: Type of era reader adapter to use (default: `bootstrap`, use `cardano-chain` for production networks as specified in [Network configurations](../getting-started/network-configurations.md))
@@ -282,17 +287,13 @@ The configuration values for the `/opt/mithril/mithril-aggregator.env` file are 
 
 - The **Cardano database** configuration values are (only needed if supporting Cardano database certification):
 
-  - `DB_DIRECTORY`: Directory of the Cardano node database stores (same as the `--database-path` setting of the Cardano node)
-  - `DATA_STORES_DIRECTORY`: Directory where the aggregator will store its databases (eg, `/opt/mithril/stores`)
   - `GOOGLE_APPLICATION_CREDENTIALS_JSON`: JSON content of the GCP service account credentials (required if using GCP for snapshot storage)
   - `GOOGLE_APPLICATION_CREDENTIALS_GCP_KMS_JSON`: JSON content of the GCP KMS credentials for signing (optional, for using GCP KMS to sign ancillary files)
-  - `SNAPSHOT_UPLOADER_TYPE`: Type of snapshot uploader (`gcp` for Google Cloud Storage or `local` for local storage)
   - `SNAPSHOT_BUCKET_NAME`: Name of the GCP bucket where snapshots are stored (required if `SNAPSHOT_UPLOADER_TYPE` is `gcp`)
   - `SNAPSHOT_USE_CDN_DOMAIN`: Set to `true` to use CDN domain for constructing snapshot URLs (default: `false`, only relevant for GCP)
   - `SNAPSHOT_COMPRESSION_ALGORITHM`: Compression algorithm for snapshot archives (default: `zstandard`)
   - `ZSTANDARD_PARAMETERS__LEVEL`: Zstandard compression level (eg, `9` for maximum compression, range 1-22)
   - `ZSTANDARD_PARAMETERS__NUMBER_OF_WORKERS`: Number of worker threads for Zstandard compression (eg, `4`)
-  - `ANCILLARY_FILES_SIGNER_CONFIG`: JSON configuration for signing ancillary files. Can be either a secret key or a GCP KMS key. Keypair can be generated using Mithril Aggregator command `tools generate-keypair ed25519`. Example with secret key: `{"type": "secret-key", "secret_key": "your_hex_encoded_secret_key"}`.
 
 - The **Cardano transactions** configuration values are (only needed if supporting Cardano transactions certification):
   - `CARDANO_TRANSACTIONS_PROVER_CACHE_POOL_SIZE`: Size of the prover cache pool (default: `10`). This configuration can have a significant impact on the aggregator's memory usage. In particular, on `mainnet`, we recommend avoiding values higher than `10`.
@@ -316,6 +317,11 @@ Here is an **example** set of values for **release-mainnet** that will be used i
   - **NETWORK**: `mainnet`
   - **NETWORK_MAGIC**: `764824073`
   - **CARDANO_NODE_SOCKET_PATH**: `/cardano/ipc/node.socket`
+  - **CARDANO_CLI_PATH**: `/app/bin/cardano-cli`
+  - **DB_DIRECTORY**: `/cardano/db`
+  - **DATA_STORES_DIRECTORY**: `/opt/mithril/stores`
+  - **SNAPSHOT_UPLOADER_TYPE**: `local`
+  - **ANCILLARY_FILES_SIGNER_CONFIG**: `**YOUR_SECRET**`
   - **CARDANO_NODE_VERSION**: `10.7.1`
   - **CHAIN_OBSERVER_TYPE**: `pallas`
   - **ERA_READER_ADAPTER_TYPE**: `cardano-chain`
@@ -332,17 +338,13 @@ Here is an **example** set of values for **release-mainnet** that will be used i
 
 - **Cardano database configuration**:
 
-  - **DB_DIRECTORY**: `/cardano/db`
-  - **DATA_STORES_DIRECTORY**: `/opt/mithril/stores`
   - **GOOGLE_APPLICATION_CREDENTIALS_JSON**: `**YOUR_SECRET**`
   - **GOOGLE_APPLICATION_CREDENTIALS_GCP_KMS_JSON**: `**YOUR_SECRET**`
-  - **SNAPSHOT_UPLOADER_TYPE**: `local`
   - **SNAPSHOT_BUCKET_NAME**: `mithril-snapshots`
   - **SNAPSHOT_USE_CDN_DOMAIN**: `false`
   - **SNAPSHOT_COMPRESSION_ALGORITHM**: `zstandard`
   - **ZSTANDARD_PARAMETERS\_\_LEVEL**: `9`
   - **ZSTANDARD_PARAMETERS\_\_NUMBER_OF_WORKERS**: `4`
-  - **ANCILLARY_FILES_SIGNER_CONFIG**: `**YOUR_SECRET**`
 
 - **Cardano transaction configuration**:
   - **CARDANO_TRANSACTIONS_PROVER_CACHE_POOL_SIZE**: `10`
@@ -365,6 +367,11 @@ STORE_RETENTION_LIMIT=**YOUR_STORE_RETENTION_LIMIT**
 NETWORK=**YOUR_NETWORK**
 NETWORK_MAGIC=**YOUR_NETWORK_MAGIC**
 CARDANO_NODE_SOCKET_PATH=**YOUR_CARDANO_NODE_SOCKET_PATH**
+CARDANO_CLI_PATH=**YOUR_CARDANO_CLI_PATH**
+DB_DIRECTORY=**YOUR_DB_DIRECTORY**
+DATA_STORES_DIRECTORY=**YOUR_DATA_STORES_DIRECTORY**
+SNAPSHOT_UPLOADER_TYPE=**YOUR_SNAPSHOT_UPLOADER_TYPE**
+ANCILLARY_FILES_SIGNER_CONFIG=**YOUR_ANCILLARY_FILES_SIGNER_CONFIG**
 CARDANO_NODE_VERSION=**YOUR_CARDANO_IMAGE_ID**
 CHAIN_OBSERVER_TYPE=**YOUR_CHAIN_OBSERVER_TYPE**
 ERA_READER_ADAPTER_TYPE=**YOUR_ERA_READER_ADAPTER_TYPE**
@@ -383,7 +390,7 @@ sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 # Optional configuration
 BLOCKFROST_PARAMETERS=**YOUR_BLOCKFROST_PARAMETERS**
 SIGNER_IMPORTER_RUN_INTERVAL=**YOUR_SIGNER_IMPORTER_RUN_INTERVAL**
-EOF`
+EOF'
 ```
 
 If you want to support **Cardano database v2** certification, append the following variables to the `/opt/mithril/mithril-aggregator.env` file:
@@ -391,18 +398,14 @@ If you want to support **Cardano database v2** certification, append the followi
 ```bash
 sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 # Cardano database configuration
-DB_DIRECTORY=**YOUR_DB_DIRECTORY**
-DATA_STORES_DIRECTORY=**YOUR_DATA_STORES_DIRECTORY**
 GOOGLE_APPLICATION_CREDENTIALS_JSON=**YOUR_GOOGLE_APPLICATION_CREDENTIALS_JSON**
 GOOGLE_APPLICATION_CREDENTIALS_GCP_KMS_JSON=**YOUR_GOOGLE_APPLICATION_CREDENTIALS_GCP_KMS_JSON**
-SNAPSHOT_UPLOADER_TYPE=**YOUR_SNAPSHOT_UPLOADER_TYPE**
 SNAPSHOT_BUCKET_NAME=**YOUR_SNAPSHOT_BUCKET_NAME**
 SNAPSHOT_USE_CDN_DOMAIN=**YOUR_SNAPSHOT_USE_CDN_DOMAIN**
 SNAPSHOT_COMPRESSION_ALGORITHM=**YOUR_SNAPSHOT_COMPRESSION_ALGORITHM**
 ZSTANDARD_PARAMETERS__LEVEL=**YOUR_ZSTANDARD_PARAMETERS__LEVEL**
 ZSTANDARD_PARAMETERS__NUMBER_OF_WORKERS=**YOUR_ZSTANDARD_PARAMETERS__NUMBER_OF_WORKERS**
-ANCILLARY_FILES_SIGNER_CONFIG=**YOUR_ANCILLARY_FILES_SIGNER_CONFIG**
-EOF`
+EOF'
 ```
 
 If you want to support **Cardano transaction** certification, append the following variables to the `/opt/mithril/mithril-aggregator.env` file:
@@ -412,7 +415,7 @@ sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 # Cardano transactions configuration
 CARDANO_TRANSACTIONS_PROVER_CACHE_POOL_SIZE=**YOUR_CARDANO_TRANSACTIONS_PROVER_CACHE_POOL_SIZE**
 CARDANO_TRANSACTIONS_DATABASE_CONNECTION_POOL_SIZE=**YOUR_CARDANO_TRANSACTIONS_DATABASE_CONNECTION_POOL_SIZE**
-EOF`
+EOF'
 ```
 
 :::tip
@@ -432,6 +435,11 @@ STORE_RETENTION_LIMIT=5
 NETWORK=mainnet
 NETWORK_MAGIC=764824073
 CARDANO_NODE_SOCKET_PATH=/cardano/ipc/node.socket
+CARDANO_CLI_PATH=/app/bin/cardano-cli
+DB_DIRECTORY=/cardano/db
+DATA_STORES_DIRECTORY=/opt/mithril/stores
+SNAPSHOT_UPLOADER_TYPE=local
+ANCILLARY_FILES_SIGNER_CONFIG={"type": "secret-key", "secret_key": "**YOUR_SECRET**"}
 CARDANO_NODE_VERSION=10.7.1
 CHAIN_OBSERVER_TYPE=pallas
 ERA_READER_ADAPTER_TYPE=cardano-chain
@@ -457,17 +465,13 @@ If you want to support the **Cardano database** certification, append the follow
 ```bash
 sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 # Cardano database configuration
-DB_DIRECTORY=/cardano/db
-DATA_STORES_DIRECTORY=/opt/mithril/stores
 GOOGLE_APPLICATION_CREDENTIALS_JSON=**YOUR_SECRET**
 GOOGLE_APPLICATION_CREDENTIALS_GCP_KMS_JSON=**YOUR_SECRET**
-SNAPSHOT_UPLOADER_TYPE=local
 SNAPSHOT_BUCKET_NAME=mithril-snapshots
 SNAPSHOT_USE_CDN_DOMAIN=false
 SNAPSHOT_COMPRESSION_ALGORITHM=zstandard
 ZSTANDARD_PARAMETERS__LEVEL=9
 ZSTANDARD_PARAMETERS__NUMBER_OF_WORKERS=4
-ANCILLARY_FILES_SIGNER_CONFIG={"type": "secret-key", "secret_key": "**YOUR_SECRET**"}
 EOF'
 ```
 
@@ -497,7 +501,7 @@ Restart=always
 RestartSec=60
 User=cardano
 EnvironmentFile=/opt/mithril/mithril-aggregator.env
-ExecStart=/opt/mithril/mithril-aggregator -vvv
+ExecStart=/opt/mithril/mithril-aggregator -vvv serve
 
 [Install]
 WantedBy=multi-user.target
@@ -571,7 +575,7 @@ To expose metrics on the endpoint, append the following environment variable to 
 ```bash
 sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 ENABLE_METRICS_SERVER=true
-EOF`
+EOF'
 ```
 
 You can also specify a custom listen IP address and port for the metrics server:
@@ -581,7 +585,7 @@ sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 ENABLE_METRICS_SERVER=true
 METRICS_SERVER_IP=**YOUR_METRICS_SERVER_IP**
 METRICS_SERVER_PORT=**YOUR_METRICS_SERVER_PORT**
-EOF`
+EOF'
 ```
 
 :::tip
@@ -593,7 +597,7 @@ sudo bash -c 'cat >> /opt/mithril/mithril-aggregator.env << EOF
 ENABLE_METRICS_SERVER=true
 METRICS_SERVER_IP=0.0.0.0
 METRICS_SERVER_PORT=9090
-EOF`
+EOF'
 ```
 
 :::

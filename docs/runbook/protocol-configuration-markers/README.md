@@ -26,15 +26,8 @@ export CARDANO_WALLET_PATH=**PATH_TO_YOUR_KEYPAIRS**
 export PROTOCOL_CONFIGURATION_READER_SECRET_KEY=**YOUR_PROTOCOL_CONFIGURATION_READER_SECRET_KEY**
 export PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY=**YOUR_PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY**
 export ASSETS_PATH=**YOUR_ASSETS_PATH**
-export SCRIPT_TX_VALUE=**MINIMUM_SCRIPT_TX_VALUE**
 export NETWORK=**YOUR_NETWORK**
 export CHAIN_OBSERVER_TYPE=pallas
-```
-
-A common value for the transaction amount used when a script transaction is made is:
-
-```bash
-export SCRIPT_TX_VALUE=4600000
 ```
 
 Compute the network magic parameter that handles both the Cardano mainnet and Cardano test networks:
@@ -75,17 +68,31 @@ export PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG="{\"type\":\"$PROTOCOL_CONFI
 
 Export latest active configurations from the Cardano chain:
 
-> [!IMPORTANT]
-> If it's the first time on the targeted environment and there are no protocol configurations on-chain, add `--default` at the end of the `protocol-configuration export-markers` command.
-
 ```bash
-./mithril-aggregator protocol-configuration export-markers --target-path $ASSETS_PATH/protocol-configurations.json
+./mithril-aggregator -vv protocol-configuration export-markers --target-path $ASSETS_PATH/protocol-configurations.json
 ```
 
 Execution of previous command must return the following information:
 
 ```bash
-No protocol configurations found on chain, getting default protocol configurations output file...
+Protocol configurations found on chain, getting protocol configurations output file...
+Generating JSON protocol configurations output file...
+Successfully wrote JSON protocol configurations file at **YOUR_ASSETS_PATH**/protocol-configurations.json
+```
+
+> [!IMPORTANT]
+> The command fails if no protocol configuration markers verified by `PROTOCOL_CONFIGURATION_READER_VERIFICATION_KEY` are found at `PROTOCOL_CONFIGURATION_READER_ADDRESS`: check that the Cardano node is synchronized and both values. The log line `Read protocol configuration markers datums` gives the number of datums found at the address, and a warning gives the number of datums discarded for an invalid signature or an undecodable payload.
+
+If it's the first time on the targeted environment and there are no protocol configurations on-chain, export the default protocol configurations instead:
+
+```bash
+./mithril-aggregator protocol-configuration export-markers --default --target-path $ASSETS_PATH/protocol-configurations.json
+```
+
+Execution of previous command must return the following information:
+
+```bash
+Getting default protocol configurations output file...
 Generating JSON protocol configurations output file...
 Successfully wrote JSON protocol configurations file at **YOUR_ASSETS_PATH**/protocol-configurations.json
 ```
@@ -129,7 +136,10 @@ cat $ASSETS_PATH/protocol-configurations.json | jq
 Manually edit previously exported JSON file written at `$ASSETS_PATH/protocol-configurations.json`
 
 > [!IMPORTANT]
-> :fire: Make sure to keep, if it exists, at least the three last epoch's configuration without any modification.
+> :fire: Leave the configuration in use from two epochs before the current epoch to the next epoch unchanged: `import-markers` verifies that it is the same on chain and in the file.
+
+> [!IMPORTANT]
+> :fire: Date a new marker at least two epochs after the current epoch: the nodes already hold the configuration of the next epoch, which can't be modified. Submit the transaction in the epoch in which `import-markers` verified the markers: if the epoch changes before the submission, run `import-markers` again.
 
 > [!IMPORTANT]
 > For the `Snark` and `IvcSnark` aggregate signature types, changing `k` or `m` changes the
@@ -142,7 +152,7 @@ Manually edit previously exported JSON file written at `$ASSETS_PATH/protocol-co
 Generate Tx Datum payload file by using previously edited JSON file
 
 ```bash
-./mithril-aggregator protocol-configuration import-markers --import-path $ASSETS_PATH/protocol-configurations.json --target-path $ASSETS_PATH/protocol-configurations-datum.json
+./mithril-aggregator -vv protocol-configuration import-markers --import-path $ASSETS_PATH/protocol-configurations.json --target-path $ASSETS_PATH/protocol-configurations-datum.json
 ```
 
 Execution of previous command must return the following information:
@@ -158,6 +168,9 @@ Datum size: 3.09 KB
 Generating Tx datum output file...
 Successfully wrote Tx datum file at **YOUR_ASSETS_PATH**/protocol-configurations-datum.json
 ```
+
+> [!NOTE]
+> On the first publication, the warnings `No previous configuration was found on chain` are expected for the epochs of the verification window.
 
 > [!IMPORTANT]
 > You may encounter errors if JSON is not valid, contains zero values or contains inconsistent configurations regarding the chain configurations of the targeted environment.
@@ -182,6 +195,19 @@ An example output of the command is:
   ],
   "signature": "6310e8eab0261643a5115cfe331d78c1826d5637c2cf28ae0e4df72cc11b95657c6948ff468227ffc2f16471bb3fc3e44973ec30a78a8ef0de2295454171e706"
 }
+```
+
+#### Compute the transaction amount
+
+Compute the minimum amount of the transaction output holding the datum, which depends on the size of the datum:
+
+```bash
+$CARDANO_CLI $CARDANO_ERA query protocol-parameters $CARDANO_NETWORK_MAGIC --socket-path $CARDANO_NODE_SOCKET_PATH --out-file $ASSETS_PATH/protocol-parameters.json
+export SCRIPT_TX_VALUE=$($CARDANO_CLI $CARDANO_ERA transaction calculate-min-required-utxo \
+    --protocol-params-file $ASSETS_PATH/protocol-parameters.json \
+    --tx-out "$(cat $CARDANO_WALLET_PATH/payment.addr)+0" \
+    --tx-out-inline-datum-file $ASSETS_PATH/protocol-configurations-datum.json | awk '{print $2}')
+echo $SCRIPT_TX_VALUE
 ```
 
 ## Bootstrap Protocol Configuration Markers: Write a transaction with the first version of datum on chain
@@ -354,7 +380,7 @@ $CARDANO_CLI $CARDANO_ERA query utxo --address $(cat $CARDANO_WALLET_PATH/paymen
 Optional : We can also validate what has been written on chain by re-running the export command :
 
 ```bash
-./mithril-aggregator protocol-configuration export-markers --target-path $ASSETS_PATH/protocol-configurations.json
+./mithril-aggregator -vv protocol-configuration export-markers --target-path $ASSETS_PATH/protocol-configurations.json
 ```
 
 ```json
