@@ -86,7 +86,7 @@ impl KeyRegistration {
             return Err(RegisterError::EmptyRegistration.into());
         }
         params.validate()?;
-        self.check_total_stake_registered()?;
+        Self::checked_total_stake(&self.registration_entries)?;
 
         let deduplicated_entries_for_concatenation =
             Self::deduplicate_concatenation_keys_from_entries(&self.registration_entries);
@@ -146,16 +146,16 @@ impl KeyRegistration {
             .collect()
     }
 
-    /// Checks that the total stake registered does not overflow the `u64` limit
-    fn check_total_stake_registered(&self) -> StmResult<()> {
-        self.registration_entries.iter().try_fold(0u64, |acc, entry| {
+    /// Sums the stakes of the given entries, failing when the sum overflows the `u64` limit.
+    fn checked_total_stake(entries: &BTreeSet<RegistrationEntry>) -> StmResult<Stake> {
+        let total_stake = entries.iter().try_fold(0u64, |acc, entry| {
             acc.checked_add(entry.get_stake())
                 .ok_or(RegisterError::TotalStakeOverflow {
                     accumulated_stake: acc,
                     stake: entry.get_stake(),
                 })
         })?;
-        Ok(())
+        Ok(total_stake)
     }
 }
 
@@ -215,13 +215,13 @@ impl<L: MerkleTreeLeaf> ClosedRegistrationForProofSystem<L> {
     /// Computes the total stake of the given deduplicated entries and closes them with it.
     ///
     /// # Error
-    /// The function fails when the total stake is zero, or when a lottery target cannot be
-    /// computed.
+    /// The function fails when the total stake overflows or is zero, or when a lottery target
+    /// cannot be computed.
     pub(crate) fn try_new(
         params: &Parameters,
         deduplicated_entries: &BTreeSet<RegistrationEntry>,
     ) -> StmResult<Self> {
-        let total_stake: Stake = deduplicated_entries.iter().map(|entry| entry.get_stake()).sum();
+        let total_stake = KeyRegistration::checked_total_stake(deduplicated_entries)?;
 
         if total_stake == 0 {
             return Err(RegisterError::ZeroTotalStake.into());
