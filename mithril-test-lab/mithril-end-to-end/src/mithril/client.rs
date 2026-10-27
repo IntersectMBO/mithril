@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use mithril_common::StdResult;
 use mithril_common::entities::{BlockHash, EpochSpecifier, TransactionHash};
 
-use crate::utils::{MithrilCommand, NodeVersion};
+use crate::utils::{MithrilCommand, NodeVersion, file_utils};
 use crate::{ANCILLARY_MANIFEST_VERIFICATION_KEY, Aggregator, GenesisKeys};
 
 #[derive(Debug)]
@@ -43,6 +43,19 @@ impl ClientOutput {
                 self.output_file.display()
             )
         })
+    }
+
+    /// Count the number of lines matching the given text in the log file, support extended regex.
+    pub async fn count_matching_lines_in_logs(&self, needle: &str) -> StdResult<usize> {
+        file_utils::count_matching_lines(&self.log_file, needle)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to count matching lines in client `{}` logs from file `{}`",
+                    self.command_name,
+                    self.log_file.display()
+                )
+            })
     }
 }
 
