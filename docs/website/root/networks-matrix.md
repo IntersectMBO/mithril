@@ -9,7 +9,7 @@ import TabItem from '@theme/TabItem';
 
 Here is an updated list of all **Mithril networks**, including their configurations and current statuses:
 
-> Last update: 10/15/2026
+> Last update: 10/22/2026
 
 <Tabs>
   <TabItem value="mainnet" label="Mainnet" default>
@@ -123,6 +123,7 @@ This network is only for the developers of the Mithril Core team.
 | **Protocol configuration reader address**          | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/protocol-config.addr` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/protocol-config.addr) |
 | **Protocol configuration reader verification key** | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/protocol-config.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/protocol-config.vkey) |
 | **Ancillary verification key**                     | `https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/ancillary.vkey` [:arrow_upper_right:](https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/ancillary.vkey)             |
+| **IPNS name of the immutable archives**            | `/ipns/k51qzi5uqu5dj0elu5jdwms8znznw21ost6ewfd46me2q7xuptgeew6z732xr9`                                                                                                                                                                                                             |
 | **Build from**                                     | **Main branch** [:arrow_upper_right:](https://github.com/IntersectMBO/mithril/tree/main)                                                                                                                                                                                           |
 
   </TabItem>

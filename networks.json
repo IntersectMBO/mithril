@@ -181,6 +181,11 @@
             "verification-key": {
               "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/testing-preview/ancillary.vkey"
             }
+          },
+          "ipfs": {
+            "immutable-archives": {
+              "ipns-name": "/ipns/k51qzi5uqu5dj0elu5jdwms8znznw21ost6ewfd46me2q7xuptgeew6z732xr9"
+            }
           }
         }
       }
