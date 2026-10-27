@@ -447,6 +447,12 @@ variable "mithril_ipfs_ipns_signing_key_name" {
   default     = "mithril-snapshot"
 }
 
+variable "mithril_aggregator_ipfs_share" {
+  type        = number
+  description = "The aggregator advertised share of immutables to download through IPFS from the clients (0-100 inclusive)"
+  default     = 5
+}
+
 variable "ipfs_image_id" {
   type        = string
   description = "The IPFS image tag of service to deploy"

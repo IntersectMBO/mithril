@@ -151,6 +151,7 @@ jobs:
           mithril_ipfs_enabled: ${{ matrix.mithril_ipfs_enabled }}
           mithril_ipfs_storage_max: ${{ vars.IPFS_STORAGE_MAX }}
           mithril_ipfs_ipns_signing_key: ${{ secrets.IPFS_IPNS_SIGNING_KEY }}
+          mithril_aggregator_ipfs_share: ${{ vars.AGGREGATOR_IPFS_SHARE }}
           ipfs_node_version: ${{ vars.IPFS_NODE_VERSION }}
           ipfs_node_docker_registry: ${{ vars.IPFS_NODE_DOCKER_REGISTRY }}
           mithril_api_domain: ${{ matrix.mithril_api_domain }}
