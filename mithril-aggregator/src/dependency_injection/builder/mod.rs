@@ -82,12 +82,12 @@ use super::{
 #[macro_export]
 macro_rules! get_dependency {
     ( $self:ident.$attribute:ident ) => {{
-        paste::paste! {
+        pastey::paste! {
             get_dependency!($self.$attribute = $self.[<build_ $attribute>]().await?)
         }
     }};
     ( $self:ident.$attribute:ident = $builder:expr ) => {{
-        paste::paste! {
+        pastey::paste! {
             if $self.$attribute.is_none() {
                 slog::debug!($self.root_logger(), "Building dependency {}", stringify!($attribute));
                 $self.$attribute = Some($builder);

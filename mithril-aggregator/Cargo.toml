@@ -1,6 +1,6 @@
 [package]
 name = "mithril-aggregator"
-version = "0.10.23"
+version = "0.10.24"
 description = "A Mithril Aggregator server"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -51,7 +51,7 @@ mithril-resource-pool = { path = "../internal/mithril-resource-pool" }
 mithril-signed-entity-lock = { path = "../internal/signed-entity/mithril-signed-entity-lock" }
 mithril-signed-entity-preloader = { path = "../internal/signed-entity/mithril-signed-entity-preloader" }
 mithril-ticker = { path = "../internal/mithril-ticker" }
-paste = "1.0.15"
+pastey = "0.2.3"
 percent-encoding = "2.3.2"
 rand_core = { workspace = true, optional = true }
 rayon = { workspace = true }
