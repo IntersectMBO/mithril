@@ -270,8 +270,10 @@ mod tests {
             .filter_map(|signer| {
                 let mut sig = signer.create_single_signature(message).ok()?;
                 let snark_sig = sig.snark_signature.as_ref()?;
-                let reg_entry =
-                    clerk.get_snark_registration_entry(sig.signer_index).ok().flatten()?;
+                let reg_entry = clerk
+                    .get_snark_registration_entry(snark_sig.get_snark_signer_index())
+                    .ok()
+                    .flatten()?;
                 let indices = compute_winning_lottery_indices(
                     clerk.parameters.m,
                     message_to_sign,
@@ -409,7 +411,7 @@ mod tests {
                     // Verify that unique signers are tracked correctly
                     let signer_indices: HashSet<_> = unique_index_map
                         .values()
-                        .map(|sig| sig.signer_index)
+                        .filter_map(|sig| sig.get_snark_signer_index())
                         .collect();
                     prop_assert!(
                         !signer_indices.is_empty(),
@@ -554,11 +556,13 @@ mod tests {
         seed_hasher.update(message_to_sign[1].to_canonical_bytes());
         let seed: [u8; 32] = seed_hasher.finalize().into();
 
-        let expected_winner_signer_index = contested_sigs
+        let expected_winner_snark_signer_index = contested_sigs
             .iter()
-            .min_by_key(|sig| HashedKey::for_signer_index(&seed, contested_index, sig.signer_index))
-            .expect("at least one candidate")
-            .signer_index;
+            .filter_map(|sig| sig.get_snark_signer_index())
+            .min_by_key(|snark_signer_index| {
+                HashedKey::for_signer_index(&seed, contested_index, *snark_signer_index)
+            })
+            .expect("at least one candidate");
 
         let result = SnarkClerk::select_valid_signatures_for_k_indices(
             &params,
@@ -571,7 +575,10 @@ mod tests {
         let winner = result
             .get(&contested_index)
             .expect("contested index should be selected");
-        assert_eq!(winner.signer_index, expected_winner_signer_index);
+        assert_eq!(
+            winner.get_snark_signer_index(),
+            Some(expected_winner_snark_signer_index)
+        );
     }
 
     mod slow {

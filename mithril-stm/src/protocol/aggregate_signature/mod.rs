@@ -32,8 +32,9 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     use crate::{
-        Initializer, KeyRegistration, MithrilMembershipDigest, Parameters, RegistrationEntry,
-        Signer, SingleSignature, Stake, StmResult, membership_commitment::MerkleBatchPath,
+        Initializer, KeyRegistration, MithrilMembershipDigest, Parameters, RegisterError,
+        RegistrationEntry, Signer, SingleSignature, Stake, StmResult,
+        membership_commitment::MerkleBatchPath,
     };
 
     use super::{
@@ -282,6 +283,85 @@ mod tests {
                 },
             }
         }
+    }
+
+    #[test]
+    fn concatenation_aggregation_succeeds_with_bls_key_collisions() {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let params = Parameters {
+            m: 100,
+            k: 5,
+            phi_f: 0.8,
+        };
+        let message = [1u8; 32];
+        let mut owners: Vec<Initializer> = (10..16)
+            .map(|stake| Initializer::new(params, stake, &mut rng))
+            .collect();
+
+        let mut lower_stake_copier = Initializer::new(params, 1, &mut rng);
+        lower_stake_copier.bls_verification_key_proof_of_possession =
+            owners[0].bls_verification_key_proof_of_possession;
+
+        let evicted_owner = owners.remove(1);
+        let mut higher_stake_copier = Initializer::new(params, 20, &mut rng);
+        higher_stake_copier.bls_verification_key_proof_of_possession =
+            evicted_owner.bls_verification_key_proof_of_possession;
+
+        let mut key_registration = KeyRegistration::initialize();
+        for initializer in
+            owners
+                .iter()
+                .chain([&evicted_owner, &lower_stake_copier, &higher_stake_copier])
+        {
+            let entry: RegistrationEntry = initializer.clone().try_into().unwrap();
+            key_registration.register_by_entry(&entry);
+        }
+        let closed_registration = key_registration.close_registration(&params).unwrap();
+
+        for collision_loser in [&lower_stake_copier, &evicted_owner] {
+            let error = collision_loser
+                .clone()
+                .try_create_signer::<D>(&closed_registration)
+                .expect_err("the loser of a BLS key collision should not get a signer");
+            assert!(matches!(
+                error.downcast_ref::<RegisterError>(),
+                Some(RegisterError::UnregisteredInitializer)
+            ));
+        }
+        let signers: Vec<Signer<D>> = owners
+            .iter()
+            .chain([&higher_stake_copier])
+            .map(|initializer| {
+                initializer
+                    .clone()
+                    .try_create_signer(&closed_registration)
+                    .expect("the holder of a kept BLS key should get a signer")
+            })
+            .collect();
+        let signatures: Vec<SingleSignature> = signers
+            .iter()
+            .filter_map(|signer| signer.create_single_signature(&message).ok())
+            .collect();
+
+        let clerk = Clerk::new_clerk_from_signer(&signers[0]);
+        let (aggregate_signature, ancillary_proof_output) = clerk
+            .aggregate_signatures_with_type(
+                &signatures,
+                &message,
+                AggregateSignatureType::Concatenation,
+                AncillaryProofInput::dummy(),
+            )
+            .expect("the aggregation should succeed with BLS key collisions");
+
+        aggregate_signature
+            .verify(
+                &message,
+                &clerk.compute_aggregate_verification_key(),
+                &params,
+                ancillary_proof_output.verifier_data().cloned(),
+                None,
+            )
+            .expect("the aggregate signature should verify with BLS key collisions");
     }
 
     proptest! {
