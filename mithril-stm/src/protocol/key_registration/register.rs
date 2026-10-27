@@ -242,19 +242,22 @@ impl<L: MerkleTreeLeaf> ClosedRegistrationForProofSystem<L> {
         self.total_stake
     }
 
+    /// Converts the entries to leaves of the proof system, in the order of the Merkle tree.
+    fn leaves(&self) -> impl Iterator<Item = L> + '_
+    where
+        Option<L>: From<ClosedRegistrationEntry>,
+    {
+        self.deduplicated_entries
+            .iter()
+            .filter_map(|entry| entry.clone().into())
+    }
+
     /// Creates the Merkle tree of the proof system.
     pub(crate) fn to_merkle_tree<D: Digest + FixedOutput>(&self) -> MerkleTree<D, L>
     where
-        L: MerkleTreeLeaf,
         Option<L>: From<ClosedRegistrationEntry>,
     {
-        MerkleTree::new(
-            &self
-                .deduplicated_entries
-                .iter()
-                .filter_map(|entry| entry.clone().into())
-                .collect::<Vec<L>>(),
-        )
+        MerkleTree::new(&self.leaves().collect::<Vec<L>>())
     }
 
     /// Return the number of leaves of the Merkle tree.
@@ -263,15 +266,19 @@ impl<L: MerkleTreeLeaf> ClosedRegistrationForProofSystem<L> {
         self.deduplicated_entries.len()
     }
 
-    /// Gets the index of the given closed registration entry, which is also its leaf position in
-    /// the Merkle tree.
+    /// Gets the index of the leaf of the given closed registration entry, which is also its
+    /// position in the Merkle tree.
     pub(crate) fn get_signer_index_for_registration(
         &self,
         entry: &ClosedRegistrationEntry,
-    ) -> Option<SignerIndex> {
-        self.deduplicated_entries
-            .iter()
-            .position(|registered_entry| registered_entry == entry)
+    ) -> Option<SignerIndex>
+    where
+        L: PartialEq,
+        Option<L>: From<ClosedRegistrationEntry>,
+    {
+        let leaf: L = Option::<L>::from(entry.clone())?;
+        self.leaves()
+            .position(|registered_leaf| registered_leaf == leaf)
             .map(|index| index as SignerIndex)
     }
 
@@ -528,7 +535,7 @@ mod tests {
 
     #[cfg(feature = "snark")]
     #[test]
-    fn signer_creation_fails_for_initializer_with_diff_param() {
+    fn initializer_with_different_parameters_gets_no_snark_signer() {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let mut kr = KeyRegistration::initialize();
         let nkeys = 5;
@@ -562,17 +569,15 @@ mod tests {
         let closed_registration = kr.clone().close_registration(&params).unwrap();
 
         for (i, init) in initializers.into_iter().enumerate() {
-            if i == 0 {
-                let result_signer =
-                    init.try_create_signer::<MithrilMembershipDigest>(&closed_registration);
+            let signer = init
+                .try_create_signer::<MithrilMembershipDigest>(&closed_registration)
+                .expect("every registered initializer should get a signer");
 
-                assert!(result_signer.is_err());
-            } else {
-                let result_signer =
-                    init.try_create_signer::<MithrilMembershipDigest>(&closed_registration);
-
-                assert!(result_signer.is_ok());
-            }
+            assert_eq!(
+                i != 0,
+                signer.snark_proof_signer.is_some(),
+                "only the initializers with the registration's parameters should get a SNARK signer"
+            );
         }
     }
 

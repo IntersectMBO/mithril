@@ -437,6 +437,31 @@ mod tests {
 
         #[cfg(feature = "snark")]
         #[test]
+        fn bls_key_owner_keeps_its_signer_when_an_equal_stake_copier_wins_the_tie() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let mut owner = Initializer::new(test_parameters(), 100, &mut rng);
+            owner.strip_snark_keys();
+            let mut copier = Initializer::new(test_parameters(), 100, &mut rng);
+            copier.bls_verification_key_proof_of_possession =
+                owner.bls_verification_key_proof_of_possession;
+
+            let closed_key_registration = close_registration(&[owner.clone(), copier.clone()]);
+
+            let kept_entry = closed_key_registration
+                .get_closed_key_registration_for_concatenation()
+                .get_registration_entry_for_index(&0)
+                .unwrap();
+            assert!(
+                kept_entry.get_verification_key_for_snark().is_some(),
+                "the copier with a SNARK key should win the tie on the SNARK key"
+            );
+            owner
+                .try_create_signer::<MithrilMembershipDigest>(&closed_key_registration)
+                .expect("the owner of a BLS key should get a signer since its leaf is in the tree");
+        }
+
+        #[cfg(feature = "snark")]
+        #[test]
         fn only_the_snark_key_collision_winner_gets_a_snark_signer() {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
             let owner = Initializer::new(test_parameters(), 200, &mut rng);
