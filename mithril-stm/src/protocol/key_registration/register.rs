@@ -132,7 +132,10 @@ impl KeyRegistration {
             .collect()
     }
 
-    /// Keeps, for each Concatenation key, the entry with the highest stake.
+    /// Keeps, for each Concatenation key, the entry with the highest stake, without its SNARK key.
+    ///
+    /// The Concatenation proof system does not use the SNARK key, and the closed entries embedded
+    /// in Concatenation proofs must stay readable by clients without the `snark` feature.
     fn deduplicate_concatenation_keys_from_entries(
         entries: &BTreeSet<RegistrationEntry>,
     ) -> BTreeSet<RegistrationEntry> {
@@ -143,7 +146,7 @@ impl KeyRegistration {
             .filter(|entry| {
                 already_registered_keys.insert(entry.get_verification_key_for_concatenation())
             })
-            .cloned()
+            .map(RegistrationEntry::without_snark_key)
             .collect()
     }
 
@@ -422,13 +425,15 @@ mod tests {
 
         let stakes: Vec<u64> = (0..nb_entries).map(|_| random_range(10..100)).collect();
         let kr = prepare_key_registration_with_stakes(stakes);
-        let closed_registration = kr.clone().close_registration(&params).unwrap();
-        let total_stake = closed_registration
-            .closed_key_registration_for_concatenation
-            .total_stake;
+        let closed_registration_for_snark = kr
+            .clone()
+            .close_registration(&params)
+            .unwrap()
+            .closed_key_registration_for_snark
+            .expect("the SNARK registration should be closed");
+        let total_stake = closed_registration_for_snark.total_stake;
 
-        for (closed_entry, entry) in closed_registration
-            .closed_key_registration_for_concatenation
+        for (closed_entry, entry) in closed_registration_for_snark
             .deduplicated_entries
             .iter()
             .zip(kr.registration_entries)
@@ -450,6 +455,27 @@ mod tests {
                 target_value_from_registration
             );
             assert_eq!(target_value_from_eligibility, target_value_from_try_from);
+        }
+    }
+
+    #[cfg(feature = "snark")]
+    #[test]
+    fn concatenation_entries_are_closed_without_snark_fields() {
+        let params = Parameters {
+            m: 20,
+            k: 10,
+            phi_f: 0.2,
+        };
+        let closed_registration = prepare_key_registration_with_stakes(vec![10, 20, 30])
+            .close_registration(&params)
+            .unwrap();
+
+        for closed_entry in closed_registration
+            .closed_key_registration_for_concatenation
+            .deduplicated_entries
+        {
+            assert_eq!(None, closed_entry.get_verification_key_for_snark());
+            assert_eq!(None, closed_entry.get_lottery_target_value());
         }
     }
 
@@ -687,7 +713,7 @@ mod tests {
 
         #[cfg(feature = "snark")]
         #[test]
-        fn keeps_the_snark_fields_of_the_winning_entry() {
+        fn drops_the_snark_key_of_the_winning_entry() {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
             let shared_vk_pop = new_vk_pop(&mut rng);
             let schnorr_vk = new_schnorr_vk(&mut rng);
@@ -699,7 +725,7 @@ mod tests {
                     lower, higher,
                 ]));
 
-            assert_eq!(BTreeSet::from([higher]), result);
+            assert_eq!(BTreeSet::from([entry(shared_vk_pop, 200)]), result);
         }
     }
 
@@ -797,7 +823,7 @@ mod tests {
                 .iter()
                 .map(|entry| {
                     ClosedRegistrationEntry::try_from((
-                        *entry,
+                        entry.without_snark_key(),
                         closed_registration
                             .closed_key_registration_for_concatenation
                             .total_stake,

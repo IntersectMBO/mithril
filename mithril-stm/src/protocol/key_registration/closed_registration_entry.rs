@@ -77,21 +77,6 @@ impl ClosedRegistrationEntry {
         self.stake
     }
 
-    /// Returns a copy of this entry with SNARK-specific fields removed.
-    ///
-    /// This is used when embedding registration entries in concatenation proofs,
-    /// which do not need SNARK fields and must remain backward-compatible with
-    /// clients that do not support the `snark` feature.
-    #[cfg(feature = "snark")]
-    pub fn without_snark_fields(&self) -> Self {
-        ClosedRegistrationEntry {
-            verification_key_for_concatenation: self.verification_key_for_concatenation,
-            stake: self.stake,
-            verification_key_for_snark: None,
-            lottery_target_value: None,
-        }
-    }
-
     #[cfg(feature = "snark")]
     /// Gets the verification key for snark.
     pub fn get_verification_key_for_snark(&self) -> Option<VerificationKeyForSnark> {
@@ -566,42 +551,20 @@ mod tests {
     }
 
     #[cfg(feature = "snark")]
-    mod without_snark_fields {
+    mod json_tuple_serialization {
         use super::*;
 
         #[test]
-        fn preserves_concatenation_key_and_stake() {
+        fn entry_without_snark_fields_serializes_as_two_element_json_tuple() {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
             let entry = create_closed_registration_entry(&mut rng, 42);
 
-            let stripped = entry.without_snark_fields();
-
-            assert_eq!(
+            let stripped = ClosedRegistrationEntry::new(
                 entry.get_verification_key_for_concatenation(),
-                stripped.get_verification_key_for_concatenation()
+                entry.get_stake(),
+                None,
+                None,
             );
-            assert_eq!(entry.get_stake(), stripped.get_stake());
-        }
-
-        #[test]
-        fn clears_snark_fields() {
-            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-            let entry = create_closed_registration_entry(&mut rng, 42);
-            assert!(entry.get_verification_key_for_snark().is_some());
-            assert!(entry.get_lottery_target_value().is_some());
-
-            let stripped = entry.without_snark_fields();
-
-            assert!(stripped.get_verification_key_for_snark().is_none());
-            assert!(stripped.get_lottery_target_value().is_none());
-        }
-
-        #[test]
-        fn serializes_as_two_element_json_tuple() {
-            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
-            let entry = create_closed_registration_entry(&mut rng, 42);
-
-            let stripped = entry.without_snark_fields();
             let json: serde_json::Value =
                 serde_json::to_value(stripped).expect("JSON serialization should not fail");
 

@@ -122,7 +122,7 @@ impl Initializer {
             closed_key_registration.get_closed_key_registration_for_concatenation();
 
         let closed_registration_entry = ClosedRegistrationEntry::try_from((
-            registration_entry,
+            registration_entry.without_snark_key(),
             closed_key_registration_for_concatenation.get_total_stake(),
             self.parameters.phi_f,
         ))?;
@@ -447,14 +447,6 @@ mod tests {
 
             let closed_key_registration = close_registration(&[owner.clone(), copier.clone()]);
 
-            let kept_entry = closed_key_registration
-                .get_closed_key_registration_for_concatenation()
-                .get_registration_entry_for_index(&0)
-                .unwrap();
-            assert!(
-                kept_entry.get_verification_key_for_snark().is_some(),
-                "the copier with a SNARK key should win the tie on the SNARK key"
-            );
             owner
                 .try_create_signer::<MithrilMembershipDigest>(&closed_key_registration)
                 .expect("the owner of a BLS key should get a signer since its leaf is in the tree");

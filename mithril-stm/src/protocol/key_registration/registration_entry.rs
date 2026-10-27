@@ -68,6 +68,16 @@ impl RegistrationEntry {
     pub(crate) fn get_stake(&self) -> Stake {
         self.1
     }
+
+    /// Returns a copy of this entry without its verification key for snark.
+    pub(crate) fn without_snark_key(&self) -> Self {
+        RegistrationEntry(
+            self.0,
+            self.1,
+            #[cfg(feature = "snark")]
+            None,
+        )
+    }
 }
 
 impl From<ClosedRegistrationEntry> for RegistrationEntry {
