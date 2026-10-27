@@ -1,5 +1,6 @@
 use anyhow::{Context, anyhow};
 use reqwest::Url;
+use serde::de::DeserializeOwned;
 use slog_scope::warn;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -14,6 +15,35 @@ use crate::{ANCILLARY_MANIFEST_VERIFICATION_KEY, Aggregator, GenesisKeys};
 pub struct Client {
     command: MithrilCommand,
     version: NodeVersion,
+}
+
+#[derive(Debug)]
+pub struct ClientOutput {
+    pub command_name: String,
+    /// Path of the file containing the logs (stderr) of the client command
+    pub log_file: PathBuf,
+    /// Path of the file containing the output (stdout) of the client command
+    pub output_file: PathBuf,
+}
+
+impl ClientOutput {
+    pub fn read_output_as_json<T: DeserializeOwned>(&self) -> StdResult<T> {
+        let file = std::fs::read_to_string(&self.output_file).with_context(|| {
+            format!(
+                "Failed to read client `{}` output from file `{}`",
+                self.command_name,
+                self.output_file.display()
+            )
+        })?;
+
+        serde_json::from_str(&file).with_context(|| {
+            format!(
+                "Failed to parse client `{}` output as json from file `{}`",
+                self.command_name,
+                self.output_file.display()
+            )
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -465,10 +495,11 @@ impl Client {
         Ok(Self { command, version })
     }
 
-    pub async fn run(&mut self, command: ClientCommand) -> StdResult<PathBuf> {
-        let output_path = self
-            .command
-            .set_output_filename(&format!("mithril-client-{}", command.name()));
+    pub async fn run(&mut self, command: ClientCommand) -> StdResult<ClientOutput> {
+        let command_name = format!("mithril-client-{}", command.name());
+        let output_file = self.command.set_output_filename(&command_name);
+        let log_file = self.command.set_log_name(&command_name);
+
         let args = command.cli_arg(self.version());
 
         let exit_status = self
@@ -479,7 +510,11 @@ impl Client {
             .with_context(|| "mithril-client crashed")?;
 
         if exit_status.success() {
-            Ok(output_path)
+            Ok(ClientOutput {
+                command_name,
+                log_file,
+                output_file,
+            })
         } else {
             self.command
                 .tail_logs(Some(format!("mithril-client {args:?}").as_str()), 40)

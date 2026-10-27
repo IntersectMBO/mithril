@@ -95,8 +95,10 @@ impl MithrilCommand {
     /// the command will be redirected.
     ///
     /// It will be suffixed with '.log'
-    pub fn set_log_name(&mut self, name: &str) {
-        self.log_path = self.work_dir.join(format!("{name}.log"));
+    pub fn set_log_name(&mut self, name: &str) -> PathBuf {
+        let log_path = self.work_dir.join(format!("{name}.log"));
+        self.log_path = log_path.clone();
+        log_path
     }
 
     /// Set the name of the file where the stdout of the command will be redirected.
