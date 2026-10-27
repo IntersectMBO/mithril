@@ -91,12 +91,10 @@ impl SnarkProverInput {
             .iter()
             .filter_map(|sig| {
                 let snark_sig = sig.snark_signature.as_ref()?;
-                let reg_entry =
-                    match clerk.get_snark_registration_entry(snark_sig.get_snark_signer_index()) {
-                        Ok(Some(entry)) => entry,
-                        Ok(None) => return None,
-                        Err(_) => return None,
-                    };
+                let reg_entry = clerk
+                    .get_snark_registration_entry(snark_sig.get_snark_signer_index())
+                    .ok()
+                    .flatten()?;
                 snark_sig
                     .verify_with_prepared_message(&reg_entry.0, message_to_sign)
                     .ok()?;
@@ -145,10 +143,10 @@ impl SnarkProverInput {
                 continue;
             };
             if let Entry::Vacant(vacant) = unique_signers.entry(snark_signer_index) {
-                let leaf = match clerk.get_snark_registration_entry(snark_signer_index) {
-                    Ok(Some(entry)) => entry,
-                    Ok(None) => continue,
-                    Err(_) => continue,
+                let Some(leaf) =
+                    clerk.get_snark_registration_entry(snark_signer_index).ok().flatten()
+                else {
+                    continue;
                 };
                 let merkle_path = merkle_tree.compute_merkle_tree_path_fixed_length(
                     snark_signer_index as usize,

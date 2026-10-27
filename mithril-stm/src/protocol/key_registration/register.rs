@@ -1,7 +1,5 @@
 use std::{
-    cmp::Ordering,
     collections::{BTreeSet, HashSet},
-    fmt::{self, Debug, Formatter},
     marker::PhantomData,
 };
 
@@ -209,6 +207,7 @@ impl ClosedKeyRegistration {
 }
 
 /// Closed registration of a proof system: its deduplicated entries and their total stake.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(crate) struct ClosedRegistrationForProofSystem<L: MerkleTreeLeaf> {
     deduplicated_entries: BTreeSet<ClosedRegistrationEntry>,
     total_stake: Stake,
@@ -296,47 +295,6 @@ impl<L: MerkleTreeLeaf> ClosedRegistrationForProofSystem<L> {
             .nth(*signer_index as usize)
             .cloned()
             .ok_or_else(|| RegisterError::UnregisteredIndex.into())
-    }
-}
-
-impl<L: MerkleTreeLeaf> Clone for ClosedRegistrationForProofSystem<L> {
-    fn clone(&self) -> Self {
-        Self {
-            deduplicated_entries: self.deduplicated_entries.clone(),
-            total_stake: self.total_stake,
-            leaf_type: PhantomData,
-        }
-    }
-}
-
-impl<L: MerkleTreeLeaf> Debug for ClosedRegistrationForProofSystem<L> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ClosedRegistrationForProofSystem")
-            .field("deduplicated_entries", &self.deduplicated_entries)
-            .field("total_stake", &self.total_stake)
-            .finish()
-    }
-}
-
-impl<L: MerkleTreeLeaf> PartialEq for ClosedRegistrationForProofSystem<L> {
-    fn eq(&self, other: &Self) -> bool {
-        self.deduplicated_entries == other.deduplicated_entries
-            && self.total_stake == other.total_stake
-    }
-}
-
-impl<L: MerkleTreeLeaf> Eq for ClosedRegistrationForProofSystem<L> {}
-
-impl<L: MerkleTreeLeaf> PartialOrd for ClosedRegistrationForProofSystem<L> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<L: MerkleTreeLeaf> Ord for ClosedRegistrationForProofSystem<L> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        (&self.deduplicated_entries, self.total_stake)
-            .cmp(&(&other.deduplicated_entries, other.total_stake))
     }
 }
 
