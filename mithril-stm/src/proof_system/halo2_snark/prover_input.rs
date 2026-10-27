@@ -121,9 +121,8 @@ impl SnarkProverInput {
     ///    the Merkle leaf (verification key + lottery target) and authentication path. A `BTreeMap`
     ///    keyed by the SNARK signer index carried in the signature ensures each signer's path is
     ///    computed only once, the index being also the position of its leaf in the SNARK Merkle
-    ///    tree. Signers whose
-    ///    registration entry is missing (`Ok(None)`) or whose lookup fails (`Err`) are skipped,
-    ///    since the input signatures have already been validated upstream.
+    ///    tree. Signers whose registration entry is missing (`Ok(None)`) or whose lookup fails
+    ///    (`Err`) are skipped, since the input signatures have already been validated upstream.
     /// 2. Entry assembly: maps every `(lottery_index, signature)` pair to a circuit witness tuple by
     ///    looking up the precomputed leaf and path for the signature's signer.
     ///

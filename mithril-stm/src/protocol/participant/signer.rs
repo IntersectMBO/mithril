@@ -10,13 +10,13 @@ use crate::{LotteryTargetValue, VerificationKeyForSnark, proof_system::SnarkProo
 /// generators of each proof system.
 #[derive(Debug, Clone)]
 pub struct Signer<D: MembershipDigest> {
-    /// Index of the signer in registration
+    /// Index of the signer in the Concatenation Merkle tree
     pub signer_index: SignerIndex,
     /// Single signature generator of concatenation proof system
     pub(crate) concatenation_proof_signer: ConcatenationProofSigner<D>,
     /// Stake associated with the signer
     stake: Stake,
-    /// Closed key registration containing closed registration entries and total stake
+    /// Closed key registration holding the closed registration of each proof system
     pub closed_key_registration: ClosedKeyRegistration,
     /// Parameters of the protocol
     pub parameters: Parameters,

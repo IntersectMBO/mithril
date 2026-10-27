@@ -113,7 +113,8 @@ impl KeyRegistration {
         ))
     }
 
-    /// Keeps only the entries with a SNARK key and with the highest stake.
+    /// Keeps, for each SNARK key, the entry with the highest stake, dropping the entries without a
+    /// SNARK key.
     #[cfg(feature = "snark")]
     fn deduplicate_snark_keys_from_entries(
         entries: &BTreeSet<RegistrationEntry>,
@@ -205,7 +206,7 @@ impl ClosedKeyRegistration {
 }
 
 /// Closed registration of a proof system: its deduplicated entries and their total stake.
-pub struct ClosedRegistrationForProofSystem<L: MerkleTreeLeaf> {
+pub(crate) struct ClosedRegistrationForProofSystem<L: MerkleTreeLeaf> {
     deduplicated_entries: BTreeSet<ClosedRegistrationEntry>,
     total_stake: Stake,
     leaf_type: PhantomData<L>,
@@ -338,6 +339,8 @@ impl<L: MerkleTreeLeaf> Ord for ClosedRegistrationForProofSystem<L> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use proptest::{collection::vec, prelude::*};
     #[cfg(feature = "snark")]
     use rand::random_range;
@@ -350,7 +353,7 @@ mod tests {
         proof_system::compute_target_value_for_snark_lottery,
     };
     use crate::{
-        Parameters, VerificationKeyProofOfPossessionForConcatenation,
+        Parameters, VerificationKeyProofOfPossessionForConcatenation, protocol::ProtocolError,
         signature_scheme::BlsSigningKey,
     };
 
@@ -501,8 +504,8 @@ mod tests {
             .expect_err("closing a registration with invalid parameters should fail");
 
         assert!(matches!(
-            error.downcast_ref::<crate::protocol::ProtocolError>(),
-            Some(crate::protocol::ProtocolError::PhiFValueOutOfRange(_))
+            error.downcast_ref::<ProtocolError>(),
+            Some(ProtocolError::PhiFValueOutOfRange(_))
         ));
     }
 
@@ -1095,7 +1098,7 @@ mod tests {
                 let closed = kr.close_registration(&params).unwrap();
 
                 // One entry per BLS key, the one with the highest stake.
-                let mut highest_stake_by_key = std::collections::BTreeMap::new();
+                let mut highest_stake_by_key = BTreeMap::new();
                 for entry in &registered_entries {
                     let stake = highest_stake_by_key
                         .entry(entry.get_verification_key_for_concatenation())
@@ -1104,7 +1107,7 @@ mod tests {
                 }
                 let retrieved_stake_by_key = closed.closed_key_registration_for_concatenation.deduplicated_entries.iter()
                     .map(|entry| (entry.get_verification_key_for_concatenation(), entry.get_stake()))
-                    .collect::<std::collections::BTreeMap<_, _>>();
+                    .collect::<BTreeMap<_, _>>();
                 assert_eq!(highest_stake_by_key, retrieved_stake_by_key);
                 assert_eq!(
                     closed.closed_key_registration_for_concatenation.deduplicated_entries.len(),
@@ -1448,7 +1451,6 @@ mod tests {
         mod golden_test_snark_key_collision {
             use super::*;
 
-            #[cfg(feature = "snark")]
             fn golden_concatenation_avk_snark_key_collision()
             -> MerkleTreeBatchCommitment<Blake2b<U32>, MerkleTreeConcatenationLeaf> {
                 closed_key_registration_snark_key_collision()
@@ -1457,7 +1459,6 @@ mod tests {
                     .to_merkle_tree_batch_commitment()
             }
 
-            #[cfg(feature = "snark")]
             fn golden_snark_avk_snark_key_collision()
             -> MerkleTreeCommitment<MidnightPoseidonDigest, MerkleTreeSnarkLeaf> {
                 closed_key_registration_snark_key_collision()
@@ -1468,7 +1469,6 @@ mod tests {
             }
 
             #[test]
-            #[cfg(feature = "snark")]
             fn golden_concatenation_computation_snark_key_collision() {
                 let value = serde_json::from_str(GOLDEN_CONCATENATION_AVK_NO_COLLISION)
                     .expect("This JSON deserialization should not fail");
@@ -1476,7 +1476,6 @@ mod tests {
             }
 
             #[test]
-            #[cfg(feature = "snark")]
             fn golden_snark_computation_snark_key_collision() {
                 let value = serde_json::from_str(GOLDEN_SNARK_AVK_SNARK_KEY_COLLISION)
                     .expect("This JSON deserialization should not fail");

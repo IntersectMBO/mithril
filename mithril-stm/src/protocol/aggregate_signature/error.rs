@@ -16,8 +16,9 @@ pub enum AggregationError {
     #[error("Indices are not unique.")]
     IndexNotUnique,
 
-    /// Signer registration data could not be found during witness assembly for SNARK prover input.
-    #[error("Missing SNARK signer data for signer index {0}.")]
+    /// Signer registration data could not be found at the given SNARK signer index during
+    /// witness assembly for SNARK prover input.
+    #[error("Missing SNARK signer data for SNARK signer index {0}.")]
     MissingSnarkSignerData(SignerIndex),
 
     /// A signature selected for witness assembly is missing its SNARK component.

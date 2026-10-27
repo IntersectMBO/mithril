@@ -21,8 +21,8 @@ pub(crate) struct SingleSignatureForSnark {
 }
 
 impl SingleSignatureForSnark {
-    /// Create and return a new instance of `SingleSignatureForSnark` for given `schnorr_signature`
-    /// and `indices`.
+    /// Create and return a new instance of `SingleSignatureForSnark` for given `schnorr_signature`,
+    /// `indices` and `snark_signer_index`, the index of the signer in the SNARK Merkle tree.
     pub(crate) fn new(
         schnorr_signature: UniqueSchnorrSignature,
         indices: Vec<LotteryIndex>,

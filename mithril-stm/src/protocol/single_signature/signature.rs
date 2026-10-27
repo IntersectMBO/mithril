@@ -212,12 +212,6 @@ impl SingleSignature {
         }
     }
 
-    /// Get indices of the single signature for snark proof system.
-    #[cfg(feature = "snark")]
-    pub fn get_snark_signature_indices(&self) -> Option<Vec<LotteryIndex>> {
-        self.snark_signature.as_ref().map(|s| s.get_indices().to_vec())
-    }
-
     /// Get the index of the signer in the SNARK Merkle tree, if the signature has a SNARK part.
     #[cfg(feature = "snark")]
     pub fn get_snark_signer_index(&self) -> Option<SignerIndex> {

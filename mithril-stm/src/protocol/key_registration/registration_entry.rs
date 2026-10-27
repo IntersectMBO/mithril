@@ -141,7 +141,10 @@ mod tests {
     };
 
     #[cfg(feature = "snark")]
-    use crate::{VerificationKeyForSnark, signature_scheme::SchnorrSigningKey};
+    use crate::{
+        VerificationKeyForSnark,
+        signature_scheme::{ScalarFieldElement, SchnorrSigningKey},
+    };
 
     use super::*;
 
@@ -190,8 +193,6 @@ mod tests {
     #[cfg(feature = "snark")]
     #[test]
     fn an_invalid_snark_key_is_dropped() {
-        use crate::signature_scheme::ScalarFieldElement;
-
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let vk_pop = VerificationKeyProofOfPossessionForConcatenation::from(
             &BlsSigningKey::generate(&mut rng),
