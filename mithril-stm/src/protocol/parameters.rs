@@ -114,29 +114,65 @@ mod tests {
         }
 
         #[test]
-        fn rejects_invalid_parameters() {
-            for parameters in [
-                Parameters {
+        fn rejects_phi_f_out_of_range() {
+            for phi_f in [0.0, -0.2, 1.5, f64::NAN, f64::INFINITY] {
+                let error = Parameters {
                     m: 20,
                     k: 10,
-                    phi_f: 0.0,
-                },
-                Parameters {
-                    m: 20,
-                    k: 0,
-                    phi_f: 0.2,
-                },
-                Parameters {
-                    m: 20,
-                    k: 21,
-                    phi_f: 0.2,
-                },
-            ] {
+                    phi_f,
+                }
+                .validate()
+                .expect_err("a phi_f out of range should be invalid");
+
                 assert!(
-                    parameters.validate().is_err(),
-                    "{parameters:?} should be invalid"
+                    matches!(
+                        error.downcast_ref::<ProtocolError>(),
+                        Some(ProtocolError::PhiFValueOutOfRange(_))
+                    ),
+                    "Unexpected error for phi_f {phi_f}: {error:?}"
                 );
             }
+        }
+
+        #[test]
+        fn rejects_a_zero_quorum_parameter() {
+            let error = Parameters {
+                m: 20,
+                k: 0,
+                phi_f: 0.2,
+            }
+            .validate()
+            .expect_err("a zero k should be invalid");
+
+            assert!(
+                matches!(
+                    error.downcast_ref::<ProtocolError>(),
+                    Some(ProtocolError::QuorumParameterIsZero)
+                ),
+                "Unexpected error: {error:?}"
+            );
+        }
+
+        #[test]
+        fn rejects_a_quorum_parameter_greater_than_the_security_parameter() {
+            let error = Parameters {
+                m: 20,
+                k: 21,
+                phi_f: 0.2,
+            }
+            .validate()
+            .expect_err("k greater than m should be invalid");
+
+            assert!(
+                matches!(
+                    error.downcast_ref::<ProtocolError>(),
+                    Some(ProtocolError::QuorumParameterGreaterThanSecurityParameter {
+                        k: 21,
+                        m: 20
+                    })
+                ),
+                "Unexpected error: {error:?}"
+            );
         }
     }
 

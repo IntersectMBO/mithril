@@ -1061,6 +1061,24 @@ mod tests {
             );
             assert!(closed_registration.closed_key_registration_for_snark.is_none());
         }
+
+        #[test]
+        fn registration_with_only_zero_stake_snark_keys_closes_with_no_snark_entry() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let with_stake = entry(new_vk_pop(&mut rng), 100);
+            let zero_stake_with_snark_key =
+                entry_with_snark_key(new_vk_pop(&mut rng), 0, new_schnorr_vk(&mut rng));
+
+            let closed_registration = close(&[with_stake, zero_stake_with_snark_key]);
+
+            assert_eq!(
+                100,
+                closed_registration
+                    .closed_key_registration_for_concatenation
+                    .total_stake
+            );
+            assert!(closed_registration.closed_key_registration_for_snark.is_none());
+        }
     }
 
     proptest! {
@@ -1301,6 +1319,13 @@ mod tests {
             "hasher":null
         }"#;
 
+        #[cfg(feature = "snark")]
+        const GOLDEN_SNARK_AVK_MISSING_SNARK_KEYS: &str = r#"
+        {
+            "root":[109, 233, 178, 32, 34, 103, 195, 31, 224, 103, 113, 129, 217, 113, 41, 27, 86, 212, 197, 239, 255, 107, 222, 232, 211, 196, 197, 83, 91, 29, 101, 44],
+            "hasher":null
+        }"#;
+
         /// Party `i` has stake `i`, so party 0 has a zero stake and the golden values also cover
         /// an entry with a zero stake, which never wins a lottery but still gets a leaf in both
         /// Merkle trees.
@@ -1350,6 +1375,36 @@ mod tests {
                     initializers[owner].schnorr_signing_key.clone();
                 initializers[receiver].schnorr_verification_key =
                     initializers[owner].schnorr_verification_key;
+            }
+
+            let mut key_reg = KeyRegistration::initialize();
+            for initializer in initializers {
+                key_reg.register_by_entry(&initializer.try_into().unwrap());
+            }
+
+            key_reg.close_registration(&params).unwrap()
+        }
+
+        /// Same parties as `closed_key_registration_no_collision` (party `i` has stake `i`), where
+        /// parties 3, 4 and 7 register without a SNARK key. The lottery targets of the SNARK leaves
+        /// are computed against the total stake of the parties with a SNARK key only.
+        #[cfg(feature = "snark")]
+        fn closed_key_registration_missing_snark_keys() -> ClosedKeyRegistration {
+            let params = Parameters {
+                m: 10,
+                k: 5,
+                phi_f: 0.8,
+            };
+            let number_of_parties = 10;
+
+            let mut initializers: Vec<Initializer> = (0..number_of_parties)
+                .map(|stake| {
+                    let mut rng = ChaCha20Rng::seed_from_u64(stake);
+                    Initializer::new(params, stake, &mut rng)
+                })
+                .collect();
+            for party in [3, 4, 7] {
+                initializers[party].strip_snark_keys();
             }
 
             let mut key_reg = KeyRegistration::initialize();
@@ -1584,6 +1639,42 @@ mod tests {
                 let value = serde_json::from_str(GOLDEN_SNARK_AVK_SNARK_KEY_COLLISION)
                     .expect("This JSON deserialization should not fail");
                 assert_eq!(golden_snark_avk_double_key_collision(), value);
+            }
+        }
+
+        #[cfg(feature = "snark")]
+        mod golden_test_missing_snark_keys {
+            use super::*;
+
+            fn golden_concatenation_avk_missing_snark_keys()
+            -> MerkleTreeBatchCommitment<Blake2b<U32>, MerkleTreeConcatenationLeaf> {
+                closed_key_registration_missing_snark_keys()
+                    .get_closed_key_registration_for_concatenation()
+                    .to_merkle_tree()
+                    .to_merkle_tree_batch_commitment()
+            }
+
+            fn golden_snark_avk_missing_snark_keys()
+            -> MerkleTreeCommitment<MidnightPoseidonDigest, MerkleTreeSnarkLeaf> {
+                closed_key_registration_missing_snark_keys()
+                    .get_closed_key_registration_for_snark()
+                    .unwrap()
+                    .to_merkle_tree()
+                    .to_merkle_tree_commitment()
+            }
+
+            #[test]
+            fn golden_concatenation_computation_missing_snark_keys() {
+                let value = serde_json::from_str(GOLDEN_CONCATENATION_AVK_NO_COLLISION)
+                    .expect("This JSON deserialization should not fail");
+                assert_eq!(golden_concatenation_avk_missing_snark_keys(), value);
+            }
+
+            #[test]
+            fn golden_snark_computation_missing_snark_keys() {
+                let value = serde_json::from_str(GOLDEN_SNARK_AVK_MISSING_SNARK_KEYS)
+                    .expect("This JSON deserialization should not fail");
+                assert_eq!(golden_snark_avk_missing_snark_keys(), value);
             }
         }
     }
