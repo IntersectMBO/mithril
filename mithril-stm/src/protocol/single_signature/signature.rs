@@ -11,7 +11,7 @@ use crate::{
 };
 #[cfg(feature = "snark")]
 use crate::{
-    RegistrationEntryForSnark, UniqueSchnorrSignature, proof_system::SingleSignatureForSnark,
+    UniqueSchnorrSignature, VerificationKeyForSnark, proof_system::SingleSignatureForSnark,
 };
 
 use super::SignatureError;
@@ -33,31 +33,36 @@ pub struct SingleSignature {
 
 impl SingleSignature {
     /// Verify a `SingleSignature` by validating the underlying single signature for proof system.
+    ///
+    /// The SNARK part is only verified when a verification key for SNARK is given and the
+    /// aggregate verification key covers the SNARK proof system.
     pub fn verify<D: MembershipDigest>(
         &self,
         params: &Parameters,
-        pk: &VerificationKeyForConcatenation,
+        verification_key_for_concatenation: &VerificationKeyForConcatenation,
         stake: &Stake,
         avk: &AggregateVerificationKey<D>,
         msg: &[u8],
-        #[cfg(feature = "snark")] snark_registration_entry: Option<RegistrationEntryForSnark>,
+        #[cfg(feature = "snark")] verification_key_for_snark: Option<VerificationKeyForSnark>,
     ) -> StmResult<()> {
-        #[cfg(feature = "snark")]
-        if let (Some(snark_signature), Some(entry), Some(snark_avk)) = (
-            &self.snark_signature,
-            snark_registration_entry,
-            avk.to_snark_aggregate_verification_key(),
-        ) {
-            snark_signature.verify(&entry.0, msg, snark_avk)?;
-        }
-
         self.concatenation_signature.verify(
             params,
-            pk,
+            verification_key_for_concatenation,
             stake,
             avk.to_concatenation_aggregate_verification_key(),
             msg,
-        )
+        )?;
+
+        #[cfg(feature = "snark")]
+        if let (Some(snark_signature), Some(verification_key_for_snark), Some(snark_avk)) = (
+            &self.snark_signature,
+            verification_key_for_snark,
+            avk.to_snark_aggregate_verification_key(),
+        ) {
+            snark_signature.verify(&verification_key_for_snark, msg, snark_avk)?;
+        }
+
+        Ok(())
     }
 
     /// Verify that all lottery indices of the concatenation signature are valid.
@@ -851,6 +856,91 @@ mod tests {
                 matches!(
                     error.downcast_ref::<BlsSignatureError>(),
                     Some(BlsSignatureError::SignatureInvalid(_))
+                ),
+                "Unexpected error variant: {error:?}"
+            );
+        }
+    }
+
+    #[cfg(feature = "snark")]
+    mod snark_verification {
+        use super::*;
+        use crate::{Clerk, Initializer, Signer, signature_scheme::SchnorrSignatureError};
+
+        type D = MithrilMembershipDigest;
+
+        /// The SNARK proof system only signs 32 bytes messages.
+        const TEST_MESSAGE: [u8; 32] = [42u8; 32];
+
+        const PARAMS: Parameters = Parameters {
+            m: 10,
+            k: 5,
+            phi_f: 1.0,
+        };
+
+        fn create_signers() -> Vec<Signer<D>> {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let initializers: Vec<Initializer> =
+                (0..2).map(|_| Initializer::new(PARAMS, 1, &mut rng)).collect();
+
+            let mut key_registration = KeyRegistration::initialize();
+            for initializer in &initializers {
+                let entry: RegistrationEntry = initializer.clone().try_into().unwrap();
+                key_registration.register_by_entry(&entry);
+            }
+            let closed_registration = key_registration.close_registration(&PARAMS).unwrap();
+
+            initializers
+                .into_iter()
+                .map(|initializer| initializer.try_create_signer(&closed_registration).unwrap())
+                .collect()
+        }
+
+        #[test]
+        fn verify_succeeds_with_the_snark_verification_key_of_the_signer() {
+            let signers = create_signers();
+            let signature = signers[0]
+                .create_single_signature(&TEST_MESSAGE)
+                .expect("signature should be created");
+            assert!(signature.snark_signature.is_some());
+            let avk =
+                Clerk::new_clerk_from_signer(&signers[0]).compute_aggregate_verification_key();
+
+            signature
+                .verify(
+                    &PARAMS,
+                    &signers[0].get_bls_verification_key(),
+                    &signers[0].get_stake(),
+                    &avk,
+                    &TEST_MESSAGE,
+                    signers[0].get_schnorr_verification_key(),
+                )
+                .expect("Verification should succeed with the SNARK key of the signer");
+        }
+
+        #[test]
+        fn verify_fails_with_the_snark_verification_key_of_another_signer() {
+            let signers = create_signers();
+            let signature = signers[0]
+                .create_single_signature(&TEST_MESSAGE)
+                .expect("signature should be created");
+            let avk =
+                Clerk::new_clerk_from_signer(&signers[0]).compute_aggregate_verification_key();
+
+            let error = signature
+                .verify(
+                    &PARAMS,
+                    &signers[0].get_bls_verification_key(),
+                    &signers[0].get_stake(),
+                    &avk,
+                    &TEST_MESSAGE,
+                    signers[1].get_schnorr_verification_key(),
+                )
+                .expect_err("Verification should fail with the SNARK key of another signer");
+            assert!(
+                matches!(
+                    error.downcast_ref::<SchnorrSignatureError>(),
+                    Some(SchnorrSignatureError::UniqueSignatureInvalid(_))
                 ),
                 "Unexpected error variant: {error:?}"
             );

@@ -95,6 +95,20 @@ impl MultiSigner {
             .get_concatenation_registered_party_for_index(&protocol_signature.signer_index)
             .with_context(|| format!("Unregistered party: '{}'", single_signature.party_id))?;
 
+        #[cfg(feature = "snark")]
+        let verification_key_for_snark = match (
+            protocol_signature.get_snark_signer_index(),
+            self.protocol_clerk.get_snark_clerk(),
+        ) {
+            (Some(snark_signer_index), Some(snark_clerk)) => snark_clerk
+                .get_snark_registration_entry(snark_signer_index)
+                .with_context(|| {
+                    format!("Unregistered SNARK party: '{}'", single_signature.party_id)
+                })?
+                .map(|entry| entry.0),
+            _ => None,
+        };
+
         protocol_signature
             .verify(
                 &self.protocol_parameters,
@@ -103,7 +117,7 @@ impl MultiSigner {
                 &avk,
                 message.to_message().as_bytes(),
                 #[cfg(feature = "snark")]
-                None,
+                verification_key_for_snark,
             )
             .with_context(|| {
                 format!(
@@ -280,5 +294,35 @@ mod test {
         multi_signer
             .verify_single_signature(&message, &single_signature)
             .expect("Verify single signature should succeed");
+    }
+
+    #[cfg(feature = "snark")]
+    #[test]
+    fn verify_single_signature_fail_if_the_snark_signer_index_is_the_one_of_another_signer() {
+        let fixture = MithrilFixtureBuilder::default()
+            .with_signers(2)
+            .with_protocol_parameters(ProtocolParameters::new(6, 200, 1.0))
+            .build();
+        let multi_signer = build_multi_signer(&fixture);
+        let message = ProtocolMessage::default();
+        let mut single_signature = fixture.signers_fixture()[0].sign(&message).unwrap();
+
+        let mut tampered_signature =
+            serde_json::to_value(single_signature.to_protocol_signature()).unwrap();
+        let snark_signer_index = &mut tampered_signature["snark_signature"]["snark_signer_index"];
+        let other_snark_signer_index = 1 - snark_signer_index
+            .as_u64()
+            .expect("the signature should have a SNARK part");
+        *snark_signer_index = other_snark_signer_index.into();
+        single_signature.signature =
+            serde_json::from_value::<mithril_stm::SingleSignature>(tampered_signature)
+                .unwrap()
+                .into();
+
+        multi_signer
+            .verify_single_signature(&message, &single_signature)
+            .expect_err(
+                "Verify single signature should fail if the SNARK part is checked with the key of another signer",
+            );
     }
 }
