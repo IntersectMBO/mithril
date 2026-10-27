@@ -199,9 +199,9 @@ mod tests {
     use rand_core::SeedableRng;
 
     use crate::{
-        AggregationError, Initializer, KeyRegistration, MithrilMembershipDigest, Parameters,
-        Signer, SingleSignature,
-        proof_system::{SnarkClerk, halo2_snark::build_snark_message},
+        AggregateVerificationKeyForSnark, AggregationError, Initializer, KeyRegistration,
+        MithrilMembershipDigest, Parameters, Signer, SignerIndex, SingleSignature,
+        proof_system::{SingleSignatureForSnark, SnarkClerk, halo2_snark::build_snark_message},
     };
 
     use super::SnarkProverInput;
@@ -315,6 +315,62 @@ mod tests {
             result.is_err(),
             "Expected failure when all SNARK signatures are stripped"
         );
+    }
+
+    #[test]
+    fn skips_signatures_with_a_tampered_snark_signer_index() {
+        let mut rng = ChaCha20Rng::from_seed([4u8; 32]);
+        let params = Parameters {
+            m: 200,
+            k: 5,
+            phi_f: 0.8,
+        };
+        let nparties = 5;
+        let message = [5u8; 32];
+
+        let (signers, clerk) = setup_signers_and_clerk(params, nparties, &mut rng);
+        let avk: AggregateVerificationKeyForSnark<D> =
+            clerk.compute_aggregate_verification_key_for_snark();
+        let message_to_sign =
+            build_snark_message(&avk.get_merkle_tree_commitment().root, &message).unwrap();
+        let signature = signers[0].create_single_signature(&message).unwrap();
+        let snark_signature = signature
+            .snark_signature
+            .clone()
+            .expect("the signer should produce a SNARK signature");
+        assert_eq!(
+            1,
+            SnarkProverInput::collect_valid_signatures_with_indices(
+                &clerk,
+                std::slice::from_ref(&signature),
+                &message_to_sign
+            )
+            .len(),
+            "the signature with its own SNARK signer index should be collected"
+        );
+
+        let another_signer_index =
+            (snark_signature.get_snark_signer_index() + 1) % nparties as SignerIndex;
+        let index_past_the_last_leaf =
+            clerk.closed_key_registration_for_snark.number_of_leaves() as SignerIndex;
+        for tampered_index in [another_signer_index, index_past_the_last_leaf] {
+            let mut tampered_signature = signature.clone();
+            tampered_signature.snark_signature = Some(SingleSignatureForSnark::new(
+                snark_signature.get_schnorr_signature(),
+                snark_signature.get_indices().to_vec(),
+                tampered_index,
+            ));
+
+            assert!(
+                SnarkProverInput::collect_valid_signatures_with_indices(
+                    &clerk,
+                    &[tampered_signature],
+                    &message_to_sign
+                )
+                .is_empty(),
+                "a signature with the SNARK signer index {tampered_index} should be dropped"
+            );
+        }
     }
 
     #[test]
