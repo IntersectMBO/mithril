@@ -183,13 +183,25 @@ impl CheckCardanoDatabaseToolkit {
         info!("Client downloaded & restored the cardano database snapshot"; "hash" => &hash, "storage_source" => "local");
 
         if ipfs_rpc_url.is_some() {
-            client
+            let cdb_download_with_ipfs_output = client
                 .run(ClientCommand::CardanoDbV2(CardanoDbV2Command::Download {
                     hash: hash.to_string(),
                     ipfs_rpc_url,
                 }))
                 .await?;
             info!("Client downloaded & restored the cardano database snapshot"; "hash" => &hash, "storage_source" => "ipfs");
+
+            let number_of_ipfs_downloads = cdb_download_with_ipfs_output
+                .count_matching_lines_in_logs(
+                    "POST Kubo RPC, ipfs_path: ipfs://[a-zA-Z0-9]+/[0-9]+\\.tar\\.zst, route: api/v0/cat",
+                )
+                .await?;
+
+            if number_of_ipfs_downloads == 0 {
+                anyhow::bail!(
+                    "Expected to download at least one immutable from IPFS, but all immutables where fetched from local",
+                );
+            }
         }
 
         Ok(())
