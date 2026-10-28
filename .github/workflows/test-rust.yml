@@ -32,7 +32,7 @@ jobs:
             test-args: --features full,unstable --workspace
             cargo-profile: ci-tests
           # Exclude nodes not officially supported on Windows and macOS (only mithril-client is supported)
-          - os: macos-14
+          - os: macos-15
             cargo-profile: ci-tests
             test-args: >
               --features full,unstable --workspace
