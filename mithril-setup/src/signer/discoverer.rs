@@ -6,20 +6,29 @@ use crate::orchestrator::interfaces::Discoverer;
 
 /// A discoverer for the signer
 pub struct SignerDiscoverer {
-    network: String,
+    /// Cardano network
+    pub network: String,
+
+    ///Dummy field
+    pub toto: String,
 }
 
 impl Discoverer for SignerDiscoverer {
     fn run() -> anyhow::Result<Self> {
         let network = SignerDiscoverer::discover_network()?;
+        let toto = SignerDiscoverer::discover_toto()?;
 
-        Ok(Self { network })
+        Ok(Self { network, toto })
     }
 }
 
 impl SignerDiscoverer {
     fn discover_network() -> anyhow::Result<String> {
         std::env::var("NETWORK").context("Environment variable 'NETWORK' not found")
+    }
+
+    fn discover_toto() -> anyhow::Result<String> {
+        Ok("toto".to_string())
     }
 }
 
