@@ -30,7 +30,7 @@ impl StandardSchnorrSignature {
         verification_key: &SchnorrVerificationKey,
     ) -> StmResult<()> {
         verification_key
-            .is_valid()
+            .validate()
             .with_context(|| "Signature verification failed due to invalid verification key")?;
 
         let prime_order_generator_point = PrimeOrderProjectivePoint::create_generator();

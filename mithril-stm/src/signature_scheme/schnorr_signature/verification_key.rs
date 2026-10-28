@@ -30,7 +30,7 @@ impl SchnorrVerificationKey {
         SchnorrVerificationKey(signing_key.0 * generator)
     }
 
-    pub fn is_valid(&self) -> StmResult<()> {
+    pub fn validate(&self) -> StmResult<()> {
         let projective_point = ProjectivePoint::from(self.0);
         if !projective_point.is_prime_order() {
             return Err(anyhow!(SchnorrSignatureError::PointIsNotPrimeOrder(
@@ -154,7 +154,7 @@ mod tests {
         let sk = SchnorrSigningKey::generate(&mut rng);
         let vk = SchnorrVerificationKey::new_from_signing_key(sk);
 
-        let result = vk.is_valid();
+        let result = vk.validate();
 
         assert!(
             result.is_ok(),
@@ -167,7 +167,7 @@ mod tests {
         let sk = SchnorrSigningKey(ScalarFieldElement::get_zero());
         let vk = SchnorrVerificationKey::new_from_signing_key(sk);
 
-        let result = vk.is_valid();
+        let result = vk.validate();
 
         assert!(
             result.is_err(),

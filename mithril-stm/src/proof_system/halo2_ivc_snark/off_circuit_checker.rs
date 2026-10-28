@@ -80,7 +80,7 @@ impl MithrilIvcOffCircuitChecker {
             .genesis_schnorr_verification_key()
             .cloned()
             .ok_or_else(|| anyhow!(AggregationError::MissingGenesisVerificationKey))?;
-        genesis_verifying_key.is_valid()?;
+        genesis_verifying_key.validate()?;
 
         let genesis_message: MessageHash = genesis_data.genesis_message_preimage().try_into()?;
         let genesis_bootstrap: IvcGenesisBootstrapInput = genesis_data.try_into()?;

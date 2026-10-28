@@ -43,7 +43,7 @@ impl RegistrationEntry {
         // instead of dropping the key.
         #[cfg(feature = "snark")]
         let schnorr_verification_key =
-            schnorr_verification_key.filter(|schnorr_vk| schnorr_vk.is_valid().is_ok());
+            schnorr_verification_key.filter(|schnorr_vk| schnorr_vk.validate().is_ok());
 
         Ok(RegistrationEntry(
             bls_verification_key_proof_of_possession.vk,
