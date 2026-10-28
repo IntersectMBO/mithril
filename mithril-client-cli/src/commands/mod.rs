@@ -11,4 +11,4 @@ mod command_removal;
 pub mod mithril_stake_distribution;
 pub mod tools;
 
-pub use command_removal::{DeprecatedCommand, Deprecation};
+pub use command_removal::{CommandRemoval, RemovedCommand};

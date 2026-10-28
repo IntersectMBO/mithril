@@ -5,17 +5,17 @@ use clap::{
 
 use crate::ClapError;
 
-/// Stores the deprecated command name and the new command name to use.
+/// Stores the removed command name and the new command name to use.
 #[derive(Clone)]
-pub struct DeprecatedCommand {
+pub struct RemovedCommand {
     command: String,
     new_command: String,
     additional_message: Option<String>,
     alias: Option<String>,
 }
 
-impl DeprecatedCommand {
-    /// Create information about a deprecated command
+impl RemovedCommand {
+    /// Create information about a removed command
     pub fn new<S1: Into<String>, S2: Into<String>>(command: S1, new_command: S2) -> Self {
         Self {
             command: command.into(),
@@ -25,57 +25,57 @@ impl DeprecatedCommand {
         }
     }
 
-    /// Add an additional message to the deprecation warning. i.e. `with option '--option'`
+    /// Append a message to the removal error, e.g. `with option '--option'`
     pub fn with_additional_message<S: Into<String>>(mut self, additional_message: S) -> Self {
         self.additional_message = Some(additional_message.into());
         self
     }
 
-    /// Matches the deprecated command with an alias.
+    /// Also match the removed command when invoked through this alias
     pub fn with_alias<S: Into<String>>(mut self, alias: S) -> Self {
         self.alias = Some(alias.into());
         self
     }
 }
 
-/// Tool to handle deprecated Clap commands.
-pub struct Deprecation;
+/// Tool to handle known removed Clap commands.
+pub struct CommandRemoval;
 
-impl Deprecation {
-    fn find_deprecated_command(
+impl CommandRemoval {
+    fn find_removed_command(
         error: &ClapError,
-        deprecated_commands: Vec<DeprecatedCommand>,
-    ) -> Option<DeprecatedCommand> {
+        removed_commands: Vec<RemovedCommand>,
+    ) -> Option<RemovedCommand> {
         if let Some(context_value) = error.get(ContextKind::InvalidSubcommand) {
             let command_name = context_value.to_string();
-            deprecated_commands.into_iter().find(|dc| {
-                command_name == dc.command || dc.alias.as_ref().is_some_and(|a| &command_name == a)
+            removed_commands.into_iter().find(|rc| {
+                command_name == rc.command || rc.alias.as_ref().is_some_and(|a| &command_name == a)
             })
         } else {
             None
         }
     }
 
-    /// Modify the result to add information on deprecated commands.
-    pub fn handle_deprecated_commands<A>(
+    /// Modify the result to add information on removed commands.
+    pub fn handle_removed_commands<A>(
         matches_result: Result<A, ClapError>,
         styles: Styles,
-        deprecated_commands: Vec<DeprecatedCommand>,
+        removed_commands: Vec<RemovedCommand>,
     ) -> Result<A, ClapError> {
         matches_result.map_err(|mut e: ClapError| {
-            if let Some(deprecated_command) = Self::find_deprecated_command(&e, deprecated_commands)
+            if let Some(removed_command) = Self::find_removed_command(&e, removed_commands)
             {
-                let additional_message = deprecated_command
+                let additional_message = removed_command
                     .additional_message
                     .map(|m| format!(" {m}"))
                     .unwrap_or_default();
                 let message = format!(
-                    "'{}{}{}' command is deprecated, use '{}{}{}' command instead{additional_message}",
+                    "'{}{}{}' command has been removed, use '{}{}{}' command instead{additional_message}",
                     styles.get_error().render(),
-                    deprecated_command.command,
+                    removed_command.command,
                     styles.get_error().render_reset(),
                     styles.get_valid().render(),
-                    deprecated_command.new_command,
+                    removed_command.new_command,
                     styles.get_valid().render_reset(),
                 );
                 e.insert(
@@ -90,9 +90,10 @@ impl Deprecation {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use clap::error::{ContextKind, ContextValue, ErrorKind};
     use clap::{CommandFactory, Parser, Subcommand};
+
+    use super::*;
 
     #[derive(Parser, Debug, Clone)]
     pub struct MyCommand {
@@ -113,75 +114,81 @@ mod tests {
     }
 
     #[test]
-    fn invalid_sub_command_message_for_a_non_deprecated_command_is_not_modified() {
+    fn invalid_sub_command_message_for_a_non_removed_command_is_not_modified() {
         let error = build_error("invalid_command");
         let default_error_message = error.to_string();
 
-        let result = Deprecation::handle_deprecated_commands(
+        let result = CommandRemoval::handle_removed_commands(
             Err(error) as Result<MyCommand, ClapError>,
             Styles::plain(),
-            vec![DeprecatedCommand::new("old_command", "new_command")],
+            vec![RemovedCommand::new("old_command", "new_command")],
         );
         assert!(result.is_err());
+
         let message = result.err().unwrap().to_string();
         assert_eq!(default_error_message, message);
     }
 
     #[test]
-    fn replace_error_message_on_deprecated_commands_and_show_the_new_command_without_additional_message()
+    fn replace_error_message_on_removed_commands_and_show_the_new_command_without_additional_message()
      {
         let error = build_error("old_command");
 
-        let result = Deprecation::handle_deprecated_commands(
+        let result = CommandRemoval::handle_removed_commands(
             Err(error) as Result<MyCommand, ClapError>,
             Styles::plain(),
-            vec![DeprecatedCommand::new("old_command", "new_command")],
+            vec![RemovedCommand::new("old_command", "new_command")],
         );
         assert!(result.is_err());
+
         let message = result.err().unwrap().to_string();
         assert!(
-            message
-                .contains("'old_command' command is deprecated, use 'new_command' command instead"),
-            "Unexpected 'tip:' error message:\n{message}"
+            message.contains(
+                "'old_command' command has been removed, use 'new_command' command instead"
+            ),
+            "Unexpected error message:\n{message}"
         );
     }
 
     #[test]
-    fn replace_error_message_on_deprecated_commands_and_show_the_new_command_when_using_alias() {
+    fn replace_error_message_on_removed_commands_and_show_the_new_command_when_using_alias() {
         let error = build_error("old_alias");
 
-        let result = Deprecation::handle_deprecated_commands(
+        let result = CommandRemoval::handle_removed_commands(
             Err(error) as Result<MyCommand, ClapError>,
             Styles::plain(),
-            vec![DeprecatedCommand::new("old_command", "new_command").with_alias("old_alias")],
+            vec![RemovedCommand::new("old_command", "new_command").with_alias("old_alias")],
         );
         assert!(result.is_err());
+
         let message = result.err().unwrap().to_string();
         assert!(
-            message
-                .contains("'old_command' command is deprecated, use 'new_command' command instead"),
-            "Unexpected 'tip:' error message:\n{message}"
+            message.contains(
+                "'old_command' command has been removed, use 'new_command' command instead"
+            ),
+            "Unexpected in error message:\n{message}"
         );
     }
 
     #[test]
-    fn replace_error_message_on_deprecated_commands_and_show_the_new_command_with_additional_message()
-     {
+    fn replace_error_message_on_removed_commands_and_show_the_new_command_with_additional_message()
+    {
         let error = build_error("old_command");
 
-        let result = Deprecation::handle_deprecated_commands(
+        let result = CommandRemoval::handle_removed_commands(
             Err(error) as Result<MyCommand, ClapError>,
             Styles::plain(),
             vec![
-                DeprecatedCommand::new("old_command", "new_command")
+                RemovedCommand::new("old_command", "new_command")
                     .with_additional_message("'additional message'"),
             ],
         );
         assert!(result.is_err());
+
         let message = result.err().unwrap().to_string();
         assert!(
-            message.contains("'old_command' command is deprecated, use 'new_command' command instead 'additional message'"),
-            "Unexpected 'tip:' in error message:\n{message}"
+            message.contains("'old_command' command has been removed, use 'new_command' command instead 'additional message'"),
+            "Unexpected in error message:\n{message}"
         );
     }
 }
