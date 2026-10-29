@@ -1,6 +1,6 @@
 //! Aggregating and verifying an aggregate signature with the non-recursive SNARK proof system.
 //!
-//! This proof system is experimental. It is gated behind the `snark` feature and its API
+//! This proof system is experimental. It is gated behind the default `snark` feature and its API
 //! may still change.
 //!
 //! The aggregate signature consists in a single succinct proof that the quorum was met, so a
@@ -30,8 +30,7 @@
 //! Then run it with:
 //!
 //! ```text
-//! cargo run --release -p mithril-stm --example non_recursive_snark_aggregate_signature \
-//!     --features snark
+//! cargo run --release -p mithril-stm --example non_recursive_snark_aggregate_signature
 //! ```
 //!
 //! Expect about three and a half seconds and roughly 1.3 GB of peak memory, measured on an Apple M4

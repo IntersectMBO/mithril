@@ -30,13 +30,13 @@ Reviewers:
 Commands to run the integrity tests, once the [production SRS is downloaded](#download-of-the-production-srs):
 
 ```bash
-cargo test -p mithril-stm --features snark --release integrity_test_for_non_recursive_production_key -- --ignored
+cargo test -p mithril-stm --release integrity_test_for_non_recursive_production_key -- --ignored
 ```
 
 and
 
 ```bash
-cargo test -p mithril-stm --features snark --release integrity_test_for_recursive_production_key -- --ignored
+cargo test -p mithril-stm --release integrity_test_for_recursive_production_key -- --ignored
 ```
 
 Release manager:
@@ -83,13 +83,13 @@ Three more pinned values depend on the circuits. The public input counts, `CERTI
 To update the production circuit verification keys, one needs to run the following commands, once the [production SRS is downloaded](#download-of-the-production-srs):
 
 ```bash
-cargo test -p mithril-stm --features snark --release write_non_recursive_circuit_verification_key_for_production_to_file -- --ignored
+cargo test -p mithril-stm --release write_non_recursive_circuit_verification_key_for_production_to_file -- --ignored
 ```
 
 and
 
 ```bash
-cargo test -p mithril-stm --features snark --release write_recursive_circuit_verification_key_for_production_to_file -- --ignored
+cargo test -p mithril-stm --release write_recursive_circuit_verification_key_for_production_to_file -- --ignored
 ```
 
 that will update the files holding the values of the production keys, `mithril-stm/src/circuits/halo2/non_recursive_circuit_verification_key_for_production.vkey` and `mithril-stm/src/circuits/halo2_ivc/recursive_circuit_verification_key_for_production.vkey`.
