@@ -16,6 +16,12 @@ CONTAINER_NAME=mithril-ipfs
 INSTALL_DIR=/opt/mithril-ipfs
 REPOSITORY_DIR=/var/lib/mithril-ipfs
 REPLICATION_SCRIPT=$INSTALL_DIR/replicate-immutable-archives.sh
+BITSWAP_SETTINGS=(
+    "Internal.Bitswap.TaskWorkerCount 32"
+    "Internal.Bitswap.EngineTaskWorkerCount 32"
+    "Internal.Bitswap.EngineBlockstoreWorkerCount 256"
+    "Internal.Bitswap.MaxOutstandingBytesPerPeer 8388608"
+)
 
 print_help() {
     cat << EOF
@@ -190,6 +196,11 @@ setup_binary() {
     if [ -n "$PUBLIC_IP_ADDRESS" ]; then
         "${ipfs_node[@]}" config --json Addresses.AppendAnnounce "$(announced_addresses)"
     fi
+    local setting key value
+    for setting in "${BITSWAP_SETTINGS[@]}"; do
+        read -r key value <<< "$setting"
+        "${ipfs_node[@]}" config --json "$key" "$value"
+    done
 
     echo ">> Writing the Kubo node service"
     sudo tee /etc/systemd/system/mithril-ipfs.service > /dev/null << EOF
@@ -249,6 +260,9 @@ setup_docker() {
         if [ -n "$PUBLIC_IP_ADDRESS" ]; then
             echo "ipfs config --json Addresses.AppendAnnounce '$(announced_addresses)'"
         fi
+        for setting in "${BITSWAP_SETTINGS[@]}"; do
+            echo "ipfs config --json $setting"
+        done
     } | sudo tee "$INSTALL_DIR/container-init.d/configure-node.sh" > /dev/null
 
     write_replication_script
