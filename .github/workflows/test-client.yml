@@ -138,7 +138,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-14, windows-latest]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-latest]
 
     runs-on: ${{ matrix.os }}
     env:
@@ -322,7 +322,7 @@ jobs:
       fail-fast: false
       matrix:
         backend: ${{ fromJson(needs.prepare.outputs.available_cardano_database_backends) }}
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-14, windows-latest]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-latest]
         ledger_backend: ["in-memory"]
         extra_args: ["", "--include-ancillary"]
 
