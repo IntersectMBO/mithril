@@ -298,6 +298,37 @@ mod test {
 
     #[cfg(feature = "snark")]
     #[test]
+    fn can_verify_valid_single_signature_with_a_snark_part() {
+        let fixture = MithrilFixtureBuilder::default()
+            .with_signers(2)
+            .with_protocol_parameters(ProtocolParameters::new(6, 200, 1.0))
+            .build();
+        let multi_signer = build_multi_signer(&fixture);
+        let message = ProtocolMessage::default();
+        let single_signature = fixture.signers_fixture()[0].sign(&message).unwrap();
+
+        assert!(
+            multi_signer
+                .compute_aggregate_verification_key()
+                .to_snark_aggregate_verification_key()
+                .is_some(),
+            "the aggregate verification key should cover the SNARK proof system"
+        );
+        assert!(
+            single_signature
+                .to_protocol_signature()
+                .get_snark_signer_index()
+                .is_some(),
+            "the signature should have a SNARK part"
+        );
+
+        multi_signer
+            .verify_single_signature(&message, &single_signature)
+            .expect("Verify single signature with a SNARK part should succeed");
+    }
+
+    #[cfg(feature = "snark")]
+    #[test]
     fn verify_single_signature_fail_if_the_snark_signer_index_is_the_one_of_another_signer() {
         let fixture = MithrilFixtureBuilder::default()
             .with_signers(2)
