@@ -2,20 +2,27 @@
 
 use crate::{
     orchestrator::{
-        interfaces::{Discoverer, Orchestrator},
+        interfaces::Orchestrator,
         store::{State, Store},
     },
-    signer::discoverer::SignerDiscoverer,
+    signer::discoverer::{SignerDiscoverer, SignerDiscovery},
 };
 
 /// Representation of a Signer
-struct Signer {
+struct SignerOrchestrator {
     pub store: Store,
+    discoverer: SignerDiscoverer,
 }
 
-impl Orchestrator for Signer {
-    fn discover(&self) -> anyhow::Result<Store> {
-        let discovery = SignerDiscoverer::run()?; //TODO could be a paramater of that method ? and reflect in the trait ?
+impl Orchestrator for SignerOrchestrator {
+    type Discovery = SignerDiscovery;
+    type Discoverer = SignerDiscoverer;
+
+    fn discoverer(&self) -> &Self::Discoverer {
+        &self.discoverer
+    }
+
+    fn apply_discovery(&self, discovery: Self::Discovery) -> anyhow::Result<Store> {
         let mut store = self.store.clone();
 
         store
@@ -25,7 +32,6 @@ impl Orchestrator for Signer {
         Ok(store)
     }
 }
-
 #[cfg(test)]
 mod test {
     use crate::orchestrator::store::{Field, FieldType};
@@ -34,7 +40,7 @@ mod test {
 
     #[test]
     fn test_signer_orchestrator_discover_must_fill_store_with_information_from_the_discoverer() {
-        let signer_orchestrator = Signer {
+        let signer_orchestrator = SignerOrchestrator {
             store: Store::new(vec![
                 Field::init(
                     "network".to_string(),
@@ -49,6 +55,7 @@ mod test {
                     None,
                 ),
             ]),
+            discoverer: SignerDiscoverer,
         };
 
         unsafe { std::env::set_var("NETWORK", "mainnet") };

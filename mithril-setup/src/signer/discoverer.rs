@@ -5,7 +5,10 @@ use anyhow::Context;
 use crate::orchestrator::interfaces::Discoverer;
 
 /// A discoverer for the signer
-pub struct SignerDiscoverer {
+pub struct SignerDiscoverer;
+
+/// A discoverer result for the signer
+pub struct SignerDiscovery {
     /// Cardano network
     pub network: String,
 
@@ -14,11 +17,13 @@ pub struct SignerDiscoverer {
 }
 
 impl Discoverer for SignerDiscoverer {
-    fn run() -> anyhow::Result<Self> {
+    type Output = SignerDiscovery;
+
+    fn run(&self) -> anyhow::Result<Self::Output> {
         let network = SignerDiscoverer::discover_network()?;
         let toto = SignerDiscoverer::discover_toto()?;
 
-        Ok(Self { network, toto })
+        Ok(SignerDiscovery { network, toto })
     }
 }
 
@@ -41,8 +46,9 @@ mod test {
         //set env variable
         unsafe { std::env::set_var("NETWORK", "mainnet") };
 
-        let signer_discoverer = SignerDiscoverer::run().unwrap();
+        let discoverer = SignerDiscoverer;
+        let discovery = discoverer.run().unwrap();
 
-        assert_eq!("mainnet".to_string(), signer_discoverer.network);
+        assert_eq!("mainnet".to_string(), discovery.network);
     }
 }
