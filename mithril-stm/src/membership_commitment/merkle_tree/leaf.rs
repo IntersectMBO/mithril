@@ -17,7 +17,7 @@ use crate::StmResult;
 use super::MerkleTreeError;
 
 /// Trait implemented to be used as a Merkle tree leaf.
-pub trait MerkleTreeLeaf: Clone + Send + Sync + Copy {
+pub trait MerkleTreeLeaf: Clone + Send + Sync + Copy + PartialEq {
     /// Converts the Merkle tree leaf to a bytes representation used internally by the Merkle tree
     fn as_bytes_for_merkle_tree(&self) -> Vec<u8>;
 

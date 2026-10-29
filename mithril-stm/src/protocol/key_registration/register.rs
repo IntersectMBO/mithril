@@ -214,7 +214,10 @@ pub(crate) struct ClosedRegistrationForProofSystem<L: MerkleTreeLeaf> {
     leaf_type: PhantomData<L>,
 }
 
-impl<L: MerkleTreeLeaf> ClosedRegistrationForProofSystem<L> {
+impl<L: MerkleTreeLeaf> ClosedRegistrationForProofSystem<L>
+where
+    Option<L>: From<ClosedRegistrationEntry>,
+{
     /// Computes the total stake of the given deduplicated entries and closes them with it.
     ///
     /// # Error
@@ -246,20 +249,14 @@ impl<L: MerkleTreeLeaf> ClosedRegistrationForProofSystem<L> {
     }
 
     /// Converts the entries to leaves of the proof system, in the order of the Merkle tree.
-    fn leaves(&self) -> impl Iterator<Item = L> + '_
-    where
-        Option<L>: From<ClosedRegistrationEntry>,
-    {
+    fn leaves(&self) -> impl Iterator<Item = L> + '_ {
         self.deduplicated_entries
             .iter()
             .filter_map(|entry| entry.clone().into())
     }
 
     /// Creates the Merkle tree of the proof system.
-    pub(crate) fn to_merkle_tree<D: Digest + FixedOutput>(&self) -> MerkleTree<D, L>
-    where
-        Option<L>: From<ClosedRegistrationEntry>,
-    {
+    pub(crate) fn to_merkle_tree<D: Digest + FixedOutput>(&self) -> MerkleTree<D, L> {
         MerkleTree::new(&self.leaves().collect::<Vec<L>>())
     }
 
@@ -274,11 +271,7 @@ impl<L: MerkleTreeLeaf> ClosedRegistrationForProofSystem<L> {
     pub(crate) fn get_signer_index_for_registration(
         &self,
         entry: &ClosedRegistrationEntry,
-    ) -> Option<SignerIndex>
-    where
-        L: PartialEq,
-        Option<L>: From<ClosedRegistrationEntry>,
-    {
+    ) -> Option<SignerIndex> {
         let leaf: L = Option::<L>::from(entry.clone())?;
         self.leaves()
             .position(|registered_leaf| registered_leaf == leaf)
