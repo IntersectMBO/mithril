@@ -15,7 +15,7 @@ use mithril_client::MithrilResult;
 use mithril_doc::{Documenter, GenerateDocCommands, StructDoc};
 
 use mithril_client_cli::commands::{
-    DeprecatedCommand, Deprecation, cardano_block::CardanoBlockCommands,
+    CommandRemoval, RemovedCommand, cardano_block::CardanoBlockCommands,
     cardano_db::CardanoDbCommands, cardano_stake_distribution::CardanoStakeDistributionCommands,
     cardano_transaction::CardanoTransactionCommands,
     mithril_stake_distribution::MithrilStakeDistributionCommands, tools::ToolsCommands,
@@ -232,12 +232,12 @@ impl Args {
         }
     }
 
-    fn handle_deprecated_decorator(
+    fn handle_removed_commands_decorator(
         args_result: Result<Self, ClapError>,
-        deprecated_commands: Vec<DeprecatedCommand>,
+        removed_commands: Vec<RemovedCommand>,
     ) -> Result<Self, ClapError> {
         let styles = Args::command().get_styles().clone();
-        Deprecation::handle_deprecated_commands(args_result, styles, deprecated_commands)
+        CommandRemoval::handle_removed_commands(args_result, styles, removed_commands)
     }
 
     fn config_parameters(&self, root_logger: &Logger) -> MithrilResult<ConfigParameters> {
@@ -322,11 +322,11 @@ impl ArtifactCommands {
 async fn main() -> MithrilResult<()> {
     // Load args
     let args = Args::parse_with_decorator(&|result: Result<Args, ClapError>| {
-        Args::handle_deprecated_decorator(
+        Args::handle_removed_commands_decorator(
             result,
             vec![
-                DeprecatedCommand::new("snapshot", "cardano-db"),
-                DeprecatedCommand::new("cardano-db-v2", "cardano-db")
+                RemovedCommand::new("snapshot", "cardano-db"),
+                RemovedCommand::new("cardano-db-v2", "cardano-db")
                     .with_alias("cdbv2")
                     .with_additional_message("with option `--backend v2`"),
             ],

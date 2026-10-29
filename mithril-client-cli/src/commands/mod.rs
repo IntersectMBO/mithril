@@ -7,7 +7,8 @@ pub mod cardano_block;
 pub mod cardano_db;
 pub mod cardano_stake_distribution;
 pub mod cardano_transaction;
-mod deprecation;
+mod command_removal;
 pub mod mithril_stake_distribution;
 pub mod tools;
-pub use deprecation::{DeprecatedCommand, Deprecation};
+
+pub use command_removal::{CommandRemoval, RemovedCommand};
