@@ -21,8 +21,8 @@ use crate::{
     },
 };
 use crate::{
-    AggregateVerificationKey, ClosedKeyRegistration, LotteryIndex, MembershipDigest, Parameters,
-    Signer, SingleSignature, Stake, StmResult, VerificationKeyForConcatenation,
+    AggregateVerificationKey, ClosedKeyRegistration, MembershipDigest, Parameters, Signer,
+    SignerIndex, SingleSignature, Stake, StmResult, VerificationKeyForConcatenation,
     proof_system::{ConcatenationClerk, ConcatenationProof},
 };
 
@@ -54,10 +54,7 @@ impl<D: MembershipDigest> Clerk<D> {
         Self {
             concatenation_proof_clerk: ConcatenationClerk::new_clerk_from_signer(signer),
             #[cfg(feature = "snark")]
-            snark_proof_clerk: signer
-                .closed_key_registration
-                .has_snark_verification_keys()
-                .then(|| SnarkClerk::new_clerk_from_signer(signer)),
+            snark_proof_clerk: SnarkClerk::new_clerk_from_signer(signer),
             #[cfg(feature = "snark")]
             snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory::new(
                 SnarkProverSetupReuse::Enabled,
@@ -79,9 +76,10 @@ impl<D: MembershipDigest> Clerk<D> {
                 closed_registration,
             ),
             #[cfg(feature = "snark")]
-            snark_proof_clerk: closed_registration.has_snark_verification_keys().then(|| {
-                SnarkClerk::new_clerk_from_closed_key_registration(parameters, closed_registration)
-            }),
+            snark_proof_clerk: SnarkClerk::new_clerk_from_closed_key_registration(
+                parameters,
+                closed_registration,
+            ),
             #[cfg(feature = "snark")]
             snark_prover_factory: Arc::new(NonDeterministicSnarkProverFactory::new(
                 SnarkProverSetupReuse::Enabled,
@@ -267,11 +265,12 @@ impl<D: MembershipDigest> Clerk<D> {
     /// Get the concatenation registered party for a given index.
     pub fn get_concatenation_registered_party_for_index(
         &self,
-        party_index: &LotteryIndex,
+        party_index: &SignerIndex,
     ) -> StmResult<(VerificationKeyForConcatenation, Stake)> {
         let entry = self
             .get_concatenation_clerk()
             .closed_key_registration
+            .get_closed_key_registration_for_concatenation()
             .get_registration_entry_for_index(party_index)?;
         Ok((
             entry.get_verification_key_for_concatenation(),
@@ -298,11 +297,14 @@ mod tests {
 
     use anyhow::anyhow;
     use midnight_proofs::transcript::Blake2b256;
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
 
     use crate::{
         AggregateSignature, AggregateSignatureError, AggregateSignatureType, AggregationError,
         AncillaryGenesisData, AncillaryProofInput, AncillaryProofOutput, AncillaryProverData,
-        Clerk, MithrilMembershipDigest, Parameters, Signer, SnarkProof, StmResult,
+        Clerk, Initializer, KeyRegistration, MithrilMembershipDigest, Parameters, RegisterError,
+        RegistrationEntry, Signer, SingleSignature, SnarkProof, StmResult,
         circuits::{
             halo2::{
                 NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
@@ -685,6 +687,97 @@ mod tests {
     }
 
     #[test]
+    fn concatenation_aggregation_succeeds_with_snark_and_bls_key_collisions() {
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+        let params = Parameters {
+            m: 100,
+            k: 5,
+            phi_f: 0.8,
+        };
+        let message = [1u8; 32];
+        let owners: Vec<Initializer> = (10..16)
+            .map(|stake| Initializer::new(params, stake, &mut rng))
+            .collect();
+
+        let mut without_snark_key = Initializer::new(params, 1, &mut rng);
+        without_snark_key.strip_snark_keys();
+
+        let mut snark_key_collision_loser = Initializer::new(params, 2, &mut rng);
+        snark_key_collision_loser.schnorr_signing_key = owners[0].schnorr_signing_key.clone();
+        snark_key_collision_loser.schnorr_verification_key = owners[0].schnorr_verification_key;
+
+        let mut bls_key_collision_loser = Initializer::new(params, 3, &mut rng);
+        bls_key_collision_loser.bls_verification_key_proof_of_possession =
+            owners[1].bls_verification_key_proof_of_possession;
+
+        let mut equal_stake_owner = Initializer::new(params, 20, &mut rng);
+        equal_stake_owner.strip_snark_keys();
+        let mut equal_stake_copier = Initializer::new(params, 20, &mut rng);
+        equal_stake_copier.bls_verification_key_proof_of_possession =
+            equal_stake_owner.bls_verification_key_proof_of_possession;
+
+        let signing_initializers: Vec<Initializer> = owners
+            .into_iter()
+            .chain([
+                without_snark_key,
+                snark_key_collision_loser,
+                equal_stake_owner,
+                equal_stake_copier,
+            ])
+            .collect();
+
+        let mut key_registration = KeyRegistration::initialize();
+        for initializer in signing_initializers.iter().chain([&bls_key_collision_loser]) {
+            let entry: RegistrationEntry = initializer.clone().try_into().unwrap();
+            key_registration.register_by_entry(&entry);
+        }
+        let closed_registration = key_registration.close_registration(&params).unwrap();
+
+        let error = bls_key_collision_loser
+            .try_create_signer::<D>(&closed_registration)
+            .expect_err("the loser of a BLS key collision should not get a signer");
+        assert!(matches!(
+            error.downcast_ref::<RegisterError>(),
+            Some(RegisterError::UnregisteredInitializer)
+        ));
+        let signers: Vec<Signer<D>> = signing_initializers
+            .into_iter()
+            .map(|initializer| {
+                initializer
+                    .try_create_signer(&closed_registration)
+                    .expect("the holder of a kept Concatenation leaf should get a signer")
+            })
+            .collect();
+        let signatures: Vec<SingleSignature> = signers
+            .iter()
+            .filter_map(|signer| signer.create_single_signature(&message).ok())
+            .collect();
+
+        let clerk = MockProverFactory::new()
+            .without_snark_prover_call()
+            .without_ivc_prover_call()
+            .build_clerk(&signers[0]);
+        let (aggregate_signature, ancillary_proof_output) = clerk
+            .aggregate_signatures_with_type(
+                &signatures,
+                &message,
+                AggregateSignatureType::Concatenation,
+                build_ancillary_input(None),
+            )
+            .expect("the aggregation should succeed with SNARK and BLS key collisions");
+
+        aggregate_signature
+            .verify(
+                &message,
+                &clerk.compute_aggregate_verification_key(),
+                &params,
+                ancillary_proof_output.verifier_data().cloned(),
+                None,
+            )
+            .expect("the aggregate signature should verify with SNARK and BLS key collisions");
+    }
+
+    #[test]
     fn snark_aggregation_fails_when_snark_clerk_is_missing() {
         let signer = setup_party_without_snark_keys(PARAMS, 1);
         let clerk = Clerk::new_clerk_from_signer(&signer);
@@ -834,7 +927,7 @@ mod tests {
         let signer = setup_single_party(PARAMS);
         let message: &[u8] = &[7, 7, 7];
 
-        let snark_clerk = SnarkClerk::new_clerk_from_signer(&signer);
+        let snark_clerk = SnarkClerk::new_clerk_from_signer(&signer).unwrap();
         let expected_proof_bytes = dummy_snark_proof(PARAMS).to_bytes().unwrap();
         let expected_avk = snark_clerk.compute_aggregate_verification_key_for_snark();
 

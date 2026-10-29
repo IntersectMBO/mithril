@@ -1,20 +1,17 @@
-#[cfg(feature = "snark")]
-use anyhow::Context;
 use anyhow::anyhow;
 use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ClosedKeyRegistration, MembershipDigest, Parameters, RegisterError, RegistrationEntry,
-    RegistrationEntryForConcatenation, Stake, StmResult,
+    ClosedKeyRegistration, ClosedRegistrationEntry, MembershipDigest, Parameters, RegisterError,
+    RegistrationEntry, SignerIndex, Stake, StmResult,
     VerificationKeyProofOfPossessionForConcatenation, proof_system::ConcatenationProofSigner,
     signature_scheme::BlsSigningKey,
 };
 #[cfg(feature = "snark")]
 use crate::{
-    ClosedRegistrationEntry, ProofOfBoundPossessionPrefixBytes, RegistrationEntryForSnark,
-    StandardSchnorrSignature, VerificationKeyForSnark, proof_system::SnarkProofSigner,
-    signature_scheme::SchnorrSigningKey,
+    ProofOfBoundPossessionPrefixBytes, StandardSchnorrSignature, VerificationKeyForSnark,
+    proof_system::SnarkProofSigner, signature_scheme::SchnorrSigningKey,
 };
 
 use crate::codec;
@@ -92,55 +89,12 @@ impl Initializer {
             self.schnorr_verification_key,
         )?;
 
-        let signer_index = closed_key_registration
-            .get_signer_index_for_registration(
-                &(
-                    registration_entry,
-                    closed_key_registration.get_total_stake(),
-                    self.parameters.phi_f,
-                )
-                    .try_into()?,
-            )
-            .ok_or_else(|| anyhow!(RegisterError::UnregisteredInitializer))?;
-
-        let key_registration_commitment_for_concatenation = closed_key_registration
-            .to_merkle_tree::<D::ConcatenationHash, RegistrationEntryForConcatenation>()
-            .to_merkle_tree_batch_commitment();
-        let concatenation_proof_signer = ConcatenationProofSigner::new(
-            registration_entry.get_stake(),
-            closed_key_registration.get_total_stake(),
-            self.parameters,
-            self.bls_signing_key,
-            self.bls_verification_key_proof_of_possession.vk,
-            key_registration_commitment_for_concatenation,
-        );
+        let (signer_index, concatenation_proof_signer) = self
+            .try_create_concatenation_proof_signer(registration_entry, closed_key_registration)?;
 
         #[cfg(feature = "snark")]
-        let snark_proof_signer = {
-            match (self.schnorr_signing_key, self.schnorr_verification_key) {
-                (Some(schnorr_signing_key), Some(schnorr_verification_key)) => {
-                    let key_registration_commitment_for_snark = closed_key_registration
-                        .to_merkle_tree::<D::SnarkHash, RegistrationEntryForSnark>()
-                        .to_merkle_tree_commitment();
-                    let lottery_target_value = ClosedRegistrationEntry::try_from((
-                        registration_entry,
-                        closed_key_registration.get_total_stake(),
-                        self.parameters.phi_f,
-                    ))?
-                    .get_lottery_target_value()
-                    .ok_or(RegisterError::SnarkProofSignerCreation)
-                    .with_context(|| "missing lottery target value")?;
-                    Some(SnarkProofSigner::new(
-                        self.parameters,
-                        schnorr_signing_key,
-                        schnorr_verification_key,
-                        lottery_target_value,
-                        key_registration_commitment_for_snark,
-                    ))
-                }
-                _ => None,
-            }
-        };
+        let snark_proof_signer =
+            self.create_snark_proof_signer(registration_entry, closed_key_registration);
 
         // Create and return signer
         Ok(Signer::new(
@@ -151,6 +105,87 @@ impl Initializer {
             registration_entry.get_stake(),
             #[cfg(feature = "snark")]
             snark_proof_signer,
+        ))
+    }
+
+    /// Tries to create the Concatenation proof signer
+    ///
+    /// First tries to find the signer index in the deduplicated Concatenation entries then
+    /// creates the Concatenation proof signer and returns both values. Fails when the
+    /// verification key is not registered or the ClosedRegistrationEntry cannot be created.
+    fn try_create_concatenation_proof_signer<D: MembershipDigest>(
+        &self,
+        registration_entry: RegistrationEntry,
+        closed_key_registration: &ClosedKeyRegistration,
+    ) -> StmResult<(SignerIndex, ConcatenationProofSigner<D>)> {
+        let closed_key_registration_for_concatenation =
+            closed_key_registration.get_closed_key_registration_for_concatenation();
+
+        let closed_registration_entry = ClosedRegistrationEntry::try_from((
+            registration_entry.without_snark_key(),
+            closed_key_registration_for_concatenation.get_total_stake(),
+            self.parameters.phi_f,
+        ))?;
+
+        let signer_index = closed_key_registration_for_concatenation
+            .get_signer_index_for_registration(&closed_registration_entry)
+            .ok_or_else(|| anyhow!(RegisterError::UnregisteredInitializer))?;
+
+        let key_registration_commitment = closed_key_registration_for_concatenation
+            .to_merkle_tree::<D::ConcatenationHash>()
+            .to_merkle_tree_batch_commitment();
+
+        Ok((
+            signer_index,
+            ConcatenationProofSigner::new(
+                self.stake,
+                closed_key_registration_for_concatenation.get_total_stake(),
+                self.parameters,
+                self.bls_signing_key.clone(),
+                self.bls_verification_key_proof_of_possession.vk,
+                key_registration_commitment,
+            ),
+        ))
+    }
+
+    /// Creates the SNARK proof signer or returns `None`
+    ///
+    /// Returns `None` when the initializer has no SNARK key, lost it during deduplication,
+    /// or when there is no SNARK entry at all.
+    #[cfg(feature = "snark")]
+    fn create_snark_proof_signer<D: MembershipDigest>(
+        &self,
+        registration_entry: RegistrationEntry,
+        closed_key_registration: &ClosedKeyRegistration,
+    ) -> Option<SnarkProofSigner<D>> {
+        let schnorr_signing_key = self.schnorr_signing_key.clone()?;
+        let schnorr_verification_key = self.schnorr_verification_key?;
+        let closed_key_registration_for_snark =
+            closed_key_registration.get_closed_key_registration_for_snark()?;
+
+        let snark_registration_entry = ClosedRegistrationEntry::try_from((
+            registration_entry,
+            closed_key_registration_for_snark.get_total_stake(),
+            self.parameters.phi_f,
+        ))
+        .ok()?;
+
+        let signer_index = closed_key_registration_for_snark
+            .get_signer_index_for_registration(&snark_registration_entry)?;
+
+        let lottery_target_value = snark_registration_entry.get_lottery_target_value()?;
+
+        let key_registration_commitment = closed_key_registration_for_snark
+            .to_merkle_tree::<D::SnarkHash>()
+            .to_merkle_tree_commitment();
+
+        Some(SnarkProofSigner::new(
+            self.parameters,
+            schnorr_signing_key,
+            schnorr_verification_key,
+            lottery_target_value,
+            key_registration_commitment,
+            signer_index,
         ))
     }
 
@@ -342,6 +377,172 @@ mod tests {
                 result.is_none(),
                 "No schnorr key means no Proof of Bound Possession should be created"
             );
+        }
+    }
+
+    mod try_create_signer_with_key_collisions {
+        use rand_chacha::ChaCha20Rng;
+        use rand_core::SeedableRng;
+
+        #[cfg(feature = "snark")]
+        use crate::membership_commitment::{MerkleTree, MerkleTreeSnarkLeaf};
+        use crate::{KeyRegistration, MithrilMembershipDigest};
+
+        use super::*;
+
+        fn test_parameters() -> Parameters {
+            Parameters {
+                m: 100,
+                k: 5,
+                phi_f: 0.2,
+            }
+        }
+
+        fn close_registration(initializers: &[Initializer]) -> ClosedKeyRegistration {
+            let mut key_registration = KeyRegistration::initialize();
+            for initializer in initializers {
+                key_registration.register_by_entry(&initializer.clone().try_into().unwrap());
+            }
+
+            key_registration.close_registration(&test_parameters()).unwrap()
+        }
+
+        #[test]
+        fn only_the_bls_key_collision_loser_fails_to_create_a_signer() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let owner = Initializer::new(test_parameters(), 200, &mut rng);
+            let unrelated = Initializer::new(test_parameters(), 150, &mut rng);
+            let mut copier = Initializer::new(test_parameters(), 100, &mut rng);
+            copier.bls_signing_key = owner.bls_signing_key.clone();
+            copier.bls_verification_key_proof_of_possession =
+                owner.bls_verification_key_proof_of_possession;
+
+            let closed_key_registration =
+                close_registration(&[owner.clone(), unrelated.clone(), copier.clone()]);
+
+            owner
+                .try_create_signer::<MithrilMembershipDigest>(&closed_key_registration)
+                .expect("the highest stake holder of a BLS key should get a signer");
+            unrelated
+                .try_create_signer::<MithrilMembershipDigest>(&closed_key_registration)
+                .expect("a party without collision should get a signer");
+            let error = copier
+                .try_create_signer::<MithrilMembershipDigest>(&closed_key_registration)
+                .expect_err("the loser of a BLS key collision should not get a signer");
+            assert!(matches!(
+                error.downcast_ref::<RegisterError>(),
+                Some(RegisterError::UnregisteredInitializer)
+            ));
+        }
+
+        #[cfg(feature = "snark")]
+        #[test]
+        fn bls_key_owner_keeps_its_signer_when_an_equal_stake_copier_wins_the_tie() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let mut owner = Initializer::new(test_parameters(), 100, &mut rng);
+            owner.strip_snark_keys();
+            let mut copier = Initializer::new(test_parameters(), 100, &mut rng);
+            copier.bls_verification_key_proof_of_possession =
+                owner.bls_verification_key_proof_of_possession;
+
+            let closed_key_registration = close_registration(&[owner.clone(), copier.clone()]);
+
+            owner
+                .try_create_signer::<MithrilMembershipDigest>(&closed_key_registration)
+                .expect("the owner of a BLS key should get a signer since its leaf is in the tree");
+        }
+
+        #[cfg(feature = "snark")]
+        #[test]
+        fn only_the_snark_key_collision_winner_gets_a_snark_signer() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let owner = Initializer::new(test_parameters(), 200, &mut rng);
+            let mut copier = Initializer::new(test_parameters(), 100, &mut rng);
+            copier.schnorr_signing_key = owner.schnorr_signing_key.clone();
+            copier.schnorr_verification_key = owner.schnorr_verification_key;
+
+            let closed_key_registration = close_registration(&[owner.clone(), copier.clone()]);
+
+            let owner_signer = owner
+                .try_create_signer::<MithrilMembershipDigest>(&closed_key_registration)
+                .expect("the highest stake holder of a SNARK key should get a signer");
+            let copier_signer = copier
+                .try_create_signer::<MithrilMembershipDigest>(&closed_key_registration)
+                .expect("the loser of a SNARK key collision should still get a signer");
+
+            assert!(
+                owner_signer.snark_proof_signer.is_some(),
+                "the highest stake holder of a SNARK key should get a SNARK signer"
+            );
+            assert!(
+                copier_signer.snark_proof_signer.is_none(),
+                "the loser of a SNARK key collision should not get a SNARK signer"
+            );
+        }
+
+        #[cfg(feature = "snark")]
+        #[test]
+        fn snark_signer_index_opens_correct_signer_leaf() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+
+            let mut without_snark_key = Initializer::new(test_parameters(), 1, &mut rng);
+            without_snark_key.strip_snark_keys();
+            let mut snark_key_copier = Initializer::new(test_parameters(), 2, &mut rng);
+            let mut bls_key_copier = Initializer::new(test_parameters(), 3, &mut rng);
+            let snark_key_owner = Initializer::new(test_parameters(), 4, &mut rng);
+            let bls_key_owner = Initializer::new(test_parameters(), 5, &mut rng);
+            let unrelated = Initializer::new(test_parameters(), 6, &mut rng);
+
+            snark_key_copier.schnorr_signing_key = snark_key_owner.schnorr_signing_key.clone();
+            snark_key_copier.schnorr_verification_key = snark_key_owner.schnorr_verification_key;
+            bls_key_copier.bls_signing_key = bls_key_owner.bls_signing_key.clone();
+            bls_key_copier.bls_verification_key_proof_of_possession =
+                bls_key_owner.bls_verification_key_proof_of_possession;
+
+            let snark_signers = [snark_key_owner, bls_key_owner, unrelated];
+            let initializers: Vec<Initializer> =
+                [without_snark_key, snark_key_copier, bls_key_copier]
+                    .into_iter()
+                    .chain(snark_signers.clone())
+                    .collect();
+
+            let closed_key_registration = close_registration(&initializers);
+            let closed_key_registration_for_snark = closed_key_registration
+                .get_closed_key_registration_for_snark()
+                .unwrap();
+            let merkle_tree: MerkleTree<
+                <MithrilMembershipDigest as MembershipDigest>::SnarkHash,
+                MerkleTreeSnarkLeaf,
+            > = closed_key_registration_for_snark.to_merkle_tree();
+            let commitment = merkle_tree.to_merkle_tree_commitment();
+
+            assert_eq!(
+                snark_signers.len() + 1,
+                closed_key_registration_for_snark.number_of_leaves(),
+                "the SNARK leaves should be the SNARK signers and the BLS key copier"
+            );
+            for snark_signer in snark_signers {
+                let signer = snark_signer
+                    .try_create_signer::<MithrilMembershipDigest>(&closed_key_registration)
+                    .expect("a party holding a SNARK leaf should get a signer");
+                let snark_proof_signer = signer
+                    .snark_proof_signer
+                    .expect("a party holding a SNARK leaf should get a SNARK signer");
+                let snark_signer_index = snark_proof_signer.get_snark_signer_index();
+                assert_ne!(
+                    signer.signer_index, snark_signer_index,
+                    "the setup should give different Concatenation and SNARK indices"
+                );
+                let leaf = MerkleTreeSnarkLeaf(
+                    snark_proof_signer.get_verification_key(),
+                    snark_proof_signer.get_lottery_target_value(),
+                );
+                let path = merkle_tree.compute_merkle_tree_path(snark_signer_index as usize);
+
+                commitment
+                    .verify_leaf_membership_from_path(&leaf, &path)
+                    .expect("the SNARK signer index should open the signer's own leaf");
+            }
         }
     }
 

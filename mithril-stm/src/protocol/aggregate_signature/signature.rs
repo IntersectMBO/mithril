@@ -811,7 +811,7 @@ mod tests {
             let mut kr = KeyRegistration::initialize();
             let p = Initializer::new(params, 1, &mut rng);
             let entry: RegistrationEntry = p.clone().try_into().unwrap();
-            kr.register_by_entry(&entry).unwrap();
+            kr.register_by_entry(&entry);
             let closed_reg = kr.close_registration(&params).unwrap();
             AggregateVerificationKey::from(&closed_reg)
         }
@@ -1060,8 +1060,8 @@ mod tests {
             )
             .unwrap();
 
-            key_reg.register_by_entry(&entry1).unwrap();
-            key_reg.register_by_entry(&entry2).unwrap();
+            key_reg.register_by_entry(&entry1);
+            key_reg.register_by_entry(&entry2);
             let closed_key_reg = key_reg.close_registration(&params).unwrap();
 
             let clerk = Clerk::new_clerk_from_closed_key_registration(&params, &closed_key_reg);
@@ -1074,7 +1074,10 @@ mod tests {
                     params,
                     sk_1,
                     pk_1.vk,
-                    closed_key_reg.to_merkle_tree().to_merkle_tree_batch_commitment(),
+                    closed_key_reg
+                        .get_closed_key_registration_for_concatenation()
+                        .to_merkle_tree()
+                        .to_merkle_tree_batch_commitment(),
                 ),
                 closed_key_reg.clone(),
                 params,
@@ -1091,7 +1094,10 @@ mod tests {
                     params,
                     sk_2,
                     pk_2.vk,
-                    closed_key_reg.to_merkle_tree().to_merkle_tree_batch_commitment(),
+                    closed_key_reg
+                        .get_closed_key_registration_for_concatenation()
+                        .to_merkle_tree()
+                        .to_merkle_tree_batch_commitment(),
                 ),
                 closed_key_reg.clone(),
                 params,
@@ -1677,7 +1683,7 @@ mod tests {
             let mut initializers = Vec::with_capacity(nparties);
             for _ in 0..nparties {
                 let init = Initializer::new(params, 1, &mut rng);
-                key_reg.register_by_entry(&init.clone().try_into().unwrap()).unwrap();
+                key_reg.register_by_entry(&init.clone().try_into().unwrap());
                 initializers.push(init);
             }
             let closed_reg = key_reg.close_registration(&params).unwrap();
@@ -1709,8 +1715,8 @@ mod tests {
                 Clerk::new_clerk_from_closed_key_registration(&params, &closed_reg);
             let snark_clerk = clerk.get_snark_clerk().expect("SnarkClerk must be present");
             let merkle_tree_depth = snark_clerk
-                .closed_key_registration
-                .number_of_registered_parties()
+                .closed_key_registration_for_snark
+                .number_of_leaves()
                 .next_power_of_two()
                 .trailing_zeros();
 

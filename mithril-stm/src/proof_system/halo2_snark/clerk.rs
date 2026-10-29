@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use crate::{
     AggregationError, ClosedKeyRegistration, LotteryIndex, MembershipDigest, Parameters,
     RegistrationEntryForSnark, Signer, SignerIndex, SingleSignature, StmResult,
-    signature_scheme::BaseFieldElement,
+    protocol::ClosedRegistrationForProofSystem, signature_scheme::BaseFieldElement,
 };
 
 use super::AggregateVerificationKeyForSnark;
@@ -25,47 +25,57 @@ const DOMAIN_SEPARATION_TAG_SELECTION_DEDUP: &[u8] = b"MITHRIL_SNARK_SELECTION_D
 /// `ConcatenationClerk`.
 #[derive(Debug, Clone)]
 pub struct SnarkClerk {
-    /// The closed key registration associated with this clerk.
-    pub(crate) closed_key_registration: ClosedKeyRegistration,
+    /// The closed registration of the SNARK proof system associated with this clerk.
+    pub(crate) closed_key_registration_for_snark:
+        ClosedRegistrationForProofSystem<RegistrationEntryForSnark>,
     /// Protocol parameters
     pub(crate) parameters: Parameters,
 }
 
 impl SnarkClerk {
     /// Create a `SnarkClerk` from a closed key registration and protocol parameters.
+    ///
+    /// Returns `None` when the closed key registration has no SNARK proof system.
     pub fn new_clerk_from_closed_key_registration(
         parameters: &Parameters,
         closed_key_registration: &ClosedKeyRegistration,
-    ) -> Self {
-        Self {
-            parameters: *parameters,
-            closed_key_registration: closed_key_registration.clone(),
-        }
+    ) -> Option<Self> {
+        closed_key_registration.get_closed_key_registration_for_snark().map(
+            |closed_key_registration_for_snark| Self {
+                parameters: *parameters,
+                closed_key_registration_for_snark: closed_key_registration_for_snark.clone(),
+            },
+        )
     }
 
     /// Create a `SnarkClerk` by extracting the parameters and closed key registration from `Signer`
-    pub fn new_clerk_from_signer<D: MembershipDigest>(signer: &Signer<D>) -> Self {
-        Self {
-            parameters: signer.parameters,
-            closed_key_registration: signer.closed_key_registration.clone(),
-        }
+    ///
+    /// Returns `None` when the closed key registration has no SNARK proof system.
+    pub fn new_clerk_from_signer<D: MembershipDigest>(signer: &Signer<D>) -> Option<Self> {
+        Self::new_clerk_from_closed_key_registration(
+            &signer.parameters,
+            &signer.closed_key_registration,
+        )
     }
 
     /// Compute the `AggregateVerificationKeyForSnark` from the closed key registration.
     pub fn compute_aggregate_verification_key_for_snark<D: MembershipDigest>(
         &self,
     ) -> AggregateVerificationKeyForSnark<D> {
-        AggregateVerificationKeyForSnark::from(&self.closed_key_registration)
+        AggregateVerificationKeyForSnark::from(&self.closed_key_registration_for_snark)
     }
 
     /// Look up and convert the registration entry for a signer into its SNARK representation.
+    ///
+    /// Returns `None` when the signer has no leaf in the SNARK Merkle tree, because it registered
+    /// without a SNARK key or lost its SNARK key to an entry with more stake.
     pub fn get_snark_registration_entry(
         &self,
-        signer_index: LotteryIndex,
+        snark_signer_index: SignerIndex,
     ) -> StmResult<Option<RegistrationEntryForSnark>> {
         let closed_registration_entry = self
-            .closed_key_registration
-            .get_registration_entry_for_index(&signer_index)?;
+            .closed_key_registration_for_snark
+            .get_registration_entry_for_index(&snark_signer_index)?;
         Ok(closed_registration_entry.into())
     }
 
@@ -76,7 +86,8 @@ impl SnarkClerk {
     ///    lottery index independent of who signed it. The `k` indices with the smallest
     ///    hashes are selected.
     /// 2. **Deduplication:** for each selected index claimed by multiple signers,
-    ///    `SHA-256(seed || lottery_index || signer_index)` picks the winner.
+    ///    `SHA-256(seed || lottery_index || signer_index)` picks the winner, `signer_index` being
+    ///    the SNARK signer index carried in the signature.
     ///
     /// The selection is fully deterministic from public inputs, publicly verifiable, and immune to
     /// grinding. The returned `BTreeMap` preserves strictly increasing lottery index order.
@@ -95,14 +106,18 @@ impl SnarkClerk {
         let seed: [u8; 32] = seed_hasher.finalize().into();
 
         // Collect all valid signatures grouped by lottery index.
-        let mut index_to_signatures: BTreeMap<LotteryIndex, Vec<SingleSignature>> = BTreeMap::new();
+        let mut index_to_signatures: BTreeMap<LotteryIndex, Vec<(SignerIndex, SingleSignature)>> =
+            BTreeMap::new();
         for signature in signatures {
-            let Some(snark_indices) = signature.get_snark_signature_indices() else {
+            let Some(snark_signature) = signature.snark_signature.as_ref() else {
                 continue;
             };
 
-            for index in snark_indices {
-                index_to_signatures.entry(index).or_default().push(signature.clone());
+            for &index in snark_signature.get_indices() {
+                index_to_signatures
+                    .entry(index)
+                    .or_default()
+                    .push((snark_signature.get_snark_signer_index(), signature.clone()));
             }
         }
 
@@ -128,9 +143,9 @@ impl SnarkClerk {
                     "Unexpected deduplication state: signature map missing lottery index {lottery_index}"
                 )
             })?;
-            let winner = candidates
+            let (_, winner) = candidates
                 .into_iter()
-                .min_by_key(|sig| HashedKey::for_signer_index(&seed, lottery_index, sig.signer_index))
+                .min_by_key(|(snark_signer_index, _)| HashedKey::for_signer_index(&seed, lottery_index, *snark_signer_index))
                 .ok_or_else(|| {
                     anyhow!(
                         "Unexpected deduplication state: no candidates for lottery index {lottery_index}"
@@ -148,7 +163,7 @@ impl SnarkClerk {
 /// Used in two contexts:
 /// - **Index selection:** hash is `SHA-256(seed || lottery_index)`, tie-breaker is the lottery index.
 /// - **Deduplication:** hash is `SHA-256(seed || lottery_index || signer_index)`, tie-breaker is
-///   the signer index.
+///   the SNARK signer index.
 ///
 /// Ordering is by hash first, then by the tie-breaker to ensure a total ordering.
 #[derive(Eq, PartialEq, Ord, PartialOrd)]
@@ -228,7 +243,7 @@ mod tests {
                 init.schnorr_verification_key,
             )
             .unwrap();
-            key_reg.register_by_entry(&entry).unwrap();
+            key_reg.register_by_entry(&entry);
             initializers.push(init);
         }
 
@@ -238,7 +253,7 @@ mod tests {
             .map(|init| init.try_create_signer::<D>(&closed_reg).unwrap())
             .collect();
 
-        let clerk = SnarkClerk::new_clerk_from_signer(&signers[0]);
+        let clerk = SnarkClerk::new_clerk_from_signer(&signers[0]).unwrap();
         (signers, clerk)
     }
 
@@ -255,8 +270,10 @@ mod tests {
             .filter_map(|signer| {
                 let mut sig = signer.create_single_signature(message).ok()?;
                 let snark_sig = sig.snark_signature.as_ref()?;
-                let reg_entry =
-                    clerk.get_snark_registration_entry(sig.signer_index).ok().flatten()?;
+                let reg_entry = clerk
+                    .get_snark_registration_entry(snark_sig.get_snark_signer_index())
+                    .ok()
+                    .flatten()?;
                 let indices = compute_winning_lottery_indices(
                     clerk.parameters.m,
                     message_to_sign,
@@ -287,6 +304,7 @@ mod tests {
             k in 1_u64..10,
             phi_f in 10_u64..100,
         ) {
+            prop_assume!(k <= m);
             let parameters = Parameters { m, k, phi_f: phi_f as f64 / 100f64 };
             let mut rng = ChaCha20Rng::from_seed(seed);
 
@@ -296,7 +314,7 @@ mod tests {
             let clerk_from_registration = SnarkClerk::new_clerk_from_closed_key_registration(
                 &parameters,
                 &signers[0].closed_key_registration,
-            );
+            ).unwrap();
 
             let avk_from_registration: AggregateVerificationKeyForSnark<D> =
                 clerk_from_registration.compute_aggregate_verification_key_for_snark();
@@ -332,6 +350,7 @@ mod tests {
             phi_f in 1_u32..100,
             num_false_msgs in 0_usize..3,
         ) {
+            prop_assume!(k <= m);
             let params = Parameters { m, k, phi_f: (phi_f as f64) / 100.0f64 };
             let mut rng = ChaCha20Rng::from_seed(seed);
 
@@ -392,7 +411,7 @@ mod tests {
                     // Verify that unique signers are tracked correctly
                     let signer_indices: HashSet<_> = unique_index_map
                         .values()
-                        .map(|sig| sig.signer_index)
+                        .filter_map(|sig| sig.get_snark_signer_index())
                         .collect();
                     prop_assert!(
                         !signer_indices.is_empty(),
@@ -537,11 +556,13 @@ mod tests {
         seed_hasher.update(message_to_sign[1].to_canonical_bytes());
         let seed: [u8; 32] = seed_hasher.finalize().into();
 
-        let expected_winner_signer_index = contested_sigs
+        let expected_winner_snark_signer_index = contested_sigs
             .iter()
-            .min_by_key(|sig| HashedKey::for_signer_index(&seed, contested_index, sig.signer_index))
-            .expect("at least one candidate")
-            .signer_index;
+            .filter_map(|sig| sig.get_snark_signer_index())
+            .min_by_key(|snark_signer_index| {
+                HashedKey::for_signer_index(&seed, contested_index, *snark_signer_index)
+            })
+            .expect("at least one candidate");
 
         let result = SnarkClerk::select_valid_signatures_for_k_indices(
             &params,
@@ -554,7 +575,10 @@ mod tests {
         let winner = result
             .get(&contested_index)
             .expect("contested index should be selected");
-        assert_eq!(winner.signer_index, expected_winner_signer_index);
+        assert_eq!(
+            winner.get_snark_signer_index(),
+            Some(expected_winner_snark_signer_index)
+        );
     }
 
     mod slow {

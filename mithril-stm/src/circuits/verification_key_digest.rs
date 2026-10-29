@@ -288,7 +288,7 @@ mod tests {
                 "golden production certificate circuit verification key digest changed, either the digest computation, the embedded production key or the certificate circuit changed, which breaks published circuit verification key registries"
             );
             assert_eq!(
-                "9b19d67fd7898e35b0810624b6adc994bab91ba8d7d112126c59d7730c919561",
+                "e1cf0b1f44b114c6d38f593eb027397e6ddc61fd8b4ba905fbe3d04f40e83105",
                 CircuitVerificationKeyDigest::for_ivc_circuit().unwrap().to_string(),
                 "golden IVC circuit verification key digest changed, either the digest computation, the embedded production key or the IVC circuit changed, which breaks published circuit verification key registries"
             );
@@ -312,7 +312,7 @@ mod tests {
                 "golden certificate circuit verification key digest changed, either the digest computation or the circuit changed, which breaks published circuit verification key registries"
             );
             assert_eq!(
-                "ea5e2c551a83ddc774688f594c8aa000bb23ee64544650fd315c472bb891a44d",
+                "de8b453a5428f82a1476a54ced179d27dfd2ccf13910f82261886d6bcb2da913",
                 recursive_key_digest.to_string(),
                 "golden IVC circuit verification key digest changed, either the digest computation or the circuit changed, which breaks published circuit verification key registries"
             );

@@ -762,7 +762,7 @@ mod tests {
             let signed_path = temp.join("signed.bin");
             let signing_key_path = write_signing_key(&temp, SupportedEra::Lagrange);
 
-            let preimage = vec![0x42u8; 190];
+            let preimage = vec![0x42u8; 186];
             fs::write(&preimage_path, &preimage).unwrap();
 
             GenesisTools::sign_genesis_certificate(
@@ -801,7 +801,7 @@ mod tests {
             let preimage_path = temp.join("preimage.bin");
             let signed_path = temp.join("signed.bin");
             let signing_key_path = write_signing_key(&temp, SupportedEra::Pythagoras);
-            fs::write(&preimage_path, vec![0xAAu8; 190]).unwrap();
+            fs::write(&preimage_path, vec![0xAAu8; 186]).unwrap();
 
             let error = GenesisTools::sign_genesis_certificate(
                 &preimage_path,
@@ -886,7 +886,7 @@ mod tests {
                 .export_payload_to_sign(&preimage_path)
                 .expect("export should not fail");
             let preimage_bytes = fs::read(&preimage_path).unwrap();
-            assert_eq!(preimage_bytes.len(), 190);
+            assert_eq!(preimage_bytes.len(), 186);
 
             GenesisTools::sign_genesis_certificate(
                 &preimage_path,

@@ -351,10 +351,10 @@ fn reduced_field_element(bytes: &[u8; 32]) -> NativeField {
 /// Pins the reader ranges independently of any generated value.
 #[test]
 fn preimage_range_constants_match_their_literal_ranges() {
-    assert_eq!(PREIMAGE_SIZE, 190);
+    assert_eq!(PREIMAGE_SIZE, 186);
     assert_eq!(PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES, 69..101);
-    assert_eq!(PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, 137..169);
-    assert_eq!(PREIMAGE_CURRENT_EPOCH_BYTES, 182..190);
+    assert_eq!(PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, 133..165);
+    assert_eq!(PREIMAGE_CURRENT_EPOCH_BYTES, 178..186);
 }
 
 proptest! {
@@ -378,7 +378,7 @@ proptest! {
             .try_rigid_preimage()
             .expect("a fully populated message should assemble");
 
-        prop_assert_eq!(preimage.len(), 190);
+        prop_assert_eq!(preimage.len(), 186);
         prop_assert_eq!(&preimage[0..6], b"digest");
         prop_assert_eq!(
             &preimage[6..38],
@@ -386,12 +386,11 @@ proptest! {
         );
         prop_assert_eq!(&preimage[38..69], b"next_aggregate_verification_key");
         prop_assert_eq!(&preimage[69..101], &aggregate_key_root);
-        prop_assert_eq!(&preimage[101..105], &[0u8; 4]);
-        prop_assert_eq!(&preimage[105..113], &total_stake.to_le_bytes());
-        prop_assert_eq!(&preimage[113..137], b"next_protocol_parameters");
-        prop_assert_eq!(&preimage[137..169], &next_protocol_parameters);
-        prop_assert_eq!(&preimage[169..182], b"current_epoch");
-        prop_assert_eq!(&preimage[182..190], &current_epoch.to_le_bytes());
+        prop_assert_eq!(&preimage[101..109], &total_stake.to_le_bytes());
+        prop_assert_eq!(&preimage[109..133], b"next_protocol_parameters");
+        prop_assert_eq!(&preimage[133..165], &next_protocol_parameters);
+        prop_assert_eq!(&preimage[165..178], b"current_epoch");
+        prop_assert_eq!(&preimage[178..186], &current_epoch.to_le_bytes());
     }
 
     #[test]

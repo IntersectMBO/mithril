@@ -11,6 +11,7 @@ pub use aggregate_signature::{
     AncillaryProverData, AncillaryVerifierData, Clerk, GenesisVerificationKeyBundle,
 };
 pub use error::{ProtocolError, RegisterError};
+pub(crate) use key_registration::ClosedRegistrationForProofSystem;
 pub(crate) use key_registration::RegistrationEntry;
 #[cfg(feature = "snark")]
 pub use key_registration::RegistrationEntryForSnark;

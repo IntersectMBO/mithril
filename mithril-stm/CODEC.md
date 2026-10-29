@@ -242,9 +242,9 @@ The following table lists every type with its golden byte size(s):
 | `MerkleBatchPath`                    | 155        | No            |
 | `MerklePath`                         | 149        | `snark` only  |
 | `MerkleTree`                         | 485        | No            |
-| `SingleSignature`                    | 131 / 396  | Yes           |
+| `SingleSignature`                    | 131 / 418  | Yes           |
 | `ClosedRegistrationEntry`            | 219 / 433  | Yes           |
-| `SingleSignatureWithRegisteredParty` | 730 / 1721 | Yes           |
+| `SingleSignatureWithRegisteredParty` | 730 / 1766 | Yes           |
 | `Initializer`                        | 490        | No            |
 | `ConcatenationProof`                 | 2974       | No            |
 | `AggregateVerificationKeyForSnark`   | 115        | `snark` only  |

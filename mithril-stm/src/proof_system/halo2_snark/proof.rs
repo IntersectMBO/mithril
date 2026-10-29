@@ -242,8 +242,8 @@ impl<D: MembershipDigest, R: RngCore + CryptoRng> SnarkAggregateSignatureProver<
             circuit_proof,
             params: clerk.parameters,
             merkle_tree_depth: clerk
-                .closed_key_registration
-                .number_of_registered_parties()
+                .closed_key_registration_for_snark
+                .number_of_leaves()
                 .next_power_of_two()
                 .trailing_zeros(),
             phantom: PhantomData,
@@ -284,7 +284,7 @@ mod tests {
 
         for _ in 0..nparties {
             let init = Initializer::new(params, 1, rng);
-            key_reg.register_by_entry(&init.clone().try_into().unwrap()).unwrap();
+            key_reg.register_by_entry(&init.clone().try_into().unwrap());
             initializers.push(init);
         }
 
@@ -294,7 +294,7 @@ mod tests {
             .map(|init| init.try_create_signer::<D>(&closed_reg).unwrap())
             .collect();
 
-        let clerk = SnarkClerk::new_clerk_from_signer(&signers[0]);
+        let clerk = SnarkClerk::new_clerk_from_signer(&signers[0]).unwrap();
         (signers, clerk)
     }
 
@@ -412,6 +412,72 @@ mod tests {
         }
 
         #[test]
+        fn produces_valid_snark_proof_with_key_collisions() {
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+            let params = Parameters {
+                m: 200,
+                k: 3,
+                phi_f: 0.8,
+            };
+            let message = [1u8; 32];
+
+            let mut without_snark_key = Initializer::new(params, 1, &mut rng);
+            without_snark_key.strip_snark_keys();
+            let mut snark_key_collision_loser = Initializer::new(params, 2, &mut rng);
+            let mut bls_key_collision_loser = Initializer::new(params, 3, &mut rng);
+            let parties: Vec<Initializer> = (10..16)
+                .map(|stake| Initializer::new(params, stake, &mut rng))
+                .collect();
+            snark_key_collision_loser.schnorr_signing_key = parties[0].schnorr_signing_key.clone();
+            snark_key_collision_loser.schnorr_verification_key =
+                parties[0].schnorr_verification_key;
+            bls_key_collision_loser.bls_verification_key_proof_of_possession =
+                parties[1].bls_verification_key_proof_of_possession;
+
+            let initializers: Vec<Initializer> =
+                [without_snark_key, snark_key_collision_loser, bls_key_collision_loser]
+                    .into_iter()
+                    .chain(parties)
+                    .collect();
+            let mut key_reg = KeyRegistration::initialize();
+            for init in &initializers {
+                key_reg.register_by_entry(&init.clone().try_into().unwrap());
+            }
+            let closed_reg = key_reg.close_registration(&params).unwrap();
+            // The BLS key collision loser gets no signer.
+            let signers: Vec<Signer<D>> = initializers
+                .into_iter()
+                .filter_map(|init| init.try_create_signer::<D>(&closed_reg).ok())
+                .collect();
+            assert!(
+                signers.iter().any(|signer| {
+                    signer.snark_proof_signer.as_ref().is_some_and(|snark_signer| {
+                        snark_signer.get_snark_signer_index() != signer.signer_index
+                    })
+                }),
+                "the collisions should give some signers different Concatenation and SNARK indices"
+            );
+
+            let clerk =
+                SnarkClerk::new_clerk_from_closed_key_registration(&params, &closed_reg).unwrap();
+            let signatures = collect_signatures(&signers, &message);
+            let mut prover = create_prover(params, [0u8; 32]);
+
+            let proof: SnarkProof<D> = prover
+                .aggregate_signatures(&clerk, &signatures, &message)
+                .expect("the aggregation should succeed with key collisions");
+
+            proof
+                .verify(
+                    &message,
+                    &clerk.compute_aggregate_verification_key_for_snark(),
+                    &snark_verifier_data(&prover),
+                    &prover.verifier_params(),
+                )
+                .expect("the proof should verify with key collisions");
+        }
+
+        #[test]
         fn valid_snark_proof_with_different_path_length() {
             let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
             let params = Parameters {
@@ -426,8 +492,8 @@ mod tests {
             let avk = clerk.compute_aggregate_verification_key_for_snark::<D>();
 
             let current_merkle_tree_depth = clerk
-                .closed_key_registration
-                .number_of_registered_parties()
+                .closed_key_registration_for_snark
+                .number_of_leaves()
                 .next_power_of_two()
                 .trailing_zeros();
             let mut prover = create_prover(params, [0u8; 32]);

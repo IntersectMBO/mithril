@@ -83,7 +83,7 @@ mod tests {
 
     /// A preimage whose SHA-256 hash is above the field modulus, so reducing the hash as a single
     /// field element would lose information.
-    const PREIMAGE_WITH_A_HASH_ABOVE_THE_MODULUS: [u8; PREIMAGE_SIZE] = [0u8; PREIMAGE_SIZE];
+    const PREIMAGE_WITH_A_HASH_ABOVE_THE_MODULUS: [u8; PREIMAGE_SIZE] = [1u8; PREIMAGE_SIZE];
 
     #[test]
     fn fixture_preimage_hashes_above_the_modulus() {

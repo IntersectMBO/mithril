@@ -49,7 +49,6 @@ mod tests {
         RegistrationEntry, VerificationKeyForSnark,
         VerificationKeyProofOfPossessionForConcatenation,
         proof_system::halo2_snark::eligibility::{check_lottery_for_index, compute_lottery_prefix},
-        protocol::RegistrationEntryForSnark,
         signature_scheme::{BlsSigningKey, SchnorrSigningKey},
     };
 
@@ -89,7 +88,7 @@ mod tests {
                 Some(schnorr_vk),
             )
             .unwrap();
-            key_reg.register_by_entry(&entry).unwrap();
+            key_reg.register_by_entry(&entry);
 
             if i == 0 {
                 first_schnorr_sk = Some(schnorr_sk);
@@ -102,14 +101,20 @@ mod tests {
         let entry = first_entry.unwrap();
 
         let merkle_tree = closed_reg
-            .to_merkle_tree::<<D as crate::MembershipDigest>::SnarkHash, RegistrationEntryForSnark>(
-            )
+            .get_closed_key_registration_for_snark()
+            .unwrap()
+            .to_merkle_tree::<<D as crate::MembershipDigest>::SnarkHash>()
             .to_merkle_tree_commitment();
-        let lottery_target_value =
-            ClosedRegistrationEntry::try_from((entry, closed_reg.get_total_stake(), params.phi_f))
+        let closed_entry = ClosedRegistrationEntry::try_from((
+            entry,
+            closed_reg
+                .get_closed_key_registration_for_snark()
                 .unwrap()
-                .get_lottery_target_value()
-                .unwrap();
+                .get_total_stake(),
+            params.phi_f,
+        ))
+        .unwrap();
+        let lottery_target_value = closed_entry.get_lottery_target_value().unwrap();
 
         let snark_signer = SnarkProofSigner::<D>::new(
             params,
@@ -117,9 +122,16 @@ mod tests {
             first_schnorr_vk.unwrap(),
             lottery_target_value,
             merkle_tree,
+            closed_reg
+                .get_closed_key_registration_for_snark()
+                .unwrap()
+                .get_signer_index_for_registration(&closed_entry)
+                .unwrap(),
         );
 
-        let aggregate_key = AggregateVerificationKeyForSnark::<D>::from(&closed_reg);
+        let aggregate_key = AggregateVerificationKeyForSnark::<D>::from(
+            closed_reg.get_closed_key_registration_for_snark().unwrap(),
+        );
 
         (snark_signer, aggregate_key)
     }

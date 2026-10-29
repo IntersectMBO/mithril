@@ -285,7 +285,7 @@ mod tests {
                     &avk,
                     &expected_message,
                     #[cfg(feature = "snark")]
-                    None,
+                    current_signer.protocol_signer.get_schnorr_verification_key(),
                 )
                 .is_ok(),
             "produced single signature should be valid"

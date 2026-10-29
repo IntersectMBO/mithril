@@ -54,16 +54,11 @@ impl<D: MembershipDigest> ConcatenationProof<D> {
             .map(|sig| {
                 clerk
                     .closed_key_registration
+                    .get_closed_key_registration_for_concatenation()
                     .get_registration_entry_for_index(&sig.signer_index)
-                    .map(|reg_party| {
-                        #[cfg(feature = "snark")]
-                        // We need to remove the SNARK fields from the registration entry used in Concatenation proofs to avoid breaking change with previous client not able to parse the aggregate signature.
-                        // This happens because of the way the `ClosedRegistrationEntry` is serialized with an array representation instead of map representation.
-                        let reg_party = reg_party.without_snark_fields();
-                        SingleSignatureWithRegisteredParty {
-                            sig: sig.clone(),
-                            reg_party,
-                        }
+                    .map(|reg_party| SingleSignatureWithRegisteredParty {
+                        sig: sig.clone(),
+                        reg_party,
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -89,7 +84,8 @@ impl<D: MembershipDigest> ConcatenationProof<D> {
 
         let batch_proof = clerk
             .closed_key_registration
-            .to_merkle_tree::<D::ConcatenationHash, RegistrationEntryForConcatenation>()
+            .get_closed_key_registration_for_concatenation()
+            .to_merkle_tree::<D::ConcatenationHash>()
             .compute_merkle_tree_batch_path(mt_index_list);
 
         Ok(Self {
@@ -383,8 +379,8 @@ mod tests {
             )
             .unwrap();
 
-            key_reg.register_by_entry(&entry1).unwrap();
-            key_reg.register_by_entry(&entry2).unwrap();
+            key_reg.register_by_entry(&entry1);
+            key_reg.register_by_entry(&entry2);
             let closed_key_reg = key_reg.close_registration(&params).unwrap();
 
             let clerk = Clerk::new_clerk_from_closed_key_registration(&params, &closed_key_reg);
@@ -397,7 +393,10 @@ mod tests {
                     params,
                     sk_1,
                     pk_1.vk,
-                    closed_key_reg.to_merkle_tree().to_merkle_tree_batch_commitment(),
+                    closed_key_reg
+                        .get_closed_key_registration_for_concatenation()
+                        .to_merkle_tree()
+                        .to_merkle_tree_batch_commitment(),
                 ),
                 closed_key_reg.clone(),
                 params,
@@ -414,7 +413,10 @@ mod tests {
                     params,
                     sk_2,
                     pk_2.vk,
-                    closed_key_reg.to_merkle_tree().to_merkle_tree_batch_commitment(),
+                    closed_key_reg
+                        .get_closed_key_registration_for_concatenation()
+                        .to_merkle_tree()
+                        .to_merkle_tree_batch_commitment(),
                 ),
                 closed_key_reg.clone(),
                 params,

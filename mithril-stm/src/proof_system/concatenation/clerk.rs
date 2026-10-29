@@ -41,7 +41,10 @@ impl ConcatenationClerk {
     pub fn compute_aggregate_verification_key_for_concatenation<D: MembershipDigest>(
         &self,
     ) -> AggregateVerificationKeyForConcatenation<D> {
-        AggregateVerificationKeyForConcatenation::from(&self.closed_key_registration)
+        AggregateVerificationKeyForConcatenation::from(
+            self.closed_key_registration
+                .get_closed_key_registration_for_concatenation(),
+        )
     }
 
     #[cfg(test)]
@@ -185,6 +188,7 @@ mod tests {
             phi_f in 1u32..100,
             num_invalid_sigs_per_party in 0_usize..3,
         ) {
+            prop_assume!(k <= m);
             let params = Parameters { m, k, phi_f: (phi_f as f64) / 100.0f64 };
             let mut rng = ChaCha20Rng::from_seed(seed);
 
@@ -205,7 +209,7 @@ mod tests {
             for i in 0..nparties {
                 let stake = (i as u64 + 1) * 10;
                 let initializer = Initializer::new(params, stake, &mut rng);
-                key_registration.register_by_entry(&initializer.clone().try_into().unwrap()).unwrap();
+                key_registration.register_by_entry(&initializer.clone().try_into().unwrap());
                 initializers.push(initializer);
             }
 
@@ -237,11 +241,7 @@ mod tests {
             let sig_reg_list = all_sigs
                 .iter()
                 .map(|sig| {
-                    let reg_party = clerk.closed_key_registration.get_registration_entry_for_index(&sig.signer_index).unwrap();
-                    #[cfg(feature = "snark")]
-                    // We need to remove the SNARK fields from the registration entry used in Concatenation proofs to avoid breaking change with previous client not able to parse the aggregate signature.
-                    // This happens because of the way the `ClosedRegistrationEntry` is serialized with an array representation instead of map representation.
-                    let reg_party = reg_party.without_snark_fields();
+                    let reg_party = clerk.closed_key_registration.get_closed_key_registration_for_concatenation().get_registration_entry_for_index(&sig.signer_index).unwrap();
                     SingleSignatureWithRegisteredParty {
                         sig: sig.clone(),
                         reg_party,

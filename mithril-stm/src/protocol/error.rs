@@ -6,10 +6,6 @@ use crate::VerificationKeyForSnark;
 /// Errors which can be outputted by key registration.
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum RegisterError {
-    /// This key has already been registered by a participant
-    #[error("This key has already been registered.")]
-    EntryAlreadyRegistered,
-
     /// Cannot register if the registration is closed.
     #[error("Cannot register if the registration is closed.")]
     RegistrationClosed,
@@ -39,11 +35,6 @@ pub enum RegisterError {
     #[error("No registration found for the given index.")]
     UnregisteredIndex,
 
-    /// Snark proof signer creation from initializer failed
-    #[cfg(feature = "snark")]
-    #[error("Unable to create SNARK proof signer.")]
-    SnarkProofSignerCreation,
-
     /// Total stake value overflows `u64` during computation.
     #[error("Total stake overflow accumulated stake: {accumulated_stake}, adding stake: {stake}")]
     TotalStakeOverflow { accumulated_stake: u64, stake: u64 },
@@ -51,6 +42,10 @@ pub enum RegisterError {
     /// Total stake of the key registration is zero.
     #[error("Cannot run the protocol if total stake is zero.")]
     ZeroTotalStake,
+
+    /// The registration has no entry.
+    #[error("Cannot close a registration without any entry.")]
+    EmptyRegistration,
 }
 
 /// Errors which are due to an error in the protocol.
@@ -59,4 +54,12 @@ pub enum ProtocolError {
     /// Value of phi_f is out of the (0,1] range
     #[error("phi_f must be in the range (0, 1], got {0}")]
     PhiFValueOutOfRange(f64),
+
+    /// The quorum parameter `k` is zero.
+    #[error("k must be greater than 0")]
+    QuorumParameterIsZero,
+
+    /// The quorum parameter `k` is greater than the security parameter `m`.
+    #[error("k ({k}) must not be greater than m ({m})")]
+    QuorumParameterGreaterThanSecurityParameter { k: u64, m: u64 },
 }

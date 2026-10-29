@@ -55,7 +55,7 @@ impl UniqueSchnorrSignature {
     ) -> StmResult<()> {
         // Check that the verification key is valid
         verification_key
-            .is_valid()
+            .validate()
             .with_context(|| "Signature verification failed due to invalid verification key")?;
 
         if !self.commitment_point.is_prime_order() {
