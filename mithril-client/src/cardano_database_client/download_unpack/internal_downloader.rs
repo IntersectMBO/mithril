@@ -112,13 +112,14 @@ impl InternalArtifactDownloader {
         .await?;
 
         #[cfg(feature = "unstable")]
-        if self.ipfs_file_downloader.is_none()
-            && cardano_database_snapshot
-                .immutables
-                .locations
-                .iter()
-                .any(|l| matches!(l, ImmutablesLocation::Ipfs { .. }))
-        {
+        let locations_have_ipfs = cardano_database_snapshot
+            .immutables
+            .locations
+            .iter()
+            .any(|l| matches!(l, ImmutablesLocation::Ipfs { .. }));
+
+        #[cfg(feature = "unstable")]
+        if self.ipfs_file_downloader.is_none() && locations_have_ipfs {
             warn!(
                 self.logger,
                 "IPFS locations are available for immutable files but no IPFS downloader is configured (no `ipfs_rpc_base_url` set); those locations will be skipped."
@@ -128,14 +129,7 @@ impl InternalArtifactDownloader {
         #[cfg(feature = "unstable")]
         let ipfs_coin = {
             let ipfs_ratio = self
-                .expand_ipfs_share_to_percentage(
-                    ipfs_share,
-                    cardano_database_snapshot
-                        .immutables
-                        .locations
-                        .iter()
-                        .any(|l| matches!(l, ImmutablesLocation::Ipfs { .. })),
-                )
+                .expand_ipfs_share_to_percentage(ipfs_share, locations_have_ipfs)
                 .await;
 
             WeightedCoin::new(ipfs_ratio, timestamp_seed())
@@ -371,7 +365,7 @@ impl InternalArtifactDownloader {
         ipfs_share: IpfsShare,
         locations_have_ipfs: bool,
     ) -> Percentage {
-        if !locations_have_ipfs {
+        if !locations_have_ipfs || self.ipfs_file_downloader.is_none() {
             return Percentage::ZERO;
         }
 
@@ -1069,6 +1063,7 @@ mod tests {
         fn ipfs_location_is_tried_first_when_it_wins_the_coin_flip() {
             let target_dir = temp_dir_create!();
             let artifact_downloader = artifact_downloader_with_ipfs();
+            let coin_flip_result = true;
 
             let task = artifact_downloader
                 .new_immutable_download_task(
@@ -1077,7 +1072,7 @@ mod tests {
                     &target_dir,
                     "download_id",
                     CircuitBreaker::default(),
-                    true,
+                    coin_flip_result,
                 )
                 .unwrap();
 
@@ -1095,6 +1090,7 @@ mod tests {
         fn ipfs_location_is_tried_last_when_it_loses_the_coin_flip() {
             let target_dir = temp_dir_create!();
             let artifact_downloader = artifact_downloader_with_ipfs();
+            let coin_flip_result = false;
 
             let task = artifact_downloader
                 .new_immutable_download_task(
@@ -1103,7 +1099,7 @@ mod tests {
                     &target_dir,
                     "download_id",
                     CircuitBreaker::default(),
-                    false,
+                    coin_flip_result,
                 )
                 .unwrap();
 
@@ -1264,6 +1260,32 @@ mod tests {
                 .await;
 
             assert_eq!(Percentage::ZERO, expanded);
+        }
+
+        #[tokio::test]
+        async fn return_ratio_0_if_no_ipfs_downloader_is_set() {
+            let locations_have_ipfs = true;
+            let artifact_downloader = InternalArtifactDownloader {
+                ipfs_file_downloader: None,
+                aggregator_requester:
+                    MockBuilder::<MockCardanoDatabaseAggregatorRequest>::configure(|mock| {
+                        mock.expect_get_ipfs_share().never();
+                    }),
+                ..artifact_downloader_for_test()
+            };
+
+            let expanded_with_custom_ratio = artifact_downloader
+                .expand_ipfs_share_to_percentage(
+                    IpfsShare::Ratio(Percentage::new(63)),
+                    locations_have_ipfs,
+                )
+                .await;
+            assert_eq!(Percentage::ZERO, expanded_with_custom_ratio);
+
+            let expanded_with_aggregator_ratio = artifact_downloader
+                .expand_ipfs_share_to_percentage(IpfsShare::AggregatorRatio, locations_have_ipfs)
+                .await;
+            assert_eq!(Percentage::ZERO, expanded_with_aggregator_ratio);
         }
     }
 }

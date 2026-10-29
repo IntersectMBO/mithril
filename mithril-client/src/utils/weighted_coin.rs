@@ -1,6 +1,6 @@
-use rand::{RngExt, SeedableRng};
 use rand::distr::Bernoulli;
 use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
 
 use mithril_common::entities::Percentage;
 
@@ -16,8 +16,10 @@ impl WeightedCoin {
     /// Constructs a new `WeightedCoin`.
     pub fn new(percentage: Percentage, seed: [u8; 32]) -> Self {
         Self {
-            distribution: Bernoulli::from_ratio(u32::from(*percentage), 100)
-                .expect("a Percentage is always within 0..=100"),
+            // Safety: `Bernoulli::from_ratio` fails if `numerator > denominator` or `denominator == 0`
+            // but `Percentage` is always within `0..=100` and denominator is 100, so unwrap is safe
+            distribution: Bernoulli::from_ratio(*percentage as u32, *Percentage::HUNDRED as u32)
+                .unwrap(),
             rng: StdRng::from_seed(seed),
         }
     }
@@ -81,7 +83,10 @@ mod tests {
         let total_flips = 30_000;
         let mut coin = WeightedCoin::new(Percentage::new(30), [0; 32]);
 
-        let true_count = flip_n_times(&mut coin, total_flips).iter().filter(|flip| **flip).count();
+        let true_count = flip_n_times(&mut coin, total_flips)
+            .iter()
+            .filter(|flip| **flip)
+            .count();
 
         let true_ratio = true_count as f64 / total_flips as f64;
         assert!(

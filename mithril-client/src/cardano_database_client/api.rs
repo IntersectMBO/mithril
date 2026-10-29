@@ -74,7 +74,9 @@ pub trait CardanoDatabaseAggregatorRequest: Send + Sync {
     async fn increment_ancillary_downloaded_statistic(&self) -> MithrilResult<()>;
 
     /// Get the ipfs share for the Cardano database download.
-    async fn get_ipfs_share(&self) -> MithrilResult<Option<Percentage>>;
+    async fn get_ipfs_share(&self) -> MithrilResult<Option<Percentage>> {
+        Ok(None)
+    }
 }
 
 impl CardanoDatabaseClient {
