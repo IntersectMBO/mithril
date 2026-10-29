@@ -45,7 +45,7 @@ Three things worth knowing before choosing a route.
 
 Statements about the code are checked against one revision of `main`, named here.
 
-**Baseline: `e1c9a4cf1`, 2026-10-01.**
+**Baseline: `2414a6a1f`, 2026-10-30.**
 
 A page describes what exists at that baseline unless it carries the **In review** marker: implemented in a named open pull request and not on `main` at the baseline. The marker does not mean approved, nor certain to ship as written. Open pull requests are rebased, so a page carrying the marker names the head it was read at. No page carries it in this edition.
 
@@ -998,7 +998,7 @@ A key passes through five stages, and the sections follow them.
 
 The two sides have opposite runtime problems. A prover's material is large — the structured reference string runs to hundreds of megabytes and a proving key is larger — so its question is how not to derive it twice. A verifier's material is small: the KZG verifier parameters are a compile-time constant and the committed verifying keys are a few kilobytes each. Its question is whether the key may be used. Possession and permission are separate, and the middle sections keep them apart.
 
-**The registry is enforced behind the `snark` feature.** The registry, its publication tooling and its enforcement in the certificate verifier are on `main`, and no distribution enables the feature at the baseline.
+**The registry is enforced behind the `snark` feature.** The registry, its publication tooling and its enforcement in the certificate verifier are on `main`. The feature is enabled by default, so the distributions built from `main` include them.
 
 ## Where key material comes from
 
@@ -1154,7 +1154,7 @@ No minimum version is compiled in. The version comparison is held in one instanc
 
 Which flavors require certification is a property of the aggregate signature type, pinned by a golden test: concatenation uses no circuit and is exempt. The check runs in the certificate verifier on both the standard path and the full-chain shortcut. A client resolves its network's registry through the published networks file by matching its aggregator endpoint; an aggregator is configured with a registry URL, where `file://` reads a local file. That routing decides which document is offered, not whether it is trusted: a wrong entry affects availability and which version is seen, while the genesis signature decides acceptance.
 
-**The feature gate.** All of this sits behind the `snark` feature, which the distributions do not enable at the baseline. A network enforces the registry once its distribution is built with the feature, a registry is published for it, and its nodes are configured with a source. Building with the feature is necessary and not sufficient.
+**The feature gate.** All of this sits behind the `snark` feature, which is enabled by default and can be left out with `--no-default-features`. A network enforces the registry once its distribution is built with the feature, a registry is published for it, and its nodes are configured with a source. Building with the feature is necessary and not sufficient.
 
 **What this constrains.** Signature verification establishes that a registry is authentic, not that it is the latest published. What a node does about updates is the refresh policy and the version rules above; neither establishes that the registry in hand is current. Part 8 covers publication and deployment.
 
@@ -1337,7 +1337,7 @@ flowchart TD
     ALL --> F --> S --> I --> RUN
 ```
 
-**Features** decide what is compiled: the SNARK code sits behind a feature flag, so a default run contains none of it.
+**Features** decide what is compiled: the SNARK code sits behind the default `snark` feature, so a default run includes it and a run with `--no-default-features` contains none of it.
 
 **There are two execution categories.** A test belongs in a `slow` submodule when it consistently exceeds thirty seconds on CI; a developer may also classify one that exceeds fifteen seconds locally. Membership is by module, so a `slow` module can hold tests well under the threshold, such as the certificate circuit's golden cases at the test degree. Moving a test back when it becomes cheaper is a maintenance decision; a change in duration does not trigger it.
 
@@ -1391,7 +1391,7 @@ Three separate controls decide whether a certificate is a SNARK certificate.
 
 **The aggregation flavor** is the aggregator's own configuration, and it defaults to concatenation. Lagrange does not select a SNARK flavor; it makes one possible. A network can be in Lagrange with every aggregator still producing concatenation certificates.
 
-**The compiled feature** is `snark`, which gates the SNARK code at build time. It exists while that code is under development and is expected to be removed once it ships on the default path, leaving the other two controls to decide. Until then, a binary built without it cannot produce or verify a SNARK certificate whatever the era says.
+**The compiled feature** is `snark`, which gates the SNARK code at build time. It is enabled by default and stays optional while that code is under development. It is expected to be removed once that code is stable, leaving the other two controls to decide. Until then, a binary built without it cannot produce or verify a SNARK certificate whatever the era says.
 
 Within a binary that carries the flavor, the certificate's own signature variant selects the verification path. A producer's current aggregation setting is not consulted when one of its earlier certificates is verified, so changing that setting does not affect what it has already issued.
 
