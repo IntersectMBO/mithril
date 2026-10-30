@@ -268,6 +268,15 @@ If the machine is behind a NAT, announce its public address (use `/ip6/` instead
 ipfs_node config --json Addresses.AppendAnnounce '["/ip4/**YOUR_PUBLIC_IP_ADDRESS**/tcp/4001", "/ip4/**YOUR_PUBLIC_IP_ADDRESS**/udp/4001/quic-v1"]'
 ```
 
+Raise the Bitswap server limits, which otherwise keep at most 1 MB in flight per peer and slow down the download of the archives by the clients:
+
+```bash
+ipfs_node config --json Internal.Bitswap.TaskWorkerCount 32
+ipfs_node config --json Internal.Bitswap.EngineTaskWorkerCount 32
+ipfs_node config --json Internal.Bitswap.EngineBlockstoreWorkerCount 256
+ipfs_node config --json Internal.Bitswap.MaxOutstandingBytesPerPeer 8388608
+```
+
 ##### Set up the service
 
 - Create a `/etc/systemd/system/mithril-ipfs.service` description file for the service:
@@ -461,6 +470,17 @@ If the machine is behind a NAT, announce its public address (use `/ip6/` instead
 ```bash
 sudo bash -c 'cat >> /opt/mithril-ipfs/container-init.d/configure-node.sh << EOF
 ipfs config --json Addresses.AppendAnnounce "[\"/ip4/**YOUR_PUBLIC_IP_ADDRESS**/tcp/4001\", \"/ip4/**YOUR_PUBLIC_IP_ADDRESS**/udp/4001/quic-v1\"]"
+EOF'
+```
+
+Raise the Bitswap server limits, which otherwise keep at most 1 MB in flight per peer and slow down the download of the archives by the clients:
+
+```bash
+sudo bash -c 'cat >> /opt/mithril-ipfs/container-init.d/configure-node.sh << EOF
+ipfs config --json Internal.Bitswap.TaskWorkerCount 32
+ipfs config --json Internal.Bitswap.EngineTaskWorkerCount 32
+ipfs config --json Internal.Bitswap.EngineBlockstoreWorkerCount 256
+ipfs config --json Internal.Bitswap.MaxOutstandingBytesPerPeer 8388608
 EOF'
 ```
 

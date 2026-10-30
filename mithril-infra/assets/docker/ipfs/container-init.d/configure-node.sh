@@ -31,6 +31,13 @@ ipfs config --json Swarm.ConnMgr.HighWater 200
 ipfs config --json Swarm.ResourceMgr.MaxMemory '"1GB"'
 ipfs config --json Swarm.ResourceMgr.MaxFileDescriptors 1024
 
+# The default Bitswap server keeps at most 1 MB in flight per peer, which throttles the download of
+# large archives by a client
+ipfs config --json Internal.Bitswap.TaskWorkerCount 32
+ipfs config --json Internal.Bitswap.EngineTaskWorkerCount 32
+ipfs config --json Internal.Bitswap.EngineBlockstoreWorkerCount 256
+ipfs config --json Internal.Bitswap.MaxOutstandingBytesPerPeer 8388608
+
 ipfs config Datastore.StorageMax "${IPFS_STORAGE_MAX}"
 ipfs config --json Experimental.FilestoreEnabled true
 ipfs config Plugins.Plugins.telemetry.Config.Mode off
