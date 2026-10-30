@@ -35,9 +35,9 @@ use super::download_task::CircuitBreaker;
 use super::download_task::{DownloadKind, DownloadTask, LocationToDownload};
 
 /// Percentage of immutable files to download through IPFS if IPFS is enabled, but the query to
-/// fetch the aggregator ratio fails.
+/// fetch the aggregator share fails.
 #[cfg(feature = "unstable")]
-const IPFS_FALLBACK_RATIO: Percentage = Percentage::new(15);
+const IPFS_FALLBACK_SHARE: Percentage = Percentage::new(15);
 
 pub struct InternalArtifactDownloader {
     http_file_downloader: Arc<dyn FileDownloader>,
@@ -128,11 +128,11 @@ impl InternalArtifactDownloader {
 
         #[cfg(feature = "unstable")]
         let ipfs_coin = {
-            let ipfs_ratio = self
+            let ipfs_share_percentage = self
                 .expand_ipfs_share_to_percentage(ipfs_share, locations_have_ipfs)
                 .await;
 
-            WeightedCoin::new(ipfs_ratio, timestamp_seed())
+            WeightedCoin::new(ipfs_share_percentage, timestamp_seed())
         };
 
         let mut tasks = VecDeque::from(self.build_download_tasks_for_immutables(
@@ -370,13 +370,13 @@ impl InternalArtifactDownloader {
         }
 
         match ipfs_share {
-            IpfsShare::Ratio(percentage) => percentage,
-            IpfsShare::AggregatorRatio => match self.aggregator_requester.get_ipfs_share().await {
+            IpfsShare::Custom(percentage) => percentage,
+            IpfsShare::FromAggregator => match self.aggregator_requester.get_ipfs_share().await {
                 Ok(Some(percentage)) => percentage,
-                Ok(None) => IPFS_FALLBACK_RATIO,
+                Ok(None) => IPFS_FALLBACK_SHARE,
                 Err(err) => {
                     warn!(self.logger, "failed to fetch IPFS share from aggregator"; "error" => ?err);
-                    IPFS_FALLBACK_RATIO
+                    IPFS_FALLBACK_SHARE
                 }
             },
         }
@@ -661,7 +661,7 @@ mod tests {
                     &immutable_file_range,
                     &target_dir,
                     download_unpack_options,
-                    IpfsShare::Ratio(Percentage::HUNDRED),
+                    IpfsShare::Custom(Percentage::HUNDRED),
                 )
                 .await
                 .unwrap();
@@ -870,7 +870,7 @@ mod tests {
                         include_ancillary: false,
                         ..DownloadUnpackOptions::default()
                     },
-                    IpfsShare::Ratio(Percentage::new(10)),
+                    IpfsShare::Custom(Percentage::new(10)),
                 )
                 .await
                 .unwrap();
@@ -923,7 +923,7 @@ mod tests {
                     target_dir.as_path(),
                     download_unpack_options,
                     #[cfg(feature = "unstable")]
-                    IpfsShare::Ratio(Percentage::ZERO),
+                    IpfsShare::Custom(Percentage::ZERO),
                 )
                 .await;
 
@@ -977,7 +977,7 @@ mod tests {
                     target_dir.as_path(),
                     download_unpack_options,
                     #[cfg(feature = "unstable")]
-                    IpfsShare::Ratio(Percentage::ZERO),
+                    IpfsShare::Custom(Percentage::ZERO),
                 )
                 .await;
 
@@ -1155,7 +1155,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn fetch_ratio_from_network_if_set_to_aggregator_ratio() {
+        async fn fetch_share_from_aggregator_if_no_custom_share_is_provided() {
             let locations_have_ipfs = true;
             let artifact_downloader = artifact_downloader_with_ipfs(|mock| {
                 mock.expect_get_ipfs_share()
@@ -1164,28 +1164,28 @@ mod tests {
             });
 
             let expanded = artifact_downloader
-                .expand_ipfs_share_to_percentage(IpfsShare::AggregatorRatio, locations_have_ipfs)
+                .expand_ipfs_share_to_percentage(IpfsShare::FromAggregator, locations_have_ipfs)
                 .await;
 
             assert_eq!(Percentage::new(57), expanded);
         }
 
         #[tokio::test]
-        async fn use_fallback_ratio_if_aggregator_does_not_advertise_a_ratio() {
+        async fn use_fallback_share_if_aggregator_does_not_advertise_a_share() {
             let locations_have_ipfs = true;
             let artifact_downloader = artifact_downloader_with_ipfs(|mock| {
                 mock.expect_get_ipfs_share().returning(|| Ok(None)).once();
             });
 
             let expanded = artifact_downloader
-                .expand_ipfs_share_to_percentage(IpfsShare::AggregatorRatio, locations_have_ipfs)
+                .expand_ipfs_share_to_percentage(IpfsShare::FromAggregator, locations_have_ipfs)
                 .await;
 
-            assert_eq!(IPFS_FALLBACK_RATIO, expanded);
+            assert_eq!(IPFS_FALLBACK_SHARE, expanded);
         }
 
         #[tokio::test]
-        async fn log_warning_and_use_fallback_ratio_if_fetching_aggregator_ratio_fails() {
+        async fn log_warning_and_use_fallback_share_if_fetching_aggregator_share_fails() {
             let locations_have_ipfs = true;
             let (logger, log_inspector) = TestLogger::memory();
             let artifact_downloader = InternalArtifactDownloader {
@@ -1198,15 +1198,15 @@ mod tests {
             };
 
             let expanded = artifact_downloader
-                .expand_ipfs_share_to_percentage(IpfsShare::AggregatorRatio, locations_have_ipfs)
+                .expand_ipfs_share_to_percentage(IpfsShare::FromAggregator, locations_have_ipfs)
                 .await;
 
-            assert_eq!(IPFS_FALLBACK_RATIO, expanded);
+            assert_eq!(IPFS_FALLBACK_SHARE, expanded);
             assert!(log_inspector.contains_log("WARN failed to fetch IPFS share from aggregator"));
         }
 
         #[tokio::test]
-        async fn use_provided_ratio_without_network_call_if_a_custom_value_is_provided() {
+        async fn use_provided_share_without_network_call_if_a_custom_value_is_provided() {
             let locations_have_ipfs = true;
             let artifact_downloader = artifact_downloader_with_ipfs(|mock| {
                 mock.expect_get_ipfs_share().never();
@@ -1214,7 +1214,7 @@ mod tests {
 
             let expanded = artifact_downloader
                 .expand_ipfs_share_to_percentage(
-                    IpfsShare::Ratio(Percentage::new(63)),
+                    IpfsShare::Custom(Percentage::new(63)),
                     locations_have_ipfs,
                 )
                 .await;
@@ -1223,7 +1223,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn return_ratio_0_if_locations_does_not_have_ipfs() {
+        async fn return_share_0_if_locations_does_not_have_ipfs() {
             let locations_have_ipfs = false;
             let artifact_downloader = artifact_downloader_with_ipfs(|mock| {
                 mock.expect_get_ipfs_share().never();
@@ -1231,7 +1231,7 @@ mod tests {
 
             let expanded = artifact_downloader
                 .expand_ipfs_share_to_percentage(
-                    IpfsShare::Ratio(Percentage::new(63)),
+                    IpfsShare::Custom(Percentage::new(63)),
                     locations_have_ipfs,
                 )
                 .await;
@@ -1240,7 +1240,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn return_ratio_0_if_no_ipfs_downloader_is_set() {
+        async fn return_share_0_if_no_ipfs_downloader_is_set() {
             let locations_have_ipfs = true;
             let artifact_downloader = InternalArtifactDownloader {
                 ipfs_file_downloader: None,
@@ -1249,18 +1249,18 @@ mod tests {
                 })
             };
 
-            let expanded_with_custom_ratio = artifact_downloader
+            let expanded_with_custom_share = artifact_downloader
                 .expand_ipfs_share_to_percentage(
-                    IpfsShare::Ratio(Percentage::new(63)),
+                    IpfsShare::Custom(Percentage::new(63)),
                     locations_have_ipfs,
                 )
                 .await;
-            assert_eq!(Percentage::ZERO, expanded_with_custom_ratio);
+            assert_eq!(Percentage::ZERO, expanded_with_custom_share);
 
-            let expanded_with_aggregator_ratio = artifact_downloader
-                .expand_ipfs_share_to_percentage(IpfsShare::AggregatorRatio, locations_have_ipfs)
+            let expanded_with_aggregator_share = artifact_downloader
+                .expand_ipfs_share_to_percentage(IpfsShare::FromAggregator, locations_have_ipfs)
                 .await;
-            assert_eq!(Percentage::ZERO, expanded_with_aggregator_ratio);
+            assert_eq!(Percentage::ZERO, expanded_with_aggregator_share);
         }
     }
 }
