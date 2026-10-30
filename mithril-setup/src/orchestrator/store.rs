@@ -11,6 +11,8 @@ pub enum FieldType {
     Bool,
     /// Path to a file
     FilePath,
+    /// Path to a existing file
+    FilePathToCheck,
 }
 
 /// State of a field
@@ -18,6 +20,8 @@ pub enum FieldType {
 pub enum State {
     /// The field is not set
     Unset,
+    /// The filed is filled with default value
+    Default,
     /// The field is discovered from the environment
     Discovered,
     /// The field is guessed from other fields
@@ -43,9 +47,8 @@ pub struct Field {
 
     /// Value
     pub value: Option<String>,
-
-    /// State
-    pub state: State,
+    // /// State
+    // pub state: State,
 }
 
 impl Field {
@@ -62,14 +65,14 @@ impl Field {
             kind,
             default,
             value: None,
-            state: State::Unset,
+            //state: State::Unset,
         }
     }
 
     /// Set the value of the field and update its state to discovered
     pub fn set_discovered_value(&mut self, value: String) {
         self.value = Some(value);
-        self.state = State::Discovered;
+        //self.state = State::Discovered;
     }
 }
 
@@ -95,7 +98,7 @@ impl Store {
         &mut self,
         name: &str,
         value: String,
-        state: State,
+        //state: State,
     ) -> anyhow::Result<&mut Self> {
         let field = self
             .fields
@@ -104,7 +107,7 @@ impl Store {
             .ok_or_else(|| anyhow::anyhow!("Field '{name}' not found"))?;
 
         field.value = Some(value);
-        field.state = state;
+        //field.state = state;
 
         Ok(self)
     }
@@ -117,16 +120,16 @@ mod test {
     mod field {
         use super::*;
 
-        #[test]
-        fn test_field_are_initialized_at_unset_state() {
-            let field = Field::init(
-                "network".to_string(),
-                "The Cardano network to target".to_string(),
-                FieldType::String,
-                Some("preview".to_string()),
-            );
-            assert_eq!(field.state, State::Unset);
-        }
+        // #[test]
+        // fn test_field_are_initialized_at_unset_state() {
+        //     let field = Field::init(
+        //         "network".to_string(),
+        //         "The Cardano network to target".to_string(),
+        //         FieldType::String,
+        //         Some("preview".to_string()),
+        //     );
+        //     assert_eq!(field.state, State::Unset);
+        // }
 
         #[test]
         fn _test_set_discovered_value_sets_the_value_and_state() {
@@ -138,7 +141,7 @@ mod test {
             );
             field.set_discovered_value("mainnet".to_string());
             assert_eq!(field.value.as_deref(), Some("mainnet"));
-            assert_eq!(field.state, State::Discovered);
+            //assert_eq!(field.state, State::Discovered);
         }
     }
 
@@ -181,7 +184,11 @@ mod test {
             let mut store = Store::new(vec![field]);
 
             let updated_field = store
-                .update_field("network", "mainnet".to_string(), State::Discovered)
+                .update_field(
+                    "network",
+                    "mainnet".to_string(),
+                    //State::Discovered
+                )
                 .unwrap()
                 .get_field("network")
                 .unwrap();
