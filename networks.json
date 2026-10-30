@@ -188,6 +188,32 @@
             }
           }
         }
+      },
+      {
+        "ivc-snark-preview": {
+          "aggregators": [
+            {
+              "url": "https://aggregator.ivc-snark-preview.api.mithril.network/aggregator"
+            }
+          ],
+          "genesis": {
+            "dual-verification-key": {
+              "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/ivc-snark-preview/genesis-dual.vkey"
+            }
+          },
+          "protocol-configuration-reader": {
+            "adapter-type": "cardano-chain",
+            "address": {
+              "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/ivc-snark-preview/protocol-config.addr"
+            },
+            "verification-key": {
+              "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/ivc-snark-preview/protocol-config.vkey"
+            }
+          },
+          "circuit-verification-key-registry": {
+            "url": "https://raw.githubusercontent.com/IntersectMBO/mithril/main/mithril-infra/configuration/ivc-snark-preview/circuit-verification-key-registry.json"
+          }
+        }
       }
     ]
   }

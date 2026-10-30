@@ -1,0 +1,56 @@
+{
+  "registry": {
+  "entries": [
+    {
+      "comment": "initial publication (2026-10-01, commit a4230d113)",
+      "digest": "b4f2e431d9b6f016d6c551a3b6ae9f2b6b494941181eabdafd1313fc7c240f25",
+      "end_epoch": null,
+      "name": "certificate-circuit v1 (k=1944)",
+      "start_epoch": 0,
+      "status": "allowed"
+    },
+    {
+      "comment": "initial publication (2026-10-01, commit a4230d113)",
+      "digest": "8a6b414e9b007a6c4ff68a349ea2a7447cb1c94cb7d3de59307197284a8db252",
+      "end_epoch": null,
+      "name": "ivc-circuit v1 (k=1944)",
+      "start_epoch": 0,
+      "status": "allowed"
+    },
+    {
+      "comment": "initial publication (2026-10-09, commit c0c1e86fd)",
+      "digest": "6dd597b297d6b9c80bddea1bb35f4483e3075407207fc06c8e2af62e2ce0702b",
+      "end_epoch": null,
+      "name": "certificate-circuit v2 (k=1944)",
+      "start_epoch": 0,
+      "status": "allowed"
+    },
+    {
+      "comment": "initial publication (2026-10-09, commit c0c1e86fd)",
+      "digest": "9b19d67fd7898e35b0810624b6adc994bab91ba8d7d112126c59d7730c919561",
+      "end_epoch": null,
+      "name": "ivc-circuit v2 (k=1944)",
+      "start_epoch": 0,
+      "status": "allowed"
+    },
+    {
+      "comment": "initial publication (2026-10-29, commit b7c2b3db1)",
+      "digest": "e1cf0b1f44b114c6d38f593eb027397e6ddc61fd8b4ba905fbe3d04f40e83105",
+      "end_epoch": null,
+      "name": "ivc-circuit v3 (k=1944)",
+      "start_epoch": 0,
+      "status": "allowed"
+    },
+    {
+      "comment": "initial publication (2026-10-29, commit b7c2b3db1)",
+      "digest": "d12413d02372a8131f838622c520342cc2a30210587593038fab6cda495e8f1a",
+      "end_epoch": null,
+      "name": "ivc-circuit v3 (k=1054)",
+      "start_epoch": 0,
+      "status": "allowed"
+    }
+  ],
+  "version": 6
+},
+  "signature": "5ccce560a326ffab62f0933a47ec5a5a6ad15fb2e7924d9bafb3f590615b634eb644992dec14f2ffebeeab877b34cb98761d41d07e821b01d5d509be743b590c"
+}
