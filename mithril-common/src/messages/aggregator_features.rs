@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use mithril_stm::AggregateSignatureType;
 
+use crate::entities::Percentage;
 use crate::messages::SignedEntityTypeDiscriminantsMessage;
 
 /// Message advertised by an Aggregator to inform about its features
@@ -17,6 +18,10 @@ pub struct AggregatorFeaturesMessage {
 
     /// Capabilities of the Aggregator
     pub capabilities: AggregatorCapabilities,
+
+    /// Distribution settings for the Cardano database's immutable files.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cardano_database_distribution_settings: Option<CardanoDatabaseDistributionSettings>,
 }
 
 /// Capabilities of an Aggregator
@@ -39,6 +44,37 @@ pub struct AggregatorCapabilities {
 pub struct CardanoTransactionsProverCapabilities {
     /// Maximum number of hashes allowed for a single request
     pub max_hashes_allowed_by_request: usize,
+}
+
+/// Distribution settings for the Cardano database's immutable files.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CardanoDatabaseDistributionSettings {
+    /// List of the supported locations type for the cardano database immutables files
+    pub supported_locations: Vec<ImmutablesLocationType>,
+
+    /// IPFS path of the IPNS record linking to an IPFS directory containing the cardano database immutables files
+    ///
+    /// Only set if the aggregator is configured to distribute immutable files via IPFS and the IPNS
+    /// publication is enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ipns_record: Option<String>,
+
+    /// Share of the immutables files to distribute through IPFS (0-100 inclusive)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ipfs_share: Option<Percentage>,
+}
+
+/// Types of locations for the immutable files.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImmutablesLocationType {
+    /// IPFS location.
+    Ipfs,
+    /// Cloud storage location.
+    CloudStorage,
+    /// Catchall for unknown location variants.
+    #[serde(other)]
+    Unknown,
 }
 
 #[cfg(test)]
@@ -111,6 +147,45 @@ mod tests {
         }
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub struct AggregatorFeaturesMessageUntilV0_8_3 {
+        pub open_api_version: String,
+        pub documentation_url: String,
+        pub capabilities: AggregatorCapabilitiesUntilV0_8_3,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub struct AggregatorCapabilitiesUntilV0_8_3 {
+        pub signed_entity_types: BTreeSet<SignedEntityTypeDiscriminantsMessage>,
+        #[serde(default)]
+        pub aggregate_signature_type: AggregateSignatureType,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub cardano_transactions_prover: Option<CardanoTransactionsProverCapabilitiesUntilV0_8_3>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub struct CardanoTransactionsProverCapabilitiesUntilV0_8_3 {
+        pub max_hashes_allowed_by_request: usize,
+    }
+
+    fn golden_message_until_open_api_0_8_3() -> AggregatorFeaturesMessageUntilV0_8_3 {
+        AggregatorFeaturesMessageUntilV0_8_3 {
+            open_api_version: "0.0.1".to_string(),
+            documentation_url: "https://example.com".to_string(),
+            capabilities: AggregatorCapabilitiesUntilV0_8_3 {
+                signed_entity_types: BTreeSet::from([
+                    SignedEntityTypeDiscriminants::CardanoTransactions.into(),
+                ]),
+                aggregate_signature_type: AggregateSignatureType::Concatenation,
+                cardano_transactions_prover: Some(
+                    CardanoTransactionsProverCapabilitiesUntilV0_8_3 {
+                        max_hashes_allowed_by_request: 100,
+                    },
+                ),
+            },
+        }
+    }
+
     fn golden_message_current() -> AggregatorFeaturesMessage {
         AggregatorFeaturesMessage {
             open_api_version: "0.0.1".to_string(),
@@ -124,6 +199,17 @@ mod tests {
                     max_hashes_allowed_by_request: 100,
                 }),
             },
+            cardano_database_distribution_settings: Some(CardanoDatabaseDistributionSettings {
+                supported_locations: vec![
+                    ImmutablesLocationType::CloudStorage,
+                    ImmutablesLocationType::Ipfs,
+                ],
+                ipns_record: Some(
+                    "/ipns/k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66"
+                        .to_string(),
+                ),
+                ipfs_share: Some(Percentage::new(30)),
+            }),
         }
     }
 
@@ -136,6 +222,11 @@ mod tests {
             "cardano_transactions_prover": {
                 "max_hashes_allowed_by_request": 100
             }
+        },
+        "cardano_database_distribution_settings": {
+            "supported_locations": ["cloud_storage", "ipfs"],
+            "ipns_record": "/ipns/k51qzi5uqu5djd98ozajs6h4ljp0p53lqf4fn4p3904t20yqjbc2nksxotpz66",
+            "ipfs_share": 30
         }
     }"#;
 
@@ -156,10 +247,24 @@ mod tests {
     }
 
     #[test]
+    fn test_current_json_deserialized_into_message_supported_until_open_api_0_8_3() {
+        let json = CURRENT_JSON;
+        let message: AggregatorFeaturesMessageUntilV0_8_3 = serde_json::from_str(json).unwrap();
+
+        assert_eq!(golden_message_until_open_api_0_8_3(), message);
+    }
+
+    #[test]
     fn test_current_json_deserialized_into_current_message() {
         let json = CURRENT_JSON;
         let message: AggregatorFeaturesMessage = serde_json::from_str(json).unwrap();
 
         assert_eq!(golden_message_current(), message);
+    }
+
+    #[test]
+    fn catch_unknown_immutables_location_type() {
+        let unknown: ImmutablesLocationType = serde_json::from_str("\"unknown_type\"").unwrap();
+        assert_eq!(unknown, ImmutablesLocationType::Unknown);
     }
 }

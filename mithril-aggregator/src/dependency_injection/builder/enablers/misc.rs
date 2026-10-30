@@ -16,14 +16,15 @@ use mithril_dmq::{
 };
 use mithril_signed_entity_lock::SignedEntityTypeLock;
 
+use crate::configuration::IpfsRpcServerConfig;
 use crate::database::repository::CertificateRepository;
 use crate::dependency_injection::{DependenciesBuilder, Result};
 use crate::get_dependency;
-use crate::services::SignatureConsumerDmq;
 use crate::services::{
     MessageService, MithrilMessageService, SequentialSignatureProcessor, SignatureConsumer,
-    SignatureConsumerNoop, SignatureProcessor,
+    SignatureConsumerDmq, SignatureConsumerNoop, SignatureProcessor,
 };
+use crate::tools::kubo_rpc_client::KuboRpcClient;
 
 impl DependenciesBuilder {
     async fn build_signed_entity_type_lock(&mut self) -> Result<Arc<SignedEntityTypeLock>> {
@@ -149,5 +150,16 @@ impl DependenciesBuilder {
         );
 
         Ok(Arc::new(signature_processor))
+    }
+
+    /// Builds a `KuboRpcClient`
+    pub fn build_kubo_rpc_client(
+        &self,
+        ipfs_rpc_config: &IpfsRpcServerConfig,
+    ) -> Result<Arc<KuboRpcClient>> {
+        let kubo_rpc_client =
+            KuboRpcClient::new(ipfs_rpc_config.sanitized_url()?, self.root_logger())?;
+
+        Ok(Arc::new(kubo_rpc_client))
     }
 }

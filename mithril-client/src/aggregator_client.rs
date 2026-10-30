@@ -13,10 +13,11 @@ use mithril_aggregator_client::query::{
 };
 
 use mithril_aggregator_client::query::{
-    GetAggregatorStatusQuery, GetCardanoDatabaseListQuery, GetCardanoDatabaseQuery,
-    GetCardanoStakeDistributionQuery, GetCardanoStakeDistributionsListQuery,
-    GetCardanoTransactionProofQuery, GetCardanoTransactionQuery, GetCardanoTransactionsListQuery,
-    GetCertificateQuery, GetCertificatesListQuery, GetMithrilStakeDistributionQuery,
+    GetAggregatorFeaturesQuery, GetAggregatorStatusQuery, GetCardanoDatabaseListQuery,
+    GetCardanoDatabaseQuery, GetCardanoStakeDistributionQuery,
+    GetCardanoStakeDistributionsListQuery, GetCardanoTransactionProofQuery,
+    GetCardanoTransactionQuery, GetCardanoTransactionsListQuery, GetCertificateQuery,
+    GetCertificatesListQuery, GetMithrilStakeDistributionQuery,
     GetMithrilStakeDistributionsListQuery,
     PostIncrementCardanoDatabaseAncillaryRestoredStatisticQuery,
     PostIncrementCardanoDatabaseImmutablesRestoredStatisticQuery,
@@ -36,7 +37,9 @@ use crate::{
     CardanoStakeDistributionListItem, CardanoTransactionSnapshot,
     CardanoTransactionSnapshotListItem, CardanoTransactionsProofs, MithrilCertificate,
     MithrilCertificateListItem, MithrilResult, MithrilStakeDistribution,
-    MithrilStakeDistributionListItem, common::EpochSpecifier, era::FetchedEra,
+    MithrilStakeDistributionListItem,
+    common::{EpochSpecifier, Percentage},
+    era::FetchedEra,
 };
 
 use crate::{
@@ -102,6 +105,17 @@ impl CardanoDatabaseAggregatorRequest for AggregatorHttpClient {
             .with_context(
                 || "Failed to increment Cardano database ancillary files restored statistic",
             )
+    }
+
+    async fn get_ipfs_share(&self) -> MithrilResult<Option<Percentage>> {
+        let aggregator_features = self
+            .send(GetAggregatorFeaturesQuery::current())
+            .await
+            .with_context(|| "Failed to get aggregator features")?;
+
+        Ok(aggregator_features
+            .cardano_database_distribution_settings
+            .and_then(|cdd| cdd.ipfs_share))
     }
 }
 
@@ -278,7 +292,9 @@ mod tests {
     use httpmock::MockServer;
     use serde_json::json;
 
-    use mithril_common::messages::AggregatorStatusMessage;
+    use mithril_common::messages::{
+        AggregatorFeaturesMessage, AggregatorStatusMessage, CardanoDatabaseDistributionSettings,
+    };
 
     use crate::common::{SupportedEra, test::Dummy};
     use crate::test_utils::TestLogger;
@@ -308,5 +324,66 @@ mod tests {
 
         let mithril_era = client.fetch_current_era().await.unwrap();
         assert_eq!(mithril_era.era, SupportedEra::Lagrange.to_string());
+    }
+
+    mod get_ipfs_share {
+        use super::*;
+
+        #[tokio::test]
+        async fn returns_share_from_cardano_database_distribution() {
+            let (server, client) = setup_server_and_client();
+            server.mock(|when, then| {
+                when.any_request();
+                then.status(200).json_body(json!(AggregatorFeaturesMessage {
+                    cardano_database_distribution_settings: Some(
+                        CardanoDatabaseDistributionSettings {
+                            supported_locations: vec![],
+                            ipns_record: None,
+                            ipfs_share: Some(Percentage::new(35)),
+                        }
+                    ),
+                    ..Dummy::dummy()
+                }));
+            });
+
+            let share = client.get_ipfs_share().await.unwrap();
+            assert_eq!(Some(Percentage::new(35)), share);
+        }
+
+        #[tokio::test]
+        async fn returns_none_without_cardano_database_distribution() {
+            let (server, client) = setup_server_and_client();
+            server.mock(|when, then| {
+                when.any_request();
+                then.status(200).json_body(json!(AggregatorFeaturesMessage {
+                    cardano_database_distribution_settings: None,
+                    ..Dummy::dummy()
+                }));
+            });
+
+            let share = client.get_ipfs_share().await.unwrap();
+            assert_eq!(None, share);
+        }
+
+        #[tokio::test]
+        async fn returns_none_when_cardano_database_distribution_has_no_ipfs_share() {
+            let (server, client) = setup_server_and_client();
+            server.mock(|when, then| {
+                when.any_request();
+                then.status(200).json_body(json!(AggregatorFeaturesMessage {
+                    cardano_database_distribution_settings: Some(
+                        CardanoDatabaseDistributionSettings {
+                            supported_locations: vec![],
+                            ipns_record: None,
+                            ipfs_share: None,
+                        }
+                    ),
+                    ..Dummy::dummy()
+                }));
+            });
+
+            let share = client.get_ipfs_share().await.unwrap();
+            assert_eq!(None, share);
+        }
     }
 }

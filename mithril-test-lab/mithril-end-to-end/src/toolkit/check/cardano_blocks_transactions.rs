@@ -1,4 +1,4 @@
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use slog_scope::{info, warn};
 
 use mithril_common::{
@@ -94,7 +94,7 @@ impl CheckCardanoBlocksTransactionsToolkit {
             return Ok(());
         }
 
-        let result_file = client
+        let tx_certify_output = client
             .run(ClientCommand::CardanoTransactionV2(
                 CardanoTransactionV2Command::Certify {
                     tx_hashes: tx_hashes.clone(),
@@ -103,19 +103,8 @@ impl CheckCardanoBlocksTransactionsToolkit {
             .await?;
         info!("Client verified the Cardano transactions V2"; "tx_hashes" => ?tx_hashes);
 
-        let file = std::fs::read_to_string(&result_file).with_context(|| {
-            format!(
-                "Failed to read client output from file `{}`",
-                result_file.display()
-            )
-        })?;
-        let result: ClientCardanoTransactionCertifyResult = serde_json::from_str(&file)
-            .with_context(|| {
-                format!(
-                    "Failed to parse client output as json from file `{}`",
-                    result_file.display()
-                )
-            })?;
+        let result: ClientCardanoTransactionCertifyResult =
+            tx_certify_output.read_output_as_json()?;
 
         info!("Asserting that all Cardano transactions V2 were verified by the Client...");
         let certified_tx_hashes_result: Vec<String> = result
@@ -156,25 +145,13 @@ impl CheckCardanoBlocksTransactionsToolkit {
             return Ok(());
         }
 
-        let result_file = client
+        let block_certify_output = client
             .run(ClientCommand::CardanoBlock(CardanoBlockCommand::Certify {
                 block_hashes: block_hashes.clone(),
             }))
             .await?;
         info!("Client verified the Cardano blocks"; "block_hashes" => ?block_hashes);
-        let file = std::fs::read_to_string(&result_file).with_context(|| {
-            format!(
-                "Failed to read client output from file `{}`",
-                result_file.display()
-            )
-        })?;
-        let result: ClientCardanoBlockCertifyResult =
-            serde_json::from_str(&file).with_context(|| {
-                format!(
-                    "Failed to parse client output as json from file `{}`",
-                    result_file.display()
-                )
-            })?;
+        let result: ClientCardanoBlockCertifyResult = block_certify_output.read_output_as_json()?;
 
         info!("Asserting that all Cardano blocks were verified by the Client...");
         let certified_blocks_hashes_result: Vec<String> = result

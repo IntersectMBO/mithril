@@ -5,14 +5,15 @@ use std::str::FromStr;
 use anyhow::Context;
 use config::{ConfigError, Map, Source, Value, ValueKind};
 use semver::Version;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de};
 
 use mithril_cardano_node_chain::chain_observer::ChainObserverType;
 use mithril_cli_helper::{register_config_value, serde_deserialization};
 use mithril_common::crypto_helper::{GenesisEd25519Signer, ManifestSigner};
 use mithril_common::entities::{
     BlockNumber, CompressionAlgorithm, ConfigSecret, HexEncodedGenesisVerificationKey,
-    HexEncodedKey, ProtocolParameters, SignedEntityConfig, SignedEntityTypeDiscriminants,
+    HexEncodedKey, Percentage, ProtocolParameters, SignedEntityConfig,
+    SignedEntityTypeDiscriminants,
 };
 use mithril_common::{AggregateSignatureType, CardanoNetwork, StdResult};
 use mithril_dmq::DmqNetwork;
@@ -125,6 +126,11 @@ pub trait ConfigurationSource {
     /// Configuration parameters to connect to a Kubo IPFS RPC API, setting this will enable IPFS upload for immutable snapshots
     fn ipfs_rpc_server_config(&self) -> Option<IpfsRpcServerConfig> {
         panic!("ipfs_rpc_server_config is not implemented.");
+    }
+
+    /// Advertised share of immutables to download through IPFS from the clients (0-100 inclusive)
+    fn ipfs_share(&self) -> Percentage {
+        panic!("ipfs_share is not implemented.");
     }
 
     /// Server listening IP
@@ -513,6 +519,10 @@ pub struct ServeCommandConfiguration {
     )]
     pub ipfs_rpc_server_config: Option<IpfsRpcServerConfig>,
 
+    /// Advertised share of immutables to download through IPFS from the clients (0-100 inclusive)
+    #[serde(deserialize_with = "deserialize_strict_percentage")]
+    pub ipfs_share: Percentage,
+
     /// Server listening IP
     pub server_ip: String,
 
@@ -748,6 +758,15 @@ impl FromStr for IpfsRpcServerConfig {
     }
 }
 
+/// Deserialize a [Percentage], failing for values above 100 instead of saturating them.
+fn deserialize_strict_percentage<'de, D>(deserializer: D) -> Result<Percentage, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = u8::deserialize(deserializer)?;
+    Percentage::try_new(value).map_err(de::Error::custom)
+}
+
 /// Configuration to connect to the Blockfrost API.
 ///
 /// Currently only used to fetch the ticker and name for registered pools.
@@ -825,6 +844,7 @@ impl ServeCommandConfiguration {
             snapshot_bucket_name: None,
             snapshot_use_cdn_domain: false,
             ipfs_rpc_server_config: None,
+            ipfs_share: Percentage::new(5),
             server_ip: "0.0.0.0".to_string(),
             server_port: 8000,
             public_server_url: None,
@@ -941,6 +961,10 @@ impl ConfigurationSource for ServeCommandConfiguration {
 
     fn ipfs_rpc_server_config(&self) -> Option<IpfsRpcServerConfig> {
         self.ipfs_rpc_server_config.clone()
+    }
+
+    fn ipfs_share(&self) -> Percentage {
+        self.ipfs_share
     }
 
     fn server_ip(&self) -> String {
@@ -1150,6 +1174,9 @@ pub struct DefaultConfiguration {
     /// Use CDN domain to construct snapshot urls default setting (if snapshot_uploader_type is Gcp)
     pub snapshot_use_cdn_domain: String,
 
+    /// Advertised share of immutables to download through IPFS from the clients (0-100 inclusive)
+    pub ipfs_share: u8,
+
     /// Signer importer run interval default setting
     pub signer_importer_run_interval: u64,
 
@@ -1218,6 +1245,7 @@ impl Default for DefaultConfiguration {
             disable_digests_cache: "false".to_string(),
             snapshot_compression_algorithm: "zstandard".to_string(),
             snapshot_use_cdn_domain: "false".to_string(),
+            ipfs_share: 5,
             signer_importer_run_interval: 720,
             allow_unparsable_block: "false".to_string(),
             cardano_blocks_transactions_prover_cache_pool_size: 10,
@@ -1275,6 +1303,7 @@ impl Source for DefaultConfiguration {
         register_config_value!(result, &namespace, myself.disable_digests_cache);
         register_config_value!(result, &namespace, myself.snapshot_compression_algorithm);
         register_config_value!(result, &namespace, myself.snapshot_use_cdn_domain);
+        register_config_value!(result, &namespace, myself.ipfs_share);
         register_config_value!(result, &namespace, myself.signer_importer_run_interval);
         register_config_value!(result, &namespace, myself.allow_unparsable_block);
         register_config_value!(
@@ -1654,6 +1683,41 @@ mod test {
             );
         } else {
             panic!("Expected GcpKms variant but got {deserialized:?}");
+        }
+    }
+
+    mod ipfs_share {
+        use super::*;
+
+        #[derive(Debug, Deserialize)]
+        struct IpfsShareConfiguration {
+            #[serde(deserialize_with = "deserialize_strict_percentage")]
+            ipfs_share: Percentage,
+        }
+
+        fn deserialize_ipfs_share(value: &str) -> Result<Percentage, ConfigError> {
+            config::Config::builder()
+                .set_override("ipfs_share", value)?
+                .build()?
+                .try_deserialize::<IpfsShareConfiguration>()
+                .map(|configuration| configuration.ipfs_share)
+        }
+
+        #[test]
+        fn accept_a_number_between_0_and_100() {
+            assert_eq!(Percentage::ZERO, deserialize_ipfs_share("0").unwrap());
+            assert_eq!(Percentage::new(42), deserialize_ipfs_share("42").unwrap());
+            assert_eq!(Percentage::HUNDRED, deserialize_ipfs_share("100").unwrap());
+        }
+
+        #[test]
+        fn reject_invalid_values() {
+            for value in ["101", "256", "-1", "4.2", "whatever"] {
+                assert!(
+                    deserialize_ipfs_share(value).is_err(),
+                    "'{value}' should be rejected"
+                );
+            }
         }
     }
 

@@ -106,6 +106,10 @@ inputs:
     description: IPNS signing key in PEM PKCS#8 format used by the IPFS node to publish the immutable archives directory (optional, the aggregator does not publish to IPNS if empty, experimental).
     required: false
     default: ""
+  mithril_aggregator_ipfs_share:
+    description: The aggregator advertised share of immutables to download through IPFS from the clients (0-100 inclusive)
+    required: false
+    default: "5"
   ipfs_node_version:
     description: IPFS node version (experimental).
     required: false
@@ -324,6 +328,7 @@ runs:
           mithril_ipfs_enabled                                                         = "${{ inputs.mithril_ipfs_enabled }}"
           mithril_ipfs_storage_max                                                     = "${{ inputs.mithril_ipfs_storage_max }}"
           mithril_ipfs_ipns_signing_key                                                = "${{ steps.prepare.outputs.mithril_ipfs_ipns_signing_key_base64 }}"
+          mithril_aggregator_ipfs_share                                                = "${{ inputs.mithril_aggregator_ipfs_share }}"
           mithril_api_domain                                                           = "${{ inputs.mithril_api_domain }}"
           mithril_image_id                                                             = "${{ inputs.mithril_image_id }}"
           mithril_genesis_verification_key_url                                         = "${{ inputs.mithril_genesis_verification_key_url }}"

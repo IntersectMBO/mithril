@@ -21,6 +21,14 @@ As a minor extension, we have adopted a slightly different versioning convention
 
 - Fix Cardano chain rollbacks missed by the Cardano blocks and transactions importer in the signer and aggregator.
 
+- The Mithril aggregator advertises the supported locations of the immutable files in the new `cardano_database_distribution_settings` field of its `/` route.
+
+- **UNSTABLE**:
+  - IPFS:
+    - The Mithril aggregator advertises the IPNS record of the immutable files directory in the `/` route when the `ipns_key_name` field of the `ipfs_rpc_server_config` configuration parameter is set.
+    - New `ipfs_share` configuration parameter of the Mithril aggregator to set the share of the immutable files to download through IPFS, advertised in the `/` route.
+    - The Mithril client library and CLI no longer download all the immutable files through IPFS first when an IPFS RPC URL is configured: IPFS is now tried first only for the share advertised by the aggregator, the other files try IPFS last.
+
 ## Mithril Distribution [2642.0] - 2026-10-20
 
 - **REMOVED** support for `Gzip` compression in the Mithril aggregator and client:

@@ -4,7 +4,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
-#[cfg(any(feature = "fs", not(target_family = "wasm")))]
+#[cfg(feature = "fs")]
 use chrono::Utc;
 #[cfg(not(target_family = "wasm"))]
 use rand::SeedableRng;
@@ -56,6 +56,8 @@ use crate::mithril_stake_distribution_client::MithrilStakeDistributionClient;
 use crate::utils::AncillaryVerifier;
 #[cfg(feature = "fs")]
 use crate::utils::TimestampTempDirectoryProvider;
+#[cfg(not(target_family = "wasm"))]
+use crate::utils::timestamp_seed;
 
 const DEFAULT_CLIENT_TYPE: &str = "LIBRARY";
 
@@ -572,13 +574,7 @@ impl ClientBuilder {
     fn default_aggregator_discoverer() -> Arc<dyn AggregatorDiscoverer<AggregatorEndpoint>> {
         Arc::new(ShuffleAggregatorDiscoverer::new(
             Arc::new(HttpConfigAggregatorDiscoverer::default()),
-            {
-                let mut seed = [0u8; 32];
-                let timestamp = Utc::now().timestamp_nanos_opt().unwrap_or(0);
-                seed[..8].copy_from_slice(&timestamp.to_le_bytes());
-
-                StdRng::from_seed(seed)
-            },
+            StdRng::from_seed(timestamp_seed()),
         ))
     }
 

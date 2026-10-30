@@ -10,7 +10,7 @@ mod signer;
 pub use aggregator::{Aggregator, AggregatorConfig};
 pub use client::{
     CardanoBlockCommand, CardanoDbV2Command, CardanoStakeDistributionCommand,
-    CardanoTransactionCommand, CardanoTransactionV2Command, Client, ClientCommand,
+    CardanoTransactionCommand, CardanoTransactionV2Command, Client, ClientCommand, ClientOutput,
     MithrilStakeDistributionCommand, ToolsCommand, UtxoHdCommand,
 };
 pub use genesis_keys::GenesisKeys;
