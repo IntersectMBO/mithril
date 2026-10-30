@@ -5,7 +5,7 @@
 //! ## Running
 //!
 //! ```text
-//! cargo bench -p mithril-stm --features snark,benchmark-internals --bench halo2_ivc_snark -- <id-or-prefix>
+//! cargo bench -p mithril-stm --features benchmark-internals --bench halo2_ivc_snark -- <id-or-prefix>
 //! ```
 //!
 //! `<id-or-prefix>` is a single **literal** substring of a benchmark id (e.g. `ivc/same_epoch/prove` or

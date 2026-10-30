@@ -25,9 +25,7 @@ impl BaseFieldElement {
         BaseFieldElement(JubjubBase::ONE)
     }
 
-    #[cfg(all(test, feature = "snark"))]
-    // TODO: remove this allow dead_code directive when function is called or snark is activated
-    #[allow(dead_code)]
+    #[cfg(test)]
     /// Generates a new random scalar field element
     pub(crate) fn random(rng: &mut (impl RngCore + CryptoRng)) -> Self {
         BaseFieldElement(JubjubBase::random(rng))
@@ -176,7 +174,7 @@ impl ScalarFieldElement {
         false
     }
 
-    #[cfg(all(test, feature = "snark"))]
+    #[cfg(test)]
     /// Retrieves the additive identity element of the scalar field
     pub(crate) fn get_zero() -> Self {
         ScalarFieldElement(JubjubScalar::ZERO)
@@ -376,7 +374,6 @@ mod tests {
             value.expect_err("Bytes conversion should fail because input is higher than modulus.");
         }
 
-        #[cfg(feature = "snark")]
         #[test]
         fn from_raw_recover_element_correctly() {
             let mut rng = ChaCha20Rng::from_seed([3u8; 32]);

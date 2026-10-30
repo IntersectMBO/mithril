@@ -32,8 +32,8 @@ version.
 > [!NOTE]
 > The `circuit-key-registry` command and the `circuit_verification_key_registry_url` parameter of
 > the aggregator, and the `--circuit-verification-key-registry-path` parameter of the client, only
-> exist in binaries built with the `snark` feature, which the distributions do not enable
-> yet: a deployed Mithril network enforces the registry once its distribution is built with it.
+> exist in binaries built with the `snark` feature. It is enabled by default, so they are only
+> missing from binaries built with `--no-default-features`.
 
 > [!IMPORTANT]
 > `networks.json` only routes the clients to a registry, it is not trusted: a wrong entry can only
@@ -108,10 +108,10 @@ that changed, published before the first epoch certified with the new parameters
 
 - The genesis secret key of the Mithril network, on the air-gapped machine used for signing
 - The protocol parameters of the Mithril network
-- A `mithril-aggregator` binary built with the `snark` feature:
+- A `mithril-aggregator` binary built with the `snark` feature, which is enabled by default:
 
 ```bash
-cargo build --release -p mithril-aggregator --features snark
+cargo build --release -p mithril-aggregator
 ```
 
 ## Setup environment variables

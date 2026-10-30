@@ -155,7 +155,6 @@ mod tests {
             let entry = RegistrationEntry::new(
                 initializer.get_verification_key_proof_of_possession_for_concatenation(),
                 initializer.stake,
-                #[cfg(feature = "snark")]
                 initializer.schnorr_verification_key,
             )
             .unwrap();

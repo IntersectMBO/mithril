@@ -1,6 +1,6 @@
 [package]
 name = "mithril-client-cli"
-version = "0.13.32"
+version = "0.13.33"
 description = "A Mithril Client"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -22,7 +22,7 @@ name = "mithril-client"
 path = "src/main.rs"
 
 [features]
-default = ["rustls"]
+default = ["rustls", "snark"]
 rustls = ["mithril-client/rustls"]
 snark = ["mithril-client/snark"]
 

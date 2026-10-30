@@ -1,6 +1,6 @@
 [package]
 name = "mithril-signer"
-version = "1.2.8"
+version = "1.2.9"
 description = "A Mithril Signer"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -14,7 +14,7 @@ repository = { workspace = true }
 ignored = ["reqwest"]
 
 [features]
-default = ["rustls"]
+default = ["rustls", "snark"]
 snark = ["mithril-common/snark"]
 rustls = ["reqwest/rustls"]
 

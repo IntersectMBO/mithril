@@ -21,6 +21,8 @@ As a minor extension, we have adopted a slightly different versioning convention
 
 - Fix Cardano chain rollbacks missed by the Cardano blocks and transactions importer in the signer and aggregator.
 
+- The SNARK proof systems are enabled by default in the Mithril nodes, client and libraries, and can be left out with `--no-default-features`.
+
 ## Mithril Distribution [2642.0] - 2026-10-20
 
 - **REMOVED** support for `Gzip` compression in the Mithril aggregator and client:

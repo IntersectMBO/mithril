@@ -8,7 +8,7 @@
   - the [_concatenation proof system_](https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/concatenation) (Section 4.3), currently used by the Mithril network. The aggregate signature carries one entry per contributing signer, together covering at least the `k` winning lottery indices the quorum requires, so its size follows the number of signers needed rather than `k` alone. Verification needs no trusted setup.
   - a [_non-recursive SNARK_](https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/non-recursive-snark) proof system, in which the aggregate signature consists in a single succinct proof that the quorum was met, so a verifier checks one proof rather than every individual signature.
   - a [_recursive SNARK_](https://mithril.network/doc/mithril/advanced/mithril-protocol/aggregation/recursive-snark) proof system, in which each aggregate signature proves the whole chain behind it, so a verifier checks one proof rather than every aggregate signature since genesis.
-- The two SNARK proof systems are **experimental**. They are gated behind the `snark` feature.
+- The two SNARK proof systems are **experimental**. They are gated behind the `snark` feature, which is enabled by default.
 - The [Mithril SNARK book](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/SNARK.md) describes the two SNARK proof systems: the protocol rules they share, their circuits, keys and trusted setup, testing, rollout and security.
 - We implemented the concatenation proof system as batch proofs:
   - Individual signatures do not contain the Merkle path to prove membership of the avk. Instead, it is the role of the aggregator to generate such proofs. This allows for a more efficient implementation of batched membership proofs (or batched Merkle paths).
@@ -49,10 +49,11 @@ cargo build --release
 
 ## Trusted setup
 
-The two SNARK proof systems are enabled with the `snark` feature:
+The two SNARK proof systems are enabled by the `snark` feature, which is a default feature.
+To build the library without them:
 
 ```shell
-cargo build --release --features snark
+cargo build --release --no-default-features --features num-integer-backend
 ```
 
 Proving needs the SRS of the [Midnight trusted setup](https://github.com/midnightntwrk/midnight-trusted-setup).
@@ -100,11 +101,11 @@ cargo bench
 
 One runnable example per proof system, each covering aggregation and verification.
 
-| Example                                                                                                                                  | Command                                                                                                 |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [Concatenation](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/concatenation_aggregate_signature.rs)             | `cargo run -p mithril-stm --example concatenation_aggregate_signature`                                  |
-| [Non-recursive SNARK](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/non_recursive_snark_aggregate_signature.rs) | `cargo run --release -p mithril-stm --example non_recursive_snark_aggregate_signature --features snark` |
-| [Recursive SNARK](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/recursive_snark_aggregate_signature.rs)         | `cargo run --release -p mithril-stm --example recursive_snark_aggregate_signature --features snark`     |
+| Example                                                                                                                                  | Command                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| [Concatenation](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/concatenation_aggregate_signature.rs)             | `cargo run -p mithril-stm --example concatenation_aggregate_signature`                 |
+| [Non-recursive SNARK](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/non_recursive_snark_aggregate_signature.rs) | `cargo run --release -p mithril-stm --example non_recursive_snark_aggregate_signature` |
+| [Recursive SNARK](https://github.com/IntersectMBO/mithril/blob/main/mithril-stm/examples/recursive_snark_aggregate_signature.rs)         | `cargo run --release -p mithril-stm --example recursive_snark_aggregate_signature`     |
 
 The concatenation example runs in well under a second. The two SNARK examples generate real proofs and are substantially more demanding; each states its measured cost and its hardware requirement in its own header. Both need the trusted setup cached beforehand, see [Trusted setup](#trusted-setup).
 
@@ -168,7 +169,7 @@ STM/Blake2b/Verification/k: 250, m: 1523, nr_parties: 2000
 
 ## Certificate Circuit Benchmarks
 
-Criterion benchmarks for the non-recursive `CertificateCircuit` (Halo2/KZG), gated behind the `snark` and `benchmark-internals` features.
+Criterion benchmarks for the non-recursive `CertificateCircuit` (Halo2/KZG), gated behind the `benchmark-internals` feature and the default `snark` feature.
 
 Three metrics are measured per tier: VK/PK setup time, proof generation time, and proof verification time. Circuit cost and proof size are printed at startup.
 
@@ -197,22 +198,22 @@ Three metrics are measured per tier: VK/PK setup time, proof generation time, an
 Small and medium tiers use Criterion (10 samples, flat sampling — one iteration per sample):
 
 ```bash
-cargo bench -p mithril-stm --features snark,benchmark-internals --bench halo2_snark -- certificate/small
-cargo bench -p mithril-stm --features snark,benchmark-internals --bench halo2_snark -- certificate/medium
+cargo bench -p mithril-stm --features benchmark-internals --bench halo2_snark -- certificate/small
+cargo bench -p mithril-stm --features benchmark-internals --bench halo2_snark -- certificate/medium
 ```
 
 Large and production tiers run a single timed measurement (Criterion's 10-sample minimum is impractical at this scale):
 
 ```bash
-cargo bench -p mithril-stm --features snark,benchmark-internals --bench halo2_snark -- certificate/large
-cargo bench -p mithril-stm --features snark,benchmark-internals --bench halo2_snark -- certificate/production
+cargo bench -p mithril-stm --features benchmark-internals --bench halo2_snark -- certificate/large
+cargo bench -p mithril-stm --features benchmark-internals --bench halo2_snark -- certificate/production
 ```
 
 ## CI Parameter Benchmarks
 
 Single-run benchmarks for the `CertificateCircuit` across small `k` values, covering both the real prover and the mock prover (`MockProver` from `midnight_proofs`). Used to determine the optimal circuit parameters for CI and end-to-end tests.
 
-Gated behind the `snark` and `benchmark-internals` features.
+Gated behind the `benchmark-internals` feature and the default `snark` feature.
 
 ### E2E extrapolation formula
 
@@ -244,5 +245,5 @@ All tiers complete in under 15 minutes on any developer machine with at least 4 
 ### Running the benchmarks
 
 ```bash
-cargo bench -p mithril-stm --features snark,benchmark-internals --bench halo2_prover_modes
+cargo bench -p mithril-stm --features benchmark-internals --bench halo2_prover_modes
 ```

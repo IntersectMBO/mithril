@@ -88,7 +88,7 @@ debug = "line-tables-only"
 # Not cached by `Swatinem/rust-cache`, so generating them is a waste of resources
 incremental = false
 
-# Variant of `ci-tests` used *only* by the `snark` Rust test job (selected via
+# Variant of `ci-tests` used *only* by the `mithril-stm` Rust test job (selected via
 # `--cargo-profile ci-tests-snark` in the matching CI matrix entry). All other test jobs keep
 # using `ci-tests` and are unaffected by the `opt-level = 3` overrides below.
 [profile.ci-tests-snark]

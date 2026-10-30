@@ -208,9 +208,8 @@ impl Serialize for ClosedRegistrationEntry {
         }
         #[cfg(feature = "snark")]
         {
-            let has_snark_fields = self.verification_key_for_snark.is_some()
-                && self.lottery_target_value.is_some()
-                && cfg!(feature = "snark");
+            let has_snark_fields =
+                self.verification_key_for_snark.is_some() && self.lottery_target_value.is_some();
             let tuples_number = if has_snark_fields { 4 } else { 2 };
             let mut tuple = serializer.serialize_tuple(tuples_number)?;
             tuple.serialize_element(&self.verification_key_for_concatenation)?;

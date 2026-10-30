@@ -1,6 +1,6 @@
 [package]
 name = "mithrildemo"
-version = "0.1.58"
+version = "0.1.59"
 authors = { workspace = true }
 edition = { workspace = true }
 documentation = { workspace = true }
@@ -9,6 +9,7 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [features]
+default = ["snark"]
 # Enable experimental SNARK support in mithril-stm and mithril-common.
 snark = ["mithril-stm/snark", "mithril-common/snark"]
 

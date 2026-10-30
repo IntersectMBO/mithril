@@ -648,7 +648,7 @@ mod tests {
                 tests::common::asset_readers::load_embedded_verification_context_asset,
                 types::MessageHash,
             },
-            proof_system::{MERKLE_TREE_DEPTH_FOR_SNARK, halo2_ivc_snark::IvcVerifierData},
+            proof_system::halo2_ivc_snark::IvcVerifierData,
             protocol::aggregate_signature::tests::setup_equal_parties,
         };
 
@@ -667,15 +667,15 @@ mod tests {
 
         // A dummy Snark proof suffices: the ancillary-data checks fire before any cryptographic
         // verification, so the proof bytes are never inspected.
-        fn dummy_snark_aggregate_signature(params: Parameters) -> AggregateSignature<D> {
-            let proof = SnarkProof::<D>::new(vec![], params, MERKLE_TREE_DEPTH_FOR_SNARK);
+        fn dummy_snark_aggregate_signature() -> AggregateSignature<D> {
+            let proof = SnarkProof::<D>::new(vec![]);
             AggregateSignature::Snark(Box::new(proof))
         }
 
         #[test]
         fn snark_verify_fails_without_ancillary_verifier_data() {
             let (avk, params) = snark_capable_avk_and_params();
-            let snark = dummy_snark_aggregate_signature(params);
+            let snark = dummy_snark_aggregate_signature();
 
             let err = snark
                 .verify(&[0u8; 32], &avk, &params, None, None)
@@ -690,7 +690,7 @@ mod tests {
         #[test]
         fn snark_verify_fails_with_ivc_ancillary_verifier_data() {
             let (avk, params) = snark_capable_avk_and_params();
-            let snark = dummy_snark_aggregate_signature(params);
+            let snark = dummy_snark_aggregate_signature();
             let context = load_embedded_verification_context_asset()
                 .expect("verification context asset should load");
             let wrong_typed_ancillary = AncillaryVerifierData::IvcSnark(IvcVerifierData::new(
@@ -711,12 +711,7 @@ mod tests {
 
         #[test]
         fn legacy_outer_envelope_wraps_new_cbor_snark_proof() {
-            let params = Parameters {
-                m: 10,
-                k: 3,
-                phi_f: 0.9,
-            };
-            let proof = SnarkProof::<D>::new(vec![1, 2, 3], params, MERKLE_TREE_DEPTH_FOR_SNARK);
+            let proof = SnarkProof::<D>::new(vec![1, 2, 3]);
             let inner = proof.to_bytes().expect("proof serialization should not fail");
 
             // Legacy outer type-prefix framing wrapping a new-format (versioned CBOR) inner proof
@@ -1745,9 +1740,9 @@ mod tests {
             );
         }
 
-        const GOLDEN_CBOR_BYTES: &[u8; 3701] = &[
+        const GOLDEN_CBOR_BYTES: &[u8; 3652] = &[
             1, 162, 110, 115, 105, 103, 110, 97, 116, 117, 114, 101, 95, 116, 121, 112, 101, 1,
-            107, 112, 114, 111, 111, 102, 95, 98, 121, 116, 101, 115, 89, 14, 84, 1, 163, 109, 99,
+            107, 112, 114, 111, 111, 102, 95, 98, 121, 116, 101, 115, 89, 14, 35, 1, 161, 109, 99,
             105, 114, 99, 117, 105, 116, 95, 112, 114, 111, 111, 102, 89, 14, 16, 151, 148, 199,
             209, 50, 194, 34, 206, 155, 114, 128, 191, 38, 204, 163, 187, 211, 118, 95, 87, 7, 21,
             207, 247, 101, 178, 84, 63, 189, 229, 105, 58, 57, 176, 118, 14, 204, 71, 148, 143, 9,
@@ -1938,10 +1933,7 @@ mod tests {
             189, 252, 122, 226, 58, 186, 172, 197, 175, 133, 107, 39, 220, 7, 35, 149, 225, 137,
             229, 28, 87, 86, 180, 233, 176, 109, 66, 47, 128, 70, 231, 70, 166, 149, 217, 217, 125,
             80, 159, 50, 138, 175, 125, 9, 150, 148, 121, 28, 84, 204, 49, 110, 129, 128, 146, 90,
-            239, 68, 74, 117, 79, 254, 155, 196, 63, 144, 110, 116, 128, 0, 102, 112, 97, 114, 97,
-            109, 115, 163, 97, 109, 24, 200, 97, 107, 5, 101, 112, 104, 105, 95, 102, 251, 63, 233,
-            153, 153, 153, 153, 153, 154, 113, 109, 101, 114, 107, 108, 101, 95, 116, 114, 101,
-            101, 95, 100, 101, 112, 116, 104, 4,
+            239, 68, 74, 117, 79, 254, 155, 196, 63, 144, 110, 116, 128, 0,
         ];
 
         #[test]

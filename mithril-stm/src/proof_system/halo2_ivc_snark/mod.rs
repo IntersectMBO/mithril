@@ -17,7 +17,7 @@ pub(crate) use off_circuit_checker::MithrilIvcOffCircuitChecker;
 pub(crate) use proof::{IvcChainStepBundle, IvcProof, IvcProver};
 #[cfg(feature = "benchmark-internals")]
 pub(crate) use prover_input::IvcProverInput;
-#[cfg(all(test, feature = "snark"))]
+#[cfg(test)]
 pub(crate) use prover_input_helpers::tests::build_standard_rolling_state;
 pub(crate) use prover_setup::IvcProverSetup;
 pub(crate) use rolling_state::{IvcRollingState, IvcTransitionType};

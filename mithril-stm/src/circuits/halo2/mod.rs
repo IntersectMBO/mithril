@@ -14,22 +14,14 @@
 use crate::Parameters;
 
 pub mod adapters;
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) mod witness_assignments;
-// TODO(snark): remove `allow(dead_code)` once Halo2 modules are fully wired into STM.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod circuit;
 pub mod errors;
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod gadgets;
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod key_serialization;
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod keys;
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod types;
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod witness;
+pub(crate) mod witness_assignments;
 
 #[cfg(any(test, feature = "benchmark-internals"))]
 pub mod bench;

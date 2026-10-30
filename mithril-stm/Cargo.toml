@@ -1,6 +1,6 @@
 [package]
 name = "mithril-stm"
-version = "0.13.1"
+version = "0.14.0"
 edition = { workspace = true }
 authors = { workspace = true }
 homepage = { workspace = true }
@@ -40,9 +40,9 @@ ignored = ["serde_bytes"]
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [features]
-default = ["num-integer-backend"]
+default = ["num-integer-backend", "snark"]
 # For benchmarking
-benchmark-internals = []
+benchmark-internals = ["dep:rand_chacha"]
 # Enable experimental SNARK support 
 snark = [
     "dep:ff",
@@ -52,10 +52,10 @@ snark = [
     "dep:midnight-proofs",
     "dep:midnight-zk-stdlib",
     "dep:num-bigint",
+    "dep:num-integer",
+    "dep:num-rational",
     "dep:num-traits",
-    "dep:rand",
     "dep:sha2",
-    "dep:rand_chacha",
 ]
 num-integer-backend = ["dep:num-bigint", "dep:num-integer", "dep:num-rational", "dep:num-traits"]
 rug-backend = ["dep:rug"]
@@ -78,7 +78,6 @@ midnight-zk-stdlib = { version = "=2.3.3", optional = true }
 num-bigint = { version = "0.4.6", optional = true }
 num-integer = { version = "0.1", optional = true }
 num-traits = { version = "0.2.19", optional = true }
-rand = { version = "0.10.3", optional = true }
 rand_chacha = { workspace = true, optional = true }
 rand_core = { workspace = true, features = ["std"] }
 rayon = { workspace = true }
