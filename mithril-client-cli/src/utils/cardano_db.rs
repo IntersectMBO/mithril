@@ -24,6 +24,9 @@ pub enum LedgerFormat {
 }
 
 impl CardanoDbUtils {
+    /// Maximum length of a network code or a node version in the node start command
+    const NODE_START_COMMAND_VALUE_MAX_LENGTH: usize = 32;
+
     /// Handle the error return by `check_prerequisites`
     pub fn check_disk_space_error(error: MithrilError) -> MithrilResult<String> {
         match error.downcast_ref::<CardanoDbDownloadCheckerError>() {
@@ -71,7 +74,9 @@ impl CardanoDbUtils {
         cardano_network: &str,
         cardano_node_version: &str,
         ledger_format: LedgerFormat,
-    ) -> String {
+    ) -> MithrilResult<String> {
+        Self::check_node_start_command_values(cardano_network, cardano_node_version)?;
+
         let db_path = canonical_db_filepath.as_ref();
         let cardano_node_version = if matches!(ledger_format, LedgerFormat::Legacy) {
             "10.3.1"
@@ -95,10 +100,38 @@ impl CardanoDbUtils {
             ""
         };
 
-        format!(
+        Ok(format!(
             "docker run -v cardano-node-ipc:/ipc -v cardano-node-data:/data --mount type=bind,source=\"{db_path}\",target=/data/db/ -e NETWORK={cardano_network}{cardano_node_config}{security_opt} ghcr.io/intersectmbo/cardano-node:{cardano_node_version}",
             db_path = db_path.display(),
-        )
+        ))
+    }
+
+    /// Check that the network and the node version can be used to build the node start command
+    pub fn check_node_start_command_values(
+        cardano_network: &str,
+        cardano_node_version: &str,
+    ) -> MithrilResult<()> {
+        if !Self::is_safe_node_start_command_value(cardano_network) {
+            return Err(anyhow!(
+                "Refusing to build the node start command for an invalid network '{cardano_network}'"
+            ));
+        }
+        if !Self::is_safe_node_start_command_value(cardano_node_version) {
+            return Err(anyhow!(
+                "Refusing to build the node start command for an invalid node version '{cardano_node_version}'"
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Check that a value is a non empty and bounded string of lowercase letters, digits, dots and hyphens
+    fn is_safe_node_start_command_value(value: &str) -> bool {
+        !value.is_empty()
+            && value.len() <= Self::NODE_START_COMMAND_VALUE_MAX_LENGTH
+            && value.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'.' || byte == b'-'
+            })
     }
 }
 
@@ -169,7 +202,8 @@ mod test {
             "mainnet",
             "whatever",
             LedgerFormat::Legacy,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             run_command,
@@ -184,7 +218,8 @@ mod test {
             "mainnet",
             "10.5.4",
             LedgerFormat::InMemory,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             run_command,
@@ -199,7 +234,8 @@ mod test {
             "mainnet",
             "10.6.2",
             LedgerFormat::Lmdb,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             run_command,
@@ -214,11 +250,194 @@ mod test {
             "mainnet",
             "10.7.1",
             LedgerFormat::Lsm,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             run_command,
             r#"docker run -v cardano-node-ipc:/ipc -v cardano-node-data:/data --mount type=bind,source="/path/to/db",target=/data/db/ -e NETWORK=mainnet -e CARDANO_CONFIG_JSON_MERGE='{"LedgerDB": { "Backend": "V2LSM" }}' --security-opt seccomp=unconfined ghcr.io/intersectmbo/cardano-node:10.7.1"#
         )
+    }
+
+    #[test]
+    fn get_docker_run_command_for_private_network() {
+        let run_command = CardanoDbUtils::get_docker_run_command(
+            Path::new("/path/to/db"),
+            "private",
+            "10.5.4",
+            LedgerFormat::InMemory,
+        )
+        .unwrap();
+
+        assert_eq!(
+            run_command,
+            r#"docker run -v cardano-node-ipc:/ipc -v cardano-node-data:/data --mount type=bind,source="/path/to/db",target=/data/db/ -e NETWORK=private ghcr.io/intersectmbo/cardano-node:10.5.4"#
+        )
+    }
+
+    #[test]
+    fn get_docker_run_command_for_latest_node_version() {
+        let run_command = CardanoDbUtils::get_docker_run_command(
+            Path::new("/path/to/db"),
+            "mainnet",
+            "latest",
+            LedgerFormat::Lsm,
+        )
+        .unwrap();
+
+        assert_eq!(
+            run_command,
+            r#"docker run -v cardano-node-ipc:/ipc -v cardano-node-data:/data --mount type=bind,source="/path/to/db",target=/data/db/ -e NETWORK=mainnet -e CARDANO_CONFIG_JSON_MERGE='{"LedgerDB": { "Backend": "V2LSM" }}' --security-opt seccomp=unconfined ghcr.io/intersectmbo/cardano-node:latest"#
+        )
+    }
+
+    #[test]
+    fn get_docker_run_command_for_pre_release_node_version() {
+        let run_command = CardanoDbUtils::get_docker_run_command(
+            Path::new("/path/to/db"),
+            "preview",
+            "pre-release",
+            LedgerFormat::InMemory,
+        )
+        .unwrap();
+
+        assert_eq!(
+            run_command,
+            r#"docker run -v cardano-node-ipc:/ipc -v cardano-node-data:/data --mount type=bind,source="/path/to/db",target=/data/db/ -e NETWORK=preview ghcr.io/intersectmbo/cardano-node:pre-release"#
+        )
+    }
+
+    #[test]
+    fn get_docker_run_command_for_network_and_node_version_unknown_to_the_client() {
+        let run_command = CardanoDbUtils::get_docker_run_command(
+            Path::new("/path/to/db"),
+            "sanchonet",
+            "10.6.0-pre",
+            LedgerFormat::InMemory,
+        )
+        .unwrap();
+
+        assert_eq!(
+            run_command,
+            r#"docker run -v cardano-node-ipc:/ipc -v cardano-node-data:/data --mount type=bind,source="/path/to/db",target=/data/db/ -e NETWORK=sanchonet ghcr.io/intersectmbo/cardano-node:10.6.0-pre"#
+        )
+    }
+
+    #[test]
+    fn get_docker_run_command_accepts_values_of_maximum_length() {
+        let value = "a".repeat(CardanoDbUtils::NODE_START_COMMAND_VALUE_MAX_LENGTH);
+
+        CardanoDbUtils::get_docker_run_command(
+            Path::new("/path/to/db"),
+            &value,
+            &value,
+            LedgerFormat::InMemory,
+        )
+        .expect("values of maximum length must be accepted");
+    }
+
+    #[test]
+    fn get_docker_run_command_rejects_network_with_forbidden_character() {
+        CardanoDbUtils::get_docker_run_command(
+            Path::new("/path/to/db"),
+            "mainnet|whatever",
+            "10.5.4",
+            LedgerFormat::InMemory,
+        )
+        .expect_err("a network with a forbidden character must be rejected");
+    }
+
+    #[test]
+    fn get_docker_run_command_rejects_network_not_in_lowercase() {
+        CardanoDbUtils::get_docker_run_command(
+            Path::new("/path/to/db"),
+            "MAINNET",
+            "10.5.4",
+            LedgerFormat::InMemory,
+        )
+        .expect_err("a network not in lowercase must be rejected");
+    }
+
+    #[test]
+    fn get_docker_run_command_rejects_empty_network() {
+        CardanoDbUtils::get_docker_run_command(
+            Path::new("/path/to/db"),
+            "",
+            "10.5.4",
+            LedgerFormat::InMemory,
+        )
+        .expect_err("an empty network must be rejected");
+    }
+
+    #[test]
+    fn get_docker_run_command_rejects_network_longer_than_maximum_length() {
+        CardanoDbUtils::get_docker_run_command(
+            Path::new("/path/to/db"),
+            &"a".repeat(CardanoDbUtils::NODE_START_COMMAND_VALUE_MAX_LENGTH + 1),
+            "10.5.4",
+            LedgerFormat::InMemory,
+        )
+        .expect_err("a network longer than the maximum length must be rejected");
+    }
+
+    #[test]
+    fn get_docker_run_command_rejects_node_version_with_forbidden_character() {
+        CardanoDbUtils::get_docker_run_command(
+            Path::new("/path/to/db"),
+            "mainnet",
+            "10.5.4; whatever",
+            LedgerFormat::InMemory,
+        )
+        .expect_err("a node version with a forbidden character must be rejected");
+    }
+
+    #[test]
+    fn get_docker_run_command_rejects_node_version_longer_than_maximum_length() {
+        CardanoDbUtils::get_docker_run_command(
+            Path::new("/path/to/db"),
+            "mainnet",
+            &"1".repeat(CardanoDbUtils::NODE_START_COMMAND_VALUE_MAX_LENGTH + 1),
+            LedgerFormat::InMemory,
+        )
+        .expect_err("a node version longer than the maximum length must be rejected");
+    }
+
+    #[test]
+    fn get_docker_run_command_rejects_invalid_node_version_for_legacy_ledger() {
+        CardanoDbUtils::get_docker_run_command(
+            Path::new("/path/to/db"),
+            "mainnet",
+            "10.5.4; whatever",
+            LedgerFormat::Legacy,
+        )
+        .expect_err("an invalid node version must be rejected even when it is overridden");
+    }
+
+    #[test]
+    fn check_node_start_command_values_accepts_valid_network_and_node_version() {
+        CardanoDbUtils::check_node_start_command_values("mainnet", "10.5.4")
+            .expect("a valid network and node version must be accepted");
+    }
+
+    #[test]
+    fn check_node_start_command_values_rejects_invalid_network() {
+        let error = CardanoDbUtils::check_node_start_command_values("mainnet|whatever", "10.5.4")
+            .expect_err("an invalid network must be rejected");
+
+        assert!(
+            error.to_string().contains("invalid network 'mainnet|whatever'"),
+            "Unexpected error: {error:?}"
+        );
+    }
+
+    #[test]
+    fn check_node_start_command_values_rejects_invalid_node_version() {
+        let error = CardanoDbUtils::check_node_start_command_values("mainnet", "10.5.4; whatever")
+            .expect_err("an invalid node version must be rejected");
+
+        assert!(
+            error.to_string().contains("invalid node version '10.5.4; whatever'"),
+            "Unexpected error: {error:?}"
+        );
     }
 }

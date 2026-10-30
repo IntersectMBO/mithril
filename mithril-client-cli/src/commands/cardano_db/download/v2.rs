@@ -122,6 +122,17 @@ impl PreparedCardanoDbV2Download {
             .await?
             .with_context(|| format!("Can not get the cardano db for hash: '{}'", self.hash))?;
 
+        CardanoDbUtils::check_node_start_command_values(
+            &cardano_db_message.network,
+            &cardano_db_message.cardano_node_version,
+        )
+        .with_context(|| {
+            format!(
+                "Cardano db snapshot with hash '{}' can not be downloaded",
+                cardano_db_message.hash
+            )
+        })?;
+
         Self::check_local_disk_info(
             1,
             &progress_printer,
