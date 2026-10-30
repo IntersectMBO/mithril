@@ -82,6 +82,7 @@ impl SignerRegistrationVerifier for MithrilSignerRegistrationVerifier {
 
         Ok(SignerWithStake {
             party_id: party_id_registered,
+            kes_evolutions,
             ..SignerWithStake::from_signer(signer.to_owned(), party_id_registered_stake)
         })
     }
@@ -91,6 +92,7 @@ impl SignerRegistrationVerifier for MithrilSignerRegistrationVerifier {
 mod tests {
     use mithril_cardano_node_chain::test::double::FakeChainObserver;
     use mithril_common::{
+        crypto_helper::KesEvolutions,
         entities::TimePoint,
         test::{builder::MithrilFixtureBuilder, double::Dummy},
     };
@@ -135,5 +137,29 @@ mod tests {
             )
             .await
             .expect_err("Verification should fail");
+    }
+
+    #[tokio::test]
+    async fn verify_returns_the_locally_computed_kes_evolutions_not_the_submitted_one() {
+        let fixture = MithrilFixtureBuilder::default().with_signers(1).build();
+        let submitted_kes_evolutions = Some(KesEvolutions(u64::MAX));
+        let signer_to_register = Signer {
+            kes_evolutions: submitted_kes_evolutions,
+            ..fixture.signers()[0].to_owned()
+        };
+        let signer_registration_verifier = MithrilSignerRegistrationVerifier::new(Arc::new(
+            FakeChainObserver::new(Some(TimePoint::dummy())),
+        ));
+
+        let registered = signer_registration_verifier
+            .verify(
+                &signer_to_register,
+                &fixture.stake_distribution(),
+                Epoch::default(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(Some(KesEvolutions(0)), registered.kes_evolutions);
     }
 }
