@@ -5,7 +5,7 @@ use std::str::FromStr;
 use anyhow::Context;
 use config::{ConfigError, Map, Source, Value, ValueKind};
 use semver::Version;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de};
 
 use mithril_cardano_node_chain::chain_observer::ChainObserverType;
 use mithril_cli_helper::{register_config_value, serde_deserialization};
@@ -520,6 +520,7 @@ pub struct ServeCommandConfiguration {
     pub ipfs_rpc_server_config: Option<IpfsRpcServerConfig>,
 
     /// Advertised share of immutables to download through IPFS from the clients (0-100 inclusive)
+    #[serde(deserialize_with = "deserialize_strict_percentage")]
     pub ipfs_share: Percentage,
 
     /// Server listening IP
@@ -755,6 +756,15 @@ impl FromStr for IpfsRpcServerConfig {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         serde_json::from_str(s)
     }
+}
+
+/// Deserialize a [Percentage], failing for values above 100 instead of saturating them.
+fn deserialize_strict_percentage<'de, D>(deserializer: D) -> Result<Percentage, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = u8::deserialize(deserializer)?;
+    Percentage::try_new(value).map_err(de::Error::custom)
 }
 
 /// Configuration to connect to the Blockfrost API.
@@ -1673,6 +1683,41 @@ mod test {
             );
         } else {
             panic!("Expected GcpKms variant but got {deserialized:?}");
+        }
+    }
+
+    mod ipfs_share {
+        use super::*;
+
+        #[derive(Debug, Deserialize)]
+        struct IpfsShareConfiguration {
+            #[serde(deserialize_with = "deserialize_strict_percentage")]
+            ipfs_share: Percentage,
+        }
+
+        fn deserialize_ipfs_share(value: &str) -> Result<Percentage, ConfigError> {
+            config::Config::builder()
+                .set_override("ipfs_share", value)?
+                .build()?
+                .try_deserialize::<IpfsShareConfiguration>()
+                .map(|configuration| configuration.ipfs_share)
+        }
+
+        #[test]
+        fn accept_a_number_between_0_and_100() {
+            assert_eq!(Percentage::ZERO, deserialize_ipfs_share("0").unwrap());
+            assert_eq!(Percentage::new(42), deserialize_ipfs_share("42").unwrap());
+            assert_eq!(Percentage::HUNDRED, deserialize_ipfs_share("100").unwrap());
+        }
+
+        #[test]
+        fn reject_invalid_values() {
+            for value in ["101", "256", "-1", "4.2", "whatever"] {
+                assert!(
+                    deserialize_ipfs_share(value).is_err(),
+                    "'{value}' should be rejected"
+                );
+            }
         }
     }
 

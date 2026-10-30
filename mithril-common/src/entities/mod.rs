@@ -68,7 +68,7 @@ pub use http_server_error::{ClientError, ServerError};
 pub use mithril_network::MithrilNetwork;
 pub use mithril_stake_distribution::MithrilStakeDistribution;
 pub use mk_set_proof::*;
-pub use percentage::Percentage;
+pub use percentage::{Percentage, PercentageOutOfRangeError};
 #[cfg(feature = "snark")]
 pub use protocol_message::RigidProtocolMessageIntegrityError;
 pub use protocol_message::{

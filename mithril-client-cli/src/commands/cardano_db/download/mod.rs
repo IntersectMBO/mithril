@@ -168,10 +168,11 @@ fn parse_ipfs_share(value: &str) -> Result<Percentage, String> {
     match value {
         "prefer" => Ok(Percentage::HUNDRED),
         "fallback" => Ok(Percentage::ZERO),
-        _ => match value.parse::<u8>() {
-            Ok(share) if share <= *Percentage::HUNDRED => Ok(Percentage::new(share)),
-            _ => Err("expected a number from 0 to 100, `prefer` or `fallback`".to_string()),
-        },
+        _ => value
+            .parse::<u8>()
+            .ok()
+            .and_then(|share| Percentage::try_new(share).ok())
+            .ok_or_else(|| "expected a number from 0 to 100, `prefer` or `fallback`".to_string()),
     }
 }
 

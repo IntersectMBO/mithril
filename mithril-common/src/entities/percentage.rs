@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter};
 use std::ops::{Add, AddAssign, Deref, Sub, SubAssign};
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::entities::arithmetic_operation_wrapper::impl_partial_eq_to_wrapper;
 
@@ -9,6 +10,8 @@ use crate::entities::arithmetic_operation_wrapper::impl_partial_eq_to_wrapper;
 ///
 /// Values above 100, either on construction, deserialization, or as the result of an
 /// arithmetic operation, saturate to 100.
+///
+/// Use [Percentage::try_new] to reject values above 100 instead.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(from = "u8")]
 pub struct Percentage(u8);
@@ -29,11 +32,20 @@ impl Percentage {
         }
     }
 
-    /// Ratio represented by this percentage, between `0.0` and `1.0`.
-    pub fn as_ratio(&self) -> f64 {
-        f64::from(self.0) / f64::from(Self::HUNDRED.0)
+    /// Create a new percentage, failing if the given value is above 100.
+    pub const fn try_new(value: u8) -> Result<Self, PercentageOutOfRangeError> {
+        if value > Self::HUNDRED.0 {
+            Err(PercentageOutOfRangeError(value))
+        } else {
+            Ok(Self(value))
+        }
     }
 }
+
+/// Error raised when creating a [Percentage] from a value above 100.
+#[derive(Error, Debug, PartialEq, Eq)]
+#[error("{0} is not a valid percentage, expected a value from 0 to 100")]
+pub struct PercentageOutOfRangeError(pub u8);
 
 impl Default for Percentage {
     fn default() -> Self {
@@ -133,6 +145,21 @@ mod tests {
     }
 
     #[test]
+    fn try_new_fails_above_100() {
+        assert_eq!(Percentage::try_new(0), Ok(Percentage::ZERO));
+        assert_eq!(Percentage::try_new(42), Ok(Percentage::new(42)));
+        assert_eq!(Percentage::try_new(100), Ok(Percentage::HUNDRED));
+        assert_eq!(
+            Percentage::try_new(101),
+            Err(PercentageOutOfRangeError(101))
+        );
+        assert_eq!(
+            Percentage::try_new(u8::MAX),
+            Err(PercentageOutOfRangeError(u8::MAX))
+        );
+    }
+
+    #[test]
     fn from_u8_saturates_above_100() {
         assert_eq!(Percentage::from(42), 42);
         assert_eq!(Percentage::from(150), 100);
@@ -147,13 +174,6 @@ mod tests {
     #[test]
     fn default_is_zero() {
         assert_eq!(Percentage::default(), Percentage::ZERO);
-    }
-
-    #[test]
-    fn test_as_ratio() {
-        assert_eq!(Percentage::ZERO.as_ratio(), 0.0);
-        assert_eq!(Percentage::new(42).as_ratio(), 0.42);
-        assert_eq!(Percentage::HUNDRED.as_ratio(), 1.0);
     }
 
     #[test]

@@ -1152,19 +1152,24 @@ mod tests {
 
         use super::*;
 
+        fn artifact_downloader_with_ipfs(
+            aggregator_requester_config: impl FnOnce(&mut MockCardanoDatabaseAggregatorRequest),
+        ) -> InternalArtifactDownloader {
+            InternalArtifactDownloader {
+                ipfs_file_downloader: Some(Arc::new(MockFileDownloader::new())),
+                aggregator_requester: MockBuilder::configure(aggregator_requester_config),
+                ..artifact_downloader_for_test()
+            }
+        }
+
         #[tokio::test]
         async fn fetch_ratio_from_network_if_set_to_aggregator_ratio() {
             let locations_have_ipfs = true;
-            let artifact_downloader = InternalArtifactDownloader {
-                ipfs_file_downloader: Some(Arc::new(MockFileDownloader::new())),
-                aggregator_requester:
-                    MockBuilder::<MockCardanoDatabaseAggregatorRequest>::configure(|mock| {
-                        mock.expect_get_ipfs_share()
-                            .returning(|| Ok(Some(Percentage::new(57))))
-                            .once();
-                    }),
-                ..artifact_downloader_for_test()
-            };
+            let artifact_downloader = artifact_downloader_with_ipfs(|mock| {
+                mock.expect_get_ipfs_share()
+                    .returning(|| Ok(Some(Percentage::new(57))))
+                    .once();
+            });
 
             let expanded = artifact_downloader
                 .expand_ipfs_share_to_percentage(IpfsShare::AggregatorRatio, locations_have_ipfs)
@@ -1174,17 +1179,11 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn use_fallback_ratio_if_set_to_aggregator_ratio_and_remote_query_succeed_but_there_is_no_ratio_in_the_response()
-         {
+        async fn use_fallback_ratio_if_aggregator_does_not_advertise_a_ratio() {
             let locations_have_ipfs = true;
-            let artifact_downloader = InternalArtifactDownloader {
-                ipfs_file_downloader: Some(Arc::new(MockFileDownloader::new())),
-                aggregator_requester:
-                    MockBuilder::<MockCardanoDatabaseAggregatorRequest>::configure(|mock| {
-                        mock.expect_get_ipfs_share().returning(|| Ok(None)).once();
-                    }),
-                ..artifact_downloader_for_test()
-            };
+            let artifact_downloader = artifact_downloader_with_ipfs(|mock| {
+                mock.expect_get_ipfs_share().returning(|| Ok(None)).once();
+            });
 
             let expanded = artifact_downloader
                 .expand_ipfs_share_to_percentage(IpfsShare::AggregatorRatio, locations_have_ipfs)
@@ -1194,20 +1193,16 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn log_warning_and_use_fallback_ratio_if_set_to_aggregator_ratio_and_remote_query_fails()
-         {
+        async fn log_warning_and_use_fallback_ratio_if_fetching_aggregator_ratio_fails() {
             let locations_have_ipfs = true;
             let (logger, log_inspector) = TestLogger::memory();
             let artifact_downloader = InternalArtifactDownloader {
-                ipfs_file_downloader: Some(Arc::new(MockFileDownloader::new())),
-                aggregator_requester:
-                    MockBuilder::<MockCardanoDatabaseAggregatorRequest>::configure(|mock| {
-                        mock.expect_get_ipfs_share()
-                            .returning(|| Err(anyhow!("failed to fetch from aggregator")))
-                            .once();
-                    }),
                 logger,
-                ..artifact_downloader_for_test()
+                ..artifact_downloader_with_ipfs(|mock| {
+                    mock.expect_get_ipfs_share()
+                        .returning(|| Err(anyhow!("failed to fetch from aggregator")))
+                        .once();
+                })
             };
 
             let expanded = artifact_downloader
@@ -1221,14 +1216,9 @@ mod tests {
         #[tokio::test]
         async fn use_provided_ratio_without_network_call_if_a_custom_value_is_provided() {
             let locations_have_ipfs = true;
-            let artifact_downloader = InternalArtifactDownloader {
-                ipfs_file_downloader: Some(Arc::new(MockFileDownloader::new())),
-                aggregator_requester:
-                    MockBuilder::<MockCardanoDatabaseAggregatorRequest>::configure(|mock| {
-                        mock.expect_get_ipfs_share().never();
-                    }),
-                ..artifact_downloader_for_test()
-            };
+            let artifact_downloader = artifact_downloader_with_ipfs(|mock| {
+                mock.expect_get_ipfs_share().never();
+            });
 
             let expanded = artifact_downloader
                 .expand_ipfs_share_to_percentage(
@@ -1243,14 +1233,9 @@ mod tests {
         #[tokio::test]
         async fn return_ratio_0_if_locations_does_not_have_ipfs() {
             let locations_have_ipfs = false;
-            let artifact_downloader = InternalArtifactDownloader {
-                ipfs_file_downloader: Some(Arc::new(MockFileDownloader::new())),
-                aggregator_requester:
-                    MockBuilder::<MockCardanoDatabaseAggregatorRequest>::configure(|mock| {
-                        mock.expect_get_ipfs_share().never();
-                    }),
-                ..artifact_downloader_for_test()
-            };
+            let artifact_downloader = artifact_downloader_with_ipfs(|mock| {
+                mock.expect_get_ipfs_share().never();
+            });
 
             let expanded = artifact_downloader
                 .expand_ipfs_share_to_percentage(
@@ -1267,11 +1252,9 @@ mod tests {
             let locations_have_ipfs = true;
             let artifact_downloader = InternalArtifactDownloader {
                 ipfs_file_downloader: None,
-                aggregator_requester:
-                    MockBuilder::<MockCardanoDatabaseAggregatorRequest>::configure(|mock| {
-                        mock.expect_get_ipfs_share().never();
-                    }),
-                ..artifact_downloader_for_test()
+                ..artifact_downloader_with_ipfs(|mock| {
+                    mock.expect_get_ipfs_share().never();
+                })
             };
 
             let expanded_with_custom_ratio = artifact_downloader
