@@ -291,4 +291,81 @@ mod tests {
             }
         }
     }
+
+    fn clerk_and_signature_at_indices(
+        params: &Parameters,
+        msg: &[u8],
+        indices: &[u64],
+    ) -> (ConcatenationClerk, Vec<SingleSignatureWithRegisteredParty>) {
+        let mut rng = ChaCha20Rng::from_seed([7u8; 32]);
+        let mut key_registration = KeyRegistration::initialize();
+        let initializer = Initializer::new(*params, 10, &mut rng);
+        key_registration.register_by_entry(&initializer.clone().try_into().unwrap());
+        let closed_registration = key_registration.close_registration(params).unwrap();
+        let signer = initializer.try_create_signer::<D>(&closed_registration).unwrap();
+        let clerk = ConcatenationClerk::new_clerk_from_signer(&signer);
+        let mut sig = signer.create_single_signature(msg).unwrap();
+        sig.set_concatenation_signature_indices(indices);
+        let reg_party = clerk
+            .closed_key_registration
+            .get_closed_key_registration_for_concatenation()
+            .get_registration_entry_for_index(&sig.signer_index)
+            .unwrap();
+
+        (
+            clerk,
+            vec![SingleSignatureWithRegisteredParty { sig, reg_party }],
+        )
+    }
+
+    #[test]
+    fn select_valid_signatures_for_k_indices_counts_an_index_below_m() {
+        let params = Parameters {
+            m: 10,
+            k: 1,
+            phi_f: 1.0,
+        };
+        let msg = [1u8; 16];
+        let (clerk, sig_reg_list) = clerk_and_signature_at_indices(&params, &msg, &[params.m - 1]);
+        let avk = clerk.compute_aggregate_verification_key_for_concatenation::<D>();
+
+        let selected = ConcatenationClerk::select_valid_signatures_for_k_indices(
+            &params,
+            &msg,
+            &sig_reg_list,
+            &avk,
+        )
+        .expect("an index below m must count toward k");
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(
+            selected[0].sig.get_concatenation_signature_indices(),
+            vec![params.m - 1]
+        );
+    }
+
+    #[test]
+    fn select_valid_signatures_for_k_indices_does_not_count_an_index_equal_to_m() {
+        let params = Parameters {
+            m: 10,
+            k: 1,
+            phi_f: 1.0,
+        };
+        let msg = [1u8; 16];
+        let (clerk, sig_reg_list) = clerk_and_signature_at_indices(&params, &msg, &[params.m]);
+        let avk = clerk.compute_aggregate_verification_key_for_concatenation::<D>();
+
+        let error = ConcatenationClerk::select_valid_signatures_for_k_indices(
+            &params,
+            &msg,
+            &sig_reg_list,
+            &avk,
+        )
+        .expect_err("an index equal to m must not count toward k");
+
+        assert_eq!(
+            error.downcast_ref::<AggregationError>(),
+            Some(&AggregationError::NotEnoughSignatures(0, 1))
+        );
+    }
 }

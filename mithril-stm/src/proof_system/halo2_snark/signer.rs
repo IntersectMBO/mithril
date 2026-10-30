@@ -179,6 +179,16 @@ mod tests {
             "Expected IndexBoundFailed({}, {m}), got: {err:?}",
             m + 1
         );
+
+        let err = check_lottery_for_index(&signature, m, m, prefix, target)
+            .expect_err("Index equal to m should fail");
+        assert!(
+            matches!(
+                err.downcast_ref::<SignatureError>(),
+                Some(SignatureError::IndexBoundFailed(idx, bound)) if *idx == m && *bound == m
+            ),
+            "Expected IndexBoundFailed({m}, {m}), got: {err:?}"
+        );
     }
 
     #[test]
