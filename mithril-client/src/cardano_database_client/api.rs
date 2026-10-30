@@ -11,7 +11,7 @@ use mithril_cardano_node_internal_database::entities::ImmutableFile;
 use mithril_common::{crypto_helper::MKProof, messages::CertificateMessage};
 
 #[cfg(all(feature = "fs", feature = "unstable"))]
-pub use crate::cardano_database_client::download_unpack::IpfsShare;
+use crate::cardano_database_client::download_unpack::IpfsShare;
 #[cfg(feature = "fs")]
 use crate::cardano_database_client::{VerifiedDigests, proving::CardanoDatabaseVerificationError};
 use crate::common::{Epoch, EpochSpecifier, Percentage};
@@ -168,7 +168,7 @@ impl CardanoDatabaseClient {
                 immutable_file_range,
                 target_dir,
                 download_unpack_options,
-                #[cfg(all(feature = "fs", feature = "unstable"))]
+                #[cfg(feature = "unstable")]
                 IpfsShare::default(),
             )
             .await

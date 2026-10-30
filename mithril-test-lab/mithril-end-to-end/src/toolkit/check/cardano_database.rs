@@ -199,7 +199,7 @@ impl CheckCardanoDatabaseToolkit {
 
             if number_of_ipfs_downloads == 0 {
                 anyhow::bail!(
-                    "Expected to download at least one immutable from IPFS, but all immutables where fetched from local",
+                    "Expected to download at least one immutable from IPFS, but all immutables were fetched from local",
                 );
             }
         }

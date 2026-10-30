@@ -375,10 +375,7 @@ impl InternalArtifactDownloader {
                 Ok(Some(percentage)) => percentage,
                 Ok(None) => IPFS_FALLBACK_RATIO,
                 Err(err) => {
-                    warn!(
-                        self.logger, "failed to fetch IPFS share from aggregator";
-                        "error" => ?err, "ipfs_share" => ?ipfs_share, "locations_have_ipfs" => locations_have_ipfs,
-                    );
+                    warn!(self.logger, "failed to fetch IPFS share from aggregator"; "error" => ?err);
                     IPFS_FALLBACK_RATIO
                 }
             },
@@ -873,7 +870,7 @@ mod tests {
                         include_ancillary: false,
                         ..DownloadUnpackOptions::default()
                     },
-                    IpfsShare::Ratio(10.into()),
+                    IpfsShare::Ratio(Percentage::new(10)),
                 )
                 .await
                 .unwrap();
@@ -1015,8 +1012,6 @@ mod tests {
 
     #[cfg(feature = "unstable")]
     mod ordering_ipfs_location {
-        use crate::file_downloader::MockFileDownloader;
-
         use super::*;
 
         fn immutable_locations() -> ImmutablesMessagePart {
@@ -1147,9 +1142,6 @@ mod tests {
 
         use mithril_common::test::mock_extensions::MockBuilder;
 
-        use crate::cardano_database_client::api::MockCardanoDatabaseAggregatorRequest;
-        use crate::file_downloader::MockFileDownloader;
-
         use super::*;
 
         fn artifact_downloader_with_ipfs(
@@ -1210,7 +1202,7 @@ mod tests {
                 .await;
 
             assert_eq!(IPFS_FALLBACK_RATIO, expanded);
-            assert!(log_inspector.contains_log("WARN failed to fetch IPFS share from aggregator"),);
+            assert!(log_inspector.contains_log("WARN failed to fetch IPFS share from aggregator"));
         }
 
         #[tokio::test]

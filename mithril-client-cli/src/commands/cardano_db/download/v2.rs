@@ -72,10 +72,7 @@ impl PreparedCardanoDbV2Download {
             }
         }
 
-        let ipfs_share = self
-            .ipfs_share
-            .map(IpfsShare::Ratio)
-            .unwrap_or(IpfsShare::AggregatorRatio);
+        let ipfs_share = self.ipfs_share.map(IpfsShare::Ratio).unwrap_or_default();
 
         let restoration_options = RestorationOptions {
             db_dir: Path::new(&self.download_dir).join(DB_DIRECTORY_NAME),
