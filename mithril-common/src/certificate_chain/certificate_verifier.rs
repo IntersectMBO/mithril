@@ -69,6 +69,23 @@ pub enum CertificateVerifierError {
     #[error("certificate chain protocol parameters unmatch error")]
     CertificateChainProtocolParametersUnmatch,
 
+    /// Error raised when validating a genesis [Certificate] if its `aggregate_verification_key`
+    /// doesn't match its signed `next_aggregate_verification_key`.
+    #[error("genesis certificate AVK unmatch error")]
+    GenesisCertificateAVKUnmatch,
+
+    /// Error raised when validating a genesis [Certificate] if the hash of its
+    /// `metadata.protocol_parameters` doesn't match its signed `next_protocol_parameters`.
+    #[error("genesis certificate protocol parameters unmatch error")]
+    GenesisCertificateProtocolParametersUnmatch,
+
+    /// Error raised when validating a genesis [Certificate] if both its
+    /// `aggregate_verification_key_snark` and its signed `next_snark_aggregate_verification_key`
+    /// are present and don't match.
+    #[cfg(feature = "snark")]
+    #[error("genesis certificate SNARK AVK unmatch error")]
+    GenesisCertificateSnarkAVKUnmatch,
+
     /// Error raised when validating the certificate chain if the current [Certificate]
     /// `epoch` doesn't match the signed `current_epoch` of the current certificate
     #[error("certificate epoch unmatch error")]
@@ -328,6 +345,58 @@ impl MithrilCertificateVerifier {
         Err(anyhow!(CertificateVerifierError::CertificateEpochUnmatch))
     }
 
+    /// Verify that the fields of a genesis certificate equal the parts its signature covers.
+    fn verify_genesis_certificate_fields_match_protocol_message(
+        &self,
+        genesis_certificate: &Certificate,
+    ) -> StdResult<()> {
+        let signed_aggregate_verification_key = genesis_certificate
+            .protocol_message
+            .get_message_part(&ProtocolMessagePartKey::NextAggregateVerificationKey)
+            .and_then(|encoded| {
+                ProtocolAggregateVerificationKeyForConcatenation::try_from(encoded.as_str()).ok()
+            });
+        if signed_aggregate_verification_key.as_ref()
+            != Some(&genesis_certificate.aggregate_verification_key)
+        {
+            return Err(anyhow!(
+                CertificateVerifierError::GenesisCertificateAVKUnmatch
+            ));
+        }
+
+        let protocol_parameters_match = genesis_certificate
+            .protocol_message
+            .get_message_part(&ProtocolMessagePartKey::NextProtocolParameters)
+            .is_some_and(|signed| {
+                *signed == genesis_certificate.metadata.protocol_parameters.compute_hash()
+            });
+        if !protocol_parameters_match {
+            return Err(anyhow!(
+                CertificateVerifierError::GenesisCertificateProtocolParametersUnmatch
+            ));
+        }
+
+        #[cfg(feature = "snark")]
+        if let Some(snark_aggregate_verification_key) =
+            &genesis_certificate.aggregate_verification_key_snark
+            && let Some(encoded_signed_snark_aggregate_verification_key) = genesis_certificate
+                .protocol_message
+                .get_message_part(&ProtocolMessagePartKey::NextSnarkAggregateVerificationKey)
+            && ProtocolAggregateVerificationKeyForSnark::try_from(
+                encoded_signed_snark_aggregate_verification_key.as_str(),
+            )
+            .ok()
+            .as_ref()
+                != Some(snark_aggregate_verification_key)
+        {
+            return Err(anyhow!(
+                CertificateVerifierError::GenesisCertificateSnarkAVKUnmatch
+            ));
+        }
+
+        Ok(())
+    }
+
     fn verify_epoch_chaining(
         &self,
         certificate: &Certificate,
@@ -511,6 +580,10 @@ impl CertificateVerifier for MithrilCertificateVerifier {
             )
             .with_context(|| "Certificate verifier failed verifying a genesis certificate")?;
         self.verify_epoch_matches_protocol_message(genesis_certificate)?;
+        self.verify_genesis_certificate_fields_match_protocol_message(genesis_certificate)
+            .with_context(
+                || "Genesis certificate fields do not match its signed protocol message",
+            )?;
 
         Ok(())
     }
@@ -720,6 +793,98 @@ mod tests {
         let verify = verifier.verify_genesis_certificate(genesis_certificate).await;
 
         verify.expect("verify_genesis_certificate should not fail");
+    }
+
+    #[tokio::test]
+    async fn verify_genesis_certificate_fails_if_aggregate_verification_key_unmatch() {
+        let fake_certificates = setup_certificate_chain(3, 1);
+        let verifier = MockDependencyInjector::new()
+            .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+        let mut genesis_certificate = fake_certificates.genesis_certificate().clone();
+        let foreign_aggregate_verification_key =
+            fake_certificates[0].aggregate_verification_key.clone();
+        assert_ne!(
+            foreign_aggregate_verification_key, genesis_certificate.aggregate_verification_key,
+            "precondition: the substituted key must differ from the genuine one"
+        );
+        genesis_certificate.aggregate_verification_key = foreign_aggregate_verification_key;
+        genesis_certificate.hash = genesis_certificate.try_compute_hash().unwrap();
+
+        let error = verifier
+            .verify_genesis_certificate(&genesis_certificate)
+            .await
+            .expect_err(
+                "verify_genesis_certificate should reject a key the signature does not cover",
+            );
+
+        assert_error_matches!(
+            CertificateVerifierError::GenesisCertificateAVKUnmatch,
+            error
+        )
+    }
+
+    #[test]
+    fn verify_genesis_certificate_fields_fails_if_signed_aggregate_verification_key_is_missing() {
+        let fake_certificates = setup_certificate_chain(2, 1);
+        let verifier = MockDependencyInjector::new()
+            .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+        let mut genesis_certificate = fake_certificates.genesis_certificate().clone();
+        genesis_certificate
+            .protocol_message
+            .message_parts
+            .remove(&ProtocolMessagePartKey::NextAggregateVerificationKey);
+
+        let error = verifier
+            .verify_genesis_certificate_fields_match_protocol_message(&genesis_certificate)
+            .expect_err("verification should reject a genesis without a signed key");
+
+        assert_error_matches!(
+            CertificateVerifierError::GenesisCertificateAVKUnmatch,
+            error
+        )
+    }
+
+    #[test]
+    fn verify_genesis_certificate_fields_fails_if_signed_protocol_parameters_are_missing() {
+        let fake_certificates = setup_certificate_chain(2, 1);
+        let verifier = MockDependencyInjector::new()
+            .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+        let mut genesis_certificate = fake_certificates.genesis_certificate().clone();
+        genesis_certificate
+            .protocol_message
+            .message_parts
+            .remove(&ProtocolMessagePartKey::NextProtocolParameters);
+
+        let error = verifier
+            .verify_genesis_certificate_fields_match_protocol_message(&genesis_certificate)
+            .expect_err("verification should reject a genesis without signed protocol parameters");
+
+        assert_error_matches!(
+            CertificateVerifierError::GenesisCertificateProtocolParametersUnmatch,
+            error
+        )
+    }
+
+    #[tokio::test]
+    async fn verify_genesis_certificate_fails_if_protocol_parameters_unmatch() {
+        let fake_certificates = setup_certificate_chain(2, 1);
+        let verifier = MockDependencyInjector::new()
+            .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+        let mut genesis_certificate = fake_certificates.genesis_certificate().clone();
+        genesis_certificate.metadata.protocol_parameters.k += 1;
+        genesis_certificate.hash = genesis_certificate.try_compute_hash().unwrap();
+
+        let error = verifier
+            .verify_genesis_certificate(&genesis_certificate)
+            .await
+            .expect_err(
+                "verify_genesis_certificate should reject protocol parameters the signature does not cover",
+            );
+
+        assert_error_matches!(
+            CertificateVerifierError::GenesisCertificateProtocolParametersUnmatch,
+            error
+        )
     }
 
     #[cfg(feature = "snark")]
@@ -1425,6 +1590,117 @@ mod tests {
                 panic!("Certificate signature should be a multi signature");
             }
             certificate
+        }
+
+        #[tokio::test]
+        async fn verify_genesis_certificate_success_with_a_signed_snark_aggregate_verification_key()
+        {
+            let fake_certificates = setup_certificate_chain_with_lagrange_era(2, 1);
+            let verifier = MockDependencyInjector::new()
+                .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+            let genesis_certificate = fake_certificates.genesis_certificate();
+            assert!(genesis_certificate.aggregate_verification_key_snark.is_some());
+            assert!(
+                genesis_certificate
+                    .protocol_message
+                    .get_message_part(&ProtocolMessagePartKey::NextSnarkAggregateVerificationKey)
+                    .is_some()
+            );
+
+            verifier
+                .verify_genesis_certificate(genesis_certificate)
+                .await
+                .expect("verify_genesis_certificate should not fail");
+        }
+
+        #[tokio::test]
+        async fn verify_genesis_certificate_fails_if_snark_aggregate_verification_key_unmatch() {
+            let fake_certificates = setup_certificate_chain_with_lagrange_era(3, 1);
+            let verifier = MockDependencyInjector::new()
+                .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+            let mut genesis_certificate = fake_certificates.genesis_certificate().clone();
+            let foreign_snark_aggregate_verification_key =
+                fake_certificates[0].aggregate_verification_key_snark.clone();
+            assert_ne!(
+                foreign_snark_aggregate_verification_key,
+                genesis_certificate.aggregate_verification_key_snark,
+                "precondition: the substituted key must differ from the genuine one"
+            );
+            genesis_certificate.aggregate_verification_key_snark =
+                foreign_snark_aggregate_verification_key;
+            genesis_certificate.hash = genesis_certificate.try_compute_hash().unwrap();
+
+            let error = verifier
+                .verify_genesis_certificate(&genesis_certificate)
+                .await
+                .expect_err(
+                    "verify_genesis_certificate should reject a SNARK key the signature does not cover",
+                );
+
+            assert_error_matches!(
+                CertificateVerifierError::GenesisCertificateSnarkAVKUnmatch,
+                error
+            )
+        }
+
+        #[test]
+        fn verify_genesis_certificate_fields_fails_if_signed_snark_aggregate_verification_key_is_not_decodable()
+         {
+            let fake_certificates = setup_certificate_chain_with_lagrange_era(2, 1);
+            let verifier = MockDependencyInjector::new()
+                .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+            let mut genesis_certificate = fake_certificates.genesis_certificate().clone();
+            genesis_certificate.protocol_message.set_message_part(
+                ProtocolMessagePartKey::NextSnarkAggregateVerificationKey,
+                "not-a-key".to_string(),
+            );
+
+            let error = verifier
+                .verify_genesis_certificate_fields_match_protocol_message(&genesis_certificate)
+                .expect_err(
+                    "verification should reject a signed SNARK key that can not be decoded",
+                );
+
+            assert_error_matches!(
+                CertificateVerifierError::GenesisCertificateSnarkAVKUnmatch,
+                error
+            )
+        }
+
+        #[tokio::test]
+        async fn verify_genesis_certificate_success_without_snark_aggregate_verification_key() {
+            let fake_certificates = setup_certificate_chain_with_lagrange_era(2, 1);
+            let verifier = MockDependencyInjector::new()
+                .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+            let mut genesis_certificate = fake_certificates.genesis_certificate().clone();
+            genesis_certificate.aggregate_verification_key_snark = None;
+            genesis_certificate.hash = genesis_certificate.try_compute_hash().unwrap();
+
+            verifier
+                .verify_genesis_certificate(&genesis_certificate)
+                .await
+                .expect("verify_genesis_certificate should accept a genesis served without its SNARK key");
+        }
+
+        #[tokio::test]
+        async fn verify_genesis_certificate_success_with_an_unsigned_snark_aggregate_verification_key()
+         {
+            let fake_certificates = setup_certificate_chain(2, 1);
+            let verifier = MockDependencyInjector::new()
+                .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+            let genesis_certificate = fake_certificates.genesis_certificate();
+            assert!(genesis_certificate.aggregate_verification_key_snark.is_some());
+            assert!(
+                genesis_certificate
+                    .protocol_message
+                    .get_message_part(&ProtocolMessagePartKey::NextSnarkAggregateVerificationKey)
+                    .is_none()
+            );
+
+            verifier
+                .verify_genesis_certificate(genesis_certificate)
+                .await
+                .expect("verify_genesis_certificate should accept a Pythagoras genesis");
         }
 
         #[test]
