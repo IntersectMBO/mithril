@@ -176,7 +176,11 @@ EOT
       ,
       "export ERA_READER_SECRET_KEY='${var.mithril_era_reader_secret_key}'",
       <<-EOT
-PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG=$(jq -nc --arg type '${var.mithril_protocol_configuration_reader_adapter_type}' --arg address "$(wget -q -O - '${var.mithril_protocol_configuration_reader_address_url}')" --arg verification_key "$(wget -q -O - '${var.mithril_protocol_configuration_reader_verification_key_url}')" '{"type": $type, "address": $address, "verification_key": $verification_key}')
+if [ '${var.mithril_protocol_configuration_reader_adapter_type}' = "fake" ]; then
+  PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG=$(jq -nc --arg protocol_parameters '${var.mithril_protocol_configuration_reader_fake_configuration}' '{"type": "fake", "protocol_parameters": $protocol_parameters}')
+else
+  PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG=$(jq -nc --arg type '${var.mithril_protocol_configuration_reader_adapter_type}' --arg address "$(wget -q -O - '${var.mithril_protocol_configuration_reader_address_url}')" --arg verification_key "$(wget -q -O - '${var.mithril_protocol_configuration_reader_verification_key_url}')" '{"type": $type, "address": $address, "verification_key": $verification_key}')
+fi
 export PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG="$PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG"
 EOT
       ,

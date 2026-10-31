@@ -589,6 +589,12 @@ variable "mithril_protocol_configuration_reader_verification_key_url" {
   default     = ""
 }
 
+variable "mithril_protocol_configuration_reader_fake_configuration" {
+  type        = string
+  description = "The JSON hex encoded protocol configuration used by the 'fake' protocol configuration reader adapter (same format as the configuration of a protocol configuration marker, test only)"
+  default     = ""
+}
+
 variable "mithril_protocol_configuration_reader_secret_key" {
   type        = string
   description = "The Mithril protocol configuration reader secret key used by the aggregator to generate a protocol configuration markers payload TxDatum file (test only)"

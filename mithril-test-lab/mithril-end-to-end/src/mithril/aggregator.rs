@@ -5,9 +5,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, anyhow};
+use mithril_common::crypto_helper::key_encode_hex;
 use mithril_common::entities::{
-    CardanoBlocksTransactionsSigningConfig, CardanoTransactionsSigningConfig, ProtocolParameters,
+    BlockNumber, BlockNumberOffset, CardanoBlocksTransactionsSigningConfig,
+    CardanoTransactionsSigningConfig, ProtocolParameters,
 };
+use mithril_common::messages::SignedEntityTypeDiscriminantsMessage;
+use serde_json::json;
 use slog_scope::info;
 use tokio::process::Child;
 use tokio::sync::RwLock;
@@ -98,11 +102,9 @@ impl Aggregator {
                     PROTOCOL_CONFIGURATION_MARKERS_VERIFICATION_KEY
                 )
             } else {
-                let protocol_parameters = aggregator_config.startup_protocol_parameters.clone();
-                format!(
-                    r#"{{"type":"fake","protocol_parameters":{{"k":{},"m":{},"phi_f":{}}}}}"#,
-                    protocol_parameters.k, protocol_parameters.m, protocol_parameters.phi_f
-                )
+                Self::fake_protocol_configuration_reader_adapter_config(
+                    aggregator_config.startup_protocol_parameters,
+                )?
             };
         let ancillary_files_signer_config =
             format!(r#"{{"type": "secret-key", "secret_key": "{ANCILLARY_MANIFEST_SECRET_KEY}"}}"#);
@@ -622,13 +624,36 @@ impl Aggregator {
     pub async fn set_fake_protocol_configuration_reader_adapter_config(
         &self,
         protocol_parameters: &entities::ProtocolParameters,
-    ) {
+    ) -> StdResult<()> {
         let mut command = self.command.write().await;
-        let fake_config = format!(
-            r#"{{"type": "fake", "protocol_parameters":{{"k":{},"m":{},"phi_f":{}}}}}"#,
-            protocol_parameters.k, protocol_parameters.m, protocol_parameters.phi_f
-        );
+        let fake_config =
+            Self::fake_protocol_configuration_reader_adapter_config(protocol_parameters)?;
         command.set_env_var("PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG", &fake_config);
+
+        Ok(())
+    }
+
+    fn fake_protocol_configuration_reader_adapter_config(
+        protocol_parameters: &ProtocolParameters,
+    ) -> StdResult<String> {
+        let configuration = json!({
+            "protocol_parameters": protocol_parameters,
+            "cardano_transactions": CardanoTransactionsSigningConfig {
+                security_parameter: BlockNumberOffset(120),
+                step: BlockNumber(15),
+            },
+            "cardano_blocks_transactions": CardanoBlocksTransactionsSigningConfig {
+                security_parameter: BlockNumberOffset(120),
+                step: BlockNumber(15),
+            },
+            "enabled_signed_entity_types": SignedEntityTypeDiscriminantsMessage::all_known(),
+        });
+
+        Ok(json!({
+            "type": "fake",
+            "protocol_parameters": key_encode_hex(configuration)?,
+        })
+        .to_string())
     }
 
     pub async fn set_signing_config(
@@ -698,6 +723,8 @@ impl Aggregator {
 
 #[cfg(test)]
 mod tests {
+    use mithril_common::crypto_helper::key_decode_hex;
+
     use super::*;
 
     #[test]
@@ -729,5 +756,24 @@ mod tests {
         );
 
         assert_eq!(vec![startup_protocol_parameters], protocol_parameters);
+    }
+
+    #[test]
+    fn fake_protocol_configuration_reader_adapter_config_encodes_the_protocol_parameters_in_json_hex()
+     {
+        let protocol_parameters = ProtocolParameters::new(5, 9, 0.95);
+
+        let adapter_config =
+            Aggregator::fake_protocol_configuration_reader_adapter_config(&protocol_parameters)
+                .unwrap();
+
+        let adapter_config: serde_json::Value = serde_json::from_str(&adapter_config).unwrap();
+        let configuration: serde_json::Value =
+            key_decode_hex(adapter_config["protocol_parameters"].as_str().unwrap()).unwrap();
+        assert_eq!("fake", adapter_config["type"]);
+        assert_eq!(
+            protocol_parameters,
+            serde_json::from_value(configuration["protocol_parameters"].clone()).unwrap()
+        );
     }
 }

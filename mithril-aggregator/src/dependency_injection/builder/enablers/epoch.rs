@@ -81,7 +81,7 @@ impl DependenciesBuilder {
                         adapter_config,
                         self.get_chain_observer().await?,
                         self.root_logger(),
-                    )
+                    )?
                 }
                 _ => Arc::new(FakeProtocolConfigurationMarkersReader::default()),
             };
