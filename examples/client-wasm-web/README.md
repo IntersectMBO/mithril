@@ -22,6 +22,8 @@ The certificate chain verifications use the certificate chain cache (unstable), 
 
 ## Build and run the example
 
+The development server requires Node.js version `22.15+`.
+
 First you need to switch to the latest release tag:
 
 ```bash
