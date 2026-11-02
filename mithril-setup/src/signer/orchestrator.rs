@@ -3,7 +3,7 @@
 use crate::{
     orchestrator::{
         interfaces::Orchestrator,
-        store::{State, Store},
+        store::{FieldState, Store},
     },
     signer::discoverer::{SignerDiscoverer, SignerDiscovery},
 };
@@ -26,16 +26,8 @@ impl Orchestrator for SignerOrchestrator {
         let mut store = self.store.clone();
 
         store
-            .update_field(
-                "network",
-                discovery.network,
-                //    State::Discovered
-            )?
-            .update_field(
-                "toto",
-                discovery.toto,
-                //    State::Discovered
-            )?;
+            .update_field("network", discovery.network, FieldState::Discovered)?
+            .update_field("toto", discovery.toto, FieldState::Discovered)?;
 
         Ok(store)
     }

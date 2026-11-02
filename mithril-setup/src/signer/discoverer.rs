@@ -19,7 +19,7 @@ pub struct SignerDiscovery {
 impl Discoverer for SignerDiscoverer {
     type Output = SignerDiscovery;
 
-    fn run(&self) -> anyhow::Result<Self::Output> {
+    fn discover(&self) -> anyhow::Result<Self::Output> {
         let network = SignerDiscoverer::discover_network()?;
         let toto = SignerDiscoverer::discover_toto()?;
 
@@ -47,7 +47,7 @@ mod test {
         unsafe { std::env::set_var("NETWORK", "mainnet") };
 
         let discoverer = SignerDiscoverer;
-        let discovery = discoverer.run().unwrap();
+        let discovery = discoverer.discover().unwrap();
 
         assert_eq!("mainnet".to_string(), discovery.network);
     }

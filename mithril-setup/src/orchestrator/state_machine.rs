@@ -6,7 +6,7 @@
 
 use std::io;
 
-use crate::orchestrator::store::{Field, FieldType, Store};
+use crate::orchestrator::store::{Field, FieldState, FieldType, Store};
 
 /// Where the flow is, with the data known at that point
 #[derive(Debug, Clone, PartialEq)]
@@ -113,6 +113,7 @@ fn execute(effect: Effect) -> Event {
                 description: "desc".to_string(),
                 kind: FieldType::String,
                 value: None,
+                state: FieldState::Unset,
             }]);
             Event::Discovered(Ok(discovered_store))
         }
@@ -135,15 +136,12 @@ fn run(state: &State, event: Event, execute: impl Fn(Effect) -> Event) -> Result
     Ok(state)
 }
 
-/// Turn a line typed by the user into an event: an empty line confirms, any other text is the new name
+// Turn a line typed by the user into an event: an empty line confirms, any other text is the new name
 // fn user_event(field_name: &str, line: &str) -> Event {
 //     match line.trim() {
 //         "" => Event::Confirmed,
 
-//         name => {
-//             field_to_edit =
-//             Event::FieldEdited(name.to_string())
-//         },
+//         name => field_to_edit = Event::FieldEdited(name.to_string()),
 //     }
 // }
 

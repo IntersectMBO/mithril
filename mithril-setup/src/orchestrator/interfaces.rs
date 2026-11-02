@@ -8,7 +8,7 @@ pub trait Discoverer {
     type Output;
 
     /// Run the discoverer logic and fill the output structure
-    fn run(&self) -> anyhow::Result<Self::Output>;
+    fn discover(&self) -> anyhow::Result<Self::Output>;
 }
 
 /// Orchestrator trait, working with a mutable store
@@ -26,7 +26,7 @@ pub trait Orchestrator {
 
     /// Run the discoverer and then update the store with the discovery
     fn discover(&self) -> anyhow::Result<Store> {
-        let discovery = self.discoverer().run()?;
+        let discovery = self.discoverer().discover()?;
         self.apply_discovery(discovery)
     }
 }
@@ -35,7 +35,7 @@ pub trait Orchestrator {
 mod test {
     use crate::orchestrator::{
         interfaces::Discoverer,
-        store::{Field, FieldType, State},
+        store::{Field, FieldState, FieldType},
     };
 
     use super::*;
@@ -47,7 +47,7 @@ mod test {
     }
     impl Discoverer for MockDiscoverer {
         type Output = MockDiscovery;
-        fn run(&self) -> anyhow::Result<Self::Output> {
+        fn discover(&self) -> anyhow::Result<Self::Output> {
             Ok(MockDiscovery {
                 color: "Purple".to_string(),
                 shape: "Rectangle".to_string(),
@@ -72,16 +72,8 @@ mod test {
             let mut store = self.store.clone();
 
             store
-                .update_field(
-                    "color",
-                    discovery.color,
-                    // State::Discovered
-                )?
-                .update_field(
-                    "shape",
-                    discovery.shape,
-                    // State::Discovered
-                )?;
+                .update_field("color", discovery.color, FieldState::Discovered)?
+                .update_field("shape", discovery.shape, FieldState::Discovered)?;
 
             Ok(store)
         }
@@ -109,20 +101,20 @@ mod test {
 
         let actual_network = signer_orchestrator.store.get_field("color").unwrap();
         assert_eq!(None, actual_network.value.clone());
-        //assert_eq!(State::Unset, actual_network.state);
+        assert_eq!(FieldState::Unset, actual_network.state);
 
         let actual_toto = signer_orchestrator.store.get_field("shape").unwrap();
         assert_eq!(None, actual_toto.value.clone());
-        //assert_eq!(State::Unset, actual_toto.state);
+        assert_eq!(FieldState::Unset, actual_toto.state);
 
         let store_updated = signer_orchestrator.discover().unwrap();
 
         let actual_network = store_updated.get_field("color").unwrap();
         assert_eq!("Purple", actual_network.value.clone().unwrap());
-        //assert_eq!(State::Discovered, actual_network.state);
+        assert_eq!(FieldState::Discovered, actual_network.state);
 
         let actual_toto = store_updated.get_field("shape").unwrap();
         assert_eq!("Rectangle", actual_toto.value.clone().unwrap());
-        //assert_eq!(State::Discovered, actual_toto.state);
+        assert_eq!(FieldState::Discovered, actual_toto.state);
     }
 }
