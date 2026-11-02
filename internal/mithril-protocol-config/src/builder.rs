@@ -32,7 +32,7 @@ pub enum AdapterConfig {
     /// Fake protocol configuration adapter with a single configuration at epoch 0 (for test usage)
     Fake {
         /// JSON hex encoded protocol configuration (same format as the configuration of a protocol configuration marker)
-        protocol_parameters: String,
+        configuration: String,
     },
 }
 
@@ -60,11 +60,9 @@ pub fn build_protocol_configuration_adapter(
             *verification_key,
             logger,
         )),
-        AdapterConfig::Fake {
-            protocol_parameters,
-        } => Arc::new(
+        AdapterConfig::Fake { configuration } => Arc::new(
             FakeProtocolConfigurationMarkersReader::from_json_hex_marker_configuration(
-                &protocol_parameters,
+                &configuration,
             )?,
         ),
     };
@@ -109,7 +107,7 @@ mod test {
     fn deserialize_fake_adapter_config_from_json() {
         let serialized_json = serde_json::json!({
             "type": "fake",
-            "protocol_parameters": "7b7d",
+            "configuration": "7b7d",
         });
 
         let payload = serde_json::to_string(&serialized_json).unwrap();
@@ -118,7 +116,7 @@ mod test {
         assert_eq!(
             deserialized,
             AdapterConfig::Fake {
-                protocol_parameters: "7b7d".to_string()
+                configuration: "7b7d".to_string()
             }
         );
     }
@@ -126,8 +124,7 @@ mod test {
     #[test]
     fn build_fake_adapter_from_json_hex_configuration() {
         let adapter_config = AdapterConfig::Fake {
-            protocol_parameters: key_encode_hex(ProtocolConfigurationForEpochMessage::dummy())
-                .unwrap(),
+            configuration: key_encode_hex(ProtocolConfigurationForEpochMessage::dummy()).unwrap(),
         };
 
         build_protocol_configuration_adapter(
@@ -141,7 +138,7 @@ mod test {
     #[test]
     fn build_fake_adapter_fails_with_invalid_configuration() {
         let adapter_config = AdapterConfig::Fake {
-            protocol_parameters: "invalid_configuration".to_string(),
+            configuration: "invalid_configuration".to_string(),
         };
 
         let result = build_protocol_configuration_adapter(

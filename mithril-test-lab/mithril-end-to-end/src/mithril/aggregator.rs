@@ -640,7 +640,7 @@ impl Aggregator {
 
         Ok(json!({
             "type": "fake",
-            "protocol_parameters": key_encode_hex(configuration)?,
+            "configuration": key_encode_hex(configuration)?,
         })
         .to_string())
     }
@@ -758,7 +758,7 @@ mod tests {
 
         let adapter_config: serde_json::Value = serde_json::from_str(&adapter_config).unwrap();
         let configuration: serde_json::Value =
-            key_decode_hex(adapter_config["protocol_parameters"].as_str().unwrap()).unwrap();
+            key_decode_hex(adapter_config["configuration"].as_str().unwrap()).unwrap();
         assert_eq!("fake", adapter_config["type"]);
         assert_eq!(
             json!({

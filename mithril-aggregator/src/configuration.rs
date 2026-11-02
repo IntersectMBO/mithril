@@ -868,7 +868,7 @@ impl ServeCommandConfiguration {
             era_reader_adapter_type: EraReaderAdapterType::Bootstrap,
             era_reader_adapter_params: None,
             protocol_configuration_reader_adapter_config: Some(AdapterConfig::Fake {
-                protocol_parameters: key_encode_hex(ProtocolConfigurationForEpochMessage {
+                configuration: key_encode_hex(ProtocolConfigurationForEpochMessage {
                     protocol_parameters: ProtocolParameters {
                         k: 5,
                         m: 100,
