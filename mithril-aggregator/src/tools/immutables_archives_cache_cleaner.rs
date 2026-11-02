@@ -130,7 +130,10 @@ impl Display for ImmutablesArchivesSummary {
 mod tests {
     use std::fs::{File, create_dir};
 
-    use mithril_common::{temp_dir_create, test::assert_equivalent};
+    use mithril_common::{
+        temp_dir_create,
+        test::{assert_dir_eq, assert_equivalent},
+    };
 
     use super::*;
 
@@ -224,10 +227,7 @@ mod tests {
 
             ImmutablesArchivesCacheCleaner::delete_archives(&archives).unwrap();
 
-            assert!(!cache_dir.join("00000.tar.zst").exists());
-            assert!(!cache_dir.join("00001.tar.zst").exists());
-            assert!(!cache_dir.join("00005.tar.zst").exists());
-            assert!(cache_dir.join("foo.txt").exists());
+            assert_dir_eq!(&cache_dir, "* foo.txt");
         }
 
         #[test]

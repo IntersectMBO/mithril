@@ -106,7 +106,7 @@ mod tests {
     use std::fs::{File, create_dir_all};
     use std::path::Path;
 
-    use mithril_common::temp_dir_create;
+    use mithril_common::{temp_dir_create, test::assert_dir_eq};
 
     use crate::test::TestLogger;
 
@@ -189,7 +189,7 @@ mod tests {
             .await
             .expect("clear-immutables-archives-cache should succeed");
 
-        assert!(cache_dir.join("00000.tar.zst").exists());
+        assert_dir_eq!(&cache_dir, "* 00000.tar.zst");
     }
 
     #[tokio::test]
@@ -204,7 +204,7 @@ mod tests {
             .await
             .expect("clear-immutables-archives-cache should succeed");
 
-        assert!(!snapshot_directory.join(CARDANO_DB_ARTIFACTS_DIR).exists());
+        assert_dir_eq!(&snapshot_directory, "");
     }
 
     #[tokio::test]
@@ -223,9 +223,7 @@ mod tests {
             .await
             .expect("clear-immutables-archives-cache should succeed");
 
-        assert!(!cache_dir.join("00000.tar.zst").exists());
-        assert!(!cache_dir.join("00003.tar.zst").exists());
-        assert!(cache_dir.join("foo.txt").exists());
+        assert_dir_eq!(&cache_dir, "* foo.txt");
     }
 
     #[tokio::test]
@@ -241,6 +239,6 @@ mod tests {
             .await
             .expect("clear-immutables-archives-cache should succeed");
 
-        assert!(!cache_dir.join("00000.tar.zst").exists());
+        assert_dir_eq!(&cache_dir, "");
     }
 }
