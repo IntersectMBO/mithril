@@ -624,7 +624,7 @@ mod tests {
     }
 
     /// pallas responses mock server.
-    async fn mock_server(server: &mut NodeServer) -> AnyCbor {
+    async fn mock_server(server: &mut NodeServer, current_era: u16) -> AnyCbor {
         let query: queries_v16::Request =
             match server.statequery().recv_while_acquired().await.unwrap() {
                 ClientQueryRequest::Query(q) => q.into_decode().unwrap(),
@@ -640,7 +640,7 @@ mod tests {
                 block_number: 52851885,
             }),
             Request::LedgerQuery(LedgerQuery::HardForkQuery(HardForkQuery::GetCurrentEra)) => {
-                AnyCbor::from_encode(4)
+                AnyCbor::from_encode(current_era)
             }
             Request::LedgerQuery(LedgerQuery::BlockQuery(_, BlockQuery::GetEpochNo)) => {
                 AnyCbor::from_encode([8])
@@ -669,6 +669,14 @@ mod tests {
     /// local state queries should be intercepted by the `mock_server`
     /// and avoid any panic errors.
     async fn setup_server(socket_path: PathBuf, intersections: u32) -> tokio::task::JoinHandle<()> {
+        setup_server_with_era(socket_path, intersections, 4).await
+    }
+
+    async fn setup_server_with_era(
+        socket_path: PathBuf,
+        intersections: u32,
+        current_era: u16,
+    ) -> tokio::task::JoinHandle<()> {
         tokio::spawn({
             async move {
                 if socket_path.exists() {
@@ -682,7 +690,7 @@ mod tests {
                 server.statequery().send_acquired().await.unwrap();
 
                 for _ in 0..intersections {
-                    let result = mock_server(&mut server).await;
+                    let result = mock_server(&mut server, current_era).await;
                     server.statequery().send_result(result).await.unwrap();
                 }
             }
@@ -958,6 +966,31 @@ mod tests {
                 block_hash: "010203".to_string(),
                 block_number: BlockNumber(52851885)
             })
+        );
+    }
+
+    #[tokio::test]
+    async fn get_current_era_returns_dijkstra_for_the_node_era_index_7() {
+        let socket_path = create_temp_dir("get_current_era_dijkstra").join("node.socket");
+        let server = setup_server_with_era(socket_path.clone(), 1, 7).await;
+        let client = tokio::spawn(async move {
+            let observer =
+                PallasChainObserver::new(socket_path.as_path(), CardanoNetwork::TestNet(10));
+            observer.get_current_era().await.unwrap().unwrap()
+        });
+
+        let (_, client_res) = tokio::join!(server, client);
+        let era = client_res.expect("Client failed");
+
+        assert_eq!(era, "Dijkstra");
+    }
+
+    #[test]
+    fn era_offset_maps_the_dijkstra_era_index_of_the_node() {
+        assert_eq!(Era::try_from(7 + ERA_OFFSET).unwrap(), Era::Dijkstra);
+        assert_eq!(
+            Era::try_from(7 + ERA_OFFSET).unwrap().to_string(),
+            "Dijkstra"
         );
     }
 }
