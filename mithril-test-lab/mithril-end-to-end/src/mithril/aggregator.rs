@@ -622,18 +622,6 @@ impl Aggregator {
         );
     }
 
-    pub async fn set_fake_protocol_configuration_reader_adapter_config(
-        &self,
-        protocol_parameters: &entities::ProtocolParameters,
-    ) -> StdResult<()> {
-        let mut command = self.command.write().await;
-        let fake_config =
-            Self::fake_protocol_configuration_reader_adapter_config(protocol_parameters)?;
-        command.set_env_var("PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG", &fake_config);
-
-        Ok(())
-    }
-
     fn fake_protocol_configuration_reader_adapter_config(
         protocol_parameters: &ProtocolParameters,
     ) -> StdResult<String> {
