@@ -22,7 +22,7 @@ jobs:
         with:
           command: check advisories
           arguments: "--all-features --config .config/deny-full.toml"
-          command-arguments: "--warn advisory-ignored"
+          command-arguments: "--warn advisory-ignored --warn vulnerability --warn unsound"
           log-level: warn
 
       - name: Explain result
@@ -32,18 +32,22 @@ jobs:
             echo "## Crates advisories (full check)"
             echo ""
             if [ "${{ steps.deny.outcome }}" = "failure" ]; then
-              echo "**Advisories found.**"
+              echo "**Yanked or unmaintained crates found.**"
               echo ""
-              echo "Yanked crates and vulnerabilities:"
+              echo "Yanked crates:"
               echo "- Direct dependency of Mithril: open a fix PR with \`cargo update -p <package> [--precise <version>]\`."
-              echo "- Not a direct dependency: try \`cargo update -p <package>\` first; if a parent crate's version constraint blocks the update, add an ignore entry to \`deny.toml\` and wait for an upstream fix (this weekly check will keep reporting it)."
+              echo "- Not a direct dependency: try \`cargo update -p <package>\` first; if a parent crate's version constraint blocks the update, wait for an upstream fix."
               echo ""
-              echo "Unmaintained crates: if it is a direct dependency of Mithril, open an issue to replace it."
+              echo "Unmaintained crates:"
+              echo "- Direct dependency of Mithril: open an issue to replace it."
+              echo "- Not a direct dependency: add an ignore entry with an explanation to \`.config/deny-full.toml\` until the parent crate replaces it."
             else
-              echo "No new advisories found ✅"
-              echo ""
-              echo "Ignored advisories are reported as warnings in the job log, see \`.config/deny-full.toml\` for what can be done."
+              echo "No new yanked or unmaintained crates found ✅"
             fi
+            echo ""
+            echo "Vulnerabilities and unsound crates are reported as warnings in the job log:"
+            echo "- Fixable with \`cargo update -p <package> [--precise <version>]\` or a dependency upgrade: open a fix PR."
+            echo "- No upstream fix available: add an ignore entry with an explanation to \`.config/deny-full.toml\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-on-failure:
