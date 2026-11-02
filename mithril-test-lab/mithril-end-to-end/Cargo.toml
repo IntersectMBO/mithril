@@ -42,3 +42,6 @@ slog-scope = "4.4.1"
 slog-term = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "signal", "time"] }
+
+[dev-dependencies]
+hex = { workspace = true }
