@@ -12,10 +12,12 @@ use mithril_persistence::sqlite::{SqliteCleaner, SqliteCleaningTask};
 use crate::{
     ConfigurationSource, ExecutionEnvironment,
     database::repository::{CertificateRepository, SignedEntityStore},
-    dependency_injection::DependenciesBuilder,
+    dependency_injection::{CARDANO_DB_ARTIFACTS_DIR, DependenciesBuilder, IMMUTABLE_ARCHIVES_DIR},
     extract_all,
-    tools::CertificatesHashMigrator,
-    tools::KeypairTools,
+    tools::{
+        CertificatesHashMigrator, ImmutablesArchivesCacheCleaner, ImmutablesArchivesSummary,
+        KeypairTools,
+    },
 };
 
 #[derive(Debug, Clone, Deserialize, Documenter)]
@@ -33,6 +35,13 @@ impl ConfigurationSource for ToolsCommandConfiguration {
     fn data_stores_directory(&self) -> PathBuf {
         self.data_stores_directory.clone()
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Documenter)]
+pub struct ClearImmutablesArchivesCacheCommandConfiguration {
+    /// Directory to store snapshot
+    #[example = "`./mithril-aggregator/snapshots`"]
+    pub snapshot_directory: PathBuf,
 }
 
 /// List of tools to upkeep the aggregator
@@ -58,6 +67,7 @@ impl ToolsCommand {
             ToolsSubCommand,
             RecomputeCertificatesHash = { RecomputeCertificatesHashCommand },
             GenerateKeypair = { GenerateKeypairCommand },
+            ClearImmutablesArchivesCache = { ClearImmutablesArchivesCacheCommand },
         )
     }
 }
@@ -74,6 +84,11 @@ pub enum ToolsSubCommand {
 
     /// Generate a new keypair
     GenerateKeypair(GenerateKeypairCommand),
+
+    /// Clear the cache directory of the immutable files compressed archives.
+    ///
+    /// Must not be run while the aggregator is running.
+    ClearImmutablesArchivesCache(ClearImmutablesArchivesCacheCommand),
 }
 
 /// List of commands to generate a new keypair
@@ -116,6 +131,9 @@ impl ToolsSubCommand {
         match self {
             Self::RecomputeCertificatesHash(cmd) => cmd.execute(root_logger, config_builder).await,
             Self::GenerateKeypair(cmd) => cmd.execute(root_logger).await,
+            Self::ClearImmutablesArchivesCache(cmd) => {
+                cmd.execute(root_logger, config_builder).await
+            }
         }
     }
 }
@@ -197,6 +215,47 @@ impl Ed25519SubCommand {
     }
 }
 
+/// Clear immutable files compressed archives cache command.
+#[derive(Parser, Debug, Clone)]
+pub struct ClearImmutablesArchivesCacheCommand {}
+
+impl ClearImmutablesArchivesCacheCommand {
+    pub async fn execute(
+        &self,
+        root_logger: Logger,
+        config_builder: ConfigBuilder<DefaultState>,
+    ) -> StdResult<()> {
+        let config: ClearImmutablesArchivesCacheCommandConfiguration = config_builder
+            .build()
+            .with_context(|| "configuration build error")?
+            .try_deserialize()
+            .with_context(|| "configuration deserialize error")?;
+        debug!(root_logger, "CLEAR IMMUTABLES ARCHIVES CACHE command"; "config" => format!("{config:?}"));
+        let cache_dir = config
+            .snapshot_directory
+            .join(CARDANO_DB_ARTIFACTS_DIR)
+            .join(IMMUTABLE_ARCHIVES_DIR);
+
+        let archives = ImmutablesArchivesCacheCleaner::detect_archives(&cache_dir)
+            .with_context(|| "clear-immutables-archives-cache: archives detection error")?;
+        println!(
+            "Immutables archives cache directory: {}",
+            cache_dir.display()
+        );
+        println!("{}", ImmutablesArchivesSummary::from_archives(&archives));
+        println!("Dry run: nothing was deleted");
+
+        Ok(())
+    }
+
+    pub fn extract_config(command_path: String) -> HashMap<String, StructDoc> {
+        HashMap::from([(
+            command_path,
+            ClearImmutablesArchivesCacheCommandConfiguration::extract(),
+        )])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -256,6 +315,74 @@ mod tests {
                 .expect("generate-keypair ed25519 should succeed");
             assert!(target.join("ed25519_keypair.sk").exists());
             assert!(target.join("ed25519_keypair.vk").exists());
+        }
+    }
+
+    mod clear_immutables_archives_cache_subcommand {
+        use std::fs::{File, create_dir_all};
+        use std::path::Path;
+
+        use mithril_common::temp_dir_create;
+
+        use crate::dependency_injection::{CARDANO_DB_ARTIFACTS_DIR, IMMUTABLE_ARCHIVES_DIR};
+
+        use super::*;
+
+        fn config_builder_with_snapshot_directory(
+            snapshot_directory: &Path,
+        ) -> ConfigBuilder<DefaultState> {
+            config::Config::builder()
+                .set_override(
+                    "snapshot_directory",
+                    snapshot_directory.to_string_lossy().to_string(),
+                )
+                .unwrap()
+        }
+
+        #[test]
+        fn clear_immutables_archives_cache_subcommand_parses() {
+            let cmd = ToolsCommand::try_parse_from(["tools", "clear-immutables-archives-cache"])
+                .expect("CLI parse should succeed");
+
+            assert!(matches!(
+                cmd.subcommand,
+                ToolsSubCommand::ClearImmutablesArchivesCache(_)
+            ));
+        }
+
+        #[tokio::test]
+        async fn dry_run_does_not_delete_archives() {
+            let snapshot_directory = temp_dir_create!();
+            let cache_dir = snapshot_directory
+                .join(CARDANO_DB_ARTIFACTS_DIR)
+                .join(IMMUTABLE_ARCHIVES_DIR);
+            create_dir_all(&cache_dir).unwrap();
+            File::create(cache_dir.join("00000.tar.zst")).unwrap();
+
+            ClearImmutablesArchivesCacheCommand {}
+                .execute(
+                    TestLogger::stdout(),
+                    config_builder_with_snapshot_directory(&snapshot_directory),
+                )
+                .await
+                .expect("clear-immutables-archives-cache should succeed");
+
+            assert!(cache_dir.join("00000.tar.zst").exists());
+        }
+
+        #[tokio::test]
+        async fn dry_run_succeeds_if_cache_directory_does_not_exist() {
+            let snapshot_directory = temp_dir_create!();
+
+            ClearImmutablesArchivesCacheCommand {}
+                .execute(
+                    TestLogger::stdout(),
+                    config_builder_with_snapshot_directory(&snapshot_directory),
+                )
+                .await
+                .expect("clear-immutables-archives-cache should succeed");
+
+            assert!(!snapshot_directory.join(CARDANO_DB_ARTIFACTS_DIR).exists());
         }
     }
 }
