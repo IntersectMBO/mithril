@@ -33,13 +33,13 @@ cargo install wasm-pack
 sudo apt install clang
 ```
 
-- Install `nodejs` version `16.15+`
+- Install `nodejs` version `22.15+`
 
 ```bash
 sudo apt install nodejs
 ```
 
-- Install `npm` version `8.11+`
+- Install `npm` version `10.9+`
 
 ```bash
 sudo apt install npm
