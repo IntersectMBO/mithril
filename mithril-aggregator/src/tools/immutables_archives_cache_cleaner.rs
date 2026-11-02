@@ -1,6 +1,8 @@
 use std::{
     ffi::OsStr,
+    fmt::{Display, Formatter},
     fs,
+    ops::RangeInclusive,
     path::{Path, PathBuf},
 };
 
@@ -67,6 +69,44 @@ impl ImmutablesArchivesCacheCleaner {
         }
 
         immutable_file_number.parse().ok()
+    }
+}
+
+/// Summary of the immutable files archives detected in the cache directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImmutablesArchivesSummary {
+    /// Number of archives
+    pub count: usize,
+    /// Range from the lowest to the highest immutable file number (may contain holes)
+    pub immutable_file_numbers: Option<RangeInclusive<ImmutableFileNumber>>,
+}
+
+impl ImmutablesArchivesSummary {
+    /// Compute the summary of the given archives
+    pub fn from_archives(archives: &[ImmutableFileArchive]) -> Self {
+        let immutable_file_numbers = archives.iter().map(|archive| archive.immutable_file_number);
+        let min = immutable_file_numbers.clone().min();
+        let max = immutable_file_numbers.max();
+
+        Self {
+            count: archives.len(),
+            immutable_file_numbers: min.zip(max).map(|(min, max)| min..=max),
+        }
+    }
+}
+
+impl Display for ImmutablesArchivesSummary {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.immutable_file_numbers {
+            None => write!(f, "No immutables archives"),
+            Some(range) => write!(
+                f,
+                "{} immutables archives, immutable file numbers from {} to {}",
+                self.count,
+                range.start(),
+                range.end()
+            ),
+        }
     }
 }
 
@@ -152,5 +192,67 @@ mod tests {
         let archives = ImmutablesArchivesCacheCleaner::detect_archives(&cache_dir).unwrap();
 
         assert_eq!(vec![archive(&cache_dir, 2, "00002.tar.zst")], archives);
+    }
+
+    mod summary {
+        use super::*;
+
+        #[test]
+        fn summary_of_no_archives() {
+            let summary = ImmutablesArchivesSummary::from_archives(&[]);
+
+            assert_eq!(
+                ImmutablesArchivesSummary {
+                    count: 0,
+                    immutable_file_numbers: None,
+                },
+                summary
+            );
+            assert_eq!("No immutables archives", summary.to_string());
+        }
+
+        #[test]
+        fn summary_of_a_single_archive() {
+            let cache_dir = PathBuf::from("cache");
+            let summary = ImmutablesArchivesSummary::from_archives(&[archive(
+                &cache_dir,
+                42,
+                "00042.tar.zst",
+            )]);
+
+            assert_eq!(
+                ImmutablesArchivesSummary {
+                    count: 1,
+                    immutable_file_numbers: Some(42..=42),
+                },
+                summary
+            );
+            assert_eq!(
+                "1 immutables archives, immutable file numbers from 42 to 42",
+                summary.to_string()
+            );
+        }
+
+        #[test]
+        fn summary_of_unordered_archives_with_holes() {
+            let cache_dir = PathBuf::from("cache");
+            let summary = ImmutablesArchivesSummary::from_archives(&[
+                archive(&cache_dir, 5, "00005.tar.zst"),
+                archive(&cache_dir, 0, "00000.tar.zst"),
+                archive(&cache_dir, 1, "00001.tar.zst"),
+            ]);
+
+            assert_eq!(
+                ImmutablesArchivesSummary {
+                    count: 3,
+                    immutable_file_numbers: Some(0..=5),
+                },
+                summary
+            );
+            assert_eq!(
+                "3 immutables archives, immutable file numbers from 0 to 5",
+                summary.to_string()
+            );
+        }
     }
 }

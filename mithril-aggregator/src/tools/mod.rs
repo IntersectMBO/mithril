@@ -19,7 +19,9 @@ pub use era::EraTools;
 #[cfg(feature = "snark")]
 pub use genesis::GenesisSignedPayload;
 pub use genesis::GenesisTools;
-pub use immutables_archives_cache_cleaner::ImmutablesArchivesCacheCleaner;
+pub use immutables_archives_cache_cleaner::{
+    ImmutablesArchivesCacheCleaner, ImmutablesArchivesSummary,
+};
 pub use keypair::KeypairTools;
 pub use protocol_configuration::{HumanReadableProtocolConfiguration, ProtocolConfigurationTools};
 pub use single_signature_authenticator::*;
