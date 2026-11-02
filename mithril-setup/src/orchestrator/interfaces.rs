@@ -11,7 +11,7 @@ pub trait Discoverer {
     fn discover(&self) -> anyhow::Result<Self::Output>;
 }
 
-/// Orchestrator trait, working with a mutable store
+/// Orchestrator trait, performing the effects requested by the state machine
 pub trait Orchestrator {
     /// type representing the discoverer result
     type Discovery;
@@ -21,18 +21,26 @@ pub trait Orchestrator {
     /// Return the discoverer
     fn discoverer(&self) -> &Self::Discoverer;
 
-    /// Update the store with the discovery
-    fn apply_discovery(&self, discovery: Self::Discovery) -> anyhow::Result<Store>;
+    /// Return the store with all the fields to fill, not set yet
+    fn initial_store(&self) -> Store;
 
-    /// Run the discoverer and then update the store with the discovery
+    /// Update the given store with the discovery
+    fn apply_discovery(&self, store: Store, discovery: Self::Discovery) -> anyhow::Result<Store>;
+
+    /// Persist the given store
+    fn save(&self, store: &Store) -> anyhow::Result<()>;
+
+    /// Run the discoverer and then update the initial store with the discovery
     fn discover(&self) -> anyhow::Result<Store> {
         let discovery = self.discoverer().discover()?;
-        self.apply_discovery(discovery)
+        self.apply_discovery(self.initial_store(), discovery)
     }
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
+    use std::cell::RefCell;
+
     use crate::orchestrator::{
         interfaces::Discoverer,
         store::{Field, FieldState, FieldType},
@@ -40,8 +48,9 @@ mod test {
 
     use super::*;
 
-    struct MockDiscoverer;
-    struct MockDiscovery {
+    #[derive(Default)]
+    pub(crate) struct MockDiscoverer;
+    pub(crate) struct MockDiscovery {
         color: String,
         shape: String,
     }
@@ -55,9 +64,10 @@ mod test {
         }
     }
 
-    struct MockOrchestrator {
-        pub store: Store,
+    #[derive(Default)]
+    pub(crate) struct MockOrchestrator {
         discoverer: MockDiscoverer,
+        pub saved_stores: RefCell<Vec<Store>>,
     }
 
     impl Orchestrator for MockOrchestrator {
@@ -65,24 +75,11 @@ mod test {
         type Discoverer = MockDiscoverer;
 
         fn discoverer(&self) -> &Self::Discoverer {
-            &self.discoverer //TODO can be a blanket of the trait ?
+            &self.discoverer
         }
 
-        fn apply_discovery(&self, discovery: Self::Discovery) -> anyhow::Result<Store> {
-            let mut store = self.store.clone();
-
-            store
-                .update_field("color", discovery.color, FieldState::Discovered)?
-                .update_field("shape", discovery.shape, FieldState::Discovered)?;
-
-            Ok(store)
-        }
-    }
-
-    #[test]
-    fn test_orchestrator_discover_must_fill_store_with_information_from_the_discoverer() {
-        let signer_orchestrator = MockOrchestrator {
-            store: Store::new(vec![
+        fn initial_store(&self) -> Store {
+            Store::new(vec![
                 Field::init(
                     "color".to_string(),
                     "description".to_string(),
@@ -95,26 +92,49 @@ mod test {
                     FieldType::String,
                     None,
                 ),
-            ]),
-            discoverer: MockDiscoverer,
-        };
+            ])
+        }
 
-        let actual_network = signer_orchestrator.store.get_field("color").unwrap();
-        assert_eq!(None, actual_network.value.clone());
-        assert_eq!(FieldState::Unset, actual_network.state);
+        fn apply_discovery(
+            &self,
+            mut store: Store,
+            discovery: Self::Discovery,
+        ) -> anyhow::Result<Store> {
+            store
+                .update_field("color", discovery.color, FieldState::Discovered)?
+                .update_field("shape", discovery.shape, FieldState::Discovered)?;
 
-        let actual_toto = signer_orchestrator.store.get_field("shape").unwrap();
-        assert_eq!(None, actual_toto.value.clone());
-        assert_eq!(FieldState::Unset, actual_toto.state);
+            Ok(store)
+        }
 
-        let store_updated = signer_orchestrator.discover().unwrap();
+        fn save(&self, store: &Store) -> anyhow::Result<()> {
+            self.saved_stores.borrow_mut().push(store.clone());
+            Ok(())
+        }
+    }
 
-        let actual_network = store_updated.get_field("color").unwrap();
-        assert_eq!("Purple", actual_network.value.clone().unwrap());
-        assert_eq!(FieldState::Discovered, actual_network.state);
+    #[test]
+    fn test_orchestrator_discover_must_fill_store_with_information_from_the_discoverer() {
+        let orchestrator = MockOrchestrator::default();
 
-        let actual_toto = store_updated.get_field("shape").unwrap();
-        assert_eq!("Rectangle", actual_toto.value.clone().unwrap());
-        assert_eq!(FieldState::Discovered, actual_toto.state);
+        let initial_store = orchestrator.initial_store();
+
+        let actual_color = initial_store.get_field("color").unwrap();
+        assert_eq!(None, actual_color.value.clone());
+        assert_eq!(FieldState::Unset, actual_color.state);
+
+        let actual_shape = initial_store.get_field("shape").unwrap();
+        assert_eq!(None, actual_shape.value.clone());
+        assert_eq!(FieldState::Unset, actual_shape.state);
+
+        let store_updated = orchestrator.discover().unwrap();
+
+        let actual_color = store_updated.get_field("color").unwrap();
+        assert_eq!("Purple", actual_color.value.clone().unwrap());
+        assert_eq!(FieldState::Discovered, actual_color.state);
+
+        let actual_shape = store_updated.get_field("shape").unwrap();
+        assert_eq!("Rectangle", actual_shape.value.clone().unwrap());
+        assert_eq!(FieldState::Discovered, actual_shape.state);
     }
 }
