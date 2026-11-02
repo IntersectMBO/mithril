@@ -41,7 +41,7 @@ impl State {
     }
 }
 
-/// Something that happened, sent by the user or produced by an effect
+/// Events to transition to another state
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     /// The user started the flow
@@ -50,13 +50,13 @@ pub enum Event {
     /// The Store discovery finished or the reason of its failure
     Discovered(Result<Store, String>),
 
-    /// The user replaced the proposed store in the store
+    /// The user replaced the proposed store
     StoreEdited(Store),
 
-    /// The user confirmed the proposed Field
-    Confirmed,
+    /// The user confirmed the proposed Store
+    StoreConfirmed,
 
-    /// The Field saving finished, or the reason of its failure
+    /// The Store saving finished, or the reason of its failure
     Saved(Result<(), String>),
 }
 
@@ -88,11 +88,11 @@ pub fn transition(state: &State, event: Event) -> Result<(State, Option<Effect>)
             Ok((State::Reviewing { store }, None))
         }
 
-        (State::Reviewing { store }, Event::Confirmed) if !store.is_all_fields_filled() => {
+        (State::Reviewing { store }, Event::StoreConfirmed) if !store.is_all_fields_filled() => {
             Err("All the fields must be filled before confirming".to_string())
         }
 
-        (State::Reviewing { store }, Event::Confirmed) => Ok((
+        (State::Reviewing { store }, Event::StoreConfirmed) => Ok((
             State::Saving {
                 store: store.clone(),
             },
@@ -183,12 +183,12 @@ mod tests {
     }
 
     #[test]
-    fn confirmed_asks_to_save_the_reviewed_name() {
+    fn confirmed_asks_to_save_the_reviewed_store() {
         let reviewing = State::Reviewing {
             store: filled_store_with_name("bob"),
         };
 
-        let (state, effect) = transition(&reviewing, Event::Confirmed).unwrap();
+        let (state, effect) = transition(&reviewing, Event::StoreConfirmed).unwrap();
 
         assert_eq!(
             State::Saving {
@@ -225,12 +225,12 @@ mod tests {
             )]),
         };
 
-        assert!(transition(&reviewing, Event::Confirmed).is_err());
+        assert!(transition(&reviewing, Event::StoreConfirmed).is_err());
     }
 
     #[test]
     fn an_unexpected_event_is_rejected() {
-        assert!(transition(&State::Idle, Event::Confirmed).is_err());
+        assert!(transition(&State::Idle, Event::StoreConfirmed).is_err());
     }
 
     #[test]
@@ -239,7 +239,7 @@ mod tests {
             Event::Started,
             Event::Discovered(Ok(filled_store_with_name("bob"))),
             Event::StoreEdited(filled_store_with_name("alice")),
-            Event::Confirmed,
+            Event::StoreConfirmed,
             Event::Saved(Ok(())),
         ];
 
@@ -254,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn cannot_go_to_next_state_if_all_fields_are_unset() {
+    fn cannot_confirm_store_if_all_fields_are_unset() {
         let reviewing = State::Reviewing {
             store: Store::new(vec![Field {
                 name: "name".to_string(),
@@ -266,14 +266,30 @@ mod tests {
             }]),
         };
 
-        assert!(transition(&reviewing, Event::Confirmed).is_err());
+        assert!(transition(&reviewing, Event::StoreConfirmed).is_err());
+    }
+
+    #[test]
+    fn can_confirm_store_if_all_fields_are_set() {
+        let reviewing = State::Reviewing {
+            store: Store::new(vec![Field {
+                name: "name".to_string(),
+                description: "user name".to_string(),
+                kind: FieldType::String,
+                value: Some("Carol".to_string()),
+                state: FieldState::FilledByUser,
+                default: None,
+            }]),
+        };
+
+        assert!(transition(&reviewing, Event::StoreConfirmed).is_ok());
     }
 
     #[test]
     fn the_shell_can_be_replaced_by_a_fake() {
         let reviewing = run(&State::Idle, Event::Started, fake_execute).unwrap();
 
-        let done = run(&reviewing, Event::Confirmed, fake_execute).unwrap();
+        let done = run(&reviewing, Event::StoreConfirmed, fake_execute).unwrap();
 
         assert_eq!(
             State::Reviewing {
@@ -307,7 +323,7 @@ mod tests {
         assert_eq!(Some("Purple".to_string()), color.value);
         assert_eq!(FieldState::Discovered, color.state);
 
-        let done = run(&reviewing, Event::Confirmed, execute).unwrap();
+        let done = run(&reviewing, Event::StoreConfirmed, execute).unwrap();
 
         assert_eq!(State::Done, done);
         assert_eq!(vec![store.clone()], *orchestrator.saved_stores.borrow());
@@ -317,7 +333,7 @@ mod tests {
     fn setup_runs_the_flow_until_it_is_finished() {
         let orchestrator = MockOrchestrator::default();
 
-        let state = setup(&orchestrator, |_| Event::Confirmed).unwrap();
+        let state = setup(&orchestrator, |_| Event::StoreConfirmed).unwrap();
 
         assert_eq!(State::Done, state);
         assert_eq!(1, orchestrator.saved_stores.borrow().len());

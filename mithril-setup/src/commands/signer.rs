@@ -41,11 +41,11 @@ fn read_user_event(state: &State) -> Event {
 
         let mut line = String::new();
         match std::io::stdin().read_line(&mut line) {
-            Ok(0) => return Event::Confirmed,
+            Ok(0) => return Event::StoreConfirmed,
             Ok(_) => {}
             Err(e) => {
                 eprintln!("Can not read the user input: {e}");
-                return Event::Confirmed;
+                return Event::StoreConfirmed;
             }
         }
 
@@ -68,7 +68,7 @@ fn accepted_user_event(state: &State, line: &str) -> anyhow::Result<Event> {
 fn user_event(state: &State, line: &str) -> anyhow::Result<Event> {
     let line = line.trim();
     if line.is_empty() {
-        return Ok(Event::Confirmed);
+        return Ok(Event::StoreConfirmed);
     }
 
     let State::Reviewing { store } = state else {
@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn user_event_confirms_on_an_empty_line() {
         assert_eq!(
-            Event::Confirmed,
+            Event::StoreConfirmed,
             user_event(&reviewing_state(), "\n").unwrap()
         );
     }
@@ -147,7 +147,7 @@ mod tests {
             panic!("expected StoreEdited");
         };
         assert_eq!(
-            Event::Confirmed,
+            Event::StoreConfirmed,
             accepted_user_event(&State::Reviewing { store }, "\n").unwrap()
         );
     }

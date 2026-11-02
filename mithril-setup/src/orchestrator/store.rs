@@ -47,6 +47,7 @@ pub struct Field {
 
     /// Value of the field
     pub value: Option<String>,
+
     /// State of the field
     pub state: FieldState,
 }
