@@ -18,13 +18,13 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Deserialize, Documenter)]
-pub struct ToolsCommandConfiguration {
+pub struct RecomputeCertificatesHashCommandConfiguration {
     /// Directory to store aggregator databases
     #[example = "`./mithril-aggregator/stores`"]
     pub data_stores_directory: PathBuf,
 }
 
-impl ConfigurationSource for ToolsCommandConfiguration {
+impl ConfigurationSource for RecomputeCertificatesHashCommandConfiguration {
     fn environment(&self) -> ExecutionEnvironment {
         ExecutionEnvironment::Production
     }
@@ -44,7 +44,7 @@ impl RecomputeCertificatesHashCommand {
         root_logger: Logger,
         config_builder: ConfigBuilder<DefaultState>,
     ) -> StdResult<()> {
-        let config: ToolsCommandConfiguration = config_builder
+        let config: RecomputeCertificatesHashCommandConfiguration = config_builder
             .build()
             .with_context(|| "configuration build error")?
             .try_deserialize()
@@ -81,7 +81,10 @@ impl RecomputeCertificatesHashCommand {
     }
 
     pub fn extract_config(command_path: String) -> HashMap<String, StructDoc> {
-        HashMap::from([(command_path, ToolsCommandConfiguration::extract())])
+        HashMap::from([(
+            command_path,
+            RecomputeCertificatesHashCommandConfiguration::extract(),
+        )])
     }
 }
 
@@ -97,7 +100,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_container_does_not_panic() {
-        let config = ToolsCommandConfiguration {
+        let config = RecomputeCertificatesHashCommandConfiguration {
             data_stores_directory: temp_dir!().join("stores"),
         };
         let mut dependencies_builder =
