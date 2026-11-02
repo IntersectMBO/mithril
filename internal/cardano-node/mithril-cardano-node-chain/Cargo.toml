@@ -13,6 +13,8 @@ include = [
     "README.md",
     ".gitignore",
     "tests/assets/shelley1.block",
+    "tests/assets/dijkstra1.block",
+    "tests/assets/dijkstra2.block",
 ]
 
 [dependencies]
