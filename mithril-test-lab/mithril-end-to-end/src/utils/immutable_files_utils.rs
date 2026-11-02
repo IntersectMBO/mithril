@@ -9,6 +9,25 @@ use pallas_traverse::MultiEraBlock;
 pub struct CardanoBlockTransactions {
     pub block_hash: String,
     pub transaction_hashes: Vec<String>,
+    /// Hashes of the sub-transactions nested in the transactions of the block (Dijkstra era)
+    pub sub_transaction_hashes: Vec<String>,
+}
+
+impl CardanoBlockTransactions {
+    /// Lists the top-level transactions and their sub-transactions of a decoded block
+    pub fn from_block(block: &MultiEraBlock) -> Self {
+        let transactions = block.txs();
+
+        Self {
+            block_hash: block.hash().to_string(),
+            transaction_hashes: transactions.iter().map(|tx| tx.hash().to_string()).collect(),
+            sub_transaction_hashes: transactions
+                .iter()
+                .flat_map(|tx| tx.sub_transactions())
+                .map(|sub_transaction| sub_transaction.hash().to_string())
+                .collect(),
+        }
+    }
 }
 
 pub fn retrieve_blocks_transactions_from_immutable_files(
@@ -20,14 +39,7 @@ pub fn retrieve_blocks_transactions_from_immutable_files(
         let block = block?;
         let decoded_block = MultiEraBlock::decode(&block)?;
 
-        block_transaction_list.push(CardanoBlockTransactions {
-            block_hash: decoded_block.hash().to_string(),
-            transaction_hashes: decoded_block
-                .txs()
-                .iter()
-                .map(|tx| tx.hash().to_string())
-                .collect(),
-        });
+        block_transaction_list.push(CardanoBlockTransactions::from_block(&decoded_block));
     }
     Ok(block_transaction_list)
 }
@@ -85,7 +97,29 @@ mod tests {
             transaction_hashes: vec![
                 "ce2872d64240a25d7d43fb57efacfd1d9bd20073e91e1539bd31ef3ebc16555e".to_string()
             ],
+            sub_transaction_hashes: vec![],
         }));
+    }
+
+    #[test]
+    fn from_block_separates_top_level_and_sub_transactions_of_a_dijkstra_block() {
+        let raw_block = hex::decode(include_str!("../../tests/assets/dijkstra1.block")).unwrap();
+        let block = MultiEraBlock::decode(&raw_block).unwrap();
+
+        let block_transactions = CardanoBlockTransactions::from_block(&block);
+
+        assert_eq!(
+            block_transactions.block_hash,
+            "27a8e2d79a1ea9bfb7906f1d049b6c81b7a77c08504ab45c8c49d50a5f109d64"
+        );
+        assert_eq!(
+            block_transactions.transaction_hashes,
+            vec!["7ff742461176a381748e6c0e79f0c483a738e646da8422cdf8fa19deecac52cc".to_string()]
+        );
+        assert_eq!(
+            block_transactions.sub_transaction_hashes,
+            vec!["d0fecaa8853c23d59b233149d11d4918cbfd5f8fb7892280d04ed84646e3f586".to_string()]
+        );
     }
 
     #[test]
@@ -94,10 +128,12 @@ mod tests {
             CardanoBlockTransactions {
                 block_hash: "block1".to_string(),
                 transaction_hashes: vec!["tx1".to_string(), "tx2".to_string()],
+                sub_transaction_hashes: vec![],
             },
             CardanoBlockTransactions {
                 block_hash: "block2".to_string(),
                 transaction_hashes: vec!["tx3".to_string(), "tx4".to_string()],
+                sub_transaction_hashes: vec![],
             },
         ];
         let transaction_hashes = randomly_take_transactions_hashes(&blocks_transactions, 3);
@@ -117,18 +153,22 @@ mod tests {
             CardanoBlockTransactions {
                 block_hash: "block1".to_string(),
                 transaction_hashes: vec![],
+                sub_transaction_hashes: vec![],
             },
             CardanoBlockTransactions {
                 block_hash: "block2".to_string(),
                 transaction_hashes: vec![],
+                sub_transaction_hashes: vec![],
             },
             CardanoBlockTransactions {
                 block_hash: "block3".to_string(),
                 transaction_hashes: vec![],
+                sub_transaction_hashes: vec![],
             },
             CardanoBlockTransactions {
                 block_hash: "block4".to_string(),
                 transaction_hashes: vec![],
+                sub_transaction_hashes: vec![],
             },
         ];
         let block_hashes = randomly_take_blocks_hashes(&blocks_transactions, 2);

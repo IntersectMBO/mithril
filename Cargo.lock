@@ -4778,6 +4778,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap",
+ "hex",
  "indicatif",
  "mithril-cardano-node-chain",
  "mithril-cardano-node-internal-database",
