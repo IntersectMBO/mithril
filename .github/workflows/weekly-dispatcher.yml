@@ -47,7 +47,7 @@ jobs:
             echo ""
             echo "Vulnerabilities and unsound crates are reported as warnings in the job log:"
             echo "- Fixable with \`cargo update -p <package> [--precise <version>]\` or a dependency upgrade: open a fix PR."
-            echo "- No upstream fix available: add an ignore entry with an explanation to \`.config/deny-full.toml\`."
+            echo "- No upstream fix available: keep the warning until a fixed release is reachable."
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-on-failure:
