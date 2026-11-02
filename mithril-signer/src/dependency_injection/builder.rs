@@ -196,19 +196,19 @@ impl<'a> DependenciesBuilder<'a> {
         &self,
         chain_observer: Arc<dyn ChainObserver>,
         aggregator_client: Arc<AggregatorHttpClient>,
-    ) -> Arc<dyn MithrilNetworkConfigurationProvider> {
+    ) -> StdResult<Arc<dyn MithrilNetworkConfigurationProvider>> {
         if let Some(config) = self.config.protocol_configuration_reader_adapter_config.clone() {
             let protocol_configuration_adapter =
-                build_protocol_configuration_adapter(config, chain_observer, self.root_logger());
-            Arc::new(MarkersMithrilNetworkConfigurationProvider::new(
+                build_protocol_configuration_adapter(config, chain_observer, self.root_logger())?;
+            Ok(Arc::new(MarkersMithrilNetworkConfigurationProvider::new(
                 self.root_logger(),
                 protocol_configuration_adapter,
-            ))
+            )))
         } else {
-            Arc::new(HttpMithrilNetworkConfigurationProvider::new(
+            Ok(Arc::new(HttpMithrilNetworkConfigurationProvider::new(
                 aggregator_client,
                 self.root_logger(),
-            ))
+            )))
         }
     }
 
@@ -452,7 +452,7 @@ impl<'a> DependenciesBuilder<'a> {
                 chain_observer.clone(),
                 aggregator_client.clone(),
             )
-            .await;
+            .await?;
 
         let preloader_activation = CardanoTransactionsPreloaderActivationSigner::new(
             network_configuration_service.clone(),
