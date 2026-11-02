@@ -103,7 +103,10 @@ macro_rules! get_dependency {
 const SQLITE_FILE: &str = "aggregator.sqlite3";
 const SQLITE_FILE_CARDANO_TRANSACTION: &str = "cardano-transaction.sqlite3";
 const SQLITE_MONITORING_FILE: &str = "monitoring.sqlite3";
-const CARDANO_DB_ARTIFACTS_DIR: &str = "cardano-database";
+/// Directory, relative to the snapshot directory, where the Cardano database artifacts are stored.
+pub(crate) const CARDANO_DB_ARTIFACTS_DIR: &str = "cardano-database";
+/// Directory, relative to [CARDANO_DB_ARTIFACTS_DIR], where the immutable files archives are cached.
+pub(crate) const IMMUTABLE_ARCHIVES_DIR: &str = "immutable";
 const SNAPSHOT_ARTIFACTS_DIR: &str = "cardano-immutable-files-full";
 /// Maximum offset that can be applied to the latest epoch when fetching artifacts.
 const MAX_ARTIFACT_EPOCH_OFFSET: u64 = 5;
