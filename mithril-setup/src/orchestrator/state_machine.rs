@@ -88,6 +88,10 @@ pub fn transition(state: &State, event: Event) -> Result<(State, Option<Effect>)
             Ok((State::Reviewing { store }, None))
         }
 
+        (State::Reviewing { store }, Event::Confirmed) if !store.is_all_fields_filled() => {
+            Err("All the fields must be filled before confirming".to_string())
+        }
+
         (State::Reviewing { store }, Event::Confirmed) => Ok((
             State::Saving {
                 store: store.clone(),
@@ -157,8 +161,19 @@ mod tests {
 
     use super::*;
 
-    #[test]
+    /// A store with a single `name` field discovered with the given value
+    fn filled_store_with_name(value: &str) -> Store {
+        let mut store = Store::new(vec![Field::init(
+            "name".to_string(),
+            "user name".to_string(),
+            FieldType::String,
+            None,
+        )]);
+        store.discover_field("name", value.to_string()).unwrap();
+        store
+    }
 
+    #[test]
     fn started_asks_for_the_discovery() {
         let (state, effect) = transition(&State::Idle, Event::Started).unwrap();
 
@@ -168,44 +183,27 @@ mod tests {
     }
 
     #[test]
-
     fn confirmed_asks_to_save_the_reviewed_name() {
         let reviewing = State::Reviewing {
-            store: Store::new(vec![Field::init(
-                "name".to_string(),
-                "user name".to_string(),
-                FieldType::String,
-                Some("bob".to_string()),
-            )]),
+            store: filled_store_with_name("bob"),
         };
 
         let (state, effect) = transition(&reviewing, Event::Confirmed).unwrap();
 
         assert_eq!(
             State::Saving {
-                store: Store::new(vec![Field::init(
-                    "name".to_string(),
-                    "user name".to_string(),
-                    FieldType::String,
-                    Some("bob".to_string()),
-                )]),
+                store: filled_store_with_name("bob")
             },
             state
         );
 
         assert_eq!(
-            Some(Effect::SaveStore(Store::new(vec![Field::init(
-                "name".to_string(),
-                "user name".to_string(),
-                FieldType::String,
-                Some("bob".to_string()),
-            )]),)),
+            Some(Effect::SaveStore(filled_store_with_name("bob"))),
             effect
         );
     }
 
     #[test]
-
     fn a_failed_discovery_fails_the_setup() {
         let (state, _) = transition(
             &State::Discovering,
@@ -217,28 +215,30 @@ mod tests {
     }
 
     #[test]
+    fn confirmed_is_rejected_while_a_field_is_not_filled() {
+        let reviewing = State::Reviewing {
+            store: Store::new(vec![Field::init(
+                "name".to_string(),
+                "user name".to_string(),
+                FieldType::String,
+                Some("bob".to_string()),
+            )]),
+        };
 
+        assert!(transition(&reviewing, Event::Confirmed).is_err());
+    }
+
+    #[test]
     fn an_unexpected_event_is_rejected() {
         assert!(transition(&State::Idle, Event::Confirmed).is_err());
     }
 
     #[test]
-
     fn replaying_the_events_rebuilds_the_same_state() {
         let events = vec![
             Event::Started,
-            Event::Discovered(Ok(Store::new(vec![Field::init(
-                "name".to_string(),
-                "user name".to_string(),
-                FieldType::String,
-                Some("bob".to_string()),
-            )]))),
-            Event::StoreEdited(Store::new(vec![Field::init(
-                "name".to_string(),
-                "user name".to_string(),
-                FieldType::String,
-                Some("alice".to_string()),
-            )])),
+            Event::Discovered(Ok(filled_store_with_name("bob"))),
+            Event::StoreEdited(filled_store_with_name("alice")),
             Event::Confirmed,
             Event::Saved(Ok(())),
         ];
@@ -254,7 +254,22 @@ mod tests {
     }
 
     #[test]
+    fn cannot_go_to_next_state_if_all_fields_are_unset() {
+        let reviewing = State::Reviewing {
+            store: Store::new(vec![Field {
+                name: "name".to_string(),
+                description: "user name".to_string(),
+                kind: FieldType::String,
+                value: None,
+                state: FieldState::Unset,
+                default: None,
+            }]),
+        };
 
+        assert!(transition(&reviewing, Event::Confirmed).is_err());
+    }
+
+    #[test]
     fn the_shell_can_be_replaced_by_a_fake() {
         let reviewing = run(&State::Idle, Event::Started, fake_execute).unwrap();
 
@@ -262,12 +277,7 @@ mod tests {
 
         assert_eq!(
             State::Reviewing {
-                store: Store::new(vec![Field::init(
-                    "name".to_string(),
-                    "user name".to_string(),
-                    FieldType::String,
-                    Some("carol".to_string()),
-                )])
+                store: filled_store_with_name("carol")
             },
             reviewing
         );
@@ -277,12 +287,7 @@ mod tests {
 
     fn fake_execute(effect: Effect) -> Event {
         match effect {
-            Effect::DiscoverStore => Event::Discovered(Ok(Store::new(vec![Field::init(
-                "name".to_string(),
-                "user name".to_string(),
-                FieldType::String,
-                Some("carol".to_string()),
-            )]))),
+            Effect::DiscoverStore => Event::Discovered(Ok(filled_store_with_name("carol"))),
 
             Effect::SaveStore(_) => Event::Saved(Ok(())),
         }
