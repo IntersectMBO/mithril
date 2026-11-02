@@ -434,8 +434,10 @@ List of tools to upkeep the aggregator
 Usage: mithril-aggregator tools <COMMAND>
 
 Commands:
-  recompute-certificates-hash  Load all certificates in the database to recompute their hash and update all related entities
-  help                         Print this message or the help of the given subcommand(s)
+  recompute-certificates-hash      Load all certificates in the database to recompute their hash and update all related entities
+  generate-keypair                 Generate a new keypair
+  clear-immutables-archives-cache  Clear the cache directory of the immutable files compressed archives
+  help                             Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help  Print help
@@ -446,6 +448,27 @@ Run the 'tools recompute-certificates-hash' command in release mode with the def
 ```bash
 ./mithril-aggregator tools recompute-certificates-hash
 ```
+
+Run the 'tools clear-immutables-archives-cache' command to clear the cache directory of the immutable files compressed archives (`<snapshot_directory>/cardano-database/immutable`). This will trigger a full re-computation of all the immutable files compressed archives when the next Cardano database artifact is built.
+
+By default, the command only displays a summary of the archives found in the cache directory, without deleting anything:
+
+```bash
+./mithril-aggregator tools clear-immutables-archives-cache
+```
+
+Add the `--delete` option to delete the archives:
+
+```bash
+./mithril-aggregator tools clear-immutables-archives-cache --delete
+```
+
+:::warning
+
+- The aggregator must not be running while this command is executed.
+- With the `local` snapshot uploader, the archives are served directly from the cache directory: deleting them will break the download of the existing Cardano database snapshots until the archives are re-built.
+
+:::
 
 ## Building for release and running the binary 'database' command
 
@@ -678,11 +701,25 @@ Here is a list of the available parameters for the serve command:
 | ------------- | ------------------- | :------------------: | -------------------- | ------------------------------------- | ------------- | ------- | :----------------: |
 | `target_path` | `--target-path`     |          -           | -                    | Target path for the generated keypair | -             | -       | :heavy_check_mark: |
 
+`tools recompute-certificates-hash` command:
+
+| Parameter               | Command line (long) | Command line (short) | Environment variable    | Description                             | Default value | Example |     Mandatory      |
+| ----------------------- | ------------------- | :------------------: | ----------------------- | --------------------------------------- | ------------- | ------- | :----------------: |
+| `data_stores_directory` | -                   |          -           | `DATA_STORES_DIRECTORY` | Directory to store aggregator databases | -             | -       | :heavy_check_mark: |
+
 `tools generate-keypair ed25519` command:
 
 | Parameter     | Command line (long) | Command line (short) | Environment variable | Description                           | Default value | Example |     Mandatory      |
 | ------------- | ------------------- | :------------------: | -------------------- | ------------------------------------- | ------------- | ------- | :----------------: |
 | `target_path` | `--target-path`     |          -           | -                    | Target path for the generated keypair | -             | -       | :heavy_check_mark: |
+
+`tools clear-immutables-archives-cache` command:
+
+| Parameter                | Command line (long) | Command line (short) | Environment variable     | Description                                        | Default value | Example                          |     Mandatory      |
+| ------------------------ | ------------------- | :------------------: | ------------------------ | -------------------------------------------------- | ------------- | -------------------------------- | :----------------: |
+| `delete`                 | `--delete`          |          -           | -                        | Delete the archives, without it nothing is deleted | `false`       | -                                |         -          |
+| `snapshot_directory`     | -                   |          -           | `SNAPSHOT_DIRECTORY`     | Directory to store snapshot                        | -             | `./mithril-aggregator/snapshots` | :heavy_check_mark: |
+| `snapshot_uploader_type` | -                   |          -           | `SNAPSHOT_UPLOADER_TYPE` | Type of snapshot uploader to use                   | -             | `gcp` or `local`                 | :heavy_check_mark: |
 
 `protocol-configuration export-markers` command:
 
@@ -721,12 +758,6 @@ Here is a list of the available parameters for the serve command:
 | Parameter          | Command line (long)  | Command line (short) | Environment variable | Description                                                      | Default value | Example |     Mandatory      |
 | ------------------ | -------------------- | :------------------: | -------------------- | ---------------------------------------------------------------- | ------------- | ------- | :----------------: |
 | `stores_directory` | `--stores-directory` |          -           | `STORES_DIRECTORY`   | Location of the stores directory for vacuuming the main database | -             | -       | :heavy_check_mark: |
-
-`tools recompute-certificates-hash` command:
-
-| Parameter               | Command line (long) | Command line (short) | Environment variable    | Description                             | Default value | Example |     Mandatory      |
-| ----------------------- | ------------------- | :------------------: | ----------------------- | --------------------------------------- | ------------- | ------- | :----------------: |
-| `data_stores_directory` | -                   |          -           | `DATA_STORES_DIRECTORY` | Directory to store aggregator databases | -             | -       | :heavy_check_mark: |
 
 `circuit-key-registry export` command:
 
