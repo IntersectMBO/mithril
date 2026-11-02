@@ -8,9 +8,9 @@ use tokio::process::Command;
 
 use mithril_common::StdResult;
 
-/// Tail a file into into the given stream
+/// Tail a file into the given stream
 ///
-/// For the sake of simplicity it use internally the tail command so be sure to have it on
+/// For the sake of simplicity, it uses internally the `tail` command, so be sure to have it on
 /// your system.
 pub async fn tail(file_path: &Path, number_of_line: u64) -> StdResult<String> {
     let tail_result = Command::new("tail")
@@ -27,9 +27,39 @@ pub async fn tail(file_path: &Path, number_of_line: u64) -> StdResult<String> {
     String::from_utf8(tail_result.stdout).with_context(|| "Failed to parse tail output to utf8")
 }
 
+/// Count the number of lines matching the given extended regex in a file.
+///
+/// For the sake of simplicity, it uses internally the `grep` command, so be sure to have it on
+/// your system.
+pub async fn count_matching_lines(file_path: &Path, needle: &str) -> StdResult<usize> {
+    let grep_result = Command::new("grep")
+        .args(vec!["--count", "--extended-regexp", needle])
+        .arg(file_path.as_os_str())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .with_context(|| format!("Failed to grep file `{}`", file_path.display()))?;
+
+    // grep exit codes: 0 = match found, 1 = no match, other = error
+    if !matches!(grep_result.status.code(), Some(0) | Some(1)) {
+        anyhow::bail!(
+            "Failed to grep file `{}`: {}",
+            file_path.display(),
+            String::from_utf8_lossy(&grep_result.stderr).trim()
+        );
+    }
+
+    let output = String::from_utf8(grep_result.stdout)
+        .with_context(|| "Failed to parse grep output to utf8")?;
+    output
+        .trim()
+        .parse::<usize>()
+        .with_context(|| format!("Failed to parse grep output `{output}` to a number"))
+}
+
 /// Return the lastest errors in a file with the lines preceding them.
 ///
-/// For the sake of simplicity it use internally the `tail` and `grep` commands so be sure to have them on
+/// For the sake of simplicity, it uses internally the `tail` and `grep` commands, so be sure to have them on
 /// your system.
 pub async fn last_errors(file_path: &Path, number_of_error: u64) -> StdResult<String> {
     let number_of_line_before = 5;
@@ -106,11 +136,15 @@ pub fn copy_dir_all(from: impl AsRef<Path>, to: impl AsRef<Path>) -> StdResult<(
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::file_utils;
-    use mithril_common::test::TempDir;
     use std::fs::File;
     use std::io::prelude::*;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
+
+    use crate::utils::file_utils;
+
+    use mithril_common::{current_function, test::TempDir};
+
+    use super::*;
 
     fn get_temp_dir(subfolder_name: &str) -> PathBuf {
         TempDir::create("e2e-file-utils", subfolder_name)
@@ -123,7 +157,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn should_tail_file() {
-        let file_path = get_temp_dir("should_tail_file").join("tail_file.txt");
+        let file_path = get_temp_dir(current_function!()).join("tail_file.txt");
         write_file(
             &file_path,
             r"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod
@@ -156,7 +190,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn should_return_last_error() {
-        let temp_dir = get_temp_dir("should_return_last_error");
+        let temp_dir = get_temp_dir(current_function!());
         let file_path = temp_dir.join("file_with_error.txt");
         write_file(
             &file_path,
@@ -211,19 +245,80 @@ line 2"}
         );
     }
 
-    mod copy_dir_all {
-        use std::fs::create_dir_all;
+    mod count_matching_lines {
+        use super::*;
 
+        #[tokio::test]
+        async fn should_count_lines_matching_needle() {
+            let file_path = get_temp_dir(current_function!()).join("file.txt");
+            write_file(
+                &file_path,
+                r"needle
+haystack
+needle and needle
+haystack
+needle",
+            );
+
+            let count = file_utils::count_matching_lines(&file_path, "needle").await.unwrap();
+
+            assert_eq!(3, count);
+        }
+
+        #[tokio::test]
+        async fn should_match_needle_as_an_extended_regex() {
+            let file_path = get_temp_dir(current_function!()).join("file.txt");
+            write_file(
+                &file_path,
+                r#"{"msg":"a","level":50}
+{"msg":"b","level":30}
+{"msg":"c","level":60}"#,
+            );
+
+            let count = file_utils::count_matching_lines(&file_path, r#""level":(50|60)"#)
+                .await
+                .unwrap();
+
+            assert_eq!(2, count);
+        }
+
+        #[tokio::test]
+        async fn should_return_zero_when_needle_is_not_found() {
+            let file_path = get_temp_dir(current_function!()).join("file.txt");
+            write_file(&file_path, "haystack\nhaystack");
+
+            let count = file_utils::count_matching_lines(&file_path, "needle").await.unwrap();
+
+            assert_eq!(0, count);
+        }
+
+        #[tokio::test]
+        async fn should_fail_when_file_does_not_exist() {
+            let file_path = get_temp_dir(current_function!()).join("not_exist.txt");
+
+            let error = file_utils::count_matching_lines(&file_path, "needle")
+                .await
+                .expect_err("count_matching_lines should fail when the file does not exist");
+
+            assert!(
+                format!("{error:?}").contains("No such file or directory"),
+                "error should contain grep stderr, got: {error:?}"
+            );
+        }
+    }
+
+    mod copy_dir_all {
         use mithril_common::assert_dir_eq;
 
         use super::*;
 
         #[test]
         fn should_copy_directory() {
-            let source_dir = get_temp_dir("copy_dir_all_source");
+            let base_dir = get_temp_dir(current_function!());
+            let source_dir = base_dir.join("copy_dir_all_source");
             create_dir_all(source_dir.join("subfolder1")).unwrap();
             create_dir_all(source_dir.join("subfolder2")).unwrap();
-            let target_dir = get_temp_dir("copy_dir_all_target");
+            let target_dir = base_dir.join("copy_dir_all_target");
             write_file(
                 &source_dir.join("subfolder1").join("file1.txt"),
                 "file 1 content",

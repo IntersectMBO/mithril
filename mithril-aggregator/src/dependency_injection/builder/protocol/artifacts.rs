@@ -31,7 +31,7 @@ use crate::services::{
     SignedEntityServiceArtifactsDependencies, Snapshotter,
 };
 use crate::tools::DEFAULT_GCP_CREDENTIALS_JSON_ENV_VAR;
-use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcClient};
+use crate::tools::kubo_rpc_client::IpfsMfsDirPath;
 use crate::{DumbUploader, ExecutionEnvironment, FileUploader, SnapshotUploaderType};
 
 impl DependenciesBuilder {
@@ -277,10 +277,9 @@ impl DependenciesBuilder {
         &self,
         ipfs_rpc_config: IpfsRpcServerConfig,
     ) -> Result<IpfsUploader> {
-        let rpc_api_client =
-            KuboRpcClient::new(ipfs_rpc_config.sanitized_url()?, self.root_logger())?;
+        let rpc_api_client = self.build_kubo_rpc_client(&ipfs_rpc_config)?;
         let ipfs_uploader = IpfsUploader::new(
-            Arc::new(rpc_api_client),
+            rpc_api_client,
             IpfsMfsDirPath::from(ipfs_rpc_config.mfs_folder_name),
             ipfs_rpc_config.ipns_key_name,
             FileUploadRetryPolicy::default(),

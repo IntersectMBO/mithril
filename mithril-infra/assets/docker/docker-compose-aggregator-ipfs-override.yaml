@@ -1,7 +1,12 @@
 services:
   mithril-aggregator:
+    depends_on:
+      # Required in order for the aggregator to fetch the IPNS key id at startup, "healthy" else the RPC api is not available
+      ipfs-node:
+        condition: service_healthy
     environment:
       - IPFS_RPC_SERVER_CONFIG=${IPFS_RPC_SERVER_CONFIG}
+      - IPFS_SHARE=${AGGREGATOR_IPFS_SHARE}
 
   ipfs-node:
     image: ${IPFS_IMAGE_REGISTRY}:${IPFS_IMAGE_ID}

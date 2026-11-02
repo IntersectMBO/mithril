@@ -6,17 +6,15 @@ use std::sync::Arc;
 use slog::Logger;
 
 #[cfg(feature = "fs")]
-use mithril_common::{
-    crypto_helper::MKProof,
-    messages::{CardanoDatabaseSnapshotMessage, CertificateMessage},
-};
-
-#[cfg(feature = "fs")]
 use mithril_cardano_node_internal_database::entities::ImmutableFile;
+#[cfg(feature = "fs")]
+use mithril_common::{crypto_helper::MKProof, messages::CertificateMessage};
 
+#[cfg(all(feature = "fs", feature = "unstable"))]
+use crate::cardano_database_client::download_unpack::IpfsShare;
 #[cfg(feature = "fs")]
 use crate::cardano_database_client::{VerifiedDigests, proving::CardanoDatabaseVerificationError};
-use crate::common::{Epoch, EpochSpecifier};
+use crate::common::{Epoch, EpochSpecifier, Percentage};
 #[cfg(feature = "fs")]
 use crate::feedback::FeedbackSender;
 #[cfg(feature = "fs")]
@@ -74,6 +72,11 @@ pub trait CardanoDatabaseAggregatorRequest: Send + Sync {
 
     /// Notify the aggregator that a Cardano database v2 ancillary file has been downloaded.
     async fn increment_ancillary_downloaded_statistic(&self) -> MithrilResult<()>;
+
+    /// Get the ipfs share for the Cardano database download.
+    async fn get_ipfs_share(&self) -> MithrilResult<Option<Percentage>> {
+        Ok(None)
+    }
 }
 
 impl CardanoDatabaseClient {
@@ -102,6 +105,8 @@ impl CardanoDatabaseClient {
                 ancillary_verifier,
                 feedback_sender.clone(),
                 logger.clone(),
+                #[cfg(feature = "unstable")]
+                aggregator_requester.clone(),
             ),
             #[cfg(feature = "fs")]
             artifact_prover: InternalArtifactProver::new(
@@ -152,7 +157,7 @@ impl CardanoDatabaseClient {
     #[cfg(feature = "fs")]
     pub async fn download_unpack(
         &self,
-        cardano_database_snapshot: &CardanoDatabaseSnapshotMessage,
+        cardano_database_snapshot: &CardanoDatabaseSnapshot,
         immutable_file_range: &ImmutableFileRange,
         target_dir: &Path,
         download_unpack_options: DownloadUnpackOptions,
@@ -163,6 +168,34 @@ impl CardanoDatabaseClient {
                 immutable_file_range,
                 target_dir,
                 download_unpack_options,
+                #[cfg(feature = "unstable")]
+                IpfsShare::default(),
+            )
+            .await
+    }
+
+    /// Download and unpack the given Cardano database parts data by hash, with IPFS share control.
+    ///
+    /// IPFS control is only effective if IPFS download is enabled.
+    ///
+    /// Hidden: this control is only needed for testing until IPFS is fully deployed.
+    #[cfg(all(feature = "fs", feature = "unstable"))]
+    #[doc(hidden)]
+    pub async fn download_unpack_with_ipfs_control(
+        &self,
+        cardano_database_snapshot: &CardanoDatabaseSnapshot,
+        immutable_file_range: &ImmutableFileRange,
+        target_dir: &Path,
+        download_unpack_options: DownloadUnpackOptions,
+        ipfs_share: IpfsShare,
+    ) -> MithrilResult<()> {
+        self.artifact_downloader
+            .download_unpack(
+                cardano_database_snapshot,
+                immutable_file_range,
+                target_dir,
+                download_unpack_options,
+                ipfs_share,
             )
             .await
     }
@@ -172,7 +205,7 @@ impl CardanoDatabaseClient {
     pub async fn download_and_verify_digests(
         &self,
         certificate: &CertificateMessage,
-        cardano_database_snapshot: &CardanoDatabaseSnapshotMessage,
+        cardano_database_snapshot: &CardanoDatabaseSnapshot,
     ) -> MithrilResult<VerifiedDigests> {
         self.artifact_prover
             .download_and_verify_digests(certificate, cardano_database_snapshot)
@@ -184,7 +217,7 @@ impl CardanoDatabaseClient {
     pub async fn verify_cardano_database(
         &self,
         certificate: &CertificateMessage,
-        cardano_database_snapshot: &CardanoDatabaseSnapshotMessage,
+        cardano_database_snapshot: &CardanoDatabaseSnapshot,
         immutable_file_range: &ImmutableFileRange,
         allow_missing: bool,
         database_dir: &Path,

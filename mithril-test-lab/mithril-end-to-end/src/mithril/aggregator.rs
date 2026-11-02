@@ -228,6 +228,7 @@ impl Aggregator {
                     node.rpc_url, IPNS_KEY_NAME_FOR_SNAPSHOT
                 ),
             );
+            env.insert("IPFS_SHARE", "90");
         }
 
         let args = vec![

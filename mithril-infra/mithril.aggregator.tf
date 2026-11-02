@@ -37,6 +37,7 @@ resource "null_resource" "mithril_aggregator" {
     mithril_ipfs_storage_max                                                     = var.mithril_ipfs_storage_max,
     mithril_ipfs_ipns_signing_key                                                = sha256(var.mithril_ipfs_ipns_signing_key),
     mithril_ipfs_ipns_signing_key_name                                           = var.mithril_ipfs_ipns_signing_key_name,
+    mithril_aggregator_ipfs_share                                                = var.mithril_aggregator_ipfs_share,
     ipfs_image_id                                                                = var.ipfs_image_id,
     ipfs_image_registry                                                          = var.ipfs_image_registry,
   }
@@ -225,6 +226,7 @@ EOT
       "export AGGREGATOR_IPFS_STORAGE_MAX='${var.mithril_ipfs_storage_max}'",
       "export AGGREGATOR_IPFS_IPNS_SIGNING_KEY_NAME='${var.mithril_ipfs_ipns_signing_key_name}'",
       "export AGGREGATOR_IPFS_IPNS_SIGNING_KEY='${local.mithril_aggregator_ipfs_ipns_signing_key}'",
+      "export AGGREGATOR_IPFS_SHARE='${var.mithril_aggregator_ipfs_share}'",
       "export P2P_BOOTSTRAP_PEER='${var.mithril_p2p_network_bootstrap_peer}'",
       "export ENABLE_METRICS_SERVER=true",
       "export METRICS_SERVER_IP=0.0.0.0",
@@ -272,11 +274,6 @@ fi
 EOT
       ,
       "docker compose $DOCKER_COMPOSE_FILES --profile all up -d",
-      <<-EOT
-if [ "${var.mithril_ipfs_enabled}" = "true" ]; then
-  docker compose $DOCKER_COMPOSE_FILES --profile all up -d --wait --wait-timeout 120 ipfs-node
-fi
-EOT
     ]
   }
 }

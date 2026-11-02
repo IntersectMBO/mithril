@@ -192,3 +192,7 @@ cfg_fs! {
     pub use proving::{CardanoDatabaseVerificationError, ImmutableVerificationResult};
     pub use proving::VerifiedDigests;
 }
+
+cfg_fs_unstable! {
+    pub use download_unpack::IpfsShare;
+}

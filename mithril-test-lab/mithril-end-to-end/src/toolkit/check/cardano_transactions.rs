@@ -1,4 +1,4 @@
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use slog_scope::info;
 
 use mithril_common::{
@@ -80,7 +80,7 @@ impl CheckCardanoTransactionsToolkit {
             non_certified_transactions: Vec<TransactionHash>,
         }
 
-        let result_file = client
+        let certify_output = client
             .run(ClientCommand::CardanoTransaction(
                 CardanoTransactionCommand::Certify {
                     tx_hashes: tx_hashes.clone(),
@@ -89,19 +89,7 @@ impl CheckCardanoTransactionsToolkit {
             .await?;
         info!("Client verified the Cardano transactions"; "tx_hashes" => ?tx_hashes);
 
-        let file = std::fs::read_to_string(&result_file).with_context(|| {
-            format!(
-                "Failed to read client output from file `{}`",
-                result_file.display()
-            )
-        })?;
-        let result: ClientCardanoTransactionCertifyResult = serde_json::from_str(&file)
-            .with_context(|| {
-                format!(
-                    "Failed to parse client output as json from file `{}`",
-                    result_file.display()
-                )
-            })?;
+        let result: ClientCardanoTransactionCertifyResult = certify_output.read_output_as_json()?;
 
         info!("Asserting that all Cardano transactions were verified by the Client...");
         if tx_hashes.iter().all(|tx| result.certified_transactions.contains(tx)) {

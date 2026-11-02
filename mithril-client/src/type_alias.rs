@@ -86,7 +86,7 @@ pub mod common {
         AncillaryLocation, BlockHash, BlockNumber, BlockNumberOffset, CardanoDbBeacon,
         CardanoNetwork, ChainPoint, CompressionAlgorithm, DigestLocation, Epoch, EpochSpecifier,
         ImmutableFileNumber, ImmutablesLocation, MagicId, MithrilNetwork, MultiFilesUri,
-        ProtocolMessage, ProtocolMessagePartKey, ProtocolParameters, SignedEntityType,
+        Percentage, ProtocolMessage, ProtocolMessagePartKey, ProtocolParameters, SignedEntityType,
         SignedEntityTypeDiscriminants, SlotNumber, StakeDistribution, SupportedEra, TemplateUri,
         TransactionHash,
     };

@@ -757,6 +757,7 @@ jobs:
                   pool_id = "",
                 },
               }
+            mithril_ipfs_enabled: true
             terraform_backend_bucket: hydra-terraform-admin
             google_region: europe-west1
             google_zone: europe-west1-b
@@ -774,6 +775,7 @@ jobs:
               {}
             mithril_leader_aggregator_endpoint: https://aggregator.testing-preview.api.mithril.network/aggregator
             mithril_certificate_chain_aggregator_endpoint: ""
+            mithril_ipfs_enabled: true
             terraform_backend_bucket: hydra-terraform-admin
             google_region: europe-west1
             google_zone: europe-west1-b
@@ -850,7 +852,9 @@ jobs:
           mithril_aggregator_ancillary_signer_secret_key: ${{ secrets.AGGREGATOR_ANCILLARY_SIGNER_SECRET_KEY }}
           mithril_aggregator_ancillary_signer_gcp_kms_resource_name: ${{ secrets.AGGREGATOR_ANCILLARY_SIGNER_GCP_KMS_RESOURCE_NAME }}
           mithril_aggregator_ancillary_signer_gcp_kms_credentials: ${{ secrets.AGGREGATOR_ANCILLARY_SIGNER_GCP_KMS_CREDENTIALS }}
+          mithril_ipfs_enabled: ${{ matrix.mithril_ipfs_enabled }}
           mithril_ipfs_ipns_signing_key: ${{ secrets.IPFS_IPNS_SIGNING_KEY }}
+          mithril_aggregator_ipfs_share: ${{ vars.AGGREGATOR_IPFS_SHARE }}
           mithril_aggregator_custom_origin_tag_white_list: ${{ vars.AGGREGATOR_CUSTOM_ORIGIN_TAG_WHITE_LIST }}
           prometheus_auth_username: ${{ secrets.PROMETHEUS_AUTH_USERNAME }}
           prometheus_auth_password: ${{ secrets.PROMETHEUS_AUTH_PASSWORD }}
