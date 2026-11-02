@@ -6,7 +6,19 @@ use std::{
 
 use anyhow::Context;
 
-use mithril_common::{StdResult, entities::CompressionAlgorithm};
+use mithril_common::{
+    StdResult,
+    entities::{CompressionAlgorithm, ImmutableFileNumber},
+};
+
+/// An immutable files archive found in the cache directory.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ImmutableFileArchive {
+    /// Number of the immutable file the archive was created from
+    pub immutable_file_number: ImmutableFileNumber,
+    /// Path of the archive
+    pub path: PathBuf,
+}
 
 /// Utilities to clean the cache directory of the immutable files compressed archives.
 pub struct ImmutablesArchivesCacheCleaner {}
@@ -16,7 +28,7 @@ impl ImmutablesArchivesCacheCleaner {
     ///
     /// Only the files named after an immutable file number (i.e.: `00042.tar.zst`) for any
     /// supported compression algorithm are returned, other files and directories are ignored.
-    pub fn detect_archives(cache_dir: &Path) -> StdResult<Vec<PathBuf>> {
+    pub fn detect_archives(cache_dir: &Path) -> StdResult<Vec<ImmutableFileArchive>> {
         if !cache_dir.exists() {
             return Ok(vec![]);
         }
@@ -26,26 +38,35 @@ impl ImmutablesArchivesCacheCleaner {
             .with_context(|| format!("Can not read cache directory: '{}'", cache_dir.display()))?
         {
             let entry = entry?;
-            if entry.file_type()?.is_file() && Self::is_archive_file_name(&entry.file_name()) {
-                archives.push(entry.path());
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+            if let Some(immutable_file_number) =
+                Self::parse_immutable_file_number(&entry.file_name())
+            {
+                archives.push(ImmutableFileArchive {
+                    immutable_file_number,
+                    path: entry.path(),
+                });
             }
         }
 
         Ok(archives)
     }
 
-    fn is_archive_file_name(file_name: &OsStr) -> bool {
-        let Some((immutable_file_number, extension)) =
-            file_name.to_str().and_then(|name| name.split_once('.'))
-        else {
-            return false;
-        };
+    fn parse_immutable_file_number(file_name: &OsStr) -> Option<ImmutableFileNumber> {
+        let (immutable_file_number, extension) = file_name.to_str()?.split_once('.')?;
 
-        immutable_file_number.len() == 5
+        let is_archive = immutable_file_number.len() == 5
             && immutable_file_number.chars().all(|c| c.is_ascii_digit())
             && CompressionAlgorithm::list()
                 .iter()
-                .any(|algorithm| algorithm.tar_file_extension() == extension)
+                .any(|algorithm| algorithm.tar_file_extension() == extension);
+        if !is_archive {
+            return None;
+        }
+
+        immutable_file_number.parse().ok()
     }
 }
 
@@ -56,6 +77,17 @@ mod tests {
     use mithril_common::{temp_dir_create, test::assert_equivalent};
 
     use super::*;
+
+    fn archive(
+        dir: &Path,
+        immutable_file_number: ImmutableFileNumber,
+        file_name: &str,
+    ) -> ImmutableFileArchive {
+        ImmutableFileArchive {
+            immutable_file_number,
+            path: dir.join(file_name),
+        }
+    }
 
     fn create_files(dir: &Path, file_names: &[&str]) {
         for file_name in file_names {
@@ -69,7 +101,7 @@ mod tests {
 
         let archives = ImmutablesArchivesCacheCleaner::detect_archives(&cache_dir).unwrap();
 
-        assert_eq!(Vec::<PathBuf>::new(), archives);
+        assert_eq!(Vec::<ImmutableFileArchive>::new(), archives);
     }
 
     #[test]
@@ -78,7 +110,7 @@ mod tests {
 
         let archives = ImmutablesArchivesCacheCleaner::detect_archives(&cache_dir).unwrap();
 
-        assert_eq!(Vec::<PathBuf>::new(), archives);
+        assert_eq!(Vec::<ImmutableFileArchive>::new(), archives);
     }
 
     #[test]
@@ -93,9 +125,9 @@ mod tests {
 
         assert_equivalent!(
             vec![
-                cache_dir.join("00000.tar.zst"),
-                cache_dir.join("00001.tar.zst"),
-                cache_dir.join("00005.tar.zst"),
+                archive(&cache_dir, 0, "00000.tar.zst"),
+                archive(&cache_dir, 1, "00001.tar.zst"),
+                archive(&cache_dir, 5, "00005.tar.zst"),
             ],
             archives
         );
@@ -119,6 +151,6 @@ mod tests {
 
         let archives = ImmutablesArchivesCacheCleaner::detect_archives(&cache_dir).unwrap();
 
-        assert_eq!(vec![cache_dir.join("00002.tar.zst")], archives);
+        assert_eq!(vec![archive(&cache_dir, 2, "00002.tar.zst")], archives);
     }
 }
