@@ -101,8 +101,8 @@ pub(crate) mod test {
             discovery: Self::Discovery,
         ) -> anyhow::Result<Store> {
             store
-                .update_field("color", discovery.color, FieldState::Discovered)?
-                .update_field("shape", discovery.shape, FieldState::Discovered)?;
+                .discover_field("color", discovery.color)?
+                .discover_field("shape", discovery.shape)?;
 
             Ok(store)
         }

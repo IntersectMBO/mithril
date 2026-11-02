@@ -3,14 +3,29 @@
 use crate::{
     orchestrator::{
         interfaces::Orchestrator,
-        store::{Field, FieldState, FieldType, Store},
+        store::{Field, FieldType, Store},
     },
     signer::discoverer::{SignerDiscoverer, SignerDiscovery},
 };
 
 /// Representation of a Signer
-struct SignerOrchestrator {
+pub struct SignerOrchestrator {
     discoverer: SignerDiscoverer,
+}
+
+impl SignerOrchestrator {
+    /// Create a new signer orchestrator
+    pub fn new() -> Self {
+        Self {
+            discoverer: SignerDiscoverer,
+        }
+    }
+}
+
+impl Default for SignerOrchestrator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Orchestrator for SignerOrchestrator {
@@ -44,8 +59,8 @@ impl Orchestrator for SignerOrchestrator {
         discovery: Self::Discovery,
     ) -> anyhow::Result<Store> {
         store
-            .update_field("network", discovery.network, FieldState::Discovered)?
-            .update_field("toto", discovery.toto, FieldState::Discovered)?;
+            .discover_field("network", discovery.network)?
+            .discover_field("toto", discovery.toto)?;
 
         Ok(store)
     }
@@ -57,13 +72,13 @@ impl Orchestrator for SignerOrchestrator {
 }
 #[cfg(test)]
 mod test {
+    use crate::orchestrator::store::FieldState;
+
     use super::*;
 
     #[test]
     fn test_signer_orchestrator_discover_must_fill_store_with_information_from_the_discoverer() {
-        let signer_orchestrator = SignerOrchestrator {
-            discoverer: SignerDiscoverer,
-        };
+        let signer_orchestrator = SignerOrchestrator::new();
 
         unsafe { std::env::set_var("NETWORK", "mainnet") };
 

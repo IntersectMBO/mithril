@@ -45,9 +45,9 @@ pub struct Field {
     /// Default value
     pub default: Option<String>,
 
-    /// Value
+    /// Value of the field
     pub value: Option<String>,
-    /// State
+    /// State of the field
     pub state: FieldState,
 }
 
@@ -67,12 +67,6 @@ impl Field {
             value: None,
             state: FieldState::Unset,
         }
-    }
-
-    /// Set the value of the field and update its state to discovered
-    pub fn set_discovered_value(&mut self, value: String) {
-        self.value = Some(value);
-        self.state = FieldState::Discovered;
     }
 }
 
@@ -94,7 +88,7 @@ impl Store {
     }
 
     /// Update field value and state by its name if it exists
-    pub fn update_field(
+    fn update_field(
         &mut self,
         name: &str,
         value: String,
@@ -110,6 +104,21 @@ impl Store {
         field.state = state;
 
         Ok(self)
+    }
+
+    /// Update field value and state to Discovered by its name if it exists
+    pub fn discover_field(&mut self, name: &str, value: String) -> anyhow::Result<&mut Self> {
+        self.update_field(name, value, FieldState::Discovered)
+    }
+
+    /// Update field value and state to FilledByUser by its name if it exists
+    pub fn user_update_field(&mut self, name: &str, value: String) -> anyhow::Result<&mut Self> {
+        self.update_field(name, value, FieldState::FilledByUser)
+    }
+
+    /// Check if all fields are filled (not Unset)
+    pub fn is_all_fields_filled(&self) -> bool {
+        self.fields.iter().all(|field| field.state != FieldState::Unset)
     }
 }
 
@@ -129,19 +138,6 @@ mod test {
                 Some("preview".to_string()),
             );
             assert_eq!(field.state, FieldState::Unset);
-        }
-
-        #[test]
-        fn _test_set_discovered_value_sets_the_value_and_state() {
-            let mut field = Field::init(
-                "network".to_string(),
-                "The Cardano network to target".to_string(),
-                FieldType::String,
-                Some("preview".to_string()),
-            );
-            field.set_discovered_value("mainnet".to_string());
-            assert_eq!(field.value.as_deref(), Some("mainnet"));
-            assert_eq!(field.state, FieldState::Discovered);
         }
     }
 
@@ -184,12 +180,35 @@ mod test {
             let mut store = Store::new(vec![field]);
 
             let updated_field = store
-                .update_field("network", "mainnet".to_string(), FieldState::Discovered)
+                .discover_field("network", "mainnet".to_string())
                 .unwrap()
                 .get_field("network")
                 .unwrap();
 
             assert_eq!("mainnet".to_string(), updated_field.value.clone().unwrap());
+            assert_eq!(FieldState::Discovered, updated_field.state);
+        }
+
+        #[test]
+        fn test_is_all_fields_filled_returns_true_when_all_fields_are_filled() {
+            let field1 = Field::init(
+                "network".to_string(),
+                "The Cardano network to target".to_string(),
+                FieldType::String,
+                Some("preview".to_string()),
+            );
+            let field2 = Field::init(
+                "magic_id".to_string(),
+                "Magic id of the Cardano network".to_string(),
+                FieldType::Int,
+                None,
+            );
+            let mut store = Store::new(vec![field1, field2]);
+            assert!(!store.is_all_fields_filled());
+
+            store.user_update_field("network", "mainnet".to_string()).unwrap();
+            store.user_update_field("magic_id", "42".to_string()).unwrap();
+            assert!(store.is_all_fields_filled());
         }
     }
 }
