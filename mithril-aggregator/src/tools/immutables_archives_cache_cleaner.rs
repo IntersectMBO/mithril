@@ -56,6 +56,22 @@ impl ImmutablesArchivesCacheCleaner {
         Ok(archives)
     }
 
+    /// Delete the given immutable files archives.
+    pub fn delete_archives(archives: &[ImmutableFileArchive]) -> StdResult<()> {
+        // Stop at the first failure: its cause (permissions, read-only filesystem, ...) most
+        // likely affects all the archives, and a new run will detect the remaining ones.
+        for archive in archives {
+            fs::remove_file(&archive.path).with_context(|| {
+                format!(
+                    "Can not delete immutable files archive: '{}'",
+                    archive.path.display()
+                )
+            })?;
+        }
+
+        Ok(())
+    }
+
     fn parse_immutable_file_number(file_name: &OsStr) -> Option<ImmutableFileNumber> {
         let (immutable_file_number, extension) = file_name.to_str()?.split_once('.')?;
 
@@ -192,6 +208,50 @@ mod tests {
         let archives = ImmutablesArchivesCacheCleaner::detect_archives(&cache_dir).unwrap();
 
         assert_eq!(vec![archive(&cache_dir, 2, "00002.tar.zst")], archives);
+    }
+
+    mod delete {
+        use super::*;
+
+        #[test]
+        fn delete_detected_archives_and_keep_other_files() {
+            let cache_dir = temp_dir_create!();
+            create_files(
+                &cache_dir,
+                &["00000.tar.zst", "00001.tar.zst", "00005.tar.zst", "foo.txt"],
+            );
+            let archives = ImmutablesArchivesCacheCleaner::detect_archives(&cache_dir).unwrap();
+
+            ImmutablesArchivesCacheCleaner::delete_archives(&archives).unwrap();
+
+            assert!(!cache_dir.join("00000.tar.zst").exists());
+            assert!(!cache_dir.join("00001.tar.zst").exists());
+            assert!(!cache_dir.join("00005.tar.zst").exists());
+            assert!(cache_dir.join("foo.txt").exists());
+        }
+
+        #[test]
+        fn delete_nothing_if_no_archives() {
+            ImmutablesArchivesCacheCleaner::delete_archives(&[]).unwrap();
+        }
+
+        #[test]
+        fn fail_with_the_archive_path_if_an_archive_can_not_be_deleted() {
+            let cache_dir = temp_dir_create!();
+            let missing_archive = archive(&cache_dir, 3, "00003.tar.zst");
+
+            let error = ImmutablesArchivesCacheCleaner::delete_archives(std::slice::from_ref(
+                &missing_archive,
+            ))
+            .expect_err("Deleting a missing archive should fail");
+
+            assert!(
+                error
+                    .to_string()
+                    .contains(&missing_archive.path.display().to_string()),
+                "Error should contain the archive path, got: {error}"
+            );
+        }
     }
 
     mod summary {
