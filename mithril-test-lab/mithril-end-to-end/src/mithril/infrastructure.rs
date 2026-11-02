@@ -45,6 +45,7 @@ pub struct MithrilInfrastructureConfig {
     pub artifacts_dir: PathBuf,
     pub bin_dir: PathBuf,
     pub cardano_node_version: semver::Version,
+    pub cardano_hard_fork_latest_era_at_epoch: u16,
     pub mithril_run_interval: u32,
     pub mithril_era: String,
     pub mithril_era_reader_adapter: String,
@@ -99,6 +100,7 @@ impl MithrilInfrastructureConfig {
             artifacts_dir: PathBuf::from("/tmp/artifacts"),
             bin_dir: PathBuf::from("/tmp/bin"),
             cardano_node_version: semver::Version::new(1, 0, 0),
+            cardano_hard_fork_latest_era_at_epoch: 0,
             mithril_run_interval: 10,
             mithril_era: "era1".to_string(),
             mithril_era_reader_adapter: "adapter1".to_string(),
@@ -142,6 +144,7 @@ pub struct MithrilInfrastructure {
     relay_signers: Vec<RelaySigner>,
     relay_passives: Vec<RelayPassive>,
     cardano_node_version: semver::Version,
+    cardano_hard_fork_latest_era_at_epoch: u16,
     cardano_chain_observer: Arc<dyn ChainObserver>,
     startup_protocol_configuration: ProtocolConfiguration,
     current_era: RwLock<String>,
@@ -256,6 +259,7 @@ impl MithrilInfrastructure {
             relay_passives,
             cardano_chain_observer,
             cardano_node_version: config.cardano_node_version.clone(),
+            cardano_hard_fork_latest_era_at_epoch: config.cardano_hard_fork_latest_era_at_epoch,
             startup_protocol_configuration: config.startup_protocol_configuration.clone(),
             current_era: RwLock::new(config.mithril_era.clone()),
             era_reader_adapter: config.mithril_era_reader_adapter.clone(),
@@ -682,6 +686,11 @@ impl MithrilInfrastructure {
 
     pub fn cardano_node_version(&self) -> &semver::Version {
         &self.cardano_node_version
+    }
+
+    /// Epoch of the hard fork of the devnet to its latest Cardano era
+    pub fn cardano_hard_fork_latest_era_at_epoch(&self) -> u16 {
+        self.cardano_hard_fork_latest_era_at_epoch
     }
 
     pub fn most_constraining_aggregate_signature_type(&self) -> AggregateSignatureType {

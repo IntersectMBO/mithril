@@ -76,6 +76,19 @@ pub struct DevnetBootstrapArgs {
 }
 
 impl Devnet {
+    /// First cardano-node version able to run the Dijkstra era
+    pub const MIN_CARDANO_NODE_VERSION_WITH_DIJKSTRA: semver::Version =
+        semver::Version::new(11, 2, 0);
+
+    /// Whether a cardano-node version runs the Dijkstra era, whatever its pre-release suffix
+    pub fn runs_dijkstra(cardano_node_version: &semver::Version) -> bool {
+        semver::Version::new(
+            cardano_node_version.major,
+            cardano_node_version.minor,
+            cardano_node_version.patch,
+        ) >= Self::MIN_CARDANO_NODE_VERSION_WITH_DIJKSTRA
+    }
+
     fn build_command(&self, script_path: &Path) -> StdResult<Command> {
         let mut command = Command::new(script_path);
         command
@@ -213,13 +226,31 @@ impl Devnet {
         self.artifacts_dir.join("transaction-hashes.txt")
     }
 
+    /// Ids of the transactions submitted by the payment script, computed by cardano-cli, empty before any payment
     pub fn mithril_payments_transaction_hashes(&self) -> StdResult<Vec<TransactionHash>> {
-        let transaction_hashes = read_to_string(self.mithril_payments_transaction_hashes_path())?
+        Self::read_hashes(&self.mithril_payments_transaction_hashes_path())
+    }
+
+    /// Path of the `sub-transaction-hashes.txt` file where the payment script writes the ids of the sub-transactions it nests
+    pub fn mithril_payments_sub_transaction_hashes_path(&self) -> PathBuf {
+        self.artifacts_dir.join("sub-transaction-hashes.txt")
+    }
+
+    /// Ids of the sub-transactions nested by the payment script, computed by cardano-cli, empty when the devnet never ran in Dijkstra
+    pub fn mithril_payments_sub_transaction_hashes(&self) -> StdResult<Vec<TransactionHash>> {
+        Self::read_hashes(&self.mithril_payments_sub_transaction_hashes_path())
+    }
+
+    fn read_hashes(path: &Path) -> StdResult<Vec<String>> {
+        if !path.exists() {
+            return Ok(vec![]);
+        }
+
+        Ok(read_to_string(path)
+            .with_context(|| format!("Failed to read the hashes file {}", path.display()))?
             .lines()
             .map(String::from)
-            .collect();
-
-        Ok(transaction_hashes)
+            .collect())
     }
 
     pub fn mithril_payments_block_hashes_path(&self) -> PathBuf {
@@ -433,6 +464,22 @@ impl Devnet {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    #[test]
+    fn runs_dijkstra_from_cardano_node_11_2_0_whatever_the_pre_release_suffix() {
+        assert!(!Devnet::runs_dijkstra(
+            &semver::Version::parse("11.1.3").unwrap()
+        ));
+        assert!(Devnet::runs_dijkstra(
+            &semver::Version::parse("11.2.0").unwrap()
+        ));
+        assert!(Devnet::runs_dijkstra(
+            &semver::Version::parse("11.2.0-pre").unwrap()
+        ));
+        assert!(Devnet::runs_dijkstra(
+            &semver::Version::parse("11.2.1-pre").unwrap()
+        ));
+    }
 
     use super::*;
 
