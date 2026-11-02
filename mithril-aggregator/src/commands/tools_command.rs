@@ -10,7 +10,7 @@ use mithril_doc::{Documenter, StructDoc};
 use mithril_persistence::sqlite::{SqliteCleaner, SqliteCleaningTask};
 
 use crate::{
-    ConfigurationSource, ExecutionEnvironment,
+    ConfigurationSource, ExecutionEnvironment, SnapshotUploaderType,
     database::repository::{CertificateRepository, SignedEntityStore},
     dependency_injection::{CARDANO_DB_ARTIFACTS_DIR, DependenciesBuilder, IMMUTABLE_ARCHIVES_DIR},
     extract_all,
@@ -42,6 +42,20 @@ pub struct ClearImmutablesArchivesCacheCommandConfiguration {
     /// Directory to store snapshot
     #[example = "`./mithril-aggregator/snapshots`"]
     pub snapshot_directory: PathBuf,
+
+    /// Type of snapshot uploader to use
+    #[example = "`gcp` or `local`"]
+    pub snapshot_uploader_type: SnapshotUploaderType,
+}
+
+impl ConfigurationSource for ClearImmutablesArchivesCacheCommandConfiguration {
+    fn environment(&self) -> ExecutionEnvironment {
+        ExecutionEnvironment::Production
+    }
+
+    fn snapshot_uploader_type(&self) -> SnapshotUploaderType {
+        self.snapshot_uploader_type
+    }
 }
 
 /// List of tools to upkeep the aggregator
@@ -217,7 +231,11 @@ impl Ed25519SubCommand {
 
 /// Clear immutable files compressed archives cache command.
 #[derive(Parser, Debug, Clone)]
-pub struct ClearImmutablesArchivesCacheCommand {}
+pub struct ClearImmutablesArchivesCacheCommand {
+    /// Delete the archives, without it nothing is deleted
+    #[clap(long)]
+    delete: bool,
+}
 
 impl ClearImmutablesArchivesCacheCommand {
     pub async fn execute(
@@ -243,7 +261,27 @@ impl ClearImmutablesArchivesCacheCommand {
             cache_dir.display()
         );
         println!("{}", ImmutablesArchivesSummary::from_archives(&archives));
-        println!("Dry run: nothing was deleted");
+
+        if archives.is_empty() {
+            println!("Nothing to delete: no immutables archives in the cache directory");
+            return Ok(());
+        }
+
+        if config.allow_http_serve_directory() {
+            eprintln!(
+                "WARNING: with the 'local' snapshot uploader, this directory is served as is: \
+                deleting its archives will break the download of the existing Cardano database snapshots"
+            );
+        }
+
+        if !self.delete {
+            println!("Dry run: nothing was deleted, use '--delete' to delete the archives");
+            return Ok(());
+        }
+
+        ImmutablesArchivesCacheCleaner::delete_archives(&archives)
+            .with_context(|| "clear-immutables-archives-cache: archives deletion error")?;
+        println!("Immutables archives deleted");
 
         Ok(())
     }
@@ -331,12 +369,33 @@ mod tests {
         fn config_builder_with_snapshot_directory(
             snapshot_directory: &Path,
         ) -> ConfigBuilder<DefaultState> {
+            config_builder(snapshot_directory, "gcp")
+        }
+
+        fn config_builder(
+            snapshot_directory: &Path,
+            snapshot_uploader_type: &str,
+        ) -> ConfigBuilder<DefaultState> {
             config::Config::builder()
                 .set_override(
                     "snapshot_directory",
                     snapshot_directory.to_string_lossy().to_string(),
                 )
                 .unwrap()
+                .set_override("snapshot_uploader_type", snapshot_uploader_type)
+                .unwrap()
+        }
+
+        fn create_cache_dir_with_files(snapshot_directory: &Path, file_names: &[&str]) -> PathBuf {
+            let cache_dir = snapshot_directory
+                .join(CARDANO_DB_ARTIFACTS_DIR)
+                .join(IMMUTABLE_ARCHIVES_DIR);
+            create_dir_all(&cache_dir).unwrap();
+            for file_name in file_names {
+                File::create(cache_dir.join(file_name)).unwrap();
+            }
+
+            cache_dir
         }
 
         #[test]
@@ -346,7 +405,26 @@ mod tests {
 
             assert!(matches!(
                 cmd.subcommand,
-                ToolsSubCommand::ClearImmutablesArchivesCache(_)
+                ToolsSubCommand::ClearImmutablesArchivesCache(
+                    ClearImmutablesArchivesCacheCommand { delete: false }
+                )
+            ));
+        }
+
+        #[test]
+        fn clear_immutables_archives_cache_subcommand_parses_delete_flag() {
+            let cmd = ToolsCommand::try_parse_from([
+                "tools",
+                "clear-immutables-archives-cache",
+                "--delete",
+            ])
+            .expect("CLI parse should succeed");
+
+            assert!(matches!(
+                cmd.subcommand,
+                ToolsSubCommand::ClearImmutablesArchivesCache(
+                    ClearImmutablesArchivesCacheCommand { delete: true }
+                )
             ));
         }
 
@@ -359,7 +437,7 @@ mod tests {
             create_dir_all(&cache_dir).unwrap();
             File::create(cache_dir.join("00000.tar.zst")).unwrap();
 
-            ClearImmutablesArchivesCacheCommand {}
+            ClearImmutablesArchivesCacheCommand { delete: false }
                 .execute(
                     TestLogger::stdout(),
                     config_builder_with_snapshot_directory(&snapshot_directory),
@@ -374,7 +452,7 @@ mod tests {
         async fn dry_run_succeeds_if_cache_directory_does_not_exist() {
             let snapshot_directory = temp_dir_create!();
 
-            ClearImmutablesArchivesCacheCommand {}
+            ClearImmutablesArchivesCacheCommand { delete: false }
                 .execute(
                     TestLogger::stdout(),
                     config_builder_with_snapshot_directory(&snapshot_directory),
@@ -383,6 +461,43 @@ mod tests {
                 .expect("clear-immutables-archives-cache should succeed");
 
             assert!(!snapshot_directory.join(CARDANO_DB_ARTIFACTS_DIR).exists());
+        }
+
+        #[tokio::test]
+        async fn with_delete_flag_deletes_archives_and_keeps_other_files() {
+            let snapshot_directory = temp_dir_create!();
+            let cache_dir = create_cache_dir_with_files(
+                &snapshot_directory,
+                &["00000.tar.zst", "00003.tar.zst", "foo.txt"],
+            );
+
+            ClearImmutablesArchivesCacheCommand { delete: true }
+                .execute(
+                    TestLogger::stdout(),
+                    config_builder_with_snapshot_directory(&snapshot_directory),
+                )
+                .await
+                .expect("clear-immutables-archives-cache should succeed");
+
+            assert!(!cache_dir.join("00000.tar.zst").exists());
+            assert!(!cache_dir.join("00003.tar.zst").exists());
+            assert!(cache_dir.join("foo.txt").exists());
+        }
+
+        #[tokio::test]
+        async fn with_delete_flag_and_local_uploader_still_deletes_archives() {
+            let snapshot_directory = temp_dir_create!();
+            let cache_dir = create_cache_dir_with_files(&snapshot_directory, &["00000.tar.zst"]);
+
+            ClearImmutablesArchivesCacheCommand { delete: true }
+                .execute(
+                    TestLogger::stdout(),
+                    config_builder(&snapshot_directory, "local"),
+                )
+                .await
+                .expect("clear-immutables-archives-cache should succeed");
+
+            assert!(!cache_dir.join("00000.tar.zst").exists());
         }
     }
 }
