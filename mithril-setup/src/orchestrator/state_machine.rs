@@ -263,6 +263,7 @@ mod tests {
                 value: None,
                 state: FieldState::Unset,
                 default: None,
+                guess: None,
             }]),
         };
 
@@ -279,6 +280,7 @@ mod tests {
                 value: Some("Carol".to_string()),
                 state: FieldState::FilledByUser,
                 default: None,
+                guess: None,
             }]),
         };
 
