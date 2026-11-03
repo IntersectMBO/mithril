@@ -156,6 +156,17 @@ impl Store {
         self.update_field(name, value, FieldState::FilledByUser)
     }
 
+    /// Key value JSON representation of the store, an unset field has a `null` value
+    pub fn to_json(&self) -> serde_json::Value {
+        let entries = self
+            .fields
+            .iter()
+            .map(|field| (field.name.clone(), field.value.clone().into()))
+            .collect();
+
+        serde_json::Value::Object(entries)
+    }
+
     /// Check if all fields are filled (not Unset)
     pub fn is_all_fields_filled(&self) -> bool {
         self.fields.iter().all(|field| field.state != FieldState::Unset)
@@ -277,6 +288,33 @@ mod test {
             store.user_update_field("color", "blue".to_string()).unwrap();
             store.user_update_field("shape", "square".to_string()).unwrap();
             assert!(store.is_all_fields_filled());
+        }
+    }
+
+    mod json {
+        use super::*;
+
+        #[test]
+        fn test_to_json_maps_field_names_to_their_values() {
+            let field1 = Field::init(
+                "network".to_string(),
+                "The Cardano network to target".to_string(),
+                FieldType::String,
+                None,
+            );
+            let field2 = Field::init(
+                "magic_id".to_string(),
+                "Magic id of the Cardano network".to_string(),
+                FieldType::Int,
+                None,
+            );
+            let mut store = Store::new(vec![field1, field2]);
+            store.user_update_field("network", "mainnet".to_string()).unwrap();
+
+            assert_eq!(
+                serde_json::json!({ "network": "mainnet", "magic_id": null }),
+                store.to_json()
+            );
         }
     }
 

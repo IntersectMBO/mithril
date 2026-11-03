@@ -1,5 +1,9 @@
 //! The orchestration for the signer (Discovery, Guessing)
 
+use std::path::PathBuf;
+
+use anyhow::Context;
+
 use crate::{
     orchestrator::{
         interfaces::Orchestrator,
@@ -11,20 +15,22 @@ use crate::{
 /// Representation of a Signer
 pub struct SignerOrchestrator {
     discoverer: SignerDiscoverer,
+    artifact_path: PathBuf,
 }
 
 impl SignerOrchestrator {
     /// Create a new signer orchestrator
-    pub fn new() -> Self {
+    pub fn new(artifact_path: PathBuf) -> Self {
         Self {
             discoverer: SignerDiscoverer,
+            artifact_path,
         }
     }
 }
 
 impl Default for SignerOrchestrator {
     fn default() -> Self {
-        Self::new()
+        Self::new(PathBuf::from("/tmp/mithril-setup-artifact.json"))
     }
 }
 
@@ -65,8 +71,15 @@ impl Orchestrator for SignerOrchestrator {
         Ok(store)
     }
 
-    fn save(&self, _store: &Store) -> anyhow::Result<()> {
-        // TODO: write the signer configuration file
+    fn save(&self, store: &Store) -> anyhow::Result<()> {
+        let json = serde_json::to_string_pretty(&store.to_json())?;
+        std::fs::write(&self.artifact_path, json).with_context(|| {
+            format!(
+                "Can not write the store to '{}'",
+                self.artifact_path.display()
+            )
+        })?;
+
         Ok(())
     }
 }
@@ -78,7 +91,7 @@ mod test {
 
     #[test]
     fn test_signer_orchestrator_discover_must_fill_store_with_information_from_the_discoverer() {
-        let signer_orchestrator = SignerOrchestrator::new();
+        let signer_orchestrator = SignerOrchestrator::default();
 
         unsafe { std::env::set_var("NETWORK", "mainnet") };
 
@@ -101,5 +114,26 @@ mod test {
         let actual_magic_id = store_updated.get_field("magic_id").unwrap();
         assert_eq!("1", actual_magic_id.value.clone().unwrap());
         assert_eq!(FieldState::Discovered, actual_magic_id.state);
+    }
+
+    #[test]
+    fn test_signer_orchestrator_save_writes_the_store_as_key_value_json() {
+        let output_path = PathBuf::from("/tmp/mithril-setup-store-test-output.json");
+        let signer_orchestrator = SignerOrchestrator::new(output_path.clone());
+
+        let mut store = signer_orchestrator.initial_store();
+        store.user_update_field("network", "preprod".to_string()).unwrap();
+        store.user_update_field("magic_id", "1".to_string()).unwrap();
+
+        signer_orchestrator.save(&store).unwrap();
+
+        //TODO: Use test tooling to write  temporary file
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&output_path).unwrap()).unwrap();
+        std::fs::remove_file(&output_path).unwrap();
+        assert_eq!(
+            serde_json::json!({ "network": "preprod", "magic_id": "1" }),
+            saved
+        );
     }
 }

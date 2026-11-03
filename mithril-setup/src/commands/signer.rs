@@ -20,7 +20,7 @@ impl SignerCommand {
         context.require_unstable("signer", None)?;
         info!(context.logger(), "signer command");
 
-        let orchestrator = SignerOrchestrator::new();
+        let orchestrator = SignerOrchestrator::default();
         let final_state = setup(&orchestrator, read_user_event).map_err(|e| anyhow!(e))?;
 
         match final_state {
