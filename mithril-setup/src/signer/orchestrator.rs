@@ -45,8 +45,8 @@ impl Orchestrator for SignerOrchestrator {
                 None,
             ),
             Field::init(
-                "toto".to_string(),
-                "Dummy field".to_string(),
+                "magic_id".to_string(),
+                "The magic ID".to_string(),
                 FieldType::String,
                 None,
             ),
@@ -60,7 +60,7 @@ impl Orchestrator for SignerOrchestrator {
     ) -> anyhow::Result<Store> {
         store
             .discover_field("network", discovery.network)?
-            .discover_field("toto", discovery.toto)?;
+            .discover_field("magic_id", discovery.magic_id)?;
 
         Ok(store)
     }
@@ -88,9 +88,9 @@ mod test {
         assert_eq!(None, actual_network.value.clone());
         assert_eq!(FieldState::Unset, actual_network.state);
 
-        let actual_toto = initial_store.get_field("toto").unwrap();
-        assert_eq!(None, actual_toto.value.clone());
-        assert_eq!(FieldState::Unset, actual_toto.state);
+        let actual_magic_id = initial_store.get_field("magic_id").unwrap();
+        assert_eq!(None, actual_magic_id.value.clone());
+        assert_eq!(FieldState::Unset, actual_magic_id.state);
 
         let store_updated = signer_orchestrator.discover().unwrap();
 
@@ -98,8 +98,8 @@ mod test {
         assert_eq!("mainnet", actual_network.value.clone().unwrap());
         assert_eq!(FieldState::Discovered, actual_network.state);
 
-        let actual_toto = store_updated.get_field("toto").unwrap();
-        assert_eq!("toto", actual_toto.value.clone().unwrap());
-        assert_eq!(FieldState::Discovered, actual_toto.state);
+        let actual_magic_id = store_updated.get_field("magic_id").unwrap();
+        assert_eq!("1", actual_magic_id.value.clone().unwrap());
+        assert_eq!(FieldState::Discovered, actual_magic_id.state);
     }
 }

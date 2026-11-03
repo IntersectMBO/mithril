@@ -12,8 +12,8 @@ pub struct SignerDiscovery {
     /// Cardano network
     pub network: String,
 
-    ///Dummy field
-    pub toto: String,
+    /// The magic ID
+    pub magic_id: String,
 }
 
 impl Discoverer for SignerDiscoverer {
@@ -21,9 +21,9 @@ impl Discoverer for SignerDiscoverer {
 
     fn discover(&self) -> anyhow::Result<Self::Output> {
         let network = SignerDiscoverer::discover_network()?;
-        let toto = SignerDiscoverer::discover_toto()?;
+        let magic_id = SignerDiscoverer::discover_magic_id()?;
 
-        Ok(SignerDiscovery { network, toto })
+        Ok(SignerDiscovery { network, magic_id })
     }
 }
 
@@ -32,8 +32,8 @@ impl SignerDiscoverer {
         std::env::var("NETWORK").context("Environment variable 'NETWORK' not found")
     }
 
-    fn discover_toto() -> anyhow::Result<String> {
-        Ok("toto".to_string())
+    fn discover_magic_id() -> anyhow::Result<String> {
+        Ok("1".to_string())
     }
 }
 
