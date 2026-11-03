@@ -110,11 +110,11 @@ pub struct Args {
     #[example = "`pythagoras`"]
     era: Option<String>,
 
-    /// Use the certificate chain cache to verify the certificate chain (unstable)
+    /// Use the certificate chain cache to verify the certificate chain
     #[clap(long, global = true)]
     use_certificate_chain_cache: bool,
 
-    /// Verification mode of the certificate chain when the cache is used (unstable)
+    /// Verification mode of the certificate chain when the cache is used
     #[clap(
         long,
         global = true,
@@ -124,7 +124,7 @@ pub struct Args {
     )]
     certificate_chain_cache_mode: CertificateChainCacheMode,
 
-    /// Directory of the certificate chain cache, requires --use-certificate-chain-cache (unstable)
+    /// Directory of the certificate chain cache, requires --use-certificate-chain-cache
     #[clap(
         long,
         global = true,
@@ -141,25 +141,17 @@ impl Args {
 
         let config_parameters = self.config_parameters(&root_logger)?;
         let context = CommandContext::new(config_parameters, self.unstable, self.json, root_logger)
-            .with_certificate_chain_cache(self.certificate_chain_cache_configuration()?);
+            .with_certificate_chain_cache(self.certificate_chain_cache_configuration());
 
         self.command.execute(context).await
     }
 
-    fn certificate_chain_cache_configuration(
-        &self,
-    ) -> MithrilResult<CertificateChainCacheConfiguration> {
-        if self.use_certificate_chain_cache && !self.unstable {
-            return Err(anyhow!(
-                "The \"--use-certificate-chain-cache\" option is only accepted using the --unstable flag."
-            ));
-        }
-
-        Ok(CertificateChainCacheConfiguration {
+    fn certificate_chain_cache_configuration(&self) -> CertificateChainCacheConfiguration {
+        CertificateChainCacheConfiguration {
             enabled: self.use_certificate_chain_cache,
             mode: self.certificate_chain_cache_mode,
             directory: self.certificate_chain_cache_path.clone(),
-        })
+        }
     }
 
     fn print_and_log_version(&self, root_logger: &Logger) {
@@ -355,14 +347,13 @@ mod tests {
 
         assert_eq!(
             CertificateChainCacheConfiguration::default(),
-            args.certificate_chain_cache_configuration().unwrap()
+            args.certificate_chain_cache_configuration()
         );
     }
 
     #[test]
     fn certificate_chain_cache_configuration_is_read_from_the_options() {
         let args = parse(&[
-            "--unstable",
             "--use-certificate-chain-cache",
             "--certificate-chain-cache-mode",
             "EarlyStopVerification",
@@ -377,31 +368,19 @@ mod tests {
                 mode: CertificateChainCacheMode::EarlyStopVerification,
                 directory: PathBuf::from("/path/to/cache"),
             },
-            args.certificate_chain_cache_configuration().unwrap()
+            args.certificate_chain_cache_configuration()
         );
     }
 
     #[test]
-    fn certificate_chain_cache_requires_unstable() {
-        let args = parse(&["--use-certificate-chain-cache"]).unwrap();
-
-        args.certificate_chain_cache_configuration()
-            .expect_err("The cache should require the unstable flag");
-    }
-
-    #[test]
     fn certificate_chain_cache_mode_requires_the_cache_to_be_used() {
-        parse(&[
-            "--unstable",
-            "--certificate-chain-cache-mode",
-            "EarlyStopVerification",
-        ])
-        .expect_err("The cache mode should require the cache to be used");
+        parse(&["--certificate-chain-cache-mode", "EarlyStopVerification"])
+            .expect_err("The cache mode should require the cache to be used");
     }
 
     #[test]
     fn certificate_chain_cache_path_requires_the_cache_to_be_used() {
-        parse(&["--unstable", "--certificate-chain-cache-path", "/path/to/cache"])
+        parse(&["--certificate-chain-cache-path", "/path/to/cache"])
             .expect_err("The cache path should require the cache to be used");
     }
 }
