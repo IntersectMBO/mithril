@@ -7,8 +7,7 @@ use slog::Logger;
 
 use mithril_cardano_node_chain::{chain_observer::ChainObserver, entities::ChainAddress};
 use mithril_common::{
-    crypto_helper::ProtocolConfigurationMarkersVerifierVerificationKey,
-    entities::ProtocolParameters,
+    StdResult, crypto_helper::ProtocolConfigurationMarkersVerifierVerificationKey,
 };
 
 use crate::{
@@ -30,10 +29,10 @@ pub enum AdapterConfig {
         verification_key: Box<ProtocolConfigurationMarkersVerifierVerificationKey>,
     },
 
-    /// Fake protocol configuration adapter with given protocol parameters and default value, at epoch 0 (for test usage)
+    /// Fake protocol configuration adapter with a single configuration at epoch 0 (for test usage)
     Fake {
-        /// Protocol parameters
-        protocol_parameters: ProtocolParameters,
+        /// JSON hex encoded protocol configuration
+        configuration: String,
     },
 }
 
@@ -50,8 +49,8 @@ pub fn build_protocol_configuration_adapter(
     adapter_config: AdapterConfig,
     chain_observer: Arc<dyn ChainObserver>,
     logger: Logger,
-) -> Arc<dyn ProtocolConfigurationMarkersReader> {
-    match adapter_config {
+) -> StdResult<Arc<dyn ProtocolConfigurationMarkersReader>> {
+    let adapter: Arc<dyn ProtocolConfigurationMarkersReader> = match adapter_config {
         AdapterConfig::CardanoChain {
             address,
             verification_key,
@@ -61,18 +60,24 @@ pub fn build_protocol_configuration_adapter(
             *verification_key,
             logger,
         )),
-        AdapterConfig::Fake {
-            protocol_parameters,
-        } => Arc::new(
-            FakeProtocolConfigurationMarkersReader::default_with_protocol_parameters(
-                protocol_parameters,
-            ),
+        AdapterConfig::Fake { configuration } => Arc::new(
+            FakeProtocolConfigurationMarkersReader::from_json_hex_marker_configuration(
+                &configuration,
+            )?,
         ),
-    }
+    };
+
+    Ok(adapter)
 }
 
 #[cfg(test)]
 mod test {
+    use mithril_cardano_node_chain::test::double::FakeChainObserver;
+    use mithril_common::{crypto_helper::key_encode_hex, test::double::Dummy};
+
+    use crate::{
+        cardano_chain::message::ProtocolConfigurationForEpochMessage, test::test_tools::TestLogger,
+    };
 
     use super::*;
 
@@ -102,11 +107,7 @@ mod test {
     fn deserialize_fake_adapter_config_from_json() {
         let serialized_json = serde_json::json!({
             "type": "fake",
-            "protocol_parameters": {
-                "k": 1944,
-                "m": 16948,
-                "phi_f": 0.2
-            },
+            "configuration": "7b7d",
         });
 
         let payload = serde_json::to_string(&serialized_json).unwrap();
@@ -115,13 +116,38 @@ mod test {
         assert_eq!(
             deserialized,
             AdapterConfig::Fake {
-                protocol_parameters: ProtocolParameters {
-                    k: 1944,
-                    m: 16948,
-                    phi_f: 0.2
-                }
+                configuration: "7b7d".to_string()
             }
         );
+    }
+
+    #[test]
+    fn build_fake_adapter_from_json_hex_configuration() {
+        let adapter_config = AdapterConfig::Fake {
+            configuration: key_encode_hex(ProtocolConfigurationForEpochMessage::dummy()).unwrap(),
+        };
+
+        build_protocol_configuration_adapter(
+            adapter_config,
+            Arc::new(FakeChainObserver::default()),
+            TestLogger::stdout(),
+        )
+        .expect("building a fake adapter with a valid configuration should not fail");
+    }
+
+    #[test]
+    fn build_fake_adapter_fails_with_invalid_configuration() {
+        let adapter_config = AdapterConfig::Fake {
+            configuration: "invalid_configuration".to_string(),
+        };
+
+        let result = build_protocol_configuration_adapter(
+            adapter_config,
+            Arc::new(FakeChainObserver::default()),
+            TestLogger::stdout(),
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]
