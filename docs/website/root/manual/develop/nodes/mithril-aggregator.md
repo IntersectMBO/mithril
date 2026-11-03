@@ -715,11 +715,10 @@ Here is a list of the available parameters for the serve command:
 
 `tools clear-immutables-archives-cache` command:
 
-| Parameter                | Command line (long) | Command line (short) | Environment variable     | Description                                        | Default value | Example                          |     Mandatory      |
-| ------------------------ | ------------------- | :------------------: | ------------------------ | -------------------------------------------------- | ------------- | -------------------------------- | :----------------: |
-| `delete`                 | `--delete`          |          -           | -                        | Delete the archives, without it nothing is deleted | `false`       | -                                |         -          |
-| `snapshot_directory`     | -                   |          -           | `SNAPSHOT_DIRECTORY`     | Directory to store snapshot                        | -             | `./mithril-aggregator/snapshots` | :heavy_check_mark: |
-| `snapshot_uploader_type` | -                   |          -           | `SNAPSHOT_UPLOADER_TYPE` | Type of snapshot uploader to use                   | -             | `gcp` or `local`                 | :heavy_check_mark: |
+| Parameter            | Command line (long) | Command line (short) | Environment variable | Description                                        | Default value | Example                          |     Mandatory      |
+| -------------------- | ------------------- | :------------------: | -------------------- | -------------------------------------------------- | ------------- | -------------------------------- | :----------------: |
+| `delete`             | `--delete`          |          -           | -                    | Delete the archives, without it nothing is deleted | `false`       | -                                |         -          |
+| `snapshot_directory` | -                   |          -           | `SNAPSHOT_DIRECTORY` | Directory where the snapshot archives are stored   | `.`           | `./mithril-aggregator/snapshots` | :heavy_check_mark: |
 
 `protocol-configuration export-markers` command:
 

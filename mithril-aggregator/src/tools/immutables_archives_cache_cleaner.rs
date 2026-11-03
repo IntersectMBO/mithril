@@ -73,18 +73,18 @@ impl ImmutablesArchivesCacheCleaner {
     }
 
     fn parse_immutable_file_number(file_name: &OsStr) -> Option<ImmutableFileNumber> {
-        let (immutable_file_number, extension) = file_name.to_str()?.split_once('.')?;
+        let (name, extension) = file_name.to_str()?.split_once('.')?;
 
-        let is_archive = immutable_file_number.len() == 5
-            && immutable_file_number.chars().all(|c| c.is_ascii_digit())
-            && CompressionAlgorithm::list()
-                .iter()
-                .any(|algorithm| algorithm.tar_file_extension() == extension);
-        if !is_archive {
+        let is_archive_extension = CompressionAlgorithm::list()
+            .iter()
+            .any(|algorithm| algorithm.tar_file_extension() == extension);
+        if !is_archive_extension {
             return None;
         }
 
-        immutable_file_number.parse().ok()
+        // Same naming rule as the archive builder: zero padded to at least five digits
+        let immutable_file_number: ImmutableFileNumber = name.parse().ok()?;
+        (format!("{immutable_file_number:05}") == name).then_some(immutable_file_number)
     }
 }
 
@@ -114,14 +114,18 @@ impl ImmutablesArchivesSummary {
 impl Display for ImmutablesArchivesSummary {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.immutable_file_numbers {
-            None => write!(f, "No immutables archives"),
-            Some(range) => write!(
-                f,
-                "{} immutables archives, immutable file numbers from {} to {}",
-                self.count,
-                range.start(),
-                range.end()
-            ),
+            None => write!(f, "No immutable archives"),
+            Some(range) => {
+                let (count, start, end) = (self.count, range.start(), range.end());
+                if count > 1 {
+                    write!(
+                        f,
+                        "{count} immutable archives, immutable file numbers from {start} to {end}",
+                    )
+                } else {
+                    write!(f, "1 immutable archive, immutable file number {start}",)
+                }
+            }
         }
     }
 }
@@ -193,6 +197,22 @@ mod tests {
     }
 
     #[test]
+    fn detect_archives_with_more_than_five_digits_immutable_file_number() {
+        let cache_dir = temp_dir_create!();
+        create_files(&cache_dir, &["99999.tar.zst", "100000.tar.zst"]);
+
+        let archives = ImmutablesArchivesCacheCleaner::detect_archives(&cache_dir).unwrap();
+
+        assert_equivalent!(
+            vec![
+                archive(&cache_dir, 99999, "99999.tar.zst"),
+                archive(&cache_dir, 100000, "100000.tar.zst"),
+            ],
+            archives
+        );
+    }
+
+    #[test]
     fn ignore_files_and_directories_that_are_not_archives() {
         let cache_dir = temp_dir_create!();
         create_files(
@@ -204,6 +224,8 @@ mod tests {
                 "00001.tar",
                 "00003.tar.zst.tmp",
                 "x00004.tar.zst",
+                "000042.tar.zst",
+                "+0042.tar.zst",
             ],
         );
         create_dir(cache_dir.join("00006.tar.zst")).unwrap();
@@ -268,7 +290,7 @@ mod tests {
                 },
                 summary
             );
-            assert_eq!("No immutables archives", summary.to_string());
+            assert_eq!("No immutable archives", summary.to_string());
         }
 
         #[test]
@@ -288,7 +310,7 @@ mod tests {
                 summary
             );
             assert_eq!(
-                "1 immutables archives, immutable file numbers from 42 to 42",
+                "1 immutable archive, immutable file number 42",
                 summary.to_string()
             );
         }
@@ -310,7 +332,7 @@ mod tests {
                 summary
             );
             assert_eq!(
-                "3 immutables archives, immutable file numbers from 0 to 5",
+                "3 immutable archives, immutable file numbers from 0 to 5",
                 summary.to_string()
             );
         }

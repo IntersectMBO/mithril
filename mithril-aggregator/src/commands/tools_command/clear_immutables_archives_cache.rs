@@ -10,29 +10,21 @@ use mithril_common::StdResult;
 use mithril_doc::{Documenter, StructDoc};
 
 use crate::{
-    ConfigurationSource, ExecutionEnvironment, SnapshotUploaderType,
+    ConfigurationSource, ExecutionEnvironment,
     dependency_injection::{CARDANO_DB_ARTIFACTS_DIR, IMMUTABLE_ARCHIVES_DIR},
     tools::{ImmutablesArchivesCacheCleaner, ImmutablesArchivesSummary},
 };
 
 #[derive(Debug, Clone, Deserialize, Documenter)]
 pub struct ClearImmutablesArchivesCacheCommandConfiguration {
-    /// Directory to store snapshot
+    /// Directory where the snapshot archives are stored
     #[example = "`./mithril-aggregator/snapshots`"]
     pub snapshot_directory: PathBuf,
-
-    /// Type of snapshot uploader to use
-    #[example = "`gcp` or `local`"]
-    pub snapshot_uploader_type: SnapshotUploaderType,
 }
 
 impl ConfigurationSource for ClearImmutablesArchivesCacheCommandConfiguration {
     fn environment(&self) -> ExecutionEnvironment {
         ExecutionEnvironment::Production
-    }
-
-    fn snapshot_uploader_type(&self) -> SnapshotUploaderType {
-        self.snapshot_uploader_type
     }
 }
 
@@ -64,21 +56,21 @@ impl ClearImmutablesArchivesCacheCommand {
         let archives = ImmutablesArchivesCacheCleaner::detect_archives(&cache_dir)
             .with_context(|| "clear-immutables-archives-cache: archives detection error")?;
         println!(
-            "Immutables archives cache directory: {}",
+            "Immutable archives cache directory: {}",
             cache_dir.display()
         );
         println!("{}", ImmutablesArchivesSummary::from_archives(&archives));
 
-        if archives.is_empty() {
-            println!("Nothing to delete: no immutables archives in the cache directory");
-            return Ok(());
-        }
-
-        if config.allow_http_serve_directory() {
-            eprintln!(
-                "WARNING: with the 'local' snapshot uploader, this directory is served as is: \
+        eprintln!("WARNING: The mithril aggregator must be stopped before running this command");
+        eprintln!();
+        eprintln!(
+            "WARNING: With the 'local' snapshot uploader, this directory is served as is: \
                 deleting its archives will break the download of the existing Cardano database snapshots"
-            );
+        );
+
+        if archives.is_empty() {
+            println!("Nothing to delete: no immutable archives in the cache directory");
+            return Ok(());
         }
 
         if !self.delete {
@@ -88,7 +80,7 @@ impl ClearImmutablesArchivesCacheCommand {
 
         ImmutablesArchivesCacheCleaner::delete_archives(&archives)
             .with_context(|| "clear-immutables-archives-cache: archives deletion error")?;
-        println!("Immutables archives deleted");
+        println!("Immutable archives deleted");
 
         Ok(())
     }
@@ -116,20 +108,15 @@ mod tests {
     fn config_builder_with_snapshot_directory(
         snapshot_directory: &Path,
     ) -> ConfigBuilder<DefaultState> {
-        config_builder(snapshot_directory, "gcp")
+        config_builder(snapshot_directory)
     }
 
-    fn config_builder(
-        snapshot_directory: &Path,
-        snapshot_uploader_type: &str,
-    ) -> ConfigBuilder<DefaultState> {
+    fn config_builder(snapshot_directory: &Path) -> ConfigBuilder<DefaultState> {
         config::Config::builder()
             .set_override(
                 "snapshot_directory",
                 snapshot_directory.to_string_lossy().to_string(),
             )
-            .unwrap()
-            .set_override("snapshot_uploader_type", snapshot_uploader_type)
             .unwrap()
     }
 
@@ -224,21 +211,5 @@ mod tests {
             .expect("clear-immutables-archives-cache should succeed");
 
         assert_dir_eq!(&cache_dir, "* foo.txt");
-    }
-
-    #[tokio::test]
-    async fn with_delete_flag_and_local_uploader_still_deletes_archives() {
-        let snapshot_directory = temp_dir_create!();
-        let cache_dir = create_cache_dir_with_files(&snapshot_directory, &["00000.tar.zst"]);
-
-        ClearImmutablesArchivesCacheCommand { delete: true }
-            .execute(
-                TestLogger::stdout(),
-                config_builder(&snapshot_directory, "local"),
-            )
-            .await
-            .expect("clear-immutables-archives-cache should succeed");
-
-        assert_dir_eq!(&cache_dir, "");
     }
 }
