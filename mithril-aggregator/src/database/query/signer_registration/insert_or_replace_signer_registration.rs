@@ -1,5 +1,7 @@
+use anyhow::Context;
 use sqlite::Value;
 
+use mithril_common::StdResult;
 use mithril_persistence::sqlite::{Query, SourceAlias, SqLiteEntity, WhereCondition};
 
 use crate::database::record::SignerRegistrationRecord;
@@ -10,12 +12,35 @@ pub struct InsertOrReplaceSignerRegistrationRecordQuery {
 }
 
 impl InsertOrReplaceSignerRegistrationRecordQuery {
-    pub fn one(signer_registration_record: SignerRegistrationRecord) -> Self {
+    /// Build the query for the record, failing when a numeric field does not fit a database integer.
+    pub fn one(signer_registration_record: SignerRegistrationRecord) -> StdResult<Self> {
+        let epoch_settings_id = i64::try_from(*signer_registration_record.epoch_settings_id)
+            .with_context(|| {
+                format!(
+                    "Epoch '{}' does not fit in a database integer",
+                    signer_registration_record.epoch_settings_id
+                )
+            })?;
+        let kes_evolutions = signer_registration_record
+            .kes_evolutions
+            .map(|kes_evolutions| {
+                i64::try_from(kes_evolutions).with_context(|| {
+                    format!("KES evolutions '{kes_evolutions}' do not fit in a database integer")
+                })
+            })
+            .transpose()?;
+        let stake = signer_registration_record
+            .stake
+            .map(|stake| {
+                i64::try_from(stake)
+                    .with_context(|| format!("Stake '{stake}' does not fit in a database integer"))
+            })
+            .transpose()?;
         let condition = WhereCondition::new(
             "(signer_id, epoch_setting_id, verification_key, verification_key_signature, operational_certificate, kes_period, stake, verification_key_for_snark, verification_key_signature_for_snark, created_at, proof_of_bound_possession_for_snark) values (?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*)",
             vec![
                 Value::String(signer_registration_record.signer_id),
-                Value::Integer(signer_registration_record.epoch_settings_id.try_into().unwrap()),
+                Value::Integer(epoch_settings_id),
                 Value::String(signer_registration_record.verification_key_for_concatenation),
                 signer_registration_record
                     .verification_key_signature_for_concatenation
@@ -25,14 +50,8 @@ impl InsertOrReplaceSignerRegistrationRecordQuery {
                     .operational_certificate
                     .map(Value::String)
                     .unwrap_or(Value::Null),
-                signer_registration_record
-                    .kes_evolutions
-                    .map(|k| Value::Integer(i64::try_from(k).unwrap()))
-                    .unwrap_or(Value::Null),
-                signer_registration_record
-                    .stake
-                    .map(|s| Value::Integer(i64::try_from(s).unwrap()))
-                    .unwrap_or(Value::Null),
+                kes_evolutions.map(Value::Integer).unwrap_or(Value::Null),
+                stake.map(Value::Integer).unwrap_or(Value::Null),
                 #[cfg(feature = "snark")]
                 signer_registration_record
                     .verification_key_for_snark
@@ -58,7 +77,7 @@ impl InsertOrReplaceSignerRegistrationRecordQuery {
             ],
         );
 
-        Self { condition }
+        Ok(Self { condition })
     }
 }
 
@@ -83,8 +102,10 @@ impl Query for InsertOrReplaceSignerRegistrationRecordQuery {
 
 #[cfg(test)]
 mod tests {
-    use mithril_common::entities::Epoch;
+    use mithril_common::crypto_helper::KesEvolutions;
+    use mithril_common::entities::{Epoch, SignerWithStake};
     use mithril_common::test::builder::MithrilFixtureBuilder;
+    use mithril_common::test::double::fake_keys;
     use mithril_persistence::sqlite::ConnectionExtensions;
 
     use crate::database::test_helper::main_db_connection;
@@ -102,9 +123,12 @@ mod tests {
             let signer_registration_record =
                 SignerRegistrationRecord::from_signer_with_stake(signer_with_stake, Epoch(1));
             let signer_registration_record_saved = connection
-                .fetch_first(InsertOrReplaceSignerRegistrationRecordQuery::one(
-                    signer_registration_record.clone(),
-                ))
+                .fetch_first(
+                    InsertOrReplaceSignerRegistrationRecordQuery::one(
+                        signer_registration_record.clone(),
+                    )
+                    .unwrap(),
+                )
                 .unwrap();
             assert_eq!(
                 Some(signer_registration_record),
@@ -117,14 +141,71 @@ mod tests {
             let signer_registration_record =
                 SignerRegistrationRecord::from_signer_with_stake(signer_with_stake, Epoch(1));
             let signer_registration_record_saved = connection
-                .fetch_first(InsertOrReplaceSignerRegistrationRecordQuery::one(
-                    signer_registration_record.clone(),
-                ))
+                .fetch_first(
+                    InsertOrReplaceSignerRegistrationRecordQuery::one(
+                        signer_registration_record.clone(),
+                    )
+                    .unwrap(),
+                )
                 .unwrap();
             assert_eq!(
                 Some(signer_registration_record),
                 signer_registration_record_saved
             );
         }
+    }
+
+    fn signer_registration_record() -> SignerRegistrationRecord {
+        let signer_with_stake = SignerWithStake {
+            party_id: "party_id".to_string(),
+            verification_key_for_concatenation: fake_keys::signer_verification_key()[0]
+                .try_into()
+                .unwrap(),
+            verification_key_signature_for_concatenation: None,
+            operational_certificate: None,
+            kes_evolutions: None,
+            stake: 10,
+            #[cfg(feature = "snark")]
+            verification_key_for_snark: None,
+            #[cfg(feature = "snark")]
+            verification_key_signature_for_snark: None,
+            #[cfg(feature = "snark")]
+            proof_of_bound_possession_for_snark: None,
+        };
+
+        SignerRegistrationRecord::from_signer_with_stake(signer_with_stake, Epoch(1))
+    }
+
+    #[test]
+    fn one_fails_with_an_epoch_that_does_not_fit_a_database_integer() {
+        let mut signer_registration_record = signer_registration_record();
+        signer_registration_record.epoch_settings_id = Epoch(u64::MAX);
+
+        assert!(
+            InsertOrReplaceSignerRegistrationRecordQuery::one(signer_registration_record).is_err(),
+            "an epoch above i64::MAX must be rejected"
+        );
+    }
+
+    #[test]
+    fn one_fails_with_kes_evolutions_that_do_not_fit_a_database_integer() {
+        let mut signer_registration_record = signer_registration_record();
+        signer_registration_record.kes_evolutions = Some(KesEvolutions(u64::MAX));
+
+        assert!(
+            InsertOrReplaceSignerRegistrationRecordQuery::one(signer_registration_record).is_err(),
+            "KES evolutions above i64::MAX must be rejected"
+        );
+    }
+
+    #[test]
+    fn one_fails_with_a_stake_that_does_not_fit_a_database_integer() {
+        let mut signer_registration_record = signer_registration_record();
+        signer_registration_record.stake = Some(u64::MAX);
+
+        assert!(
+            InsertOrReplaceSignerRegistrationRecordQuery::one(signer_registration_record).is_err(),
+            "a stake above i64::MAX must be rejected"
+        );
     }
 }

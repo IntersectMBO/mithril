@@ -62,7 +62,7 @@ impl VerificationKeyStorer for SignerRegistrationStore {
             .connection
             .fetch_first(InsertOrReplaceSignerRegistrationRecordQuery::one(
                 SignerRegistrationRecord::from_signer_with_stake(signer, epoch),
-            ))
+            )?)
             .with_context(|| format!("persist verification key failure, epoch: {epoch}"))?;
 
         match existing_record {
@@ -141,6 +141,7 @@ impl EpochPruningTask for SignerRegistrationStore {
 mod tests {
     use crate::database::test_helper::{insert_signer_registrations, main_db_connection};
 
+    use mithril_common::crypto_helper::KesEvolutions;
     use mithril_common::entities::{Epoch, PartyId, Signer, SignerWithStake};
     use mithril_common::test::double::fake_keys;
     use std::collections::HashMap;
@@ -270,6 +271,18 @@ mod tests {
             .unwrap();
 
         assert!(res.is_none());
+    }
+
+    #[tokio::test]
+    pub async fn save_key_with_kes_evolutions_that_do_not_fit_a_database_integer_fails() {
+        let store = init_signer_registration_store(build_signers(0, 0), None);
+        let mut signer_with_stake = build_fake_signers_with_stakes(1).remove(0);
+        signer_with_stake.kes_evolutions = Some(KesEvolutions(u64::MAX));
+
+        store
+            .save_verification_key(Epoch(1), signer_with_stake)
+            .await
+            .expect_err("KES evolutions that do not fit a database integer must be an error");
     }
 
     #[tokio::test]

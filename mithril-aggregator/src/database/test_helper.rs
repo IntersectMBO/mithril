@@ -344,7 +344,7 @@ pub fn insert_signer_registrations(
                     .to_owned(),
                 Epoch(1),
             ),
-        )
+        )?
         .filters()
         .expand();
         format!("insert into signer_registration {sql_values}")
