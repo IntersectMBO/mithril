@@ -279,12 +279,6 @@ console.log(
 
 ### Certificate chain cache
 
-:::warning
-
-The certificate chain cache is unstable and requires the `unstable` option of the client.
-
-:::
-
 The certificate chain cache stores the certificates of the verified certificate chains in an [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) database, so that the next verifications reuse them, across page loads.
 It is enabled with the following client options:
 
@@ -313,7 +307,6 @@ Here is an example of the code verifying a certificate chain with the certificat
 
 ```js
 let client = new MithrilClient(aggregator_endpoint, genesis_verification_key, {
-  unstable: true,
   enable_certificate_chain_verification_cache: true,
   certificate_chain_verification_cache_duration_in_seconds: 86400,
   certificate_chain_verification_cache_mode: "EarlyStopVerification",
