@@ -80,10 +80,7 @@ let client_options = {
   http_headers: new Map([["Content-Type", "application/json"]]),
   // The 'origin_tag' option is an identifier used by the aggregator to track the source of requests.
   origin_tag: "EXAMPLE",
-  // The following option activates the unstable features of the client.
-  // Unstable features will trigger an error if this option is not set.
-  unstable: true,
-  // The following option activates the certificate chain cache (unstable), stored in IndexedDB.
+  // The following option activates the certificate chain cache, stored in IndexedDB.
   // The verified certificates are reused by the next certificate chain verifications, even after a page reload.
   enable_certificate_chain_verification_cache: true,
   // The chain verification stops at the first cached certificate ('EarlyStopVerification', the default),
