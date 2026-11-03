@@ -37,7 +37,6 @@ use crate::cardano_transaction_v2_client::CardanoTransactionV2Client;
 use crate::certificate_client::{
     CertificateClient, CertificateVerifier, MithrilCertificateVerifier,
 };
-#[cfg(feature = "unstable")]
 use crate::certificate_client::{CertificateVerifierCache, CertificateVerifierCacheMode};
 #[cfg(feature = "snark")]
 use crate::circuit_key_registry::RemoteCircuitVerificationKeyRegistryRetriever;
@@ -127,10 +126,6 @@ pub struct ClientOptions {
     pub unstable: bool,
 
     /// Whether to enable certificate chain verification caching in the WASM client.
-    ///
-    /// `unstable` must be set to `true` for this option to have any effect.
-    ///
-    /// The certificate chain cache is globally unstable.
     #[cfg(target_family = "wasm")]
     #[cfg_attr(target_family = "wasm", serde(default))]
     pub enable_certificate_chain_verification_cache: bool,
@@ -139,8 +134,8 @@ pub struct ClientOptions {
     ///
     /// Default to one week (604800 seconds).
     ///
-    /// `enable_certificate_chain_verification_cache` and `unstable` must both be set to `true`
-    /// for this option to have any effect.
+    /// `enable_certificate_chain_verification_cache` must be set to `true` for this option
+    /// to have any effect.
     #[cfg(target_family = "wasm")]
     #[cfg_attr(target_family = "wasm", serde(default = "one_week_in_seconds"))]
     pub certificate_chain_verification_cache_duration_in_seconds: u32,
@@ -149,11 +144,11 @@ pub struct ClientOptions {
     ///
     /// Default to `EarlyStopVerification`.
     ///
-    /// `enable_certificate_chain_verification_cache` and `unstable` must both be set to `true`
-    /// for this option to have any effect.
-    #[cfg(all(target_family = "wasm", feature = "unstable"))]
+    /// `enable_certificate_chain_verification_cache` must be set to `true` for this option
+    /// to have any effect.
+    #[cfg(target_family = "wasm")]
     #[cfg_attr(
-        all(target_family = "wasm", feature = "unstable"),
+        target_family = "wasm",
         serde(default = "ClientOptions::default_certificate_chain_verification_cache_mode")
     )]
     pub certificate_chain_verification_cache_mode: CertificateVerifierCacheMode,
@@ -172,14 +167,14 @@ impl ClientOptions {
             enable_certificate_chain_verification_cache: false,
             #[cfg(target_family = "wasm")]
             certificate_chain_verification_cache_duration_in_seconds: one_week_in_seconds(),
-            #[cfg(all(target_family = "wasm", feature = "unstable"))]
+            #[cfg(target_family = "wasm")]
             certificate_chain_verification_cache_mode:
                 Self::default_certificate_chain_verification_cache_mode(),
         }
     }
 
     /// Default verification mode of the certificate chain when the cache is used in the WASM client.
-    #[cfg(all(target_family = "wasm", feature = "unstable"))]
+    #[cfg(target_family = "wasm")]
     const fn default_certificate_chain_verification_cache_mode() -> CertificateVerifierCacheMode {
         CertificateVerifierCacheMode::EarlyStopVerification
     }
@@ -270,9 +265,7 @@ pub struct ClientBuilder {
     ipfs_file_downloader: Option<Arc<dyn FileDownloader>>,
     #[cfg(all(feature = "unstable", feature = "fs"))]
     ipfs_rpc_base_url: Option<String>,
-    #[cfg(feature = "unstable")]
     certificate_verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
-    #[cfg(feature = "unstable")]
     certificate_verifier_cache_mode: Option<CertificateVerifierCacheMode>,
     #[cfg(feature = "snark")]
     circuit_key_registry_retriever: Option<Arc<dyn CircuitVerificationKeyRegistryRetriever>>,
@@ -315,9 +308,7 @@ impl ClientBuilder {
             ipfs_file_downloader: None,
             #[cfg(all(feature = "unstable", feature = "fs"))]
             ipfs_rpc_base_url: None,
-            #[cfg(feature = "unstable")]
             certificate_verifier_cache: None,
-            #[cfg(feature = "unstable")]
             certificate_verifier_cache_mode: None,
             #[cfg(feature = "snark")]
             circuit_key_registry_retriever: None,
@@ -403,9 +394,7 @@ impl ClientBuilder {
                     aggregator_client.clone(),
                     genesis_verification_key,
                     feedback_sender.clone(),
-                    #[cfg(feature = "unstable")]
                     self.certificate_verifier_cache,
-                    #[cfg(feature = "unstable")]
                     self.certificate_verifier_cache_mode.unwrap_or_default(),
                     #[cfg(feature = "snark")]
                     circuit_key_registry_retriever,
@@ -636,19 +625,17 @@ impl ClientBuilder {
         self
     }
 
-    cfg_unstable! {
-        /// Set the certificate verifier cache with the given implementation and mode.
-        ///
-        /// Passing a `None` value will disable the cache if any was previously set.
-        pub fn with_certificate_verifier_cache(
-            mut self,
-            certificate_verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
-            mode: CertificateVerifierCacheMode,
-        ) -> ClientBuilder {
-            self.certificate_verifier_cache = certificate_verifier_cache;
-            self.certificate_verifier_cache_mode = Some(mode);
-            self
-        }
+    /// Set the certificate verifier cache with the given implementation and mode.
+    ///
+    /// Passing a `None` value will disable the cache if any was previously set.
+    pub fn with_certificate_verifier_cache(
+        mut self,
+        certificate_verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
+        mode: CertificateVerifierCacheMode,
+    ) -> ClientBuilder {
+        self.certificate_verifier_cache = certificate_verifier_cache;
+        self.certificate_verifier_cache_mode = Some(mode);
+        self
     }
 
     /// Set a custom registry retriever for the circuit verification key registry check on
