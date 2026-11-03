@@ -31,7 +31,7 @@ pub enum AdapterConfig {
 
     /// Fake protocol configuration adapter with a single configuration at epoch 0 (for test usage)
     Fake {
-        /// JSON hex encoded protocol configuration (same format as the configuration of a protocol configuration marker)
+        /// JSON hex encoded protocol configuration
         configuration: String,
     },
 }

@@ -42,6 +42,9 @@ impl FakeProtocolConfigurationMarkersReader {
     }
 
     /// Create a new instance with a single marker at epoch 0, from a JSON hex encoded [ProtocolConfigurationForEpochMessage]
+    ///
+    /// The Cardano chain message type is reused to avoid duplicating it: a dedicated type should be added
+    /// if this message evolves in a way that no longer fits the needs of the fake reader.
     pub fn from_json_hex_marker_configuration(configuration: &str) -> StdResult<Self> {
         let configuration: ProtocolConfigurationForEpochMessage = key_decode_hex(configuration)
             .with_context(|| "Fake protocol configuration could not be decoded from JSON hex")?;

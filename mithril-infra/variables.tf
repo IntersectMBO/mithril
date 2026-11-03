@@ -597,7 +597,7 @@ variable "mithril_protocol_configuration_reader_verification_key_url" {
 
 variable "mithril_protocol_configuration_reader_fake_configuration" {
   type        = string
-  description = "The JSON hex encoded protocol configuration used by the 'fake' protocol configuration reader adapter (same format as the configuration of a protocol configuration marker, test only)"
+  description = "The JSON hex encoded protocol configuration used by the 'fake' protocol configuration reader adapter (test only)"
   default     = ""
 }
 
