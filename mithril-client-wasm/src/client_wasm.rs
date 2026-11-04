@@ -486,20 +486,6 @@ impl MithrilClient {
 
         Ok(serde_wasm_bindgen::to_value(&result)?)
     }
-}
-
-// Unstable functions are only available when the unstable flag is set
-#[wasm_bindgen]
-impl MithrilClient {
-    fn guard_unstable(&self) -> Result<(), wasm_bindgen::JsValue> {
-        if !self.unstable {
-            return Err(JsValue::from_str(
-                "Unstable functions are not enabled. Set the 'unstable' client option field to 'true' to enable them.",
-            ));
-        }
-
-        Ok(())
-    }
 
     /// Reset the certificate verifier cache if enabled
     #[wasm_bindgen]
@@ -515,6 +501,20 @@ impl MithrilClient {
     #[wasm_bindgen]
     pub async fn is_certificate_verifier_cache_enabled(&self) -> bool {
         self.certificate_verifier_cache.is_some()
+    }
+}
+
+// Unstable functions are only available when the unstable flag is set
+#[wasm_bindgen]
+impl MithrilClient {
+    fn guard_unstable(&self) -> Result<(), wasm_bindgen::JsValue> {
+        if !self.unstable {
+            return Err(JsValue::from_str(
+                "Unstable functions are not enabled. Set the 'unstable' client option field to 'true' to enable them.",
+            ));
+        }
+
+        Ok(())
     }
 
     /// `unstable` Call the client for the list of available Cardano transactions V2 snapshots
