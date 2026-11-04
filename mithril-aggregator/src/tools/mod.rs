@@ -3,6 +3,7 @@ mod certificates_hash_migrator;
 mod circuit_key_registry;
 mod era;
 mod genesis;
+mod immutables_archives_cache_cleaner;
 mod keypair;
 pub mod kubo_rpc_client;
 mod protocol_configuration;
@@ -18,6 +19,9 @@ pub use era::EraTools;
 #[cfg(feature = "snark")]
 pub use genesis::GenesisSignedPayload;
 pub use genesis::GenesisTools;
+pub use immutables_archives_cache_cleaner::{
+    ImmutablesArchivesCacheCleaner, ImmutablesArchivesSummary,
+};
 pub use keypair::KeypairTools;
 pub use protocol_configuration::{HumanReadableProtocolConfiguration, ProtocolConfigurationTools};
 pub use single_signature_authenticator::*;

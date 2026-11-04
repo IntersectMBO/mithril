@@ -15,7 +15,7 @@ use crate::artifact_builder::{
     MithrilStakeDistributionArtifactBuilder,
 };
 use crate::configuration::{AncillaryFilesSignerConfig, IpfsRpcServerConfig};
-use crate::dependency_injection::builder::SNAPSHOT_ARTIFACTS_DIR;
+use crate::dependency_injection::builder::{IMMUTABLE_ARCHIVES_DIR, SNAPSHOT_ARTIFACTS_DIR};
 use crate::dependency_injection::{DependenciesBuilder, DependenciesBuilderError, Result};
 use crate::file_uploaders::{
     CloudRemotePath, CloudUploader, FileUploadRetryPolicy, GCloudBackendUploader, IpfsUploader,
@@ -423,7 +423,7 @@ impl DependenciesBuilder {
         cardano_node_version: Version,
     ) -> Result<CardanoDatabaseArtifactBuilder> {
         let snapshot_dir = self.configuration.get_snapshot_dir()?;
-        let immutable_dir = self.get_cardano_db_artifacts_dir()?.join("immutable");
+        let immutable_dir = self.get_cardano_db_artifacts_dir()?.join(IMMUTABLE_ARCHIVES_DIR);
 
         let ancillary_builder = Arc::new(AncillaryArtifactBuilder::new(
             self.build_cardano_database_ancillary_uploaders().await?,
