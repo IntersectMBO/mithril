@@ -592,7 +592,7 @@ mod tests {
             // for the last epoch to have two certificates when `certificates_per_epoch` is an *even*
             // number, we need to set `total_certificates` to an *odd* number
             let chain = CertificateChainBuilder::new()
-                .with_total_certificates(9)
+                .with_total_certificates(5)
                 .with_certificates_per_epoch(2)
                 .build();
             let synchronizer = MithrilCertificateChainSynchronizer {
@@ -934,8 +934,8 @@ mod tests {
         #[tokio::test]
         async fn store_all() {
             let remote_chain = CertificateChainBuilder::default()
-                .with_certificates_per_epoch(3)
-                .with_total_certificates(8)
+                .with_certificates_per_epoch(2)
+                .with_total_certificates(4)
                 .build();
             let epoch = remote_chain.latest_certificate().epoch;
             let storer = Arc::new(DumbCertificateStorer::default());
@@ -957,11 +957,11 @@ mod tests {
         async fn store_partial() {
             let remote_chain = CertificateChainBuilder::default()
                 .with_certificates_per_epoch(1)
-                .with_total_certificates(8)
+                .with_total_certificates(4)
                 .build();
             let epoch = remote_chain.latest_certificate().epoch;
             let existing_certificates =
-                remote_chain.certificate_path_to_genesis(&remote_chain[5].hash);
+                remote_chain.certificate_path_to_genesis(&remote_chain[2].hash);
             let storer = Arc::new(DumbCertificateStorer::new(
                 remote_chain.genesis_certificate().clone(),
                 existing_certificates.clone(),
@@ -987,8 +987,8 @@ mod tests {
         #[tokio::test]
         async fn check_and_raise_epoch_gap_error() {
             let remote_chain = CertificateChainBuilder::default()
-                .with_certificates_per_epoch(3)
-                .with_total_certificates(8)
+                .with_certificates_per_epoch(2)
+                .with_total_certificates(4)
                 .build();
             let epoch = remote_chain.latest_certificate().epoch;
             let storer = Arc::new(DumbCertificateStorer::default());

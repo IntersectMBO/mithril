@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn test_get_certificate_records_by_epoch() {
-        let certificates = setup_certificate_chain(20, 7);
+        let certificates = setup_certificate_chain(5, 2);
 
         let connection = main_db_connection().unwrap();
         insert_certificate_records(&connection, certificates.certificates_chained.clone());
