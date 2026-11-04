@@ -53,10 +53,8 @@ impl CardanoTransactionsCertifyCommand {
 
         match self.backend {
             CardanoTransactionCommandsBackend::V1 => {
-                let client_builder =
-                    context.setup_mithril_client_builder_with_fallback_genesis_key()?;
                 let client = context
-                    .add_certificate_chain_cache(client_builder)?
+                    .setup_mithril_client_builder()?
                     .with_capabilities(SignedEntityTypeDiscriminants::CardanoTransactions.into())
                     .add_feedback_receiver(feedback_receiver)
                     .build()?;
@@ -74,10 +72,8 @@ impl CardanoTransactionsCertifyCommand {
                     "cardano-transaction certify <tx1>,<tx2>,...,<txn> --backend v2",
                     None,
                 )?;
-                let client_builder =
-                    context.setup_mithril_client_builder_with_fallback_genesis_key()?;
                 let client = context
-                    .add_certificate_chain_cache(client_builder)?
+                    .setup_mithril_client_builder()?
                     .with_capabilities(
                         SignedEntityTypeDiscriminants::CardanoBlocksTransactions.into(),
                     )
@@ -110,5 +106,59 @@ impl ConfigSource for CardanoTransactionsCertifyCommand {
         }
 
         Ok(map)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use slog::{Logger, o};
+
+    use crate::configuration::ConfigParameters;
+
+    use super::*;
+
+    fn context_without_genesis_verification_key(unstable_enabled: bool) -> CommandContext {
+        CommandContext::new(
+            ConfigParameters::build(&[("aggregator_endpoint", "http://127.0.0.1:1/aggregator")]),
+            unstable_enabled,
+            true,
+            Logger::root(slog::Discard, o!()),
+        )
+    }
+
+    fn certify_command(
+        backend: CardanoTransactionCommandsBackend,
+    ) -> CardanoTransactionsCertifyCommand {
+        CardanoTransactionsCertifyCommand {
+            backend,
+            genesis_verification_key: None,
+            transactions_hashes: vec!["tx-hash".to_string()],
+        }
+    }
+
+    #[tokio::test]
+    async fn certify_without_genesis_verification_key_fails() {
+        let error = certify_command(CardanoTransactionCommandsBackend::V1)
+            .execute(context_without_genesis_verification_key(false))
+            .await
+            .expect_err("the command must fail without a genesis verification key");
+
+        assert!(
+            format!("{error:?}").contains("genesis_verification_key"),
+            "the error must name the missing key, got: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn certify_v2_without_genesis_verification_key_fails() {
+        let error = certify_command(CardanoTransactionCommandsBackend::V2)
+            .execute(context_without_genesis_verification_key(true))
+            .await
+            .expect_err("the command must fail without a genesis verification key");
+
+        assert!(
+            format!("{error:?}").contains("genesis_verification_key"),
+            "the error must name the missing key, got: {error:?}"
+        );
     }
 }
