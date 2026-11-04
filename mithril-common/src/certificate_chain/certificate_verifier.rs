@@ -711,7 +711,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_genesis_certificate_success() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -725,7 +725,7 @@ mod tests {
     #[cfg(feature = "snark")]
     #[tokio::test]
     async fn verify_genesis_certificate_ignores_the_schnorr_half_of_a_dual_signature() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -753,7 +753,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_genesis_certificate_fails_if_is_not_genesis() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -775,7 +775,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_genesis_certificate_fails_if_hash_unmatch() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -792,7 +792,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_genesis_certificate_fails_if_protocol_message_unmatch() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -816,7 +816,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_genesis_certificate_fails_if_epoch_unmatch() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -834,7 +834,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_standard_certificate_success_with_different_epochs_as_previous() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -850,7 +850,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_standard_certificate_success_with_same_epoch_as_previous() {
-        let (total_certificates, certificates_per_epoch) = (5, 2);
+        let (total_certificates, certificates_per_epoch) = (3, 2);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -866,7 +866,7 @@ mod tests {
 
     #[test]
     fn verify_certificate_integrity_succeeds_for_a_valid_standard_certificate() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -879,7 +879,7 @@ mod tests {
 
     #[test]
     fn verify_certificate_integrity_fails_for_a_tampered_certificate() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -895,7 +895,7 @@ mod tests {
 
     #[test]
     fn verify_certificate_integrity_does_not_check_the_previous_certificate_link() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -914,7 +914,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_standard_certificate_fails_if_is_not_genesis() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -937,7 +937,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_standard_certificate_fails_if_infinite_loop() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -958,7 +958,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_standard_certificate_fails_if_hash_unmatch() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -976,7 +976,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_standard_certificate_fails_if_protocol_message_unmatch() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -1001,7 +1001,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_standard_certificate_fails_if_epoch_unmatch() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -1059,7 +1059,7 @@ mod tests {
             modified_certificate
         }
 
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = CertificateChainBuilder::new()
             .with_total_certificates(total_certificates)
             .with_certificates_per_epoch(certificates_per_epoch)
@@ -1089,7 +1089,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_standard_certificate_fails_if_certificate_previous_hash_unmatch() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -1111,7 +1111,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_standard_certificate_fails_if_certificate_chain_avk_unmatch() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -1135,7 +1135,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_standard_certificate_fails_if_certificate_chain_protocol_parameters_unmatch() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let verifier = MockDependencyInjector::new()
             .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
@@ -1162,7 +1162,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_certificate_success_when_certificate_is_genesis_and_valid() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let genesis_certificate = fake_certificates.genesis_certificate();
         let mock_container = MockDependencyInjector::new();
@@ -1176,7 +1176,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_certificate_success_when_certificate_is_standard_and_valid() {
-        let (total_certificates, certificates_per_epoch) = (5, 1);
+        let (total_certificates, certificates_per_epoch) = (3, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let certificate = fake_certificates[0].clone();
         let previous_certificate = fake_certificates[1].clone();
@@ -1244,7 +1244,7 @@ mod tests {
             }
         }
 
-        let (total_certificates, certificates_per_epoch) = (10, 1);
+        let (total_certificates, certificates_per_epoch) = (5, 1);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let fake_certificate_to_verify = fake_certificates[0].clone();
         let verifier = CertificateVerifierTest::from_certificates(&fake_certificates);
@@ -1258,7 +1258,7 @@ mod tests {
 
     #[tokio::test]
     async fn verify_certificate_chain_success_when_chain_is_valid() {
-        let (total_certificates, certificates_per_epoch) = (7, 2);
+        let (total_certificates, certificates_per_epoch) = (5, 2);
         let fake_certificates = setup_certificate_chain(total_certificates, certificates_per_epoch);
         let certificate_retriever =
             FakeCertificaterRetriever::from_certificates(&fake_certificates);
@@ -1277,10 +1277,12 @@ mod tests {
 
     #[tokio::test]
     async fn verify_certificate_chain_fails_when_chain_is_tampered() {
-        let (total_certificates, certificates_per_epoch) = (7, 2);
+        let (total_certificates, certificates_per_epoch) = (5, 2);
         let mut fake_certificates =
             setup_certificate_chain(total_certificates, certificates_per_epoch);
-        let index_certificate_fail = (total_certificates / 2) as usize;
+        // The first certificate of epoch 2, which is on the path from the latest certificate to
+        // the genesis certificate (unlike the second certificate of epoch 2)
+        let index_certificate_fail = 3;
         fake_certificates[index_certificate_fail].signed_message = "tampered-message".to_string();
         let certificate_retriever =
             FakeCertificaterRetriever::from_certificates(&fake_certificates);
@@ -1427,7 +1429,7 @@ mod tests {
 
         #[test]
         fn snark_avk_chaining_succeeds_with_different_epochs() {
-            let (total_certificates, certificates_per_epoch) = (5, 1);
+            let (total_certificates, certificates_per_epoch) = (3, 1);
             let fake_certificates = setup_certificate_chain_with_lagrange_era(
                 total_certificates,
                 certificates_per_epoch,
@@ -1449,7 +1451,7 @@ mod tests {
 
         #[test]
         fn snark_avk_chaining_succeeds_with_same_epoch() {
-            let (total_certificates, certificates_per_epoch) = (5, 2);
+            let (total_certificates, certificates_per_epoch) = (3, 2);
             let fake_certificates = setup_certificate_chain_with_lagrange_era(
                 total_certificates,
                 certificates_per_epoch,
@@ -1470,7 +1472,7 @@ mod tests {
         #[test]
         fn snark_avk_chaining_fails_with_same_epoch_when_current_has_snark_avk_but_previous_does_not()
          {
-            let (total_certificates, certificates_per_epoch) = (5, 2);
+            let (total_certificates, certificates_per_epoch) = (3, 2);
             let fake_certificates = setup_certificate_chain_with_lagrange_era(
                 total_certificates,
                 certificates_per_epoch,
@@ -1494,7 +1496,7 @@ mod tests {
         #[test]
         fn snark_avk_chaining_fails_with_same_epoch_when_previous_has_snark_avk_but_current_does_not()
          {
-            let (total_certificates, certificates_per_epoch) = (5, 2);
+            let (total_certificates, certificates_per_epoch) = (3, 2);
             let fake_certificates = setup_certificate_chain_with_lagrange_era(
                 total_certificates,
                 certificates_per_epoch,
@@ -1518,7 +1520,7 @@ mod tests {
 
         #[test]
         fn snark_avk_chaining_fails_with_same_epoch_when_both_lack_snark_avk() {
-            let (total_certificates, certificates_per_epoch) = (5, 2);
+            let (total_certificates, certificates_per_epoch) = (3, 2);
             let fake_certificates = setup_certificate_chain_with_lagrange_era(
                 total_certificates,
                 certificates_per_epoch,
@@ -1543,7 +1545,7 @@ mod tests {
 
         #[test]
         fn snark_avk_chaining_fails_when_next_snark_avk_is_tampered() {
-            let (total_certificates, certificates_per_epoch) = (5, 1);
+            let (total_certificates, certificates_per_epoch) = (3, 1);
             let fake_certificates = setup_certificate_chain_with_lagrange_era(
                 total_certificates,
                 certificates_per_epoch,
@@ -1569,7 +1571,7 @@ mod tests {
 
         #[test]
         fn snark_avk_chaining_fails_when_next_snark_avk_is_missing() {
-            let (total_certificates, certificates_per_epoch) = (5, 1);
+            let (total_certificates, certificates_per_epoch) = (3, 1);
             let fake_certificates = setup_certificate_chain_with_lagrange_era(
                 total_certificates,
                 certificates_per_epoch,
@@ -1595,7 +1597,7 @@ mod tests {
 
         #[test]
         fn avk_chaining_dispatches_to_snark_when_current_is_future_and_previous_is_concatenation() {
-            let (total_certificates, certificates_per_epoch) = (5, 1);
+            let (total_certificates, certificates_per_epoch) = (3, 1);
             let fake_certificates = setup_certificate_chain_with_lagrange_era(
                 total_certificates,
                 certificates_per_epoch,
@@ -1616,7 +1618,7 @@ mod tests {
 
         #[test]
         fn snark_avk_chaining_succeeds_when_previous_is_genesis_certificate() {
-            let (total_certificates, certificates_per_epoch) = (5, 1);
+            let (total_certificates, certificates_per_epoch) = (3, 1);
             let fake_certificates = setup_certificate_chain_with_lagrange_era(
                 total_certificates,
                 certificates_per_epoch,
@@ -1624,7 +1626,7 @@ mod tests {
             let verifier = MockDependencyInjector::new()
                 .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
             let genesis_certificate = fake_certificates.genesis_certificate().clone();
-            let mut certificate = with_snark_proof_type(fake_certificates[3].clone());
+            let mut certificate = with_snark_proof_type(fake_certificates[1].clone());
             certificate.previous_hash.clone_from(&genesis_certificate.hash);
             certificate.hash = certificate.try_compute_hash().unwrap();
 
@@ -1755,7 +1757,7 @@ mod tests {
 
         fn pythagoras_to_lagrange_era_transition_pair() -> (Certificate, Certificate) {
             let chain = CertificateChainBuilder::new()
-                .with_total_certificates(5)
+                .with_total_certificates(3)
                 .with_certificates_per_epoch(1)
                 .with_protocol_parameters(setup_protocol_parameters())
                 .with_mithril_era(SupportedEra::Pythagoras)
