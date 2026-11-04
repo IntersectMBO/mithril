@@ -9,6 +9,23 @@ As a minor extension, we have adopted a slightly different versioning convention
 
 ## Mithril Distribution [XXXX] - UNRELEASED
 
+- Fix Cardano chain rollbacks missed by the Cardano blocks and transactions importer in the signer and aggregator.
+
+- The Mithril aggregator advertises the supported locations of the immutable files in the new `cardano_database_distribution_settings` field of its `/` route.
+
+- New `tools clear-immutables-archives-cache` command in the Mithril aggregator to clear the cache of the immutable files archives, needed to rebuild byte-identical archives when the compression changes (e.g. a `zstd` library upgrade).
+
+- Support for stable certificate chain cache in the client library, CLI and WASM, which no longer requires the `unstable` feature of the library, the `--unstable` flag of the CLI or the `unstable` option of the WASM client.
+
+- **BREAKING** changes in Mithril client library:
+  - The `MithrilCertificateVerifier::new` function takes the certificate chain cache and its verification mode as parameters, which only users building the certificate verifier without the `ClientBuilder` must provide (`None` and `CertificateVerifierCacheMode::default()` to keep the previous behavior).
+
+- **UNSTABLE**:
+  - IPFS:
+    - The Mithril aggregator advertises the IPNS record of the immutable files directory in the `/` route when the `ipns_key_name` field of the `ipfs_rpc_server_config` configuration parameter is set.
+    - New `ipfs_share` configuration parameter of the Mithril aggregator to set the share of the immutable files to download through IPFS, advertised in the `/` route.
+    - The Mithril client library and CLI no longer download all the immutable files through IPFS first when an IPFS RPC URL is configured: IPFS is now tried first only for the share advertised by the aggregator, the other files try IPFS last.
+
 | Crate               | Version |
 | ------------------- | ------- |
 | mithril-aggregator  | `-`     |
@@ -18,18 +35,6 @@ As a minor extension, we have adopted a slightly different versioning convention
 | mithril-common      | `-`     |
 | mithril-signer      | `-`     |
 | mithril-stm         | `-`     |
-
-- Fix Cardano chain rollbacks missed by the Cardano blocks and transactions importer in the signer and aggregator.
-
-- The Mithril aggregator advertises the supported locations of the immutable files in the new `cardano_database_distribution_settings` field of its `/` route.
-
-- New `tools clear-immutables-archives-cache` command in the Mithril aggregator to clear the cache of the immutable files archives, needed to rebuild byte-identical archives when the compression changes (e.g. a `zstd` library upgrade).
-
-- **UNSTABLE**:
-  - IPFS:
-    - The Mithril aggregator advertises the IPNS record of the immutable files directory in the `/` route when the `ipns_key_name` field of the `ipfs_rpc_server_config` configuration parameter is set.
-    - New `ipfs_share` configuration parameter of the Mithril aggregator to set the share of the immutable files to download through IPFS, advertised in the `/` route.
-    - The Mithril client library and CLI no longer download all the immutable files through IPFS first when an IPFS RPC URL is configured: IPFS is now tried first only for the share advertised by the aggregator, the other files try IPFS last.
 
 ## Mithril Distribution [2642.0] - 2026-10-20
 
