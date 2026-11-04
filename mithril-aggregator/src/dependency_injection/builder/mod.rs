@@ -51,6 +51,7 @@ use crate::{
     ProtocolParametersRetriever, ServeCommandDependenciesContainer, SignerRegisterer,
     SignerRegistrationRoundOpener, SignerRegistrationVerifier, SingleSignatureAuthenticator,
     VerificationKeyStorer,
+    artifact_builder::ImmutableArtifactBuilder,
     configuration::{ConfigurationSource, IpfsRpcServerConfig},
     database::repository::{
         AggregatorCardanoChainDataRepository, CertificateRepository, EpochSettingsStore,
@@ -195,6 +196,9 @@ pub struct DependenciesBuilder {
 
     /// Snapshotter service.
     pub snapshotter: Option<Arc<dyn Snapshotter>>,
+
+    /// Cardano database immutable files artifact builder.
+    pub immutable_artifact_builder: Option<Arc<ImmutableArtifactBuilder>>,
 
     /// Certificate verifier service.
     pub certificate_verifier: Option<Arc<dyn CertificateVerifier>>,
@@ -351,6 +355,7 @@ impl DependenciesBuilder {
             digester: None,
             file_archiver: None,
             snapshotter: None,
+            immutable_artifact_builder: None,
             certificate_verifier: None,
             #[cfg(feature = "snark")]
             circuit_verification_key_registry_retriever: None,
