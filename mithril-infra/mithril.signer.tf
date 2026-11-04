@@ -162,6 +162,11 @@ if [ "${var.mithril_use_p2p_network}" = "true" ] && [ "${var.mithril_p2p_use_dmq
     rm -f $DMQ_RELAY_CONFIG_DIRECTORY/topology.json
     mv $DMQ_RELAY_CONFIG_DIRECTORY/topology.json.new $DMQ_RELAY_CONFIG_DIRECTORY/topology.json
 
+    # Add the DMQ block-producer to DMQ relay topology (not advertised, so that the relay pulls its signatures as soon as it starts)
+    cat $DMQ_RELAY_CONFIG_DIRECTORY/topology.json | jq '.localRoots += [{"accessPoints": [{"address": "dmq-node-block-producer-signer-${each.key}", "port": ${local.mithril_signers_dmq_block_producer_port[each.key]}}], "advertise": false, "trustable": false, "valency": 1}]' > $DMQ_RELAY_CONFIG_DIRECTORY/topology.json.new
+    rm -f $DMQ_RELAY_CONFIG_DIRECTORY/topology.json
+    mv $DMQ_RELAY_CONFIG_DIRECTORY/topology.json.new $DMQ_RELAY_CONFIG_DIRECTORY/topology.json
+
     # Enable DMQ relay ledger peers (CIP-155 SRV records)
     if [ "${var.mithril_p2p_dmq_use_ledger_peers}" = "true" ]; then
       cat $DMQ_RELAY_CONFIG_DIRECTORY/topology.json | jq '. + {"useLedgerAfterSlot": 0}' > $DMQ_RELAY_CONFIG_DIRECTORY/topology.json.new

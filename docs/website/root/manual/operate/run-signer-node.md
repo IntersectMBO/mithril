@@ -1189,6 +1189,7 @@ The DMQ node's topology file follows a similar format to the Cardano node's topo
 **Which peers should be configured for each DMQ node?**
 
 - The **relay** DMQ node connects to the **DMQ bootstrap peer** from the [Mithril networks](../getting-started/network-configurations.md) table. This is how your relay discovers and communicates with the rest of the DMQ network.
+- The **relay** DMQ node also connects to your own **block producer** DMQ node (using the block producer's **internal** IP address), in a separate group that is not advertised. Without it, the relay only starts pulling the signatures of your block producer after a long delay.
 - The **block producer** DMQ node connects **only** to your own **relay** DMQ node (using the relay's **internal** IP address). The block producer should **never** connect directly to external bootstrap peers.
 
 :::
@@ -1211,6 +1212,17 @@ bash -c 'cat > /opt/dmq/topology-relay.json << EOF
       "advertise": true,
       "trustable": false,
       "valency": 2
+    },
+    {
+      "accessPoints": [
+        {
+          "address": "**YOUR_DMQ_NODE_BLOCK_PRODUCER_INTERNAL_ADDRESS**",
+          "port": **YOUR_DMQ_NODE_BLOCK_PRODUCER_PORT**
+        }
+      ],
+      "advertise": false,
+      "trustable": false,
+      "valency": 1
     }
   ],
   "peerSnapshotFile": null,
@@ -1244,6 +1256,17 @@ bash -c 'cat > /opt/dmq/topology-relay.json << EOF
       "advertise": true,
       "trustable": false,
       "valency": 2
+    },
+    {
+      "accessPoints": [
+        {
+          "address": "192.168.1.60",
+          "port": 6161
+        }
+      ],
+      "advertise": false,
+      "trustable": false,
+      "valency": 1
     }
   ],
   "peerSnapshotFile": null,
