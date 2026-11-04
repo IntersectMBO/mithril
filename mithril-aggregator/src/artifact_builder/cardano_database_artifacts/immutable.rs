@@ -16,7 +16,7 @@ use mithril_common::{
 use crate::{
     DumbUploader, FileUploader,
     file_uploaders::{CloudUploader, IpfsUploader, LocalUploader},
-    services::Snapshotter,
+    services::{ImmutablesArchivesCreator, Snapshotter},
 };
 
 fn immutable_file_number_extractor(file_uri: &str) -> StdResult<Option<String>> {
@@ -287,6 +287,19 @@ impl ImmutableArtifactBuilder {
         up_to_immutable_file_number: ImmutableFileNumber,
     ) -> u64 {
         total_size.checked_div(up_to_immutable_file_number).unwrap_or(0)
+    }
+}
+
+#[async_trait]
+impl ImmutablesArchivesCreator for ImmutableArtifactBuilder {
+    async fn create_missing_archives(
+        &self,
+        up_to_immutable_file_number: ImmutableFileNumber,
+    ) -> StdResult<()> {
+        self.immutable_archives_paths_creating_the_missing_ones(up_to_immutable_file_number)
+            .await?;
+
+        Ok(())
     }
 }
 
