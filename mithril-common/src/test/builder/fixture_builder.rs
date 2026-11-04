@@ -105,7 +105,6 @@ impl MithrilFixtureBuilder {
             self.protocol_parameters.clone(),
             signers,
             protocol_stake_distribution,
-            epoch,
         )
     }
 
