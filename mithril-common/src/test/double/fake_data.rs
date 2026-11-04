@@ -9,7 +9,7 @@ use crate::entities::{
     self, AncillaryLocations, BlockNumber, BlockNumberOffset, CardanoDatabaseSnapshotArtifactData,
     CertificateMetadata, CertificateSignature, CompressionAlgorithm, DigestsLocations, Epoch,
     ImmutablesLocations, LotteryIndex, ProtocolMessage, ProtocolMessagePartKey, SignedEntityType,
-    SingleSignature, SlotNumber, StakeDistribution, StakeDistributionParty,
+    SingleSignature, SlotNumber, StakeDistribution,
 };
 use crate::test::{builder::MithrilFixtureBuilder, double::Dummy};
 
@@ -95,8 +95,9 @@ pub fn certificate<T: Into<String>>(certificate_hash: T) -> entities::Certificat
     let protocol_parameters = protocol_parameters();
 
     // Signers with stakes
-    let signers: Vec<StakeDistributionParty> =
-        signers_with_stakes(5).into_iter().map(|s| s.into()).collect();
+    let signers = MithrilFixtureBuilder::default()
+        .with_signers(5)
+        .build_stake_distribution_parties();
 
     // Certificate metadata
     let protocol_version = crypto_helper::PROTOCOL_VERSION.to_string();

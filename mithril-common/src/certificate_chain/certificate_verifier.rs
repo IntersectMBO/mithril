@@ -592,7 +592,7 @@ mod tests {
     };
     use crate::{
         certificate_chain::certificate_retriever::MockCertificateRetriever,
-        crypto_helper::ProtocolClerk,
+        crypto_helper::{GenesisSigner, ProtocolClerk},
     };
 
     use super::*;
@@ -645,7 +645,7 @@ mod tests {
 
     #[cfg(feature = "snark")]
     fn fake_genesis_verifier() -> Arc<GenesisVerifier> {
-        Arc::new(setup_certificate_chain(1, 1).genesis_verifier)
+        Arc::new(GenesisSigner::create_deterministic_signer().create_verifier())
     }
 
     #[test]
@@ -676,7 +676,7 @@ mod tests {
             .unwrap();
         let ancillary_verifier_data = ancillary_proof_output.verifier_data().cloned();
         let multi_signature = aggregate_signature.into();
-        let genesis_verifier = setup_certificate_chain(1, 1).genesis_verifier;
+        let genesis_verifier = GenesisSigner::create_deterministic_signer().create_verifier();
 
         let verifier = MithrilCertificateVerifier::new(
             TestLogger::stdout(),
