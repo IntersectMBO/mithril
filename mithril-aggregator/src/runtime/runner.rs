@@ -171,8 +171,7 @@ impl AggregatorRunner {
         let unlocked_signed_entities = self
             .dependencies
             .signed_entity_type_lock
-            .filter_unlocked_entries(signed_entity_types)
-            .await;
+            .filter_unlocked_entries(signed_entity_types);
 
         Ok(unlocked_signed_entities)
     }
@@ -1237,9 +1236,8 @@ pub mod tests {
             AggregatorRunner::new(Arc::new(dependencies))
         };
 
-        signed_entity_type_lock
-            .lock(SignedEntityTypeDiscriminants::CardanoTransactions)
-            .await;
+        let _lock_guard =
+            signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
 
         let time_point = TimePoint::dummy();
         let signed_entities: Vec<SignedEntityTypeDiscriminants> = runner

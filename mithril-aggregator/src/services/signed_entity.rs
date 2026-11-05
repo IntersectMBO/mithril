@@ -323,7 +323,7 @@ impl SignedEntityService for MithrilSignedEntityService {
         signed_entity_type: SignedEntityType,
         certificate: &Certificate,
     ) -> StdResult<JoinHandle<StdResult<()>>> {
-        if self.signed_entity_type_lock.is_locked(&signed_entity_type).await {
+        if self.signed_entity_type_lock.is_locked(&signed_entity_type) {
             return Err(anyhow!(
                 "Signed entity type '{:?}' is already locked",
                 signed_entity_type
@@ -332,21 +332,21 @@ impl SignedEntityService for MithrilSignedEntityService {
 
         let service = self.clone();
         let certificate_cloned = certificate.clone();
-        service.signed_entity_type_lock.lock(&signed_entity_type).await;
+        let lock_guard = service.signed_entity_type_lock.lock(&signed_entity_type);
 
         Ok(tokio::task::spawn(async move {
             let signed_entity_type_clone = signed_entity_type.clone();
             let service_clone = service.clone();
             let result = tokio::task::spawn(async move {
+                // The lock is held by the artifact creation task, so the signed entity type stays
+                // locked until the artifact is created, even if the returned handle is aborted
+                // (aborting it does not cancel the artifact creation).
+                let _lock_guard = lock_guard;
                 service_clone
                     .create_artifact_task(signed_entity_type_clone, &certificate_cloned)
                     .await
             })
             .await;
-            service
-                .signed_entity_type_lock
-                .release(signed_entity_type.clone())
-                .await;
 
             result.with_context(|| format!(
                 "Signed Entity Service can not store signed entity with type: '{signed_entity_type}'"
@@ -1007,7 +1007,6 @@ mod tests {
             !signed_entity_type_service
                 .signed_entity_type_lock
                 .is_locked(&signed_entity_type_immutable)
-                .await
         );
         let join_handle = signed_entity_type_service
             .create_artifact(signed_entity_type_immutable.clone(), &certificate)
@@ -1018,8 +1017,7 @@ mod tests {
         // ensuring 'atomic_stop' is always assigned a new value.
         let is_locked = signed_entity_type_service
             .signed_entity_type_lock
-            .is_locked(&signed_entity_type_immutable)
-            .await;
+            .is_locked(&signed_entity_type_immutable);
         let is_finished = join_handle.is_finished();
 
         atomic_stop.swap(true, Ordering::Relaxed);
@@ -1032,7 +1030,32 @@ mod tests {
             !signed_entity_type_service
                 .signed_entity_type_lock
                 .is_locked(&signed_entity_type_immutable)
-                .await
+        );
+    }
+
+    #[tokio::test]
+    async fn create_artifact_keep_signed_entity_type_locked_when_its_handle_is_aborted() {
+        let signed_entity_type_service = MockDependencyInjector::new()
+            .build_artifact_builder_service_with_time_consuming_process(Arc::new(AtomicBool::new(
+                false,
+            )));
+        let certificate = fake_data::certificate("hash".to_string());
+        let signed_entity_type_immutable =
+            SignedEntityType::CardanoDatabase(CardanoDbBeacon::default());
+
+        let join_handle = signed_entity_type_service
+            .create_artifact(signed_entity_type_immutable.clone(), &certificate)
+            .await
+            .unwrap();
+        // Let the artifact creation start before aborting its handle
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        join_handle.abort();
+        let _ = join_handle.await;
+
+        assert!(
+            signed_entity_type_service
+                .signed_entity_type_lock
+                .is_locked(&signed_entity_type_immutable)
         );
     }
 
@@ -1067,7 +1090,6 @@ mod tests {
             !signed_entity_type_service
                 .signed_entity_type_lock
                 .is_locked(&signed_entity_type_immutable)
-                .await
         );
     }
 
@@ -1095,7 +1117,6 @@ mod tests {
             !signed_entity_type_service
                 .signed_entity_type_lock
                 .is_locked(&signed_entity_type_immutable)
-                .await
         );
     }
 

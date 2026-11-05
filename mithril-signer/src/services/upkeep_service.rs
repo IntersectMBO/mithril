@@ -81,7 +81,7 @@ impl SignerUpkeepService {
     }
 
     async fn upkeep_all_databases(&self) -> StdResult<()> {
-        if self.signed_entity_type_lock.has_locked_entities().await {
+        if self.signed_entity_type_lock.has_locked_entities() {
             info!(
                 self.logger,
                 "Some entities are locked - Skipping database upkeep"
@@ -205,9 +205,8 @@ mod tests {
         let (logger, log_inspector) = TestLogger::memory();
 
         let signed_entity_type_lock = Arc::new(SignedEntityTypeLock::default());
-        signed_entity_type_lock
-            .lock(SignedEntityTypeDiscriminants::CardanoTransactions)
-            .await;
+        let _lock_guard =
+            signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
 
         let service = SignerUpkeepService::new(
             Arc::new(main_db_connection().unwrap()),

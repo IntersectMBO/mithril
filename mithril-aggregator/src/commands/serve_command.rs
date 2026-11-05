@@ -174,14 +174,6 @@ impl ServeCommand {
         )
         .await?;
 
-        // Start the aggregator runtime
-        let mut runtime = dependencies_builder
-            .create_aggregator_runner()
-            .await
-            .with_context(|| "Dependencies Builder can not create aggregator runner")?;
-        let mut join_set = JoinSet::new();
-        join_set.spawn(async move { runtime.run().await.map_err(|e| e.to_string()) });
-
         // Start the cardano transactions preloader
         let cardano_transactions_preloader = dependencies_builder
             .create_cardano_transactions_preloader()
@@ -191,6 +183,31 @@ impl ServeCommand {
             )?;
         let preload_task =
             tokio::spawn(async move { cardano_transactions_preloader.preload().await });
+
+        // Start the immutables archives preloader
+        let immutables_archives_preloader = dependencies_builder
+            .create_immutables_archives_preloader()
+            .await
+            .with_context(|| "Dependencies Builder can not create immutables archives preloader")?;
+        let immutables_archives_preloader_logger = root_logger.clone();
+        let immutables_archives_preload_task = tokio::spawn(async move {
+            if let Err(error) = immutables_archives_preloader.preload().await {
+                warn!(
+                    immutables_archives_preloader_logger, "Failed to preload the immutables archives";
+                    "error" => ?error
+                );
+            }
+        });
+
+        // Start the aggregator runtime
+        // Note: started after the preloaders so they lock their signed entity types as early as possible,
+        // well before the runtime may start working on them
+        let mut runtime = dependencies_builder
+            .create_aggregator_runner()
+            .await
+            .with_context(|| "Dependencies Builder can not create aggregator runner")?;
+        let mut join_set = JoinSet::new();
+        join_set.spawn(async move { runtime.run().await.map_err(|e| e.to_string()) });
 
         // Start the HTTP server
         let routes = dependencies_builder
@@ -323,6 +340,10 @@ impl ServeCommand {
 
         if !preload_task.is_finished() {
             preload_task.abort();
+        }
+
+        if !immutables_archives_preload_task.is_finished() {
+            immutables_archives_preload_task.abort();
         }
 
         info!(root_logger, "Event store is finishing...");

@@ -94,12 +94,11 @@ async fn prove_transactions() {
     cycle!(tester, "ready");
 
     // Lock all signed entity types except CardanoTransactions to limit the scope of the test
-    for entity in SignedEntityTypeDiscriminants::all()
+    let _lock_guards: Vec<_> = SignedEntityTypeDiscriminants::all()
         .into_iter()
         .filter(|e| e != &SignedEntityTypeDiscriminants::CardanoTransactions)
-    {
-        tester.dependencies.signed_entity_type_lock.lock(entity).await;
-    }
+        .map(|entity| tester.dependencies.signed_entity_type_lock.lock(entity))
+        .collect();
 
     comment!(
         "Increase cardano chain block number to 185, 

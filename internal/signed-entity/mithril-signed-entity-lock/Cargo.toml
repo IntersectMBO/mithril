@@ -10,7 +10,3 @@ repository = { workspace = true }
 
 [dependencies]
 mithril-common = { path = "../../../mithril-common" }
-tokio = { workspace = true }
-
-[dev-dependencies]
-tokio = { workspace = true, features = ["macros"] }

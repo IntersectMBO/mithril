@@ -1,7 +1,7 @@
 [package]
 name = "mithril-signed-entity-preloader"
 version = "0.0.13"
-description = "A preload mechanism for Cardano Transaction signed entity."
+description = "A preload mechanism for signed entities."
 authors = { workspace = true }
 edition = { workspace = true }
 homepage = { workspace = true }
