@@ -14,7 +14,7 @@ use mithril_cardano_node_internal_database::digesters::{
 };
 use mithril_common::entities::SignedEntityTypeDiscriminants;
 use mithril_signed_entity_preloader::{
-    CardanoTransactionsPreloader, CardanoTransactionsPreloaderActivation,
+    CardanoTransactionsPreloader, CardanoTransactionsPreloaderActivation, PreloadTaskRunner,
 };
 
 use crate::ExecutionEnvironment;
@@ -126,21 +126,23 @@ impl DependenciesBuilder {
         get_dependency!(self.immutable_digester)
     }
 
-    /// Create a [CardanoTransactionsPreloader] instance.
+    /// Create a [PreloadTaskRunner] running a [CardanoTransactionsPreloader].
     pub async fn create_cardano_transactions_preloader(
         &mut self,
-    ) -> Result<Arc<CardanoTransactionsPreloader>> {
+    ) -> Result<Arc<PreloadTaskRunner<CardanoTransactionsPreloader>>> {
         let activation = self
             .configuration
             .compute_allowed_signed_entity_types_discriminants()?
             .contains(&SignedEntityTypeDiscriminants::CardanoTransactions);
-        let cardano_transactions_preloader = CardanoTransactionsPreloader::new(
+        let cardano_transactions_preloader = PreloadTaskRunner::new(
+            CardanoTransactionsPreloader::new(
+                self.get_chain_data_importer().await?,
+                self.configuration.preload_security_parameter(),
+                self.get_chain_observer().await?,
+                Arc::new(CardanoTransactionsPreloaderActivation::new(activation)),
+            ),
             self.get_signed_entity_type_lock().await?,
-            self.get_chain_data_importer().await?,
-            self.configuration.preload_security_parameter(),
-            self.get_chain_observer().await?,
             self.root_logger(),
-            Arc::new(CardanoTransactionsPreloaderActivation::new(activation)),
         );
 
         Ok(Arc::new(cardano_transactions_preloader))

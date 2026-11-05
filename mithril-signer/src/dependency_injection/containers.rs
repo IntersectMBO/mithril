@@ -11,7 +11,7 @@ use mithril_era::{EraChecker, EraReader};
 use mithril_persistence::store::StakeStorer;
 use mithril_protocol_config::interface::MithrilNetworkConfigurationProvider;
 use mithril_signed_entity_lock::SignedEntityTypeLock;
-use mithril_signed_entity_preloader::CardanoTransactionsPreloader;
+use mithril_signed_entity_preloader::{CardanoTransactionsPreloader, PreloadTaskRunner};
 use mithril_ticker::TickerService;
 
 use crate::MetricsService;
@@ -71,7 +71,7 @@ pub struct SignerDependencyContainer {
     pub signed_entity_type_lock: Arc<SignedEntityTypeLock>,
 
     /// Cardano transactions preloader
-    pub cardano_transactions_preloader: Arc<CardanoTransactionsPreloader>,
+    pub cardano_transactions_preloader: Arc<PreloadTaskRunner<CardanoTransactionsPreloader>>,
 
     /// Upkeep service
     pub upkeep_service: Arc<dyn UpkeepService>,
