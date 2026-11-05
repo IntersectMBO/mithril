@@ -7,6 +7,7 @@ use mithril_common::StdResult;
 use mithril_common::crypto_helper::ManifestSigner;
 use mithril_common::entities::SignedEntityTypeDiscriminants;
 use mithril_file_archiver::FileArchiver;
+use mithril_signed_entity_preloader::PreloadTaskRunner;
 
 use crate::artifact_builder::{
     AncillaryArtifactBuilder, AncillaryFileUploader, CardanoBlocksTransactionsArtifactBuilder,
@@ -436,19 +437,21 @@ impl DependenciesBuilder {
         get_dependency!(self.immutable_artifact_builder)
     }
 
-    /// Create a [ImmutablesArchivesPreloader] instance.
+    /// Create a [PreloadTaskRunner] running an [ImmutablesArchivesPreloader].
     pub async fn create_immutables_archives_preloader(
         &mut self,
-    ) -> Result<Arc<ImmutablesArchivesPreloader>> {
+    ) -> Result<Arc<PreloadTaskRunner<ImmutablesArchivesPreloader>>> {
         let activation = self
             .configuration
             .compute_allowed_signed_entity_types_discriminants()?
             .contains(&SignedEntityTypeDiscriminants::CardanoDatabase);
-        let immutables_archives_preloader = ImmutablesArchivesPreloader::new(
+        let immutables_archives_preloader = PreloadTaskRunner::new(
+            ImmutablesArchivesPreloader::new(
+                self.get_immutable_artifact_builder().await?,
+                self.get_immutable_file_observer().await?,
+                activation,
+            ),
             self.get_signed_entity_type_lock().await?,
-            self.get_immutable_artifact_builder().await?,
-            self.get_immutable_file_observer().await?,
-            activation,
             self.root_logger(),
         );
 
