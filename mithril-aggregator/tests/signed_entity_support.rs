@@ -78,6 +78,7 @@ async fn follower_can_cycle_to_ready_to_signing_with_unknown_and_discontinued_si
 
     comment!("create signers & declare stake distribution");
     let fixture = MithrilFixtureBuilder::default()
+        .disable_signers_certification()
         .with_signers(10)
         .with_protocol_parameters(protocol_parameters.clone())
         .build();

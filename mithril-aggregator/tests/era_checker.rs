@@ -79,6 +79,7 @@ async fn testing_eras() {
         EraMarker::new("unsupported", Some(Epoch(2))),
     ]);
     let fixture = MithrilFixtureBuilder::default()
+        .disable_signers_certification()
         .with_signers(5)
         .with_protocol_parameters(protocol_parameters.clone())
         .build();

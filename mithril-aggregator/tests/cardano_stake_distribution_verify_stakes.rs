@@ -57,6 +57,7 @@ async fn cardano_stake_distribution_verify_stakes() {
 
     comment!("create signers & declare the initial stake distribution");
     let fixture = MithrilFixtureBuilder::default()
+        .disable_signers_certification()
         .with_signers(5)
         .with_protocol_parameters(protocol_parameters.clone())
         .build();

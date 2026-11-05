@@ -63,6 +63,7 @@ async fn genesis_to_signing_with_all_signed_entities() {
 
     comment!("Create signers & declare stake distribution");
     let fixture = MithrilFixtureBuilder::default()
+        .disable_signers_certification()
         .with_signers(5)
         .with_protocol_parameters(protocol_parameters.clone())
         .build();
