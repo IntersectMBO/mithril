@@ -72,12 +72,12 @@ impl ImmutablesArchivesPreloader {
 
         info!(self.logger, "Started");
         debug!(self.logger, "Locking signed entity type"; "entity_type" => ?SIGNED_ENTITY_TO_LOCK);
-        self.signed_entity_type_lock.lock(SIGNED_ENTITY_TO_LOCK);
+        let lock_guard = self.signed_entity_type_lock.lock(SIGNED_ENTITY_TO_LOCK);
 
         let preload_result = self.do_preload().await;
 
         debug!(self.logger, "Releasing signed entity type"; "entity_type" => ?SIGNED_ENTITY_TO_LOCK);
-        self.signed_entity_type_lock.release(SIGNED_ENTITY_TO_LOCK);
+        drop(lock_guard);
         info!(self.logger, "Finished");
 
         preload_result

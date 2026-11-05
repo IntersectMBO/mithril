@@ -276,7 +276,8 @@ mod tests {
         let (logger, log_inspector) = TestLogger::memory();
 
         let signed_entity_type_lock = Arc::new(SignedEntityTypeLock::default());
-        signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
+        let _lock_guard =
+            signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
 
         let service = AggregatorUpkeepService {
             signed_entity_type_lock: signed_entity_type_lock.clone(),
@@ -315,7 +316,8 @@ mod tests {
         let (logger, log_inspector) = TestLogger::memory();
 
         let signed_entity_type_lock = Arc::new(SignedEntityTypeLock::default());
-        signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
+        let _lock_guard =
+            signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
 
         let service = AggregatorUpkeepService {
             signed_entity_type_lock: signed_entity_type_lock.clone(),
@@ -337,7 +339,8 @@ mod tests {
         let (logger, log_inspector) = TestLogger::memory();
 
         let signed_entity_type_lock = Arc::new(SignedEntityTypeLock::default());
-        signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
+        let _lock_guard =
+            signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
 
         let service = AggregatorUpkeepService {
             logger,
