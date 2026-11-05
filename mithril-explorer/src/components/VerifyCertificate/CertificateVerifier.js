@@ -64,6 +64,7 @@ export default function CertificateVerifier({
   const [validationError, setValidationError] = useState(undefined);
   const [verificationDuration, setVerificationDuration] = useState(null);
   const [verificationEvents, setVerificationEvents] = useState([]);
+  const [isCacheEnabled, setIsCacheEnabled] = useState(false);
 
   async function verifyCertificateChain(client, certificateHash) {
     let startTime = performance.now();
@@ -108,9 +109,7 @@ export default function CertificateVerifier({
   }
 
   async function onCacheResetClick() {
-    if (process.env.UNSTABLE) {
-      await client.reset_certificate_verifier_cache();
-    }
+    await client.reset_certificate_verifier_cache();
   }
 
   useEffect(() => {
@@ -137,6 +136,14 @@ export default function CertificateVerifier({
       onChainValidationError(validationError);
     }
   }, [validationError, onChainValidationError]);
+
+  useEffect(() => {
+    if (!client) {
+      return;
+    }
+
+    client.is_certificate_verifier_cache_enabled().then(setIsCacheEnabled);
+  }, [client]);
 
   useEffect(() => {
     if (!client || !certificate?.hash) {
@@ -243,16 +250,14 @@ export default function CertificateVerifier({
                 .map((evt) => (
                   <div key={evt.id}>{evt.message}</div>
                 ))}
-              {process.env.UNSTABLE &&
-                client.is_certificate_verifier_cache_enabled() &&
-                currentStep === certificateValidationSteps.done && (
-                  <>
-                    Cache enabled:{" "}
-                    <a href="#" onClick={onCacheResetClick}>
-                      reset cache
-                    </a>
-                  </>
-                )}
+              {isCacheEnabled && currentStep === certificateValidationSteps.done && (
+                <>
+                  Cache enabled:{" "}
+                  <a href="#" onClick={onCacheResetClick}>
+                    reset cache
+                  </a>
+                </>
+              )}
               {validationError !== undefined && (
                 <Alert variant="danger" className="mt-2">
                   <Alert.Heading>

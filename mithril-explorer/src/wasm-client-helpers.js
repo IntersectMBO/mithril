@@ -16,16 +16,17 @@
 import { MithrilClient } from "@mithril-dev/mithril-client-wasm";
 
 async function newMithrilWasmClient(aggregator, genesisVerificationKey) {
-  const isCacheEnabled = process.env.UNSTABLE === true;
   const client_options = process.env.UNSTABLE
     ? {
         // The following option activates the unstable features of the client.
         // Unstable features will trigger an error if this option is not set.
         unstable: true,
-        enable_certificate_chain_verification_cache: isCacheEnabled,
+        enable_certificate_chain_verification_cache: true,
         origin_tag: "EXPLORER",
       }
-    : {};
+    : {
+        enable_certificate_chain_verification_cache: true,
+      };
 
   return new MithrilClient(aggregator, genesisVerificationKey, client_options);
 }
