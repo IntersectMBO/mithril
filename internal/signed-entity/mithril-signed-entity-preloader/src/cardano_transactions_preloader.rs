@@ -91,16 +91,13 @@ impl CardanoTransactionsPreloader {
 
         info!(self.logger, "Started");
         debug!(self.logger, "Locking signed entity types"; "entity_types" => ?SIGNED_ENTITIES_TO_LOCK);
-        for signed_entity_type in SIGNED_ENTITIES_TO_LOCK {
-            self.signed_entity_type_lock.lock(signed_entity_type);
-        }
+        let lock_guards = SIGNED_ENTITIES_TO_LOCK
+            .map(|signed_entity_type| self.signed_entity_type_lock.lock(signed_entity_type));
 
         let preload_result = self.do_preload().await;
 
         debug!(self.logger, "Releasing signed entity types"; "entity_types" => ?SIGNED_ENTITIES_TO_LOCK);
-        for signed_entity_type in SIGNED_ENTITIES_TO_LOCK {
-            self.signed_entity_type_lock.release(signed_entity_type);
-        }
+        drop(lock_guards);
         info!(self.logger, "Finished");
 
         preload_result

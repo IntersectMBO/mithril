@@ -164,9 +164,10 @@ mod tests {
     #[tokio::test]
     async fn no_beacon_can_be_signed_if_all_entities_are_locked() {
         let locker = Arc::new(SignedEntityTypeLock::new());
-        for signed_entity_type in SignedEntityTypeDiscriminants::all() {
-            locker.lock(signed_entity_type);
-        }
+        let _lock_guards: Vec<_> = SignedEntityTypeDiscriminants::all()
+            .into_iter()
+            .map(|signed_entity_type| locker.lock(signed_entity_type))
+            .collect();
         let certifier_service = SignerCertifierService {
             signed_entity_type_lock: locker.clone(),
             signed_entity_config_provider: Arc::new(DumbSignedEntityConfigProvider::new(
@@ -187,9 +188,11 @@ mod tests {
     #[tokio::test]
     async fn only_one_unlocked_and_not_yet_signed_yield_a_beacon_to_sign() {
         let locker = Arc::new(SignedEntityTypeLock::new());
-        for signed_entity_type in SignedEntityTypeDiscriminants::all().into_iter().skip(1) {
-            locker.lock(signed_entity_type);
-        }
+        let _lock_guards: Vec<_> = SignedEntityTypeDiscriminants::all()
+            .into_iter()
+            .skip(1)
+            .map(|signed_entity_type| locker.lock(signed_entity_type))
+            .collect();
         let certifier_service = SignerCertifierService {
             signed_entity_type_lock: locker.clone(),
             signed_entity_config_provider: Arc::new(DumbSignedEntityConfigProvider::new(

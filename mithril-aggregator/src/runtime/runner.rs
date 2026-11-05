@@ -1236,7 +1236,8 @@ pub mod tests {
             AggregatorRunner::new(Arc::new(dependencies))
         };
 
-        signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
+        let _lock_guard =
+            signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
 
         let time_point = TimePoint::dummy();
         let signed_entities: Vec<SignedEntityTypeDiscriminants> = runner

@@ -332,7 +332,7 @@ impl SignedEntityService for MithrilSignedEntityService {
 
         let service = self.clone();
         let certificate_cloned = certificate.clone();
-        service.signed_entity_type_lock.lock(&signed_entity_type);
+        let lock_guard = service.signed_entity_type_lock.lock(&signed_entity_type);
 
         Ok(tokio::task::spawn(async move {
             let signed_entity_type_clone = signed_entity_type.clone();
@@ -343,7 +343,7 @@ impl SignedEntityService for MithrilSignedEntityService {
                     .await
             })
             .await;
-            service.signed_entity_type_lock.release(signed_entity_type.clone());
+            drop(lock_guard);
 
             result.with_context(|| format!(
                 "Signed Entity Service can not store signed entity with type: '{signed_entity_type}'"
