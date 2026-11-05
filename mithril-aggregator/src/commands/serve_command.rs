@@ -200,8 +200,8 @@ impl ServeCommand {
         });
 
         // Start the aggregator runtime
-        // Note: it must be started after the preloaders, so they can lock their signed entity
-        // types before the runtime opens messages for them
+        // Note: started after the preloaders so they lock their signed entity types as early as possible,
+        // well before the runtime may start working on them
         let mut runtime = dependencies_builder
             .create_aggregator_runner()
             .await

@@ -338,12 +338,15 @@ impl SignedEntityService for MithrilSignedEntityService {
             let signed_entity_type_clone = signed_entity_type.clone();
             let service_clone = service.clone();
             let result = tokio::task::spawn(async move {
+                // The lock is held by the artifact creation task, so the signed entity type stays
+                // locked until the artifact is created, even if the returned handle is aborted
+                // (aborting it does not cancel the artifact creation).
+                let _lock_guard = lock_guard;
                 service_clone
                     .create_artifact_task(signed_entity_type_clone, &certificate_cloned)
                     .await
             })
             .await;
-            drop(lock_guard);
 
             result.with_context(|| format!(
                 "Signed Entity Service can not store signed entity with type: '{signed_entity_type}'"
@@ -1025,6 +1028,32 @@ mod tests {
 
         assert!(
             !signed_entity_type_service
+                .signed_entity_type_lock
+                .is_locked(&signed_entity_type_immutable)
+        );
+    }
+
+    #[tokio::test]
+    async fn create_artifact_keep_signed_entity_type_locked_when_its_handle_is_aborted() {
+        let signed_entity_type_service = MockDependencyInjector::new()
+            .build_artifact_builder_service_with_time_consuming_process(Arc::new(AtomicBool::new(
+                false,
+            )));
+        let certificate = fake_data::certificate("hash".to_string());
+        let signed_entity_type_immutable =
+            SignedEntityType::CardanoDatabase(CardanoDbBeacon::default());
+
+        let join_handle = signed_entity_type_service
+            .create_artifact(signed_entity_type_immutable.clone(), &certificate)
+            .await
+            .unwrap();
+        // Let the artifact creation start before aborting its handle
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        join_handle.abort();
+        let _ = join_handle.await;
+
+        assert!(
+            signed_entity_type_service
                 .signed_entity_type_lock
                 .is_locked(&signed_entity_type_immutable)
         );
