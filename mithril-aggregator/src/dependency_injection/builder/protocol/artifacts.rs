@@ -498,7 +498,7 @@ impl DependenciesBuilder {
 
 #[cfg(test)]
 mod tests {
-    use mithril_common::temp_dir_create;
+    use mithril_common::{temp_dir, temp_dir_create};
     use mithril_persistence::sqlite::ConnectionBuilder;
 
     use crate::ServeCommandConfiguration;
@@ -573,5 +573,40 @@ mod tests {
         assert!(ancillary_dir.exists());
         assert!(immutable_dir.exists());
         assert!(digests_dir.exists());
+    }
+
+    #[tokio::test]
+    async fn immutables_archive_preloader_activated_with_cardano_database_signed_entity_type_in_configuration()
+     {
+        assert_immutables_archives_preloader_activation(
+            SignedEntityTypeDiscriminants::CardanoDatabase.to_string(),
+            true,
+        )
+        .await;
+        assert_immutables_archives_preloader_activation(
+            SignedEntityTypeDiscriminants::MithrilStakeDistribution.to_string(),
+            false,
+        )
+        .await;
+    }
+
+    async fn assert_immutables_archives_preloader_activation(
+        signed_entity_types: String,
+        expected_activation: bool,
+    ) {
+        let configuration = ServeCommandConfiguration {
+            signed_entity_types: Some(signed_entity_types),
+            ..ServeCommandConfiguration::new_sample(temp_dir!())
+        };
+        let mut dep_builder = DependenciesBuilder::new_with_stdout_logger(Arc::new(configuration));
+
+        let immutables_archives_preloader =
+            dep_builder.create_immutables_archives_preloader().await.unwrap();
+
+        let is_activated = immutables_archives_preloader.is_activated().await.unwrap();
+        assert_eq!(
+            expected_activation, is_activated,
+            "'is_activated' expected {expected_activation}, but was {is_activated}"
+        );
     }
 }
