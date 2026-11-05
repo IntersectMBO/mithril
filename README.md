@@ -118,7 +118,7 @@ This repository consists of the following parts:
 
   - [**Mithril signed entity lock**](./internal/signed-entity/mithril-signed-entity-lock): a non-blocking **lock** mechanism for signed entity types, used by **Mithril network** nodes.
 
-  - [**Mithril signed entity prealoader**](./internal/signed-entity/mithril-signed-entity-preloader): a **preload** mechanism for the Cardano transaction signed entity, used by **Mithril network** nodes.
+  - [**Mithril signed entity prealoader**](./internal/signed-entity/mithril-signed-entity-preloader): a **preload** mechanism for signed entities, used by **Mithril network** nodes.
 
   - [**tests**](./internal/tests): shared testing tools used by **Mithril** crates.
     - [**Mithril api spec**](./internal/tests/mithril-api-spec): toolset to verify conformity of http routes against an Open Api specification, used by **Mithril network** nodes.
