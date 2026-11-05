@@ -62,6 +62,12 @@ npm i @mithril-dev/mithril-client-wasm
 
 Below is a basic example of how to use most of the functions exposed by the Mithril client library:
 
+:::warning
+
+Fetching a certificate and computing a message do not certify anything by themselves. Before treating an artifact or a proof as certified, an integration must verify the certificate chain with `verify_certificate_chain` and check that the computed message is signed by the verified certificate with `verify_message_match_certificate`. The `verify_*_proof_then_compute_message` functions verify only the proof itself. The examples below perform all these steps.
+
+:::
+
 ```js
 import initMithrilClient, {
   MithrilClient,
@@ -200,14 +206,24 @@ console.log(
   proof_certificate,
 );
 
-let valid_cardano_transaction_proof =
+let cardano_transaction_proof_message =
   await client.verify_cardano_transaction_proof_then_compute_message(
     proof,
     proof_certificate,
   );
 console.log(
-  "valid_cardano_transaction_proof:",
-  valid_cardano_transaction_proof,
+  "cardano_transaction_proof_message:",
+  cardano_transaction_proof_message,
+);
+
+let valid_cardano_transaction_proof_message =
+  await client.verify_message_match_certificate(
+    cardano_transaction_proof_message,
+    proof_certificate,
+  );
+console.log(
+  "valid_cardano_transaction_proof_message:",
+  valid_cardano_transaction_proof_message,
 );
 ```
 
