@@ -174,14 +174,6 @@ impl ServeCommand {
         )
         .await?;
 
-        // Start the aggregator runtime
-        let mut runtime = dependencies_builder
-            .create_aggregator_runner()
-            .await
-            .with_context(|| "Dependencies Builder can not create aggregator runner")?;
-        let mut join_set = JoinSet::new();
-        join_set.spawn(async move { runtime.run().await.map_err(|e| e.to_string()) });
-
         // Start the cardano transactions preloader
         let cardano_transactions_preloader = dependencies_builder
             .create_cardano_transactions_preloader()
@@ -206,6 +198,16 @@ impl ServeCommand {
                 );
             }
         });
+
+        // Start the aggregator runtime
+        // Note: it must be started after the preloaders, so they can lock their signed entity
+        // types before the runtime opens messages for them
+        let mut runtime = dependencies_builder
+            .create_aggregator_runner()
+            .await
+            .with_context(|| "Dependencies Builder can not create aggregator runner")?;
+        let mut join_set = JoinSet::new();
+        join_set.spawn(async move { runtime.run().await.map_err(|e| e.to_string()) });
 
         // Start the HTTP server
         let routes = dependencies_builder
