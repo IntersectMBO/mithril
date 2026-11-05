@@ -192,6 +192,21 @@ impl ServeCommand {
         let preload_task =
             tokio::spawn(async move { cardano_transactions_preloader.preload().await });
 
+        // Start the immutables archives preloader
+        let immutables_archives_preloader = dependencies_builder
+            .create_immutables_archives_preloader()
+            .await
+            .with_context(|| "Dependencies Builder can not create immutables archives preloader")?;
+        let immutables_archives_preloader_logger = root_logger.clone();
+        let immutables_archives_preload_task = tokio::spawn(async move {
+            if let Err(error) = immutables_archives_preloader.preload().await {
+                warn!(
+                    immutables_archives_preloader_logger, "Failed to preload the immutables archives";
+                    "error" => ?error
+                );
+            }
+        });
+
         // Start the HTTP server
         let routes = dependencies_builder
             .create_http_routes()
@@ -323,6 +338,10 @@ impl ServeCommand {
 
         if !preload_task.is_finished() {
             preload_task.abort();
+        }
+
+        if !immutables_archives_preload_task.is_finished() {
+            immutables_archives_preload_task.abort();
         }
 
         info!(root_logger, "Event store is finishing...");
