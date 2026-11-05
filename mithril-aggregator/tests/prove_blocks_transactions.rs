@@ -108,7 +108,7 @@ async fn prove_blocks_transactions() {
         .into_iter()
         .filter(|e| e != &SignedEntityTypeDiscriminants::CardanoBlocksTransactions)
     {
-        tester.dependencies.signed_entity_type_lock.lock(entity).await;
+        tester.dependencies.signed_entity_type_lock.lock(entity);
     }
 
     comment!(

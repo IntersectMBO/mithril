@@ -72,12 +72,12 @@ impl ImmutablesArchivesPreloader {
 
         info!(self.logger, "Started");
         debug!(self.logger, "Locking signed entity type"; "entity_type" => ?SIGNED_ENTITY_TO_LOCK);
-        self.signed_entity_type_lock.lock(SIGNED_ENTITY_TO_LOCK).await;
+        self.signed_entity_type_lock.lock(SIGNED_ENTITY_TO_LOCK);
 
         let preload_result = self.do_preload().await;
 
         debug!(self.logger, "Releasing signed entity type"; "entity_type" => ?SIGNED_ENTITY_TO_LOCK);
-        self.signed_entity_type_lock.release(SIGNED_ENTITY_TO_LOCK).await;
+        self.signed_entity_type_lock.release(SIGNED_ENTITY_TO_LOCK);
         info!(self.logger, "Finished");
 
         preload_result
@@ -116,7 +116,6 @@ mod tests {
             assert!(
                 self.signed_entity_type_lock
                     .is_locked(SignedEntityTypeDiscriminants::CardanoDatabase)
-                    .await
             );
             Ok(())
         }
@@ -181,11 +180,7 @@ mod tests {
 
         preloader.preload().await.unwrap();
 
-        assert!(
-            !signed_entity_type_lock
-                .is_locked(SignedEntityTypeDiscriminants::CardanoDatabase)
-                .await
-        );
+        assert!(!signed_entity_type_lock.is_locked(SignedEntityTypeDiscriminants::CardanoDatabase));
     }
 
     #[tokio::test]
@@ -206,11 +201,7 @@ mod tests {
 
         preloader.preload().await.expect_err("preload should fail");
 
-        assert!(
-            !signed_entity_type_lock
-                .is_locked(SignedEntityTypeDiscriminants::CardanoDatabase)
-                .await
-        );
+        assert!(!signed_entity_type_lock.is_locked(SignedEntityTypeDiscriminants::CardanoDatabase));
     }
 
     #[tokio::test]
@@ -229,10 +220,6 @@ mod tests {
 
         preloader.preload().await.expect_err("preload should fail");
 
-        assert!(
-            !signed_entity_type_lock
-                .is_locked(SignedEntityTypeDiscriminants::CardanoDatabase)
-                .await
-        );
+        assert!(!signed_entity_type_lock.is_locked(SignedEntityTypeDiscriminants::CardanoDatabase));
     }
 }

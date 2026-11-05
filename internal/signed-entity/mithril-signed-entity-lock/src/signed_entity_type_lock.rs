@@ -37,7 +37,7 @@ impl SignedEntityTypeLock {
     }
 
     /// Check if a signed entity is locked.
-    pub async fn is_locked<T: Into<SignedEntityTypeDiscriminants>>(&self, entity_type: T) -> bool {
+    pub fn is_locked<T: Into<SignedEntityTypeDiscriminants>>(&self, entity_type: T) -> bool {
         self.locked_entities().contains_key(&entity_type.into())
     }
 
@@ -45,7 +45,7 @@ impl SignedEntityTypeLock {
     ///
     /// If the entity is already locked, it will stay locked until released as many times as it
     /// has been locked.
-    pub async fn lock<T: Into<SignedEntityTypeDiscriminants>>(&self, entity_type: T) {
+    pub fn lock<T: Into<SignedEntityTypeDiscriminants>>(&self, entity_type: T) {
         let entity_type = entity_type.into();
         self.locked_entities()
             .entry(entity_type)
@@ -57,7 +57,7 @@ impl SignedEntityTypeLock {
     ///
     /// The entity is unlocked only when released as many times as it has been locked.
     /// If the entity is not locked, this function does nothing.
-    pub async fn release<T: Into<SignedEntityTypeDiscriminants>>(&self, entity_type: T) {
+    pub fn release<T: Into<SignedEntityTypeDiscriminants>>(&self, entity_type: T) {
         let mut locked_entities = self.locked_entities();
         let entity_type = entity_type.into();
         if let Some(count) = locked_entities.get_mut(&entity_type) {
@@ -69,12 +69,12 @@ impl SignedEntityTypeLock {
     }
 
     /// Check if there are any locked signed entities.
-    pub async fn has_locked_entities(&self) -> bool {
+    pub fn has_locked_entities(&self) -> bool {
         !self.locked_entities().is_empty()
     }
 
     /// List only the unlocked signed entities in the given list.
-    pub async fn filter_unlocked_entries<T: Into<SignedEntityTypeDiscriminants> + Clone>(
+    pub fn filter_unlocked_entries<T: Into<SignedEntityTypeDiscriminants> + Clone>(
         &self,
         entries: Vec<T>,
     ) -> Vec<T> {
@@ -97,136 +97,122 @@ impl Default for SignedEntityTypeLock {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn by_default_entity_is_not_locked() {
+    #[test]
+    fn by_default_entity_is_not_locked() {
         let signed_entity_type_lock = SignedEntityTypeLock::new();
         for entity_type in SignedEntityTypeDiscriminants::all() {
-            assert!(!signed_entity_type_lock.is_locked(entity_type).await);
+            assert!(!signed_entity_type_lock.is_locked(entity_type));
         }
     }
 
-    #[tokio::test]
-    async fn lock_a_signed_entity() {
+    #[test]
+    fn lock_a_signed_entity() {
         for entity_type in SignedEntityTypeDiscriminants::all() {
             let signed_entity_type_lock = SignedEntityTypeLock::new();
-            signed_entity_type_lock.lock(entity_type).await;
-            assert!(signed_entity_type_lock.is_locked(entity_type).await);
+            signed_entity_type_lock.lock(entity_type);
+            assert!(signed_entity_type_lock.is_locked(entity_type));
         }
     }
 
-    #[tokio::test]
-    async fn locking_an_entity_more_than_once_in_a_row_dont_crash() {
+    #[test]
+    fn locking_an_entity_more_than_once_in_a_row_dont_crash() {
         let entity = SignedEntityTypeDiscriminants::MithrilStakeDistribution;
         let signed_entity_type_lock = SignedEntityTypeLock::new();
 
-        signed_entity_type_lock.lock(entity).await;
-        signed_entity_type_lock.lock(entity).await;
-        signed_entity_type_lock.lock(entity).await;
+        signed_entity_type_lock.lock(entity);
+        signed_entity_type_lock.lock(entity);
+        signed_entity_type_lock.lock(entity);
 
-        assert!(signed_entity_type_lock.is_locked(entity).await);
+        assert!(signed_entity_type_lock.is_locked(entity));
     }
 
-    #[tokio::test]
-    async fn locking_a_signed_entity_does_not_lock_other_entity() {
+    #[test]
+    fn locking_a_signed_entity_does_not_lock_other_entity() {
         let signed_entity_type_lock = SignedEntityTypeLock::new();
-        signed_entity_type_lock
-            .lock(SignedEntityTypeDiscriminants::CardanoDatabase)
-            .await;
-        assert!(
-            signed_entity_type_lock
-                .is_locked(SignedEntityTypeDiscriminants::CardanoDatabase)
-                .await
-        );
+        signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoDatabase);
+        assert!(signed_entity_type_lock.is_locked(SignedEntityTypeDiscriminants::CardanoDatabase));
         assert!(
             !signed_entity_type_lock
                 .is_locked(SignedEntityTypeDiscriminants::MithrilStakeDistribution)
-                .await
         );
     }
 
-    #[tokio::test]
-    async fn releasing_an_locked_entity() {
+    #[test]
+    fn releasing_an_locked_entity() {
         let entity = SignedEntityTypeDiscriminants::MithrilStakeDistribution;
         let signed_entity_type_lock = SignedEntityTypeLock::new();
 
-        signed_entity_type_lock.lock(entity).await;
-        signed_entity_type_lock.release(entity).await;
+        signed_entity_type_lock.lock(entity);
+        signed_entity_type_lock.release(entity);
 
-        assert!(!signed_entity_type_lock.is_locked(entity).await);
+        assert!(!signed_entity_type_lock.is_locked(entity));
     }
 
-    #[tokio::test]
-    async fn releasing_an_already_released_entity() {
+    #[test]
+    fn releasing_an_already_released_entity() {
         let entity = SignedEntityTypeDiscriminants::MithrilStakeDistribution;
         let signed_entity_type_lock = SignedEntityTypeLock::new();
 
-        assert!(!signed_entity_type_lock.is_locked(entity).await);
+        assert!(!signed_entity_type_lock.is_locked(entity));
 
-        signed_entity_type_lock.release(entity).await;
+        signed_entity_type_lock.release(entity);
 
-        assert!(!signed_entity_type_lock.is_locked(entity).await);
+        assert!(!signed_entity_type_lock.is_locked(entity));
     }
 
-    #[tokio::test]
-    async fn entity_locked_more_than_once_stays_locked_until_released_as_many_times() {
+    #[test]
+    fn entity_locked_more_than_once_stays_locked_until_released_as_many_times() {
         let entity = SignedEntityTypeDiscriminants::MithrilStakeDistribution;
         let signed_entity_type_lock = SignedEntityTypeLock::new();
 
-        signed_entity_type_lock.lock(entity).await;
-        signed_entity_type_lock.lock(entity).await;
+        signed_entity_type_lock.lock(entity);
+        signed_entity_type_lock.lock(entity);
 
-        signed_entity_type_lock.release(entity).await;
-        assert!(signed_entity_type_lock.is_locked(entity).await);
-        assert!(signed_entity_type_lock.has_locked_entities().await);
+        signed_entity_type_lock.release(entity);
+        assert!(signed_entity_type_lock.is_locked(entity));
+        assert!(signed_entity_type_lock.has_locked_entities());
         assert!(
             signed_entity_type_lock
                 .filter_unlocked_entries(vec![entity])
-                .await
                 .is_empty()
         );
 
-        signed_entity_type_lock.release(entity).await;
-        assert!(!signed_entity_type_lock.is_locked(entity).await);
-        assert!(!signed_entity_type_lock.has_locked_entities().await);
+        signed_entity_type_lock.release(entity);
+        assert!(!signed_entity_type_lock.is_locked(entity));
+        assert!(!signed_entity_type_lock.has_locked_entities());
     }
 
-    #[tokio::test]
-    async fn releasing_an_unlocked_entity_does_not_prevent_it_from_being_locked_later() {
+    #[test]
+    fn releasing_an_unlocked_entity_does_not_prevent_it_from_being_locked_later() {
         let entity = SignedEntityTypeDiscriminants::MithrilStakeDistribution;
         let signed_entity_type_lock = SignedEntityTypeLock::new();
 
-        signed_entity_type_lock.release(entity).await;
-        signed_entity_type_lock.lock(entity).await;
+        signed_entity_type_lock.release(entity);
+        signed_entity_type_lock.lock(entity);
 
-        assert!(signed_entity_type_lock.is_locked(entity).await);
+        assert!(signed_entity_type_lock.is_locked(entity));
     }
 
-    #[tokio::test]
-    async fn releasing_a_signed_entity_does_not_release_other_entity() {
+    #[test]
+    fn releasing_a_signed_entity_does_not_release_other_entity() {
         let released_entity = SignedEntityTypeDiscriminants::MithrilStakeDistribution;
         let signed_entity_type_lock = SignedEntityTypeLock::new();
 
         for entity in SignedEntityTypeDiscriminants::all() {
-            signed_entity_type_lock.lock(entity).await;
+            signed_entity_type_lock.lock(entity);
         }
 
-        signed_entity_type_lock.release(released_entity).await;
+        signed_entity_type_lock.release(released_entity);
 
-        assert!(!signed_entity_type_lock.is_locked(released_entity).await);
+        assert!(!signed_entity_type_lock.is_locked(released_entity));
+        assert!(signed_entity_type_lock.is_locked(SignedEntityTypeDiscriminants::CardanoDatabase));
         assert!(
-            signed_entity_type_lock
-                .is_locked(SignedEntityTypeDiscriminants::CardanoDatabase)
-                .await
-        );
-        assert!(
-            signed_entity_type_lock
-                .is_locked(SignedEntityTypeDiscriminants::CardanoTransactions)
-                .await
+            signed_entity_type_lock.is_locked(SignedEntityTypeDiscriminants::CardanoTransactions)
         );
     }
 
-    #[tokio::test]
-    async fn filters_out_locked_entities() {
+    #[test]
+    fn filters_out_locked_entities() {
         let signed_entity_type_lock = SignedEntityTypeLock::new();
         let signed_entities: Vec<_> = vec![
             SignedEntityTypeDiscriminants::MithrilStakeDistribution,
@@ -234,33 +220,25 @@ mod tests {
         ];
 
         assert_eq!(
-            signed_entity_type_lock
-                .filter_unlocked_entries(signed_entities.clone())
-                .await,
+            signed_entity_type_lock.filter_unlocked_entries(signed_entities.clone()),
             signed_entities.clone()
         );
 
-        signed_entity_type_lock
-            .lock(SignedEntityTypeDiscriminants::MithrilStakeDistribution)
-            .await;
+        signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::MithrilStakeDistribution);
 
         assert_eq!(
-            signed_entity_type_lock
-                .filter_unlocked_entries(signed_entities.clone())
-                .await,
+            signed_entity_type_lock.filter_unlocked_entries(signed_entities.clone()),
             vec![SignedEntityTypeDiscriminants::CardanoTransactions]
         );
     }
 
-    #[tokio::test]
-    async fn has_locked_entities() {
+    #[test]
+    fn has_locked_entities() {
         let signed_entity_type_lock = SignedEntityTypeLock::new();
 
-        assert!(!signed_entity_type_lock.has_locked_entities().await);
+        assert!(!signed_entity_type_lock.has_locked_entities());
 
-        signed_entity_type_lock
-            .lock(SignedEntityTypeDiscriminants::MithrilStakeDistribution)
-            .await;
-        assert!(signed_entity_type_lock.has_locked_entities().await);
+        signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::MithrilStakeDistribution);
+        assert!(signed_entity_type_lock.has_locked_entities());
     }
 }

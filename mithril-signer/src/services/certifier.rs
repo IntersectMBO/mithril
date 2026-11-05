@@ -93,8 +93,7 @@ impl SignerCertifierService {
             .list_allowed_signed_entity_types(time_point)?;
         let unlocked_signed_entities = self
             .signed_entity_type_lock
-            .filter_unlocked_entries(signed_entity_types)
-            .await;
+            .filter_unlocked_entries(signed_entity_types);
         let not_already_signed_entities = self
             .signed_beacon_store
             .filter_out_already_signed_entities(unlocked_signed_entities)
@@ -166,7 +165,7 @@ mod tests {
     async fn no_beacon_can_be_signed_if_all_entities_are_locked() {
         let locker = Arc::new(SignedEntityTypeLock::new());
         for signed_entity_type in SignedEntityTypeDiscriminants::all() {
-            locker.lock(signed_entity_type).await;
+            locker.lock(signed_entity_type);
         }
         let certifier_service = SignerCertifierService {
             signed_entity_type_lock: locker.clone(),
@@ -189,7 +188,7 @@ mod tests {
     async fn only_one_unlocked_and_not_yet_signed_yield_a_beacon_to_sign() {
         let locker = Arc::new(SignedEntityTypeLock::new());
         for signed_entity_type in SignedEntityTypeDiscriminants::all().into_iter().skip(1) {
-            locker.lock(signed_entity_type).await;
+            locker.lock(signed_entity_type);
         }
         let certifier_service = SignerCertifierService {
             signed_entity_type_lock: locker.clone(),
