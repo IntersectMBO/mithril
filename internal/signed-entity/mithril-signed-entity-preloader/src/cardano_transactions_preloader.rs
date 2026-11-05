@@ -92,14 +92,14 @@ impl CardanoTransactionsPreloader {
         info!(self.logger, "Started");
         debug!(self.logger, "Locking signed entity types"; "entity_types" => ?SIGNED_ENTITIES_TO_LOCK);
         for signed_entity_type in SIGNED_ENTITIES_TO_LOCK {
-            self.signed_entity_type_lock.lock(signed_entity_type).await;
+            self.signed_entity_type_lock.lock(signed_entity_type);
         }
 
         let preload_result = self.do_preload().await;
 
         debug!(self.logger, "Releasing signed entity types"; "entity_types" => ?SIGNED_ENTITIES_TO_LOCK);
         for signed_entity_type in SIGNED_ENTITIES_TO_LOCK {
-            self.signed_entity_type_lock.release(signed_entity_type).await;
+            self.signed_entity_type_lock.release(signed_entity_type);
         }
         info!(self.logger, "Finished");
 
@@ -156,12 +156,10 @@ mod tests {
             assert!(
                 self.signed_entity_type_lock
                     .is_locked(SignedEntityTypeDiscriminants::CardanoTransactions)
-                    .await
             );
             assert!(
                 self.signed_entity_type_lock
                     .is_locked(SignedEntityTypeDiscriminants::CardanoBlocksTransactions)
-                    .await
             );
             Ok(())
         }
@@ -287,27 +285,21 @@ mod tests {
         );
 
         assert!(
-            !signed_entity_type_lock
-                .is_locked(SignedEntityTypeDiscriminants::CardanoTransactions)
-                .await
+            !signed_entity_type_lock.is_locked(SignedEntityTypeDiscriminants::CardanoTransactions)
         );
         assert!(
             !signed_entity_type_lock
                 .is_locked(SignedEntityTypeDiscriminants::CardanoBlocksTransactions)
-                .await
         );
 
         preloader.preload().await.unwrap();
 
         assert!(
-            !signed_entity_type_lock
-                .is_locked(SignedEntityTypeDiscriminants::CardanoTransactions)
-                .await
+            !signed_entity_type_lock.is_locked(SignedEntityTypeDiscriminants::CardanoTransactions)
         );
         assert!(
             !signed_entity_type_lock
                 .is_locked(SignedEntityTypeDiscriminants::CardanoBlocksTransactions)
-                .await
         );
     }
 
@@ -330,14 +322,11 @@ mod tests {
         preloader.preload().await.unwrap_err();
 
         assert!(
-            !signed_entity_type_lock
-                .is_locked(SignedEntityTypeDiscriminants::CardanoTransactions)
-                .await
+            !signed_entity_type_lock.is_locked(SignedEntityTypeDiscriminants::CardanoTransactions)
         );
         assert!(
             !signed_entity_type_lock
                 .is_locked(SignedEntityTypeDiscriminants::CardanoBlocksTransactions)
-                .await
         );
     }
 }

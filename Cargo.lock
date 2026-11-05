@@ -4957,7 +4957,6 @@ name = "mithril-signed-entity-lock"
 version = "0.0.7"
 dependencies = [
  "mithril-common",
- "tokio",
 ]
 
 [[package]]

@@ -86,7 +86,7 @@ impl AggregatorUpkeepService {
     }
 
     async fn upkeep_all_databases(&self) -> StdResult<()> {
-        if self.signed_entity_type_lock.has_locked_entities().await {
+        if self.signed_entity_type_lock.has_locked_entities() {
             info!(
                 self.logger,
                 "Some entities are locked - Skipping database upkeep"
@@ -129,7 +129,7 @@ impl AggregatorUpkeepService {
     }
 
     async fn vacuum_main_database(&self) -> StdResult<()> {
-        if self.signed_entity_type_lock.has_locked_entities().await {
+        if self.signed_entity_type_lock.has_locked_entities() {
             info!(
                 self.logger,
                 "Some entities are locked - Skipping main database vacuum"
@@ -276,9 +276,7 @@ mod tests {
         let (logger, log_inspector) = TestLogger::memory();
 
         let signed_entity_type_lock = Arc::new(SignedEntityTypeLock::default());
-        signed_entity_type_lock
-            .lock(SignedEntityTypeDiscriminants::CardanoTransactions)
-            .await;
+        signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
 
         let service = AggregatorUpkeepService {
             signed_entity_type_lock: signed_entity_type_lock.clone(),
@@ -317,9 +315,7 @@ mod tests {
         let (logger, log_inspector) = TestLogger::memory();
 
         let signed_entity_type_lock = Arc::new(SignedEntityTypeLock::default());
-        signed_entity_type_lock
-            .lock(SignedEntityTypeDiscriminants::CardanoTransactions)
-            .await;
+        signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
 
         let service = AggregatorUpkeepService {
             signed_entity_type_lock: signed_entity_type_lock.clone(),
@@ -341,9 +337,7 @@ mod tests {
         let (logger, log_inspector) = TestLogger::memory();
 
         let signed_entity_type_lock = Arc::new(SignedEntityTypeLock::default());
-        signed_entity_type_lock
-            .lock(SignedEntityTypeDiscriminants::CardanoTransactions)
-            .await;
+        signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::CardanoTransactions);
 
         let service = AggregatorUpkeepService {
             logger,
