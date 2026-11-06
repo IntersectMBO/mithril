@@ -26,6 +26,7 @@ async function newMithrilWasmClient(aggregator, genesisVerificationKey) {
       }
     : {
         enable_certificate_chain_verification_cache: true,
+        origin_tag: "EXPLORER",
       };
 
   return new MithrilClient(aggregator, genesisVerificationKey, client_options);
