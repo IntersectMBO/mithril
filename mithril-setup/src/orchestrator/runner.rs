@@ -5,6 +5,26 @@ use async_trait::async_trait;
 use crate::state_machine::{Effect, Event, State, transition};
 use crate::store::Store;
 
+/// Outcome of the user review
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReviewOutcome {
+    /// The user confirmed the reviewed store
+    Confirmed(Store),
+
+    /// The user aborted the flow
+    Aborted,
+}
+
+/// Outcome of a run that did not fail
+#[derive(Debug, Clone, PartialEq)]
+pub enum RunOutcome {
+    /// The flow completed
+    Completed,
+
+    /// The user aborted the flow
+    Aborted,
+}
+
 /// Performs the I/O requested by the state machine effects
 #[async_trait]
 pub trait EffectHandler: Send + Sync {
@@ -14,8 +34,8 @@ pub trait EffectHandler: Send + Sync {
     /// Guess the fields's values from the discovered ones
     async fn guess(&self, store: Store) -> Result<Store, String>;
 
-    /// Let the user review the store, returns the confirmed store
-    async fn review(&self, store: Store, errors: Vec<String>) -> Store;
+    /// Let the user review the store, returns the confirmed store or the user abort
+    async fn review(&self, store: Store, errors: Vec<String>) -> ReviewOutcome;
 
     /// Check the integrity of the store
     async fn validate(&self, store: Store) -> Result<(), Vec<String>>;
@@ -25,7 +45,7 @@ pub trait EffectHandler: Send + Sync {
 }
 
 /// Run the state machine until a final state, executing effects with the given handler
-pub async fn run(handler: &dyn EffectHandler) -> Result<(), String> {
+pub async fn run(handler: &dyn EffectHandler) -> Result<RunOutcome, String> {
     let (mut state, mut effect) = transition(&State::Idle, Event::Started)?;
 
     while let Some(current_effect) = effect {
@@ -34,7 +54,8 @@ pub async fn run(handler: &dyn EffectHandler) -> Result<(), String> {
     }
 
     match state {
-        State::Done => Ok(()),
+        State::Done => Ok(RunOutcome::Completed),
+        State::Aborted => Ok(RunOutcome::Aborted),
         State::Failed(reason) => Err(reason),
         state => Err(format!(
             "Orchestrator stopped in a non final state: {state:?}"
@@ -46,7 +67,10 @@ async fn execute(handler: &dyn EffectHandler, effect: Effect) -> Event {
     match effect {
         Effect::Discover => Event::Discovered(handler.discover().await),
         Effect::Guess(store) => Event::Guessed(handler.guess(store).await),
-        Effect::Review { store, errors } => Event::Reviewed(handler.review(store, errors).await),
+        Effect::Review { store, errors } => match handler.review(store, errors).await {
+            ReviewOutcome::Confirmed(store) => Event::Reviewed(store),
+            ReviewOutcome::Aborted => Event::Aborted,
+        },
         Effect::Validate(store) => Event::Validated(handler.validate(store).await),
         Effect::Save(store) => Event::Saved(handler.save(store).await),
     }
@@ -62,6 +86,7 @@ mod tests {
     struct FakeHandler {
         discover_result: Result<Store, String>,
         validate_results: Mutex<VecDeque<Result<(), Vec<String>>>>,
+        review_aborts: bool,
         received_review_errors: Mutex<Vec<Vec<String>>>,
     }
 
@@ -70,6 +95,7 @@ mod tests {
             Self {
                 discover_result: Ok(Store::default()),
                 validate_results: Mutex::new(VecDeque::new()),
+                review_aborts: false,
                 received_review_errors: Mutex::new(vec![]),
             }
         }
@@ -85,9 +111,13 @@ mod tests {
             Ok(store)
         }
 
-        async fn review(&self, store: Store, errors: Vec<String>) -> Store {
+        async fn review(&self, store: Store, errors: Vec<String>) -> ReviewOutcome {
             self.received_review_errors.lock().unwrap().push(errors);
-            store
+            if self.review_aborts {
+                ReviewOutcome::Aborted
+            } else {
+                ReviewOutcome::Confirmed(store)
+            }
         }
 
         async fn validate(&self, _store: Store) -> Result<(), Vec<String>> {
@@ -100,12 +130,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_returns_ok_when_all_effects_succeed() {
+    async fn run_returns_completed_when_all_effects_succeed() {
         let handler = FakeHandler::succeeding();
 
         let result = run(&handler).await;
 
-        assert_eq!(Ok(()), result);
+        assert_eq!(Ok(RunOutcome::Completed), result);
+    }
+
+    #[tokio::test]
+    async fn run_returns_aborted_when_the_user_aborts_the_review() {
+        let handler = FakeHandler {
+            review_aborts: true,
+            ..FakeHandler::succeeding()
+        };
+
+        let result = run(&handler).await;
+
+        assert_eq!(Ok(RunOutcome::Aborted), result);
     }
 
     #[tokio::test]
@@ -130,7 +172,7 @@ mod tests {
 
         let result = run(&handler).await;
 
-        assert_eq!(Ok(()), result);
+        assert_eq!(Ok(RunOutcome::Completed), result);
         assert_eq!(
             vec![vec![], validation_errors],
             *handler.received_review_errors.lock().unwrap()
