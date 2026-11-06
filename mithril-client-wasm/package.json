@@ -1,6 +1,6 @@
 {
   "name": "@mithril-dev/mithril-client-wasm",
-  "version": "0.10.13",
+  "version": "0.10.14",
   "description": "Mithril client WASM",
   "license": "Apache-2.0",
   "collaborators": [
