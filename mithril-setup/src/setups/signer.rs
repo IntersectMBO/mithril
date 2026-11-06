@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 
 use crate::runner::{EffectHandler, ReviewOutcome};
+use crate::schema::FieldError;
 use crate::store::Store;
 
 /// Effect handler performing the I/O needed to setup a Mithril signer
@@ -18,11 +19,11 @@ impl EffectHandler for SignerEffectHandler {
         Ok(store)
     }
 
-    async fn review(&self, store: Store, _errors: Vec<String>) -> ReviewOutcome {
+    async fn review(&self, store: Store, _errors: Vec<FieldError>) -> ReviewOutcome {
         ReviewOutcome::Confirmed(store)
     }
 
-    async fn validate(&self, _store: Store) -> Result<(), Vec<String>> {
+    async fn validate(&self, _store: Store) -> Result<(), Vec<FieldError>> {
         Ok(())
     }
 

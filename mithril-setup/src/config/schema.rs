@@ -33,8 +33,8 @@ pub enum Presence {
 
 impl FieldSpec {
     /// Check the given value against the spec, returns all the errors found
-    pub fn check(&self, value: Option<&str>) -> Result<(), Vec<String>> {
-        let errors: Vec<String> = match value {
+    pub fn check(&self, value: Option<&str>) -> Result<(), Vec<FieldError>> {
+        let messages: Vec<String> = match value {
             None => match self.presence {
                 Presence::Required => vec![format!("{} is required", self.label)],
                 Presence::Optional => vec![],
@@ -42,10 +42,33 @@ impl FieldSpec {
             Some(value) => self.rules.iter().filter_map(|rule| rule(value).err()).collect(),
         };
 
-        if errors.is_empty() {
+        if messages.is_empty() {
             Ok(())
         } else {
-            Err(errors)
+            Err(messages
+                .iter()
+                .map(|message| FieldError::new(self.key, message))
+                .collect())
+        }
+    }
+}
+
+/// Error found on a configuration value
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldError {
+    /// Key of the value in error
+    pub key: String,
+
+    /// Reason of the error
+    pub message: String,
+}
+
+impl FieldError {
+    /// Create a new error for the given key
+    pub fn new(key: &str, message: &str) -> Self {
+        Self {
+            key: key.to_string(),
+            message: message.to_string(),
         }
     }
 }
@@ -78,7 +101,10 @@ mod tests {
     fn unset_required_value_is_rejected() {
         let result = spec(Presence::Required, vec![]).check(None);
 
-        assert_eq!(Err(vec!["Label is required".to_string()]), result);
+        assert_eq!(
+            Err(vec![FieldError::new("key", "Label is required")]),
+            result
+        );
     }
 
     #[test]
@@ -104,6 +130,12 @@ mod tests {
         )
         .check(Some("value"));
 
-        assert_eq!(Err(vec!["first".to_string(), "second".to_string()]), result);
+        assert_eq!(
+            Err(vec![
+                FieldError::new("key", "first"),
+                FieldError::new("key", "second")
+            ]),
+            result
+        );
     }
 }

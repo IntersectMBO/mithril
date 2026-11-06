@@ -1,5 +1,6 @@
 //! State machine of the orchestrator
 
+use crate::schema::FieldError;
 use crate::store::Store;
 
 /// States of the orchestrator
@@ -49,7 +50,7 @@ pub enum Event {
     Reviewed(Store),
 
     /// The reviewed store is valid, or the list of validation errors
-    Validated(Result<(), Vec<String>>),
+    Validated(Result<(), Vec<FieldError>>),
 
     /// The Store saving finished, or the reason of its failure
     Saved(Result<(), String>),
@@ -72,7 +73,7 @@ pub enum Effect {
         /// Store to review
         store: Store,
         /// Validation errors of a previous review, empty on the first review
-        errors: Vec<String>,
+        errors: Vec<FieldError>,
     },
 
     /// Check the integrity of the values
@@ -219,7 +220,7 @@ mod tests {
 
     #[test]
     fn validating_validated_err_goes_back_to_reviewing_with_errors() {
-        let errors = vec!["invalid field".to_string()];
+        let errors = vec![FieldError::new("key", "invalid field")];
         let result = transition(
             &State::Validating(store()),
             Event::Validated(Err(errors.clone())),
