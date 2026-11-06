@@ -1,8 +1,7 @@
-use anyhow::Context;
 use sqlite::Value;
 
 use mithril_common::StdResult;
-use mithril_persistence::sqlite::{Query, SourceAlias, SqLiteEntity, WhereCondition};
+use mithril_persistence::sqlite::{Query, SourceAlias, SqLiteEntity, SqliteValue, WhereCondition};
 
 use crate::database::record::SignerRegistrationRecord;
 
@@ -14,33 +13,18 @@ pub struct InsertOrReplaceSignerRegistrationRecordQuery {
 impl InsertOrReplaceSignerRegistrationRecordQuery {
     /// Build the query for the record, failing when a numeric field does not fit a database integer.
     pub fn one(signer_registration_record: SignerRegistrationRecord) -> StdResult<Self> {
-        let epoch_settings_id = i64::try_from(*signer_registration_record.epoch_settings_id)
-            .with_context(|| {
-                format!(
-                    "Epoch '{}' does not fit in a database integer",
-                    signer_registration_record.epoch_settings_id
-                )
-            })?;
-        let kes_evolutions = signer_registration_record
-            .kes_evolutions
-            .map(|kes_evolutions| {
-                i64::try_from(kes_evolutions).with_context(|| {
-                    format!("KES evolutions '{kes_evolutions}' do not fit in a database integer")
-                })
-            })
-            .transpose()?;
-        let stake = signer_registration_record
-            .stake
-            .map(|stake| {
-                i64::try_from(stake)
-                    .with_context(|| format!("Stake '{stake}' does not fit in a database integer"))
-            })
-            .transpose()?;
+        let epoch_settings_id =
+            SqliteValue::try_integer("Epoch", signer_registration_record.epoch_settings_id)?;
+        let kes_evolutions = SqliteValue::try_integer_or_null(
+            "KES evolutions",
+            signer_registration_record.kes_evolutions,
+        )?;
+        let stake = SqliteValue::try_integer_or_null("Stake", signer_registration_record.stake)?;
         let condition = WhereCondition::new(
             "(signer_id, epoch_setting_id, verification_key, verification_key_signature, operational_certificate, kes_period, stake, verification_key_for_snark, verification_key_signature_for_snark, created_at, proof_of_bound_possession_for_snark) values (?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*, ?*)",
             vec![
                 Value::String(signer_registration_record.signer_id),
-                Value::Integer(epoch_settings_id),
+                epoch_settings_id,
                 Value::String(signer_registration_record.verification_key_for_concatenation),
                 signer_registration_record
                     .verification_key_signature_for_concatenation
@@ -50,8 +34,8 @@ impl InsertOrReplaceSignerRegistrationRecordQuery {
                     .operational_certificate
                     .map(Value::String)
                     .unwrap_or(Value::Null),
-                kes_evolutions.map(Value::Integer).unwrap_or(Value::Null),
-                stake.map(Value::Integer).unwrap_or(Value::Null),
+                kes_evolutions,
+                stake,
                 #[cfg(feature = "snark")]
                 signer_registration_record
                     .verification_key_for_snark
