@@ -3,12 +3,12 @@
 //! A command line interface helping to setup Mithril environments.
 //!
 mod command_context;
-mod config;
 mod commands;
+mod config;
 mod orchestrator;
 pub mod setups;
 
 pub use command_context::*;
-pub use config::*;
 pub use commands::*;
+pub use config::*;
 pub use orchestrator::*;
