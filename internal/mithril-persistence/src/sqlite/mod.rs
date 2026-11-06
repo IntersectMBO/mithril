@@ -12,6 +12,7 @@ mod entity;
 mod projection;
 mod query;
 mod source_alias;
+mod sqlite_value;
 mod transaction;
 
 pub use cleaner::{OptimizeMode, SqliteCleaner, SqliteCleaningTask};
@@ -24,6 +25,7 @@ pub use entity::{HydrationError, SqLiteEntity};
 pub use projection::{Projection, ProjectionField};
 pub use query::Query;
 pub use source_alias::SourceAlias;
+pub use sqlite_value::SqliteValue;
 pub use transaction::Transaction;
 
 /// Type of the connection used in Mithril
