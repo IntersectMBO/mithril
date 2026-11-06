@@ -98,22 +98,14 @@ blake2 = { opt-level = 3 }
 blake2b_simd = { opt-level = 3 }
 blst = { opt-level = 3 }
 curve25519-dalek = { opt-level = 3 }
-digest = { opt-level = 3 }
 ed25519-dalek = { opt-level = 3 }
-ff = { opt-level = 3 }
-group = { opt-level = 3 }
 kes-summed-ed25519 = { opt-level = 3 }
 midnight-circuits = { opt-level = 3 }
 midnight-curves = { opt-level = 3 }
 midnight-proofs = { opt-level = 3 }
 midnight-zk-stdlib = { opt-level = 3 }
 num-bigint = { opt-level = 3 }
-num-integer = { opt-level = 3 }
-num-rational = { opt-level = 3 }
-num-traits = { opt-level = 3 }
-pairing = { opt-level = 3 }
 sha2 = { opt-level = 3 }
-subtle = { opt-level = 3 }
 
 # Variant of `ci-tests` used *only* by the `mithril-stm` Rust test job (selected via
 # `--cargo-profile ci-tests-snark` in the matching CI matrix entry). All other test jobs keep
