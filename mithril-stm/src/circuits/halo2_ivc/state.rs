@@ -26,7 +26,6 @@ pub(crate) struct State {
 }
 
 impl State {
-    #[allow(dead_code)]
     pub(crate) fn new(
         step_counter: StepCounter,
         message: MessageHash,
@@ -171,7 +170,6 @@ pub(crate) struct Witness {
 }
 
 impl Witness {
-    #[allow(dead_code)]
     pub(crate) fn new(
         genesis_signature: StandardSchnorrSignature,
         certificate_message: MessageHash,

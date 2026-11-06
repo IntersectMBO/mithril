@@ -11,6 +11,8 @@ use midnight_curves::{Bls12, G1Projective};
 use midnight_proofs::{poly::kzg::params::ParamsVerifierKZG, utils::SerdeFormat};
 use serde::{Deserialize, Serialize};
 
+#[cfg(any(test, feature = "benchmark-internals"))]
+use crate::proof_system::halo2_ivc_snark::prover_setup::IvcProverSetup;
 use crate::{
     StmResult,
     circuits::{
@@ -22,7 +24,7 @@ use crate::{
         },
     },
     codec,
-    proof_system::{KZG_VERIFIER_PARAMS, halo2_ivc_snark::prover_setup::IvcProverSetup},
+    proof_system::KZG_VERIFIER_PARAMS,
 };
 
 /// Minimal setup artifacts needed to verify IVC proofs without loading the full SRS.
@@ -56,7 +58,6 @@ impl IvcVerifierSetup {
     ///
     /// The certificate VK varies per deployment (k, m, merkle_depth); the IVC VK is typically
     /// deserialized from `RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION`. No SRS needed.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn try_new(
         certificate_verifying_key: &NonRecursiveCircuitVerifyingKey,
         ivc_verifying_key: &RecursiveCircuitVerifyingKey,
@@ -84,7 +85,7 @@ impl IvcVerifierSetup {
     /// Derive from an already-built [`IvcProverSetup`], reusing its precomputed fixed bases.
     ///
     /// Avoids recomputing fixed bases from scratch when a proving session is already running.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn from_ivc_setup(ivc_setup: &IvcProverSetup) -> StmResult<Self> {
         let verifier_params = Self::read_embedded_params()?;
         Ok(Self {

@@ -34,8 +34,6 @@ use crate::{
 /// on a clone gives cheap early abort; the original `DualMSM` is returned on
 /// success for downstream reuse (e.g. wrapping into a certificate accumulator
 /// for recursive aggregation).
-// Kept until the IVC prover prepares certificate proof accumulators.
-#[allow(dead_code)]
 pub(crate) fn verify_and_prepare_accumulator(
     proof_bytes: &[u8],
     public_inputs: &[CircuitBase],

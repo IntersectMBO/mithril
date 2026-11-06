@@ -47,7 +47,6 @@ pub(crate) mod embedded_assets;
 pub(crate) mod errors;
 pub(crate) mod gadgets;
 pub(crate) mod io;
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod keys;
 #[cfg(test)]
 pub(crate) mod protocol_message;

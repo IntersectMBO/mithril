@@ -45,6 +45,7 @@ impl EpochFixturesMapBuilder {
                 (
                     Epoch(epoch as u64),
                     MithrilFixtureBuilder::default()
+                        .disable_signers_certification()
                         .with_signers(epoch)
                         .with_protocol_parameters(protocol_parameters.clone())
                         .with_stake_distribution(

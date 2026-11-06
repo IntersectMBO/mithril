@@ -7,10 +7,7 @@ use mithril_stm::{AggregateSignatureType, AncillaryProofInput};
 
 use crate::{
     certificate_chain::CertificateGenesisProducer,
-    crypto_helper::{
-        GenesisSigner, GenesisVerifier, ProtocolAggregateVerificationKey, ProtocolClerk,
-        ProtocolParameters,
-    },
+    crypto_helper::{GenesisSigner, GenesisVerifier, ProtocolClerk, ProtocolParameters},
     entities::{
         CardanoDbBeacon, Certificate, CertificateMetadata, CertificateSignature, Epoch,
         ProtocolMessage, ProtocolMessagePartKey, SignedEntityType, SupportedEra,
@@ -398,12 +395,6 @@ impl<'a> CertificateChainBuilder<'a> {
         ProtocolClerk::new_clerk_from_signer(first_signer)
     }
 
-    fn compute_avk_for_signers(signers: &[SignerFixture]) -> ProtocolAggregateVerificationKey {
-        let clerk = Self::compute_clerk_for_signers(signers);
-
-        clerk.compute_aggregate_verification_key()
-    }
-
     fn setup_genesis() -> (GenesisSigner, GenesisVerifier) {
         let genesis_signer = GenesisSigner::create_deterministic_signer();
         let genesis_verifier = genesis_signer.create_verifier();
@@ -475,7 +466,7 @@ impl<'a> CertificateChainBuilder<'a> {
         let index_certificate = context.index_certificate;
         let epoch = context.epoch;
         let certificate_hash = format!("certificate_hash-{index_certificate}");
-        let avk = Self::compute_avk_for_signers(&context.fixture.signers_fixture());
+        let avk = context.fixture.compute_aggregate_verification_key();
         let protocol_parameters = context.fixture.protocol_parameters().to_owned();
         let base_certificate = fake_data::certificate(certificate_hash);
         let protocol_message = context.compute_protocol_message_seed();
@@ -510,7 +501,7 @@ impl<'a> CertificateChainBuilder<'a> {
     ) -> Certificate {
         let epoch = context.epoch;
         let certificate = self.build_base_certificate(context);
-        let next_avk = Self::compute_avk_for_signers(&context.next_fixture.signers_fixture());
+        let next_avk = context.next_fixture.compute_aggregate_verification_key();
         let next_protocol_parameters = &context.next_fixture.protocol_parameters();
         let genesis_producer = CertificateGenesisProducer::new();
 

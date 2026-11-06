@@ -261,7 +261,7 @@ where
     }
 
     /// Return the number of leaves of the Merkle tree.
-    #[cfg(feature = "snark")]
+    #[cfg(all(feature = "snark", test))]
     pub(crate) fn number_of_leaves(&self) -> usize {
         self.deduplicated_entries.len()
     }

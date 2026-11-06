@@ -80,6 +80,7 @@ async fn leader_signed_entity_config_propagation() {
 
     comment!("create signers & declare stake distribution");
     let fixture = MithrilFixtureBuilder::default()
+        .disable_signers_certification()
         .with_signers(10)
         .with_protocol_parameters(protocol_parameters.clone())
         .build();
