@@ -3,8 +3,9 @@
 use async_trait::async_trait;
 
 use crate::runner::{EffectHandler, ReviewOutcome};
-use crate::schema::FieldError;
-use crate::store::Store;
+use crate::schema::{FieldError, check_store};
+use crate::setups::signer::{CARDANO_NODE_SOCKET_PATH, NETWORK, signer_schema};
+use crate::store::{Origin, Store};
 
 /// Effect handler performing the I/O needed to setup a Mithril signer
 pub struct SignerEffectHandler;
@@ -12,19 +13,36 @@ pub struct SignerEffectHandler;
 #[async_trait]
 impl EffectHandler for SignerEffectHandler {
     async fn discover(&self) -> Result<Store, String> {
-        Ok(Store::default())
+        // Hardcoded values until the real discovery is implemented
+        let mut store = Store::default();
+        store.set(
+            CARDANO_NODE_SOCKET_PATH,
+            "/ipc/node.socket",
+            Origin::Discovered,
+        );
+        store.set(NETWORK, "preview", Origin::Discovered);
+
+        Ok(store)
     }
 
     async fn guess(&self, store: Store) -> Result<Store, String> {
         Ok(store)
     }
 
-    async fn review(&self, store: Store, _errors: Vec<FieldError>) -> ReviewOutcome {
-        ReviewOutcome::Confirmed(store)
+    async fn review(&self, store: Store, errors: Vec<FieldError>) -> ReviewOutcome {
+        // No way for the user to fix the errors until the TUI is implemented
+        if errors.is_empty() {
+            ReviewOutcome::Confirmed(store)
+        } else {
+            for error in errors {
+                eprintln!("{}: {}", error.key, error.message);
+            }
+            ReviewOutcome::Aborted
+        }
     }
 
-    async fn validate(&self, _store: Store) -> Result<(), Vec<FieldError>> {
-        Ok(())
+    async fn validate(&self, store: Store) -> Result<(), Vec<FieldError>> {
+        check_store(&signer_schema(), &store)
     }
 
     async fn save(&self, store: Store) -> Result<(), String> {
@@ -38,10 +56,10 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn discover_returns_an_empty_store() {
-        let result = SignerEffectHandler.discover().await;
+    async fn discover_returns_values_following_the_signer_schema() {
+        let store = SignerEffectHandler.discover().await.unwrap();
 
-        assert_eq!(Ok(Store::default()), result);
+        assert_eq!(Ok(()), check_store(&signer_schema(), &store));
     }
 
     #[tokio::test]
@@ -52,17 +70,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn review_confirms_the_given_store() {
+    async fn review_confirms_the_given_store_when_there_is_no_errors() {
         let result = SignerEffectHandler.review(Store::default(), vec![]).await;
 
         assert_eq!(ReviewOutcome::Confirmed(Store::default()), result);
     }
 
     #[tokio::test]
-    async fn validate_accepts_any_store() {
-        let result = SignerEffectHandler.validate(Store::default()).await;
+    async fn review_aborts_when_there_are_errors() {
+        let errors = vec![FieldError::new("key", "invalid")];
+
+        let result = SignerEffectHandler.review(Store::default(), errors).await;
+
+        assert_eq!(ReviewOutcome::Aborted, result);
+    }
+
+    #[tokio::test]
+    async fn validate_accepts_the_discovered_store() {
+        let store = SignerEffectHandler.discover().await.unwrap();
+
+        let result = SignerEffectHandler.validate(store).await;
 
         assert_eq!(Ok(()), result);
+    }
+
+    #[tokio::test]
+    async fn validate_rejects_a_store_not_following_the_signer_schema() {
+        let result = SignerEffectHandler.validate(Store::default()).await;
+
+        assert!(result.is_err(), "Expected Err, got {result:?}");
     }
 
     #[tokio::test]
