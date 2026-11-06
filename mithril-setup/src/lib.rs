@@ -5,6 +5,7 @@
 mod command_context;
 mod commands;
 mod orchestrator;
+pub mod setups;
 
 pub use command_context::*;
 pub use commands::*;
