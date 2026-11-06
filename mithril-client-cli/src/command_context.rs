@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use slog::Logger;
 #[cfg(feature = "snark")]
 use std::path::PathBuf;
@@ -104,27 +104,11 @@ impl CommandContext {
         self.add_certificate_chain_cache(builder)
     }
 
-    /// Add the certificate chain cache to the given client builder, if enabled.
+    /// Set up a mithril client builder for the commands that never verify a certificate chain.
     ///
-    /// The cache directory is prepared first, so only the commands that verify a certificate
-    /// chain should call it.
-    pub fn add_certificate_chain_cache(
-        &self,
-        builder: ClientBuilder,
-    ) -> MithrilResult<ClientBuilder> {
-        match self.certificate_chain_cache.verifier_cache() {
-            Some((cache, mode)) => {
-                self.certificate_chain_cache.prepare_directory()?;
-                Ok(builder.with_certificate_verifier_cache(Some(cache), mode))
-            }
-            None => Ok(builder),
-        }
-    }
-
-    /// Set up a mithril client builder with the configured parameters, but with a dummy genesis verification key.
-    ///
-    /// [ClientBuilder](mithril_client::ClientBuilder) always requires one to build the client, but
-    /// it's really used with commands that run certificate chain verification.
+    /// [ClientBuilder](mithril_client::ClientBuilder) requires a genesis verification key to
+    /// build a client, so a dummy one stands in when none is configured. The commands that verify
+    /// a chain use [Self::setup_mithril_client_builder], which requires the configured key.
     pub fn setup_mithril_client_builder_with_fallback_genesis_key(
         &self,
     ) -> MithrilResult<ClientBuilder> {
@@ -160,7 +144,7 @@ impl CommandContext {
             ));
         } else {
             builder = builder.set_genesis_verification_key(GenesisVerificationKey::JsonHex(
-                params.require("genesis_verification_key")?,
+                params.require("genesis_verification_key").with_context(|| "The genesis verification key of the network is required to verify the certificate chain, see https://mithril.network/doc/manual/getting-started/network-configurations")?,
             ));
         }
 
@@ -180,6 +164,20 @@ impl CommandContext {
         }
 
         Ok(builder)
+    }
+
+    /// Add the certificate chain cache to the given client builder, if enabled.
+    ///
+    /// The cache directory is prepared first, so only the commands that verify a certificate
+    /// chain should call it.
+    fn add_certificate_chain_cache(&self, builder: ClientBuilder) -> MithrilResult<ClientBuilder> {
+        match self.certificate_chain_cache.verifier_cache() {
+            Some((cache, mode)) => {
+                self.certificate_chain_cache.prepare_directory()?;
+                Ok(builder.with_certificate_verifier_cache(Some(cache), mode))
+            }
+            None => Ok(builder),
+        }
     }
 }
 
@@ -221,6 +219,32 @@ mod tests {
 
         let result = context.require_unstable("test", None);
         assert!(result.is_err(), "Expected Err, got {result:?}");
+    }
+
+    #[test]
+    fn setup_mithril_client_builder_without_genesis_verification_key_points_at_the_network_configurations()
+     {
+        let context = CommandContext::new(
+            ConfigParameters::build(&[(
+                "aggregator_endpoint",
+                "https://aggregator.example/aggregator",
+            )]),
+            false,
+            true,
+            Logger::root(slog::Discard, o!()),
+        );
+
+        let error = context
+            .setup_mithril_client_builder()
+            .map(|_| ())
+            .expect_err("the genesis verification key must be required");
+
+        let message = format!("{error:?}");
+        assert!(
+            message.contains("genesis_verification_key")
+                && message.contains("network-configurations"),
+            "unexpected error: {message}"
+        );
     }
 
     #[cfg(feature = "snark")]

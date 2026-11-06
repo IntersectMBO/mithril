@@ -172,7 +172,7 @@ pub fn log_download_information(
         cardano_node_version,
         // Aggregators are only using UTxO-HD in memory format as other format are deprecated or non portable
         LedgerFormat::InMemory,
-    );
+    )?;
 
     let snapshot_converter_cmd = |flavor| {
         format!(

@@ -397,6 +397,21 @@ impl SnapshotConverterCommand {
             ));
         }
 
+        let cardano_network =
+            Self::detect_cardano_network(&self.db_directory).with_context(|| {
+                format!(
+                    "Could not detect Cardano network from the database directory: {}",
+                    self.db_directory.display()
+                )
+            })?;
+
+        if self.commit {
+            CardanoDbUtils::check_node_start_command_values(
+                &cardano_network.to_string(),
+                &self.cardano_node_version,
+            )?;
+        }
+
         let is_local_bin_mode = self.binary_path.is_some() && self.config_path.is_some();
 
         let number_of_steps = Self::calculate_number_of_steps(is_local_bin_mode, self.commit);
@@ -416,14 +431,6 @@ impl SnapshotConverterCommand {
         let distribution_dir = work_dir.join(CARDANO_DISTRIBUTION_DIR);
 
         let result = {
-            let cardano_network =
-                Self::detect_cardano_network(&self.db_directory).with_context(|| {
-                    format!(
-                        "Could not detect Cardano network from the database directory: {}",
-                        self.db_directory.display()
-                    )
-                })?;
-
             let (converter_bin, config_path) = if is_local_bin_mode {
                 match (&self.binary_path, &self.config_path) {
                     (Some(bin), Some(cfg)) => (bin.clone(), cfg.clone()),
@@ -653,7 +660,7 @@ impl SnapshotConverterCommand {
                 &cardano_network.to_string(),
                 cardano_node_version,
                 utxo_hd_flavor.into(),
-            );
+            )?;
 
             if matches!(&utxo_hd_flavor, UTxOHDFlavor::Legacy) {
                 print_simple_warning(
@@ -1006,10 +1013,14 @@ mod tests {
 
         use slog::{Logger, o};
 
+        use mithril_client::common::CardanoNetwork;
+        use mithril_common::temp_dir_create;
+
         use crate::{
             CommandContext, ConfigParameters,
             commands::tools::{
-                SnapshotConverterCommand, utxo_hd::snapshot_converter::UTxOHDFlavor,
+                SnapshotConverterCommand,
+                utxo_hd::snapshot_converter::{PROTOCOL_MAGIC_ID_FILE, UTxOHDFlavor, WORK_DIR},
             },
         };
 
@@ -1136,6 +1147,34 @@ mod tests {
                 result.unwrap_err().to_string(),
                 "UTxO HD Flavor LMDB is not supported on Cardano node 11.1.0 or upper"
             );
+        }
+
+        #[tokio::test]
+        async fn should_return_error_before_any_conversion_if_cardano_node_version_is_invalid_and_commit()
+         {
+            let db_directory = temp_dir_create!();
+            std::fs::write(
+                db_directory.join(PROTOCOL_MAGIC_ID_FILE),
+                CardanoNetwork::PREVIEW_MAGIC_ID.to_string(),
+            )
+            .unwrap();
+            let command = SnapshotConverterCommand {
+                db_directory: db_directory.clone(),
+                cardano_node_version: "10.5.4; whatever".to_string(),
+                commit: true,
+                utxo_hd_flavor: UTxOHDFlavor::Lsm,
+                ..dummy_snapshot_converter_command()
+            };
+
+            let error = SnapshotConverterCommand::execute(&command, fake_command_context())
+                .await
+                .expect_err("an invalid node version must be rejected");
+
+            assert!(
+                error.to_string().contains("invalid node version '10.5.4; whatever'"),
+                "Unexpected error: {error:?}"
+            );
+            assert!(!db_directory.join(WORK_DIR).exists());
         }
     }
 

@@ -41,9 +41,8 @@ impl CardanoBlocksCertifyCommand {
             ProgressOutputType::Tty
         };
         let progress_printer = ProgressPrinter::new(progress_output_type, 4);
-        let client_builder = context.setup_mithril_client_builder_with_fallback_genesis_key()?;
         let client = context
-            .add_certificate_chain_cache(client_builder)?
+            .setup_mithril_client_builder()?
             .add_feedback_receiver(Arc::new(IndicatifFeedbackReceiver::new(
                 progress_output_type,
                 logger.clone(),
@@ -248,5 +247,38 @@ impl ConfigSource for CardanoBlocksCertifyCommand {
         }
 
         Ok(map)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use slog::{Logger, o};
+
+    use crate::configuration::ConfigParameters;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn certify_without_genesis_verification_key_fails() {
+        let command = CardanoBlocksCertifyCommand {
+            genesis_verification_key: None,
+            blocks_hashes: vec!["block-hash".to_string()],
+        };
+        let context = CommandContext::new(
+            ConfigParameters::build(&[("aggregator_endpoint", "http://127.0.0.1:1/aggregator")]),
+            true,
+            true,
+            Logger::root(slog::Discard, o!()),
+        );
+
+        let error = command
+            .execute(context)
+            .await
+            .expect_err("the command must fail without a genesis verification key");
+
+        assert!(
+            format!("{error:?}").contains("genesis_verification_key"),
+            "the error must name the missing key, got: {error:?}"
+        );
     }
 }

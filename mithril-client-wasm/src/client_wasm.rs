@@ -259,7 +259,9 @@ impl MithrilClient {
         Ok(serde_wasm_bindgen::to_value(&result)?)
     }
 
-    /// Call the client to verify a mithril stake distribution message
+    /// Call the client to verify that a message is signed by a certificate
+    ///
+    /// The certificate must have been verified beforehand with `verify_certificate_chain`.
     #[wasm_bindgen]
     pub async fn verify_message_match_certificate(
         &self,
@@ -371,6 +373,10 @@ impl MithrilClient {
     }
 
     /// Call the client to verify a cardano transaction proof and compute a message
+    ///
+    /// Only the proof is verified: the certificate must have been verified beforehand with
+    /// `verify_certificate_chain`, and the returned message must be checked against it with
+    /// `verify_message_match_certificate` before the proof is treated as certified.
     #[wasm_bindgen]
     pub async fn verify_cardano_transaction_proof_then_compute_message(
         &self,
@@ -579,6 +585,10 @@ impl MithrilClient {
     }
 
     /// `unstable` Call the client to verify a cardano transaction V2 proof and compute a message
+    ///
+    /// Only the proof is verified: the certificate must have been verified beforehand with
+    /// `verify_certificate_chain`, and the returned message must be checked against it with
+    /// `verify_message_match_certificate` before the proof is treated as certified.
     #[wasm_bindgen]
     pub async fn verify_cardano_transaction_v2_proof_then_compute_message(
         &self,
@@ -659,6 +669,10 @@ impl MithrilClient {
     }
 
     /// `unstable` Call the client to verify a cardano block proof and compute a message
+    ///
+    /// Only the proof is verified: the certificate must have been verified beforehand with
+    /// `verify_certificate_chain`, and the returned message must be checked against it with
+    /// `verify_message_match_certificate` before the proof is treated as certified.
     #[wasm_bindgen]
     pub async fn verify_cardano_block_proof_then_compute_message(
         &self,
