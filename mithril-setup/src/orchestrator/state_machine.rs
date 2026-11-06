@@ -53,6 +53,9 @@ pub enum Event {
 
     /// The Store saving finished, or the reason of its failure
     Saved(Result<(), String>),
+
+    /// The user aborted the flow
+    Aborted,
 }
 
 /// Description of the I/O requested by the core, performed by the shell
@@ -121,6 +124,13 @@ pub fn transition(state: &State, event: Event) -> Result<(State, Option<Effect>)
         (State::Saving(_), Event::Saved(Ok(()))) => Ok((State::Done, None)),
 
         (State::Saving(_), Event::Saved(Err(reason))) => Ok((State::Failed(reason), None)),
+
+        (State::Done | State::Failed(_) | State::Aborted, Event::Aborted) => Err(format!(
+            "{:?} is not accepted in final state {state:?}",
+            Event::Aborted
+        )),
+
+        (_, Event::Aborted) => Ok((State::Aborted, None)),
 
         (state, event) => Err(format!("{event:?} is not accepted in {state:?}")),
     }
@@ -242,6 +252,34 @@ mod tests {
         );
 
         assert_eq!(Ok((State::Failed("boom".to_string()), None)), result);
+    }
+
+    #[test]
+    fn aborted_goes_to_aborted_from_any_non_final_state() {
+        for state in [
+            State::Idle,
+            State::Discovering,
+            State::Guessing(store()),
+            State::Reviewing(store()),
+            State::Validating(store()),
+            State::Saving(store()),
+        ] {
+            let result = transition(&state, Event::Aborted);
+
+            assert_eq!(Ok((State::Aborted, None)), result, "from {state:?}");
+        }
+    }
+
+    #[test]
+    fn aborted_is_rejected_from_final_states() {
+        for state in [State::Done, State::Failed("boom".to_string()), State::Aborted] {
+            let result = transition(&state, Event::Aborted);
+
+            assert!(
+                result.is_err(),
+                "Expected Err from {state:?}, got {result:?}"
+            );
+        }
     }
 
     #[test]
