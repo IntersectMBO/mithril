@@ -457,12 +457,6 @@ cargo run
 
 ### Certificate chain cache
 
-:::warning
-
-The certificate chain cache is an unstable feature: it requires the `unstable` feature of the `mithril-client` crate, and the `fs` feature for the file system backend.
-
-:::
-
 The certificate chain cache stores the certificates of the verified certificate chains, so that the next verifications reuse them.
 Two backends are available:
 

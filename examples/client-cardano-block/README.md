@@ -16,7 +16,7 @@ In this example, the client interacts with an aggregator and performs the follow
 - Verify the validity of the validity of the certificate chain attached to the proofs
 - Verify that the certificate chain signs a message computed from the proof
 
-The certificate chain can be verified with the certificate chain cache (unstable), which stores the verified certificates in a directory so that the next executions reuse them:
+The certificate chain can be verified with the certificate chain cache, which stores the verified certificates in a directory so that the next executions reuse them:
 
 - `--use-certificate-chain-cache`: enable the certificate chain cache
 - `--certificate-chain-cache-mode`: verification mode, either `FullVerification` (default, cached certificates are re-verified) or `EarlyStopVerification` (the verification stops at the first cached certificate)

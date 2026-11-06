@@ -190,10 +190,10 @@ Enabling the cache with this flavor is harmless.
 
 :::info
 
-The certificate chain cache is an unstable feature, available in:
+The certificate chain cache is available in:
 
-- The [Mithril client library](../../../manual/develop/nodes/mithril-client-library.md#certificate-chain-cache) with the `unstable` feature
-- The [Mithril client CLI](../../../manual/develop/nodes/mithril-client.md#certificate-chain-cache) with the `--unstable` and `--use-certificate-chain-cache` options
-- The [Mithril client WASM library](../../../manual/develop/nodes/mithril-client-library-wasm.md#certificate-chain-cache) with the `unstable` and `enable_certificate_chain_verification_cache` options.
+- The [Mithril client library](../../../manual/develop/nodes/mithril-client-library.md#certificate-chain-cache)
+- The [Mithril client CLI](../../../manual/develop/nodes/mithril-client.md#certificate-chain-cache) with the `--use-certificate-chain-cache` option
+- The [Mithril client WASM library](../../../manual/develop/nodes/mithril-client-library-wasm.md#certificate-chain-cache) with the `enable_certificate_chain_verification_cache` option.
 
 :::

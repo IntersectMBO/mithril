@@ -27,7 +27,7 @@ pub enum ToolsCommands {
     /// Aggregator discovery command (unstable)
     #[clap(name = "discover-aggregator")]
     AggregatorDiscovery(AggregatorDiscoveryCommand),
-    /// Cache related commands (unstable)
+    /// Cache related commands
     #[clap(subcommand)]
     Cache(CacheCommands),
 }
@@ -42,11 +42,7 @@ impl ToolsCommands {
 
                 cmd.execute(context).await
             }
-            Self::Cache(cmd) => {
-                context.require_unstable("tools cache", Some("reset"))?;
-
-                cmd.execute(context).await
-            }
+            Self::Cache(cmd) => cmd.execute(context).await,
         }
     }
 }
