@@ -26,10 +26,7 @@ pub fn one_of(allowed: &'static [&'static str]) -> FieldRule {
         if allowed.contains(&value) {
             Ok(())
         } else {
-            Err(format!(
-                "'{value}' is not one of: {}",
-                allowed.join(", ")
-            ))
+            Err(format!("'{value}' is not one of: {}", allowed.join(", ")))
         }
     })
 }

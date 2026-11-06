@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 
+use crate::schema::FieldError;
 use crate::state_machine::{Effect, Event, State, transition};
 use crate::store::Store;
 
@@ -35,10 +36,10 @@ pub trait EffectHandler: Send + Sync {
     async fn guess(&self, store: Store) -> Result<Store, String>;
 
     /// Let the user review the store, returns the confirmed store or the user abort
-    async fn review(&self, store: Store, errors: Vec<String>) -> ReviewOutcome;
+    async fn review(&self, store: Store, errors: Vec<FieldError>) -> ReviewOutcome;
 
     /// Check the integrity of the store
-    async fn validate(&self, store: Store) -> Result<(), Vec<String>>;
+    async fn validate(&self, store: Store) -> Result<(), Vec<FieldError>>;
 
     /// Save the store to the desired output
     async fn save(&self, store: Store) -> Result<(), String>;
@@ -85,9 +86,9 @@ mod tests {
 
     struct FakeHandler {
         discover_result: Result<Store, String>,
-        validate_results: Mutex<VecDeque<Result<(), Vec<String>>>>,
+        validate_results: Mutex<VecDeque<Result<(), Vec<FieldError>>>>,
         review_aborts: bool,
-        received_review_errors: Mutex<Vec<Vec<String>>>,
+        received_review_errors: Mutex<Vec<Vec<FieldError>>>,
     }
 
     impl FakeHandler {
@@ -111,7 +112,7 @@ mod tests {
             Ok(store)
         }
 
-        async fn review(&self, store: Store, errors: Vec<String>) -> ReviewOutcome {
+        async fn review(&self, store: Store, errors: Vec<FieldError>) -> ReviewOutcome {
             self.received_review_errors.lock().unwrap().push(errors);
             if self.review_aborts {
                 ReviewOutcome::Aborted
@@ -120,7 +121,7 @@ mod tests {
             }
         }
 
-        async fn validate(&self, _store: Store) -> Result<(), Vec<String>> {
+        async fn validate(&self, _store: Store) -> Result<(), Vec<FieldError>> {
             self.validate_results.lock().unwrap().pop_front().unwrap_or(Ok(()))
         }
 
@@ -164,7 +165,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_reviews_again_with_errors_when_validation_fails() {
-        let validation_errors = vec!["invalid field".to_string()];
+        let validation_errors = vec![FieldError::new("key", "invalid field")];
         let handler = FakeHandler {
             validate_results: Mutex::new(VecDeque::from([Err(validation_errors.clone())])),
             ..FakeHandler::succeeding()
