@@ -42,7 +42,7 @@ pub trait EffectHandler: Send + Sync {
     async fn validate(&self, store: Store) -> Result<(), Vec<FieldError>>;
 
     /// Save the store to the desired output
-    async fn save(&self, store: Store) -> Result<(), String>;
+    async fn export_to_artifact(&self, store: Store) -> Result<(), String>;
 }
 
 /// Run the state machine until a final state, executing effects with the given handler
@@ -73,7 +73,7 @@ async fn execute(handler: &dyn EffectHandler, effect: Effect) -> Event {
             ReviewOutcome::Aborted => Event::Aborted,
         },
         Effect::Validate(store) => Event::Validated(handler.validate(store).await),
-        Effect::Save(store) => Event::Saved(handler.save(store).await),
+        Effect::Save(store) => Event::Saved(handler.export_to_artifact(store).await),
     }
 }
 
@@ -125,7 +125,7 @@ mod tests {
             self.validate_results.lock().unwrap().pop_front().unwrap_or(Ok(()))
         }
 
-        async fn save(&self, _store: Store) -> Result<(), String> {
+        async fn export_to_artifact(&self, _store: Store) -> Result<(), String> {
             Ok(())
         }
     }
