@@ -1,6 +1,7 @@
 //! Schema: static description of the configuration values expected by a setup
 
 use crate::rules::FieldRule;
+use crate::store::Store;
 
 /// Description of a configuration value
 #[derive(Clone)]
@@ -73,6 +74,24 @@ impl FieldError {
     }
 }
 
+/// Check every value of the store against its spec, returns all the errors found
+pub fn check_store(specs: &[FieldSpec], store: &Store) -> Result<(), Vec<FieldError>> {
+    let errors: Vec<FieldError> = specs
+        .iter()
+        .filter_map(|spec| {
+            let value = store.get(spec.key).map(|entry| entry.value.as_str());
+            spec.check(value).err()
+        })
+        .flatten()
+        .collect();
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -137,5 +156,52 @@ mod tests {
             ]),
             result
         );
+    }
+
+    mod check_store {
+        use crate::store::Origin;
+
+        use super::*;
+
+        fn specs() -> Vec<FieldSpec> {
+            vec![
+                FieldSpec {
+                    key: "a",
+                    label: "A",
+                    ..spec(Presence::Required, vec![])
+                },
+                FieldSpec {
+                    key: "b",
+                    label: "B",
+                    ..spec(Presence::Required, vec![failing_rule("b is invalid")])
+                },
+            ]
+        }
+
+        #[test]
+        fn store_is_accepted_when_all_values_follow_their_spec() {
+            let specs = vec![FieldSpec {
+                key: "a",
+                ..spec(Presence::Required, vec![passing_rule()])
+            }];
+            let mut store = Store::default();
+            store.set("a", "value", Origin::User);
+
+            assert_eq!(Ok(()), check_store(&specs, &store));
+        }
+
+        #[test]
+        fn store_is_rejected_with_the_errors_of_all_specs_in_specs_order() {
+            let mut store = Store::default();
+            store.set("b", "value", Origin::User);
+
+            assert_eq!(
+                Err(vec![
+                    FieldError::new("a", "A is required"),
+                    FieldError::new("b", "b is invalid"),
+                ]),
+                check_store(&specs(), &store)
+            );
+        }
     }
 }
