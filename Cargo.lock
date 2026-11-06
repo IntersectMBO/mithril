@@ -4941,6 +4941,7 @@ name = "mithril-setup"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap",
  "config",
  "mithril-doc",
