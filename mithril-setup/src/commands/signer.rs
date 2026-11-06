@@ -5,7 +5,7 @@ use clap::Parser;
 use slog::info;
 
 use crate::CommandContext;
-use crate::runner::run;
+use crate::runner::{RunOutcome, run};
 use crate::setups::signer::SignerEffectHandler;
 
 /// Set up a Mithril signer
@@ -18,7 +18,10 @@ impl SignerCommand {
         context.require_unstable("signer", None)?;
         info!(context.logger(), "signer command");
 
-        run(&SignerEffectHandler).await.map_err(|reason| anyhow!(reason))
+        match run(&SignerEffectHandler).await.map_err(|reason| anyhow!(reason))? {
+            RunOutcome::Completed => Ok(()),
+            RunOutcome::Aborted => Err(anyhow!("Setup aborted by the user")),
+        }
     }
 }
 
