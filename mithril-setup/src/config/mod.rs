@@ -2,3 +2,4 @@
 
 pub mod store;
 pub mod rules;
+pub mod schema;
