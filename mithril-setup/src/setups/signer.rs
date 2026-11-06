@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 
-use crate::runner::EffectHandler;
+use crate::runner::{EffectHandler, ReviewOutcome};
 use crate::store::Store;
 
 /// Effect handler performing the I/O needed to setup a Mithril signer
@@ -18,8 +18,8 @@ impl EffectHandler for SignerEffectHandler {
         Ok(store)
     }
 
-    async fn review(&self, store: Store, _errors: Vec<String>) -> Store {
-        store
+    async fn review(&self, store: Store, _errors: Vec<String>) -> ReviewOutcome {
+        ReviewOutcome::Confirmed(store)
     }
 
     async fn validate(&self, _store: Store) -> Result<(), Vec<String>> {
@@ -51,10 +51,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn review_returns_the_given_store() {
+    async fn review_confirms_the_given_store() {
         let result = SignerEffectHandler.review(Store::default(), vec![]).await;
 
-        assert_eq!(Store::default(), result);
+        assert_eq!(ReviewOutcome::Confirmed(Store::default()), result);
     }
 
     #[tokio::test]
