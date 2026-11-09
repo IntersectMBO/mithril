@@ -25,6 +25,12 @@ pub enum Action {
     /// Remove the character under the cursor
     Delete,
 
+    /// Remove the word before the cursor
+    DeleteWordBackward,
+
+    /// Remove the word after the cursor
+    DeleteWordForward,
+
     /// Move the cursor one character to the left
     Left,
 
@@ -234,12 +240,45 @@ fn edit_buffer(buffer: &mut String, cursor: &mut usize, action: Action) {
         Action::Delete if *cursor < length => {
             buffer.remove(byte_index(buffer, *cursor));
         }
+        Action::DeleteWordBackward => {
+            let start = previous_word_start(buffer, *cursor);
+            buffer.replace_range(byte_index(buffer, start)..byte_index(buffer, *cursor), "");
+            *cursor = start;
+        }
+        Action::DeleteWordForward => {
+            let end = next_word_end(buffer, *cursor);
+            buffer.replace_range(byte_index(buffer, *cursor)..byte_index(buffer, end), "");
+        }
         Action::Left if *cursor > 0 => *cursor -= 1,
         Action::Right if *cursor < length => *cursor += 1,
         Action::Home => *cursor = 0,
         Action::End => *cursor = length,
         _ => {}
     }
+}
+
+/// Position of the start of the word before the cursor
+fn previous_word_start(buffer: &str, cursor: usize) -> usize {
+    cursor - word_length(buffer[..byte_index(buffer, cursor)].chars().rev())
+}
+
+/// Position of the end of the word after the cursor
+fn next_word_end(buffer: &str, cursor: usize) -> usize {
+    cursor + word_length(buffer.chars().skip(cursor))
+}
+
+/// Number of characters of the first word of `chars`
+///
+/// Like in the fish shell, a word is a run of characters of the same kind: either alphanumeric
+/// characters or separators (non-alphanumeric characters), e.g. `/abc//test` is made of the
+/// words `/`, `abc`, `//` and `test`.
+fn word_length(chars: impl Iterator<Item = char>) -> usize {
+    let mut chars = chars.peekable();
+    let Some(is_alphanumeric) = chars.peek().map(|c| c.is_alphanumeric()) else {
+        return 0;
+    };
+
+    chars.take_while(|c| c.is_alphanumeric() == is_alphanumeric).count()
 }
 
 /// Byte index in the buffer of the character at the given position, or the buffer length past its end
@@ -300,6 +339,50 @@ mod tests {
             ],
             model.rows()
         );
+    }
+
+    mod helpers {
+        use super::*;
+
+        #[test]
+        fn byte_index_of_a_position() {
+            assert_eq!(0, byte_index("aéb", 0));
+            assert_eq!(1, byte_index("aéb", 1));
+            // 'é' takes two bytes
+            assert_eq!(3, byte_index("aéb", 2));
+        }
+
+        #[test]
+        fn byte_index_past_the_end_is_the_buffer_length() {
+            assert_eq!(3, byte_index("aeb", 3));
+            assert_eq!(3, byte_index("aeb", 10));
+        }
+
+        #[test]
+        fn word_length_counts_the_first_run_of_characters_of_the_same_kind() {
+            assert_eq!(0, word_length("".chars()));
+            assert_eq!(3, word_length("ipc/node".chars()));
+            assert_eq!(1, word_length("/ipc/node".chars()));
+            assert_eq!(2, word_length("//ipc/node".chars()));
+            assert_eq!(2, word_length("//".chars()));
+            assert_eq!(3, word_length("été/".chars()));
+        }
+
+        #[test]
+        fn previous_word_start_of_a_cursor() {
+            assert_eq!(0, previous_word_start("/ipc/node", 0));
+            assert_eq!(5, previous_word_start("/ipc/node", 9));
+            assert_eq!(4, previous_word_start("/ipc/node", 5));
+            assert_eq!(1, previous_word_start("/ipc/node", 3));
+        }
+
+        #[test]
+        fn next_word_end_of_a_cursor() {
+            assert_eq!(9, next_word_end("/ipc/node", 9));
+            assert_eq!(1, next_word_end("/ipc/node", 0));
+            assert_eq!(5, next_word_end("/ipc/node", 4));
+            assert_eq!(4, next_word_end("/ipc/node", 2));
+        }
     }
 
     mod navigation {
@@ -531,6 +614,100 @@ mod tests {
             let row = port_row(&model);
             assert_eq!(Some("3000".to_string()), row.value);
             assert_eq!(Some(Origin::Discovered), row.origin);
+        }
+
+        mod words {
+            use super::*;
+
+            #[test]
+            fn delete_word_backward_removes_the_word_before_the_cursor() {
+                let mut model = editing_port("/ipc/node.socket");
+
+                model.update(Action::DeleteWordBackward);
+
+                assert_eq!(&editing_at("/ipc/node.", 10), model.mode());
+            }
+
+            #[test]
+            fn delete_word_backward_removes_only_the_separators_before_the_cursor() {
+                let mut model = editing_port("/abc//");
+
+                model.update(Action::DeleteWordBackward);
+
+                assert_eq!(&editing_at("/abc", 4), model.mode());
+            }
+
+            #[test]
+            fn delete_word_backward_keeps_the_text_after_the_cursor() {
+                let mut model = editing_port("/ipc/node.socket");
+                for _ in 0..="socket".len() {
+                    model.update(Action::Left);
+                }
+
+                model.update(Action::DeleteWordBackward);
+
+                assert_eq!(&editing_at("/ipc/.socket", 5), model.mode());
+            }
+
+            #[test]
+            fn delete_word_backward_at_the_start_does_nothing() {
+                let mut model = editing_port("/ipc");
+                model.update(Action::Home);
+
+                model.update(Action::DeleteWordBackward);
+
+                assert_eq!(&editing_at("/ipc", 0), model.mode());
+            }
+
+            #[test]
+            fn delete_word_forward_removes_the_word_after_the_cursor() {
+                let mut model = editing_port("ipc/node");
+                model.update(Action::Home);
+
+                model.update(Action::DeleteWordForward);
+
+                assert_eq!(&editing_at("/node", 0), model.mode());
+            }
+
+            #[test]
+            fn delete_word_forward_removes_only_the_separators_after_the_cursor() {
+                let mut model = editing_port("//ipc");
+                model.update(Action::Home);
+
+                model.update(Action::DeleteWordForward);
+
+                assert_eq!(&editing_at("ipc", 0), model.mode());
+            }
+
+            #[test]
+            fn delete_word_forward_keeps_the_text_before_the_cursor() {
+                let mut model = editing_port("/ipc/node.socket");
+                for _ in 0.."node.socket".len() {
+                    model.update(Action::Left);
+                }
+
+                model.update(Action::DeleteWordForward);
+
+                assert_eq!(&editing_at("/ipc/.socket", 5), model.mode());
+            }
+
+            #[test]
+            fn delete_word_forward_at_the_end_does_nothing() {
+                let mut model = editing_port("/ipc");
+
+                model.update(Action::DeleteWordForward);
+
+                assert_eq!(&editing_at("/ipc", 4), model.mode());
+            }
+
+            #[test]
+            fn delete_word_backward_removes_accented_letters_as_part_of_the_word() {
+                let mut model = editing_port("/dossier/été2");
+
+                model.update(Action::DeleteWordBackward);
+
+                assert_eq!(&editing_at("/dossier/", 9), model.mode());
+            }
         }
 
         mod cursor {
