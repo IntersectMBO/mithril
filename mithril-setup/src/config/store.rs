@@ -47,6 +47,11 @@ impl Store {
             },
         );
     }
+
+    /// Unset the value of the given key
+    pub fn unset(&mut self, key: &str) {
+        self.entries.remove(key);
+    }
 }
 
 #[cfg(test)]
@@ -89,5 +94,24 @@ mod tests {
             }),
             store.get("network")
         );
+    }
+
+    #[test]
+    fn unset_removes_the_entry() {
+        let mut store = Store::default();
+        store.set("network", "preview", Origin::Guessed);
+
+        store.unset("network");
+
+        assert_eq!(None, store.get("network"));
+    }
+
+    #[test]
+    fn unset_an_absent_key_does_nothing() {
+        let mut store = Store::default();
+
+        store.unset("network");
+
+        assert_eq!(Store::default(), store);
     }
 }
