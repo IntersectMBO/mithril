@@ -46,8 +46,8 @@ pub enum Event {
     /// Fields values have been guessed from the discovered ones, or the reason of its failure
     Guessed(Result<Store, String>),
 
-    /// The user reviewed and confirmed the store
-    Reviewed(Store),
+    /// The user reviewed and confirmed the store, or the reason of the review failure
+    Reviewed(Result<Store, String>),
 
     /// The reviewed store is valid, or the list of validation errors
     Validated(Result<(), Vec<FieldError>>),
@@ -104,10 +104,12 @@ pub fn transition(state: &State, event: Event) -> Result<(State, Option<Effect>)
 
         (State::Guessing(_), Event::Guessed(Err(reason))) => Ok((State::Failed(reason), None)),
 
-        (State::Reviewing(_), Event::Reviewed(store)) => Ok((
+        (State::Reviewing(_), Event::Reviewed(Ok(store))) => Ok((
             State::Validating(store.clone()),
             Some(Effect::Validate(store)),
         )),
+
+        (State::Reviewing(_), Event::Reviewed(Err(reason))) => Ok((State::Failed(reason), None)),
 
         (State::Validating(store), Event::Validated(Ok(()))) => Ok((
             State::Saving(store.clone()),
@@ -200,12 +202,22 @@ mod tests {
 
     #[test]
     fn reviewing_reviewed_goes_to_validating_and_requests_validation() {
-        let result = transition(&State::Reviewing(store()), Event::Reviewed(store()));
+        let result = transition(&State::Reviewing(store()), Event::Reviewed(Ok(store())));
 
         assert_eq!(
             Ok((State::Validating(store()), Some(Effect::Validate(store())))),
             result
         );
+    }
+
+    #[test]
+    fn reviewing_reviewed_err_goes_to_failed() {
+        let result = transition(
+            &State::Reviewing(store()),
+            Event::Reviewed(Err("boom".to_string())),
+        );
+
+        assert_eq!(Ok((State::Failed("boom".to_string()), None)), result);
     }
 
     #[test]

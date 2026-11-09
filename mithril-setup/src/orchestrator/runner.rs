@@ -35,8 +35,9 @@ pub trait EffectHandler: Send + Sync {
     /// Guess the fields's values from the discovered ones
     async fn guess(&self, store: Store) -> Result<Store, String>;
 
-    /// Let the user review the store, returns the confirmed store or the user abort
-    async fn review(&self, store: Store, errors: Vec<FieldError>) -> ReviewOutcome;
+    /// Let the user review the store, returns the confirmed store or the user abort,
+    /// or the reason of the review failure
+    async fn review(&self, store: Store, errors: Vec<FieldError>) -> Result<ReviewOutcome, String>;
 
     /// Check the integrity of the store
     async fn validate(&self, store: Store) -> Result<(), Vec<FieldError>>;
@@ -69,8 +70,9 @@ async fn execute(handler: &dyn EffectHandler, effect: Effect) -> Event {
         Effect::Discover => Event::Discovered(handler.discover().await),
         Effect::Guess(store) => Event::Guessed(handler.guess(store).await),
         Effect::Review { store, errors } => match handler.review(store, errors).await {
-            ReviewOutcome::Confirmed(store) => Event::Reviewed(store),
-            ReviewOutcome::Aborted => Event::Aborted,
+            Ok(ReviewOutcome::Confirmed(store)) => Event::Reviewed(Ok(store)),
+            Ok(ReviewOutcome::Aborted) => Event::Aborted,
+            Err(reason) => Event::Reviewed(Err(reason)),
         },
         Effect::Validate(store) => Event::Validated(handler.validate(store).await),
         Effect::Save(store) => Event::Saved(handler.save(store).await),
@@ -88,6 +90,7 @@ mod tests {
         discover_result: Result<Store, String>,
         validate_results: Mutex<VecDeque<Result<(), Vec<FieldError>>>>,
         review_aborts: bool,
+        review_failure: Option<String>,
         received_review_errors: Mutex<Vec<Vec<FieldError>>>,
     }
 
@@ -97,6 +100,7 @@ mod tests {
                 discover_result: Ok(Store::default()),
                 validate_results: Mutex::new(VecDeque::new()),
                 review_aborts: false,
+                review_failure: None,
                 received_review_errors: Mutex::new(vec![]),
             }
         }
@@ -112,12 +116,18 @@ mod tests {
             Ok(store)
         }
 
-        async fn review(&self, store: Store, errors: Vec<FieldError>) -> ReviewOutcome {
+        async fn review(
+            &self,
+            store: Store,
+            errors: Vec<FieldError>,
+        ) -> Result<ReviewOutcome, String> {
             self.received_review_errors.lock().unwrap().push(errors);
-            if self.review_aborts {
-                ReviewOutcome::Aborted
+            if let Some(reason) = &self.review_failure {
+                Err(reason.clone())
+            } else if self.review_aborts {
+                Ok(ReviewOutcome::Aborted)
             } else {
-                ReviewOutcome::Confirmed(store)
+                Ok(ReviewOutcome::Confirmed(store))
             }
         }
 
@@ -149,6 +159,18 @@ mod tests {
         let result = run(&handler).await;
 
         assert_eq!(Ok(RunOutcome::Aborted), result);
+    }
+
+    #[tokio::test]
+    async fn run_returns_failure_reason_when_the_review_fails() {
+        let handler = FakeHandler {
+            review_failure: Some("no terminal".to_string()),
+            ..FakeHandler::succeeding()
+        };
+
+        let result = run(&handler).await;
+
+        assert_eq!(Err("no terminal".to_string()), result);
     }
 
     #[tokio::test]

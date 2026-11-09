@@ -30,23 +30,11 @@ impl EffectHandler for SignerEffectHandler {
         Ok(store)
     }
 
-    async fn review(&self, store: Store, errors: Vec<FieldError>) -> ReviewOutcome {
-        let review = tokio::task::spawn_blocking(move || {
-            tui::terminal::review(signer_schema(), store, errors)
-        })
-        .await;
-
-        match review {
-            Ok(Ok(outcome)) => outcome,
-            Ok(Err(error)) => {
-                eprintln!("Review failed: {error}");
-                ReviewOutcome::Aborted
-            }
-            Err(error) => {
-                eprintln!("Review task failed: {error}");
-                ReviewOutcome::Aborted
-            }
-        }
+    async fn review(&self, store: Store, errors: Vec<FieldError>) -> Result<ReviewOutcome, String> {
+        tokio::task::spawn_blocking(move || tui::terminal::review(signer_schema(), store, errors))
+            .await
+            .map_err(|error| format!("Review task failed: {error}"))?
+            .map_err(|error| format!("Review failed: {error}"))
     }
 
     async fn validate(&self, store: Store) -> Result<(), Vec<FieldError>> {
