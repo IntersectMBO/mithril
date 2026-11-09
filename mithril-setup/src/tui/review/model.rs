@@ -31,6 +31,12 @@ pub enum Action {
     /// Remove the word after the cursor
     DeleteWordForward,
 
+    /// Move the cursor to the start of the word before it
+    MoveWordBackward,
+
+    /// Move the cursor to the end of the word after it
+    MoveWordForward,
+
     /// Move the cursor one character to the left
     Left,
 
@@ -251,6 +257,8 @@ fn edit_buffer(buffer: &mut String, cursor: &mut usize, action: Action) {
         }
         Action::Left if *cursor > 0 => *cursor -= 1,
         Action::Right if *cursor < length => *cursor += 1,
+        Action::MoveWordBackward => *cursor = previous_word_start(buffer, *cursor),
+        Action::MoveWordForward => *cursor = next_word_end(buffer, *cursor),
         Action::Home => *cursor = 0,
         Action::End => *cursor = length,
         _ => {}
@@ -696,6 +704,54 @@ mod tests {
                 let mut model = editing_port("/ipc");
 
                 model.update(Action::DeleteWordForward);
+
+                assert_eq!(&editing_at("/ipc", 4), model.mode());
+            }
+
+            #[test]
+            fn move_word_backward_moves_the_cursor_to_the_start_of_each_previous_word() {
+                let mut model = editing_port("/ipc/node.socket");
+
+                model.update(Action::MoveWordBackward);
+                assert_eq!(&editing_at("/ipc/node.socket", 10), model.mode());
+
+                model.update(Action::MoveWordBackward);
+                assert_eq!(&editing_at("/ipc/node.socket", 9), model.mode());
+
+                model.update(Action::MoveWordBackward);
+                assert_eq!(&editing_at("/ipc/node.socket", 5), model.mode());
+            }
+
+            #[test]
+            fn move_word_backward_at_the_start_does_nothing() {
+                let mut model = editing_port("/ipc");
+                model.update(Action::Home);
+
+                model.update(Action::MoveWordBackward);
+
+                assert_eq!(&editing_at("/ipc", 0), model.mode());
+            }
+
+            #[test]
+            fn move_word_forward_moves_the_cursor_to_the_end_of_each_next_word() {
+                let mut model = editing_port("/ipc/node.socket");
+                model.update(Action::Home);
+
+                model.update(Action::MoveWordForward);
+                assert_eq!(&editing_at("/ipc/node.socket", 1), model.mode());
+
+                model.update(Action::MoveWordForward);
+                assert_eq!(&editing_at("/ipc/node.socket", 4), model.mode());
+
+                model.update(Action::MoveWordForward);
+                assert_eq!(&editing_at("/ipc/node.socket", 5), model.mode());
+            }
+
+            #[test]
+            fn move_word_forward_at_the_end_does_nothing() {
+                let mut model = editing_port("/ipc");
+
+                model.update(Action::MoveWordForward);
 
                 assert_eq!(&editing_at("/ipc", 4), model.mode());
             }

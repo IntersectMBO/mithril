@@ -12,6 +12,8 @@ pub fn to_action(key: KeyEvent, mode: &Mode) -> Option<Action> {
             (KeyCode::Char('s'), Mode::Navigating) => Some(Action::Confirm),
             (KeyCode::Backspace, Mode::Editing { .. }) => Some(Action::DeleteWordBackward),
             (KeyCode::Delete, Mode::Editing { .. }) => Some(Action::DeleteWordForward),
+            (KeyCode::Left, Mode::Editing { .. }) => Some(Action::MoveWordBackward),
+            (KeyCode::Right, Mode::Editing { .. }) => Some(Action::MoveWordForward),
             _ => None,
         };
     }
@@ -30,7 +32,13 @@ pub fn to_action(key: KeyEvent, mode: &Mode) -> Option<Action> {
             Some(Action::DeleteWordForward)
         }
         (KeyCode::Delete, Mode::Editing { .. }) => Some(Action::Delete),
+        (KeyCode::Left, Mode::Editing { .. }) if key.modifiers.contains(KeyModifiers::ALT) => {
+            Some(Action::MoveWordBackward)
+        }
         (KeyCode::Left, Mode::Editing { .. }) => Some(Action::Left),
+        (KeyCode::Right, Mode::Editing { .. }) if key.modifiers.contains(KeyModifiers::ALT) => {
+            Some(Action::MoveWordForward)
+        }
         (KeyCode::Right, Mode::Editing { .. }) => Some(Action::Right),
         (KeyCode::Home, Mode::Editing { .. }) => Some(Action::Home),
         (KeyCode::End, Mode::Editing { .. }) => Some(Action::End),
@@ -153,6 +161,34 @@ mod tests {
             KeyEvent::new(KeyCode::Delete, KeyModifiers::ALT),
         ] {
             assert_eq!(None, to_action(key, &Mode::Navigating), "{key:?}");
+        }
+    }
+
+    #[test]
+    fn word_move_keys_while_editing() {
+        let mode = editing();
+
+        for modifier in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+            assert_eq!(
+                Some(Action::MoveWordBackward),
+                to_action(KeyEvent::new(KeyCode::Left, modifier), &mode),
+                "{modifier:?}"
+            );
+            assert_eq!(
+                Some(Action::MoveWordForward),
+                to_action(KeyEvent::new(KeyCode::Right, modifier), &mode),
+                "{modifier:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn word_move_keys_are_ignored_while_navigating() {
+        for modifier in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+            for code in [KeyCode::Left, KeyCode::Right] {
+                let key = KeyEvent::new(code, modifier);
+                assert_eq!(None, to_action(key, &Mode::Navigating), "{key:?}");
+            }
         }
     }
 
