@@ -7,6 +7,7 @@ mod commands;
 mod config;
 mod orchestrator;
 pub mod setups;
+pub mod tui;
 
 pub use command_context::*;
 pub use commands::*;
