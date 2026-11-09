@@ -10,6 +10,8 @@ pub fn to_action(key: KeyEvent, mode: &Mode) -> Option<Action> {
         return match (key.code, mode) {
             (KeyCode::Char('c'), _) => Some(Action::Abort),
             (KeyCode::Char('s'), Mode::Navigating) => Some(Action::Confirm),
+            (KeyCode::Backspace, Mode::Editing { .. }) => Some(Action::DeleteWordBackward),
+            (KeyCode::Delete, Mode::Editing { .. }) => Some(Action::DeleteWordForward),
             _ => None,
         };
     }
@@ -20,7 +22,13 @@ pub fn to_action(key: KeyEvent, mode: &Mode) -> Option<Action> {
         (KeyCode::Enter, Mode::Navigating) => Some(Action::Edit),
         (KeyCode::Esc, Mode::Navigating) => Some(Action::Abort),
         (KeyCode::Char(character), Mode::Editing { .. }) => Some(Action::Input(character)),
+        (KeyCode::Backspace, Mode::Editing { .. }) if key.modifiers.contains(KeyModifiers::ALT) => {
+            Some(Action::DeleteWordBackward)
+        }
         (KeyCode::Backspace, Mode::Editing { .. }) => Some(Action::Backspace),
+        (KeyCode::Delete, Mode::Editing { .. }) if key.modifiers.contains(KeyModifiers::ALT) => {
+            Some(Action::DeleteWordForward)
+        }
         (KeyCode::Delete, Mode::Editing { .. }) => Some(Action::Delete),
         (KeyCode::Left, Mode::Editing { .. }) => Some(Action::Left),
         (KeyCode::Right, Mode::Editing { .. }) => Some(Action::Right),
@@ -109,6 +117,49 @@ mod tests {
         let shifted = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT);
 
         assert_eq!(Some(Action::Input('A')), to_action(shifted, &editing()));
+    }
+
+    #[test]
+    fn word_deletion_keys_while_editing() {
+        let mode = editing();
+
+        assert_eq!(
+            Some(Action::DeleteWordBackward),
+            to_action(
+                KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL),
+                &mode
+            )
+        );
+        assert_eq!(
+            Some(Action::DeleteWordBackward),
+            to_action(KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT), &mode)
+        );
+        assert_eq!(
+            Some(Action::DeleteWordForward),
+            to_action(KeyEvent::new(KeyCode::Delete, KeyModifiers::CONTROL), &mode)
+        );
+        assert_eq!(
+            Some(Action::DeleteWordForward),
+            to_action(KeyEvent::new(KeyCode::Delete, KeyModifiers::ALT), &mode)
+        );
+    }
+
+    #[test]
+    fn word_deletion_keys_are_ignored_while_navigating() {
+        for key in [
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL),
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT),
+            KeyEvent::new(KeyCode::Delete, KeyModifiers::CONTROL),
+            KeyEvent::new(KeyCode::Delete, KeyModifiers::ALT),
+        ] {
+            assert_eq!(None, to_action(key, &Mode::Navigating), "{key:?}");
+        }
+    }
+
+    #[test]
+    fn ctrl_h_and_ctrl_w_are_not_mapped_while_editing() {
+        assert_eq!(None, to_action(ctrl('h'), &editing()));
+        assert_eq!(None, to_action(ctrl('w'), &editing()));
     }
 
     #[test]
