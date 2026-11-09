@@ -33,7 +33,9 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
 
     let table_rows = model_rows.iter().enumerate().map(|(index, row)| {
         let value = match model.mode() {
-            Mode::Editing { buffer } if index == model.selected() => format!("{buffer}{CURSOR}"),
+            Mode::Editing { buffer, .. } if index == model.selected() => {
+                format!("{buffer}{CURSOR}")
+            }
             _ => row.value.clone().unwrap_or_default(),
         };
         let origin = row.origin.map(|origin| format!("{origin:?}")).unwrap_or_default();
