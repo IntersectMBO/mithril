@@ -42,6 +42,7 @@ mod tests {
     fn editing() -> Mode {
         Mode::Editing {
             buffer: String::new(),
+            cursor: 0,
         }
     }
 

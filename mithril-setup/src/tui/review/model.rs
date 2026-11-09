@@ -16,11 +16,26 @@ pub enum Action {
     /// Start editing the selected row
     Edit,
 
-    /// Type a character in the edited value
+    /// Type a character at the cursor
     Input(char),
 
-    /// Remove the last character of the edited value
+    /// Remove the character before the cursor
     Backspace,
+
+    /// Remove the character under the cursor
+    Delete,
+
+    /// Move the cursor one character to the left
+    Left,
+
+    /// Move the cursor one character to the right
+    Right,
+
+    /// Move the cursor to the start of the edited value
+    Home,
+
+    /// Move the cursor to the end of the edited value
+    End,
 
     /// Save the edited value
     Save,
@@ -45,6 +60,9 @@ pub enum Mode {
     Editing {
         /// Value being edited
         buffer: String,
+
+        /// Position of the cursor in the buffer, in characters
+        cursor: usize,
     },
 }
 
@@ -103,41 +121,58 @@ impl ReviewModel {
 
     /// Apply the action, returns the outcome when the review is over
     pub fn update(&mut self, action: Action) -> Option<ReviewOutcome> {
-        match (&mut self.mode, action) {
-            (Mode::Navigating, Action::Up) => self.selected = self.selected.saturating_sub(1),
-            (Mode::Navigating, Action::Down) => {
-                if self.selected + 1 < self.specs.len() {
-                    self.selected += 1;
-                }
+        if action == Action::Abort {
+            return Some(ReviewOutcome::Aborted);
+        }
+
+        match self.mode {
+            Mode::Navigating => self.update_navigating(action),
+            Mode::Editing { .. } => {
+                self.update_editing(action);
+                None
             }
-            (Mode::Navigating, Action::Edit) => {
-                if let Some(spec) = self.specs.get(self.selected) {
-                    let buffer = self
-                        .store
-                        .get(spec.key)
-                        .map(|entry| entry.value.clone())
-                        .unwrap_or_default();
-                    self.mode = Mode::Editing { buffer };
-                }
-            }
-            (Mode::Editing { buffer }, Action::Input(character)) => buffer.push(character),
-            (Mode::Editing { buffer }, Action::Backspace) => {
-                buffer.pop();
-            }
-            (Mode::Editing { buffer }, Action::Save) => {
-                let value = std::mem::take(buffer);
-                self.save_selected_value(&value);
-                self.mode = Mode::Navigating;
-            }
-            (Mode::Editing { .. }, Action::Cancel) => self.mode = Mode::Navigating,
-            (Mode::Navigating, Action::Confirm) => {
-                return Some(ReviewOutcome::Confirmed(self.store.clone()));
-            }
-            (_, Action::Abort) => return Some(ReviewOutcome::Aborted),
+        }
+    }
+
+    fn update_navigating(&mut self, action: Action) -> Option<ReviewOutcome> {
+        match action {
+            Action::Up if self.selected > 0 => self.selected -= 1,
+            Action::Down if self.selected + 1 < self.specs.len() => self.selected += 1,
+            Action::Edit => self.start_editing_selected_value(),
+            Action::Confirm => return Some(ReviewOutcome::Confirmed(self.store.clone())),
             _ => {}
         }
 
         None
+    }
+
+    fn update_editing(&mut self, action: Action) {
+        let Mode::Editing { buffer, cursor } = &mut self.mode else {
+            return;
+        };
+
+        match action {
+            Action::Save => {
+                let value = std::mem::take(buffer);
+                self.save_selected_value(&value);
+                self.mode = Mode::Navigating;
+            }
+            Action::Cancel => self.mode = Mode::Navigating,
+            action => edit_buffer(buffer, cursor, action),
+        }
+    }
+
+    /// Start editing the value of the selected row, with the cursor at its end
+    fn start_editing_selected_value(&mut self) {
+        if let Some(spec) = self.specs.get(self.selected) {
+            let buffer = self
+                .store
+                .get(spec.key)
+                .map(|entry| entry.value.clone())
+                .unwrap_or_default();
+            let cursor = buffer.chars().count();
+            self.mode = Mode::Editing { buffer, cursor };
+        }
     }
 
     /// Set (or unset if empty) the value of the selected row and re-check it
@@ -181,6 +216,39 @@ impl ReviewModel {
             })
             .collect()
     }
+}
+
+/// Apply a text editing action to the buffer and its cursor, other actions are ignored
+fn edit_buffer(buffer: &mut String, cursor: &mut usize, action: Action) {
+    let length = buffer.chars().count();
+
+    match action {
+        Action::Input(character) => {
+            buffer.insert(byte_index(buffer, *cursor), character);
+            *cursor += 1;
+        }
+        Action::Backspace if *cursor > 0 => {
+            *cursor -= 1;
+            buffer.remove(byte_index(buffer, *cursor));
+        }
+        Action::Delete if *cursor < length => {
+            buffer.remove(byte_index(buffer, *cursor));
+        }
+        Action::Left if *cursor > 0 => *cursor -= 1,
+        Action::Right if *cursor < length => *cursor += 1,
+        Action::Home => *cursor = 0,
+        Action::End => *cursor = length,
+        _ => {}
+    }
+}
+
+/// Byte index in the buffer of the character at the given position, or the buffer length past its end
+fn byte_index(buffer: &str, position: usize) -> usize {
+    buffer
+        .char_indices()
+        .nth(position)
+        .map(|(index, _)| index)
+        .unwrap_or(buffer.len())
 }
 
 #[cfg(test)]
@@ -313,10 +381,23 @@ mod tests {
             ReviewModel::new(vec![port_field_spec()], store, vec![])
         }
 
+        /// Editing mode with the cursor at the end of the buffer
         fn editing(buffer: &str) -> Mode {
+            editing_at(buffer, buffer.chars().count())
+        }
+
+        fn editing_at(buffer: &str, cursor: usize) -> Mode {
             Mode::Editing {
                 buffer: buffer.to_string(),
+                cursor,
             }
+        }
+
+        /// Model editing the given port value
+        fn editing_port(value: &str) -> ReviewModel {
+            let mut model = model_with_port(Some(value));
+            model.update(Action::Edit);
+            model
         }
 
         fn port_row(model: &ReviewModel) -> Row {
@@ -450,6 +531,106 @@ mod tests {
             let row = port_row(&model);
             assert_eq!(Some("3000".to_string()), row.value);
             assert_eq!(Some(Origin::Discovered), row.origin);
+        }
+
+        mod cursor {
+            use super::*;
+
+            #[test]
+            fn left_and_right_move_the_cursor() {
+                let mut model = editing_port("abcd");
+
+                model.update(Action::Left);
+                model.update(Action::Left);
+                assert_eq!(&editing_at("abcd", 2), model.mode());
+
+                model.update(Action::Right);
+                assert_eq!(&editing_at("abcd", 3), model.mode());
+            }
+
+            #[test]
+            fn left_at_the_start_and_right_at_the_end_keep_the_cursor() {
+                let mut model = editing_port("ab");
+
+                model.update(Action::Right);
+                assert_eq!(&editing_at("ab", 2), model.mode());
+
+                model.update(Action::Home);
+                model.update(Action::Left);
+                assert_eq!(&editing_at("ab", 0), model.mode());
+            }
+
+            #[test]
+            fn home_and_end_move_the_cursor_to_the_bounds() {
+                let mut model = editing_port("abcd");
+
+                model.update(Action::Home);
+                assert_eq!(&editing_at("abcd", 0), model.mode());
+
+                model.update(Action::End);
+                assert_eq!(&editing_at("abcd", 4), model.mode());
+            }
+
+            #[test]
+            fn input_inserts_at_the_cursor() {
+                let mut model = editing_port("abcd");
+                model.update(Action::Left);
+                model.update(Action::Left);
+
+                model.update(Action::Input('X'));
+
+                assert_eq!(&editing_at("abXcd", 3), model.mode());
+            }
+
+            #[test]
+            fn backspace_removes_the_character_before_the_cursor() {
+                let mut model = editing_port("abcd");
+                model.update(Action::Left);
+
+                model.update(Action::Backspace);
+
+                assert_eq!(&editing_at("abd", 2), model.mode());
+            }
+
+            #[test]
+            fn backspace_at_the_start_does_nothing() {
+                let mut model = editing_port("ab");
+                model.update(Action::Home);
+
+                model.update(Action::Backspace);
+
+                assert_eq!(&editing_at("ab", 0), model.mode());
+            }
+
+            #[test]
+            fn delete_removes_the_character_under_the_cursor() {
+                let mut model = editing_port("abcd");
+                model.update(Action::Home);
+
+                model.update(Action::Delete);
+
+                assert_eq!(&editing_at("bcd", 0), model.mode());
+            }
+
+            #[test]
+            fn delete_at_the_end_does_nothing() {
+                let mut model = editing_port("ab");
+
+                model.update(Action::Delete);
+
+                assert_eq!(&editing_at("ab", 2), model.mode());
+            }
+
+            #[test]
+            fn multibyte_characters_count_as_one_cursor_step() {
+                let mut model = editing_port("aéb");
+                model.update(Action::Left);
+
+                model.update(Action::Backspace);
+                model.update(Action::Input('è'));
+
+                assert_eq!(&editing_at("aèb", 2), model.mode());
+            }
         }
     }
 
