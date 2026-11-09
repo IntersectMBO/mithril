@@ -13,6 +13,8 @@ pub fn to_action(key: KeyEvent, mode: &Mode) -> Option<Action> {
     const SHIFT: KeyModifiers = KeyModifiers::SHIFT;
     const CTRL: KeyModifiers = KeyModifiers::CONTROL;
     const ALT: KeyModifiers = KeyModifiers::ALT;
+    // On Windows, AltGr is reported as Ctrl+Alt
+    const ALTGR: KeyModifiers = KeyModifiers::CONTROL.union(KeyModifiers::ALT);
 
     match (mode, key.modifiers, key.code) {
         (_, CTRL, Char('c')) => Some(Action::Abort),
@@ -23,7 +25,9 @@ pub fn to_action(key: KeyEvent, mode: &Mode) -> Option<Action> {
         (Mode::Navigating, NONE, Esc) => Some(Action::Abort),
         (Mode::Navigating, CTRL, Char('s')) => Some(Action::Confirm),
 
-        (Mode::Editing { .. }, NONE | SHIFT, Char(character)) => Some(Action::Input(character)),
+        (Mode::Editing { .. }, NONE | SHIFT | ALTGR, Char(character)) => {
+            Some(Action::Input(character))
+        }
         (Mode::Editing { .. }, NONE, Backspace) => Some(Action::Backspace),
         (Mode::Editing { .. }, NONE, Delete) => Some(Action::Delete),
         (Mode::Editing { .. }, NONE, Left) => Some(Action::Left),
@@ -183,6 +187,31 @@ mod tests {
                 assert_eq!(None, to_action(key, &Mode::Navigating), "{key:?}");
             }
         }
+    }
+
+    #[test]
+    fn altgr_characters_are_input_while_editing() {
+        // On Windows, AltGr is reported as Ctrl+Alt (e.g. AltGr+8 gives '\' on AZERTY)
+        let altgr = KeyModifiers::CONTROL | KeyModifiers::ALT;
+
+        assert_eq!(
+            Some(Action::Input('\\')),
+            to_action(KeyEvent::new(KeyCode::Char('\\'), altgr), &editing())
+        );
+        assert_eq!(
+            Some(Action::Input('@')),
+            to_action(KeyEvent::new(KeyCode::Char('@'), altgr), &editing())
+        );
+    }
+
+    #[test]
+    fn altgr_characters_are_ignored_while_navigating() {
+        let altgr = KeyModifiers::CONTROL | KeyModifiers::ALT;
+
+        assert_eq!(
+            None,
+            to_action(KeyEvent::new(KeyCode::Char('@'), altgr), &Mode::Navigating)
+        );
     }
 
     #[test]
