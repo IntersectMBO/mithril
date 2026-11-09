@@ -21,6 +21,11 @@ pub fn to_action(key: KeyEvent, mode: &Mode) -> Option<Action> {
         (KeyCode::Esc, Mode::Navigating) => Some(Action::Abort),
         (KeyCode::Char(character), Mode::Editing { .. }) => Some(Action::Input(character)),
         (KeyCode::Backspace, Mode::Editing { .. }) => Some(Action::Backspace),
+        (KeyCode::Delete, Mode::Editing { .. }) => Some(Action::Delete),
+        (KeyCode::Left, Mode::Editing { .. }) => Some(Action::Left),
+        (KeyCode::Right, Mode::Editing { .. }) => Some(Action::Right),
+        (KeyCode::Home, Mode::Editing { .. }) => Some(Action::Home),
+        (KeyCode::End, Mode::Editing { .. }) => Some(Action::End),
         (KeyCode::Enter, Mode::Editing { .. }) => Some(Action::Save),
         (KeyCode::Esc, Mode::Editing { .. }) => Some(Action::Cancel),
         _ => None,
@@ -73,6 +78,30 @@ mod tests {
         assert_eq!(Some(Action::Save), to_action(key(KeyCode::Enter), &mode));
         assert_eq!(Some(Action::Cancel), to_action(key(KeyCode::Esc), &mode));
         assert_eq!(Some(Action::Abort), to_action(ctrl('c'), &mode));
+    }
+
+    #[test]
+    fn cursor_keys_while_editing() {
+        let mode = editing();
+
+        assert_eq!(Some(Action::Left), to_action(key(KeyCode::Left), &mode));
+        assert_eq!(Some(Action::Right), to_action(key(KeyCode::Right), &mode));
+        assert_eq!(Some(Action::Home), to_action(key(KeyCode::Home), &mode));
+        assert_eq!(Some(Action::End), to_action(key(KeyCode::End), &mode));
+        assert_eq!(Some(Action::Delete), to_action(key(KeyCode::Delete), &mode));
+    }
+
+    #[test]
+    fn cursor_keys_are_ignored_while_navigating() {
+        for code in [
+            KeyCode::Left,
+            KeyCode::Right,
+            KeyCode::Home,
+            KeyCode::End,
+            KeyCode::Delete,
+        ] {
+            assert_eq!(None, to_action(key(code), &Mode::Navigating), "{code:?}");
+        }
     }
 
     #[test]
