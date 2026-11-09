@@ -33,8 +33,10 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
 
     let table_rows = model_rows.iter().enumerate().map(|(index, row)| {
         let value = match model.mode() {
-            Mode::Editing { buffer, .. } if index == model.selected() => {
-                format!("{buffer}{CURSOR}")
+            Mode::Editing { buffer, cursor } if index == model.selected() => {
+                let before: String = buffer.chars().take(*cursor).collect();
+                let after: String = buffer.chars().skip(*cursor).collect();
+                format!("{before}{CURSOR}{after}")
             }
             _ => row.value.clone().unwrap_or_default(),
         };
@@ -184,6 +186,21 @@ mod tests {
 
         assert!(text.contains(EDITING_HELP), "{text}");
         assert!(!text.contains(NAVIGATING_HELP), "{text}");
+    }
+
+    #[test]
+    fn shows_the_cursor_at_its_position_in_the_edited_buffer() {
+        let mut model = model();
+        model.update(Action::Edit);
+        model.update(Action::Left);
+        model.update(Action::Left);
+
+        let text = rendered_text(&model);
+
+        assert!(
+            text.contains(&format!("/ipc/node.sock{CURSOR}et")),
+            "{text}"
+        );
     }
 
     #[test]
