@@ -27,6 +27,12 @@ pub enum Action {
 
     /// Cancel the edition, discarding the edited value
     Cancel,
+
+    /// Confirm the reviewed values, ending the review
+    Confirm,
+
+    /// Abort the review
+    Abort,
 }
 
 /// Interaction mode of the review table
@@ -124,6 +130,10 @@ impl ReviewModel {
                 self.mode = Mode::Navigating;
             }
             (Mode::Editing { .. }, Action::Cancel) => self.mode = Mode::Navigating,
+            (Mode::Navigating, Action::Confirm) => {
+                return Some(ReviewOutcome::Confirmed(self.store.clone()));
+            }
+            (_, Action::Abort) => return Some(ReviewOutcome::Aborted),
             _ => {}
         }
 
@@ -440,6 +450,58 @@ mod tests {
             let row = port_row(&model);
             assert_eq!(Some("3000".to_string()), row.value);
             assert_eq!(Some(Origin::Discovered), row.origin);
+        }
+    }
+
+    mod ending {
+        use super::*;
+
+        fn model() -> ReviewModel {
+            let mut store = Store::default();
+            store.set("a", "value", Origin::Discovered);
+
+            ReviewModel::new(vec![spec("a", "A")], store, vec![])
+        }
+
+        #[test]
+        fn confirm_returns_the_reviewed_store() {
+            let mut model = model();
+            model.update(Action::Edit);
+            model.update(Action::Input('!'));
+            model.update(Action::Save);
+
+            let outcome = model.update(Action::Confirm);
+
+            let mut expected_store = Store::default();
+            expected_store.set("a", "value!", Origin::User);
+            assert_eq!(Some(ReviewOutcome::Confirmed(expected_store)), outcome);
+        }
+
+        #[test]
+        fn confirm_is_ignored_while_editing() {
+            let mut model = model();
+            model.update(Action::Edit);
+
+            let outcome = model.update(Action::Confirm);
+
+            assert_eq!(None, outcome);
+        }
+
+        #[test]
+        fn abort_returns_aborted_while_navigating() {
+            let outcome = model().update(Action::Abort);
+
+            assert_eq!(Some(ReviewOutcome::Aborted), outcome);
+        }
+
+        #[test]
+        fn abort_returns_aborted_while_editing() {
+            let mut model = model();
+            model.update(Action::Edit);
+
+            let outcome = model.update(Action::Abort);
+
+            assert_eq!(Some(ReviewOutcome::Aborted), outcome);
         }
     }
 }
