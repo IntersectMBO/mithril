@@ -39,14 +39,4 @@ mod tests {
         let cmd = SignerCommand {};
         assert!(cmd.execute(context).await.is_err());
     }
-
-    #[tokio::test]
-    async fn signer_command_runs_the_orchestrator_to_completion_when_unstable_is_enabled() {
-        let context = CommandContext::new(true, false, test_logger());
-        let cmd = SignerCommand {};
-
-        let result = cmd.execute(context).await;
-
-        assert!(result.is_ok(), "Expected Ok, got {result:?}");
-    }
 }

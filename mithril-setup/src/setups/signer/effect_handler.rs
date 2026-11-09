@@ -6,6 +6,7 @@ use crate::runner::{EffectHandler, ReviewOutcome};
 use crate::schema::{FieldError, check_store};
 use crate::setups::signer::{CARDANO_NODE_SOCKET_PATH, NETWORK, signer_schema};
 use crate::store::{Origin, Store};
+use crate::tui;
 
 /// Effect handler performing the I/O needed to setup a Mithril signer
 pub struct SignerEffectHandler;
@@ -30,14 +31,21 @@ impl EffectHandler for SignerEffectHandler {
     }
 
     async fn review(&self, store: Store, errors: Vec<FieldError>) -> ReviewOutcome {
-        // No way for the user to fix the errors until the TUI is implemented
-        if errors.is_empty() {
-            ReviewOutcome::Confirmed(store)
-        } else {
-            for error in errors {
-                eprintln!("{}: {}", error.key, error.message);
+        let review = tokio::task::spawn_blocking(move || {
+            tui::terminal::review(signer_schema(), store, errors)
+        })
+        .await;
+
+        match review {
+            Ok(Ok(outcome)) => outcome,
+            Ok(Err(error)) => {
+                eprintln!("Review failed: {error}");
+                ReviewOutcome::Aborted
             }
-            ReviewOutcome::Aborted
+            Err(error) => {
+                eprintln!("Review task failed: {error}");
+                ReviewOutcome::Aborted
+            }
         }
     }
 
@@ -67,22 +75,6 @@ mod tests {
         let result = SignerEffectHandler.guess(Store::default()).await;
 
         assert_eq!(Ok(Store::default()), result);
-    }
-
-    #[tokio::test]
-    async fn review_confirms_the_given_store_when_there_is_no_errors() {
-        let result = SignerEffectHandler.review(Store::default(), vec![]).await;
-
-        assert_eq!(ReviewOutcome::Confirmed(Store::default()), result);
-    }
-
-    #[tokio::test]
-    async fn review_aborts_when_there_are_errors() {
-        let errors = vec![FieldError::new("key", "invalid")];
-
-        let result = SignerEffectHandler.review(Store::default(), errors).await;
-
-        assert_eq!(ReviewOutcome::Aborted, result);
     }
 
     #[tokio::test]
