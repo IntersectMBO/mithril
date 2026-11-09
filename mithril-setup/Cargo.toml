@@ -16,6 +16,7 @@ async-trait = { workspace = true }
 clap = { workspace = true }
 config = { workspace = true }
 mithril-doc = { path = "../internal/mithril-doc" }
+ratatui = "0.30.2"
 serde_json = { workspace = true }
 slog = { workspace = true, features = ["max_level_trace", "release_max_level_debug"] }
 slog-async = { workspace = true }
