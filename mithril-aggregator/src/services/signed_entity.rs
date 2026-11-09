@@ -2,7 +2,7 @@
 //!
 //! This service is responsible for dealing with [SignedEntity] type.
 //! It creates [Artifact] that can be accessed by clients.
-use anyhow::{Context, anyhow};
+use anyhow::Context;
 use async_trait::async_trait;
 use chrono::Utc;
 use slog::{Logger, info, warn};
@@ -323,16 +323,15 @@ impl SignedEntityService for MithrilSignedEntityService {
         signed_entity_type: SignedEntityType,
         certificate: &Certificate,
     ) -> StdResult<JoinHandle<StdResult<()>>> {
-        if self.signed_entity_type_lock.is_locked(&signed_entity_type) {
-            return Err(anyhow!(
-                "Signed entity type '{:?}' is already locked",
-                signed_entity_type
-            ));
-        }
+        let lock_guard = self
+            .signed_entity_type_lock
+            .try_lock(&signed_entity_type)
+            .with_context(|| {
+                format!("Signed entity type '{signed_entity_type:?}' is already locked")
+            })?;
 
         let service = self.clone();
         let certificate_cloned = certificate.clone();
-        let lock_guard = service.signed_entity_type_lock.lock(&signed_entity_type);
 
         Ok(tokio::task::spawn(async move {
             let signed_entity_type_clone = signed_entity_type.clone();
@@ -472,6 +471,8 @@ impl SignedEntityService for MithrilSignedEntityService {
 #[cfg(test)]
 mod tests {
     use std::{sync::atomic::Ordering, time::Duration};
+
+    use anyhow::anyhow;
 
     use mithril_common::{
         entities::{BlockNumberOffset, CardanoTransactionsSnapshot, Epoch, StakeDistribution},

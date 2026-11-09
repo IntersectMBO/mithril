@@ -62,6 +62,30 @@ impl SignedEntityTypeLock {
         }
     }
 
+    /// Lock a signed entity only if it is not already locked, the lock is released when the
+    /// returned guard is dropped.
+    ///
+    /// Return `None` if the entity is already locked.
+    ///
+    /// Note: a guard returned by this method does not prevent the entity from being locked again
+    /// with [lock][Self::lock].
+    pub fn try_lock<T: Into<SignedEntityTypeDiscriminants>>(
+        &self,
+        entity_type: T,
+    ) -> Option<SignedEntityTypeLockGuard> {
+        let entity_type = entity_type.into();
+        match self.locked_entities().entry(entity_type) {
+            Entry::Occupied(_) => None,
+            Entry::Vacant(entry) => {
+                entry.insert(1);
+                Some(SignedEntityTypeLockGuard {
+                    locked_entities: self.locked_entities.clone(),
+                    entity_type,
+                })
+            }
+        }
+    }
+
     /// Check if there are any locked signed entities.
     pub fn has_locked_entities(&self) -> bool {
         !self.locked_entities().is_empty()
@@ -237,5 +261,69 @@ mod tests {
         let _guard =
             signed_entity_type_lock.lock(SignedEntityTypeDiscriminants::MithrilStakeDistribution);
         assert!(signed_entity_type_lock.has_locked_entities());
+    }
+
+    mod try_lock {
+        use super::*;
+
+        const ENTITY: SignedEntityTypeDiscriminants =
+            SignedEntityTypeDiscriminants::MithrilStakeDistribution;
+
+        #[test]
+        fn lock_a_signed_entity_that_is_not_locked() {
+            let signed_entity_type_lock = SignedEntityTypeLock::new();
+
+            let guard = signed_entity_type_lock.try_lock(ENTITY);
+
+            assert!(guard.is_some());
+            assert!(signed_entity_type_lock.is_locked(ENTITY));
+        }
+
+        #[test]
+        fn return_none_if_the_signed_entity_is_already_locked_with_lock() {
+            let signed_entity_type_lock = SignedEntityTypeLock::new();
+            let _guard = signed_entity_type_lock.lock(ENTITY);
+
+            assert!(signed_entity_type_lock.try_lock(ENTITY).is_none());
+        }
+
+        #[test]
+        fn return_none_if_the_signed_entity_is_already_locked_with_try_lock() {
+            let signed_entity_type_lock = SignedEntityTypeLock::new();
+            let _guard = signed_entity_type_lock.try_lock(ENTITY);
+
+            assert!(signed_entity_type_lock.try_lock(ENTITY).is_none());
+        }
+
+        #[test]
+        fn dropping_the_guard_releases_the_entity() {
+            let signed_entity_type_lock = SignedEntityTypeLock::new();
+
+            let guard = signed_entity_type_lock.try_lock(ENTITY);
+            drop(guard);
+
+            assert!(!signed_entity_type_lock.is_locked(ENTITY));
+        }
+
+        #[test]
+        fn lock_can_lock_an_entity_already_locked_with_try_lock() {
+            let signed_entity_type_lock = SignedEntityTypeLock::new();
+
+            let first_guard = signed_entity_type_lock.try_lock(ENTITY);
+            let _second_guard = signed_entity_type_lock.lock(ENTITY);
+            drop(first_guard);
+
+            assert!(signed_entity_type_lock.is_locked(ENTITY));
+        }
+
+        #[test]
+        fn failing_to_lock_an_already_locked_entity_does_not_release_it() {
+            let signed_entity_type_lock = SignedEntityTypeLock::new();
+            let _guard = signed_entity_type_lock.lock(ENTITY);
+
+            let _ = signed_entity_type_lock.try_lock(ENTITY);
+
+            assert!(signed_entity_type_lock.is_locked(ENTITY));
+        }
     }
 }
