@@ -86,7 +86,9 @@ A certificate chain is considered valid when there is at least one valid certifi
 
 A **non-genesis certificate** is valid if and only if the `AVK` used to verify the multi-signature is also part of the signed message used to create a valid multi-signature in a previously sealed certificate.
 
-The genesis certificate is valid if and only if its genesis signature is verified with the advertised public genesis key.
+The genesis certificate is valid if and only if its genesis signature is verified with the advertised public genesis key, and its `AVK` and protocol parameters are the ones of the message signed by the genesis signature.
+
+The certificate following the genesis certificate is valid only if it is in the next epoch: the `AVK` signed by the genesis certificate is the one of the next epoch.
 
 The certificate following a certificate whose recursive SNARK aggregate signature certifies the whole chain is valid only if it is in the next epoch too: such a signature covers the signed message of its certificate only, so the `AVK` and protocol parameters it chains are the signed ones of the next epoch.
 
@@ -113,7 +115,9 @@ An implementation of the algorithm would work as follows for a certificate:
     - **Step 6.2.2**: Verify (or fail) that the `current_epoch` of the `previous_certificate` is part of the message signed by the genesis_certificate of the `previous_certificate`
     - **Step 6.2.3**: Verify (or fail) that the `current_avk` of the `current_certificate` is part of the message signed by the genesis signature of the `previous_certificate`
     - **Step 6.2.4**: Verify (or fail) that the `current_protocol_parameters` of the `current_certificate` is part of the message signed by the genesis signature of the `previous_certificate`
-    - **Step 6.2.5**: The certificate is valid (success).
+    - **Step 6.2.5**: Verify (or fail) that the `current_epoch` of the `current_certificate` is the epoch following the `current_epoch` of the `previous_certificate`
+    - **Step 6.2.6**: Verify (or fail) that the `current_avk` and the `current_protocol_parameters` of the `previous_certificate` are the ones of the message signed by its genesis signature, and that its SNARK `current_avk` is the one of the signed message when both are present
+    - **Step 6.2.7**: The certificate is valid (success).
 
 :::tip
 
