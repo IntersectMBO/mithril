@@ -5,45 +5,38 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::tui::review::model::{Action, Mode};
 
 /// Map a key event to the action it triggers in the given mode, if any
+///
+/// Modifiers are matched exactly: a binding is not triggered when other modifiers are held.
 pub fn to_action(key: KeyEvent, mode: &Mode) -> Option<Action> {
-    if key.modifiers.contains(KeyModifiers::CONTROL) {
-        return match (key.code, mode) {
-            (KeyCode::Char('c'), _) => Some(Action::Abort),
-            (KeyCode::Char('s'), Mode::Navigating) => Some(Action::Confirm),
-            (KeyCode::Backspace, Mode::Editing { .. }) => Some(Action::DeleteWordBackward),
-            (KeyCode::Delete, Mode::Editing { .. }) => Some(Action::DeleteWordForward),
-            (KeyCode::Left, Mode::Editing { .. }) => Some(Action::MoveWordBackward),
-            (KeyCode::Right, Mode::Editing { .. }) => Some(Action::MoveWordForward),
-            _ => None,
-        };
-    }
+    use KeyCode::*;
+    const NONE: KeyModifiers = KeyModifiers::NONE;
+    const SHIFT: KeyModifiers = KeyModifiers::SHIFT;
+    const CTRL: KeyModifiers = KeyModifiers::CONTROL;
+    const ALT: KeyModifiers = KeyModifiers::ALT;
 
-    match (key.code, mode) {
-        (KeyCode::Up, Mode::Navigating) => Some(Action::Up),
-        (KeyCode::Down, Mode::Navigating) => Some(Action::Down),
-        (KeyCode::Enter, Mode::Navigating) => Some(Action::Edit),
-        (KeyCode::Esc, Mode::Navigating) => Some(Action::Abort),
-        (KeyCode::Char(character), Mode::Editing { .. }) => Some(Action::Input(character)),
-        (KeyCode::Backspace, Mode::Editing { .. }) if key.modifiers.contains(KeyModifiers::ALT) => {
-            Some(Action::DeleteWordBackward)
-        }
-        (KeyCode::Backspace, Mode::Editing { .. }) => Some(Action::Backspace),
-        (KeyCode::Delete, Mode::Editing { .. }) if key.modifiers.contains(KeyModifiers::ALT) => {
-            Some(Action::DeleteWordForward)
-        }
-        (KeyCode::Delete, Mode::Editing { .. }) => Some(Action::Delete),
-        (KeyCode::Left, Mode::Editing { .. }) if key.modifiers.contains(KeyModifiers::ALT) => {
-            Some(Action::MoveWordBackward)
-        }
-        (KeyCode::Left, Mode::Editing { .. }) => Some(Action::Left),
-        (KeyCode::Right, Mode::Editing { .. }) if key.modifiers.contains(KeyModifiers::ALT) => {
-            Some(Action::MoveWordForward)
-        }
-        (KeyCode::Right, Mode::Editing { .. }) => Some(Action::Right),
-        (KeyCode::Home, Mode::Editing { .. }) => Some(Action::Home),
-        (KeyCode::End, Mode::Editing { .. }) => Some(Action::End),
-        (KeyCode::Enter, Mode::Editing { .. }) => Some(Action::Save),
-        (KeyCode::Esc, Mode::Editing { .. }) => Some(Action::Cancel),
+    match (mode, key.modifiers, key.code) {
+        (_, CTRL, Char('c')) => Some(Action::Abort),
+
+        (Mode::Navigating, NONE, Up) => Some(Action::Up),
+        (Mode::Navigating, NONE, Down) => Some(Action::Down),
+        (Mode::Navigating, NONE, Enter) => Some(Action::Edit),
+        (Mode::Navigating, NONE, Esc) => Some(Action::Abort),
+        (Mode::Navigating, CTRL, Char('s')) => Some(Action::Confirm),
+
+        (Mode::Editing { .. }, NONE | SHIFT, Char(character)) => Some(Action::Input(character)),
+        (Mode::Editing { .. }, NONE, Backspace) => Some(Action::Backspace),
+        (Mode::Editing { .. }, NONE, Delete) => Some(Action::Delete),
+        (Mode::Editing { .. }, NONE, Left) => Some(Action::Left),
+        (Mode::Editing { .. }, NONE, Right) => Some(Action::Right),
+        (Mode::Editing { .. }, NONE, Home) => Some(Action::Home),
+        (Mode::Editing { .. }, NONE, End) => Some(Action::End),
+        (Mode::Editing { .. }, NONE, Enter) => Some(Action::Save),
+        (Mode::Editing { .. }, NONE, Esc) => Some(Action::Cancel),
+        (Mode::Editing { .. }, CTRL | ALT, Backspace) => Some(Action::DeleteWordBackward),
+        (Mode::Editing { .. }, CTRL | ALT, Delete) => Some(Action::DeleteWordForward),
+        (Mode::Editing { .. }, CTRL | ALT, Left) => Some(Action::MoveWordBackward),
+        (Mode::Editing { .. }, CTRL | ALT, Right) => Some(Action::MoveWordForward),
+
         _ => None,
     }
 }
@@ -190,6 +183,30 @@ mod tests {
                 assert_eq!(None, to_action(key, &Mode::Navigating), "{key:?}");
             }
         }
+    }
+
+    #[test]
+    fn extra_modifiers_do_not_trigger_a_binding() {
+        let ctrl_shift = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+
+        assert_eq!(
+            None,
+            to_action(KeyEvent::new(KeyCode::Left, ctrl_shift), &editing())
+        );
+        assert_eq!(
+            None,
+            to_action(
+                KeyEvent::new(KeyCode::Char('a'), KeyModifiers::ALT),
+                &editing()
+            )
+        );
+        assert_eq!(
+            None,
+            to_action(
+                KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT),
+                &Mode::Navigating
+            )
+        );
     }
 
     #[test]
