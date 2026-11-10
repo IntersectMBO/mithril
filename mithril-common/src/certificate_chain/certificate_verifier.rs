@@ -70,18 +70,20 @@ pub enum CertificateVerifierError {
     CertificateChainProtocolParametersUnmatch,
 
     /// Error raised when validating a genesis [Certificate] if its `aggregate_verification_key`
-    /// doesn't match its signed `next_aggregate_verification_key`.
+    /// doesn't match its signed `next_aggregate_verification_key`, or if that signed part is
+    /// missing or can not be decoded.
     #[error("genesis certificate AVK unmatch error")]
     GenesisCertificateAVKUnmatch,
 
     /// Error raised when validating a genesis [Certificate] if the hash of its
-    /// `metadata.protocol_parameters` doesn't match its signed `next_protocol_parameters`.
+    /// `metadata.protocol_parameters` doesn't match its signed `next_protocol_parameters`, or if
+    /// that signed part is missing.
     #[error("genesis certificate protocol parameters unmatch error")]
     GenesisCertificateProtocolParametersUnmatch,
 
     /// Error raised when validating a genesis [Certificate] if both its
     /// `aggregate_verification_key_snark` and its signed `next_snark_aggregate_verification_key`
-    /// are present and don't match.
+    /// are present and don't match, or if that signed part can not be decoded.
     #[cfg(feature = "snark")]
     #[error("genesis certificate SNARK AVK unmatch error")]
     GenesisCertificateSnarkAVKUnmatch,
@@ -104,6 +106,15 @@ pub enum CertificateVerifierError {
     /// verification key signed by a genesis certificate is the one of the next epoch.
     #[error("certificate chain epoch after genesis unmatch error")]
     CertificateChainEpochAfterGenesisUnmatch,
+
+    /// Error raised when validating the certificate chain if the previous certificate of the
+    /// current [Certificate] certifies the full certificate chain and the current `epoch` isn't
+    /// the one following the previous certificate `epoch`.
+    ///
+    /// The proof of such a certificate binds the signed parts of its protocol message only, so a
+    /// certificate of the same epoch could not be chained to signed data.
+    #[error("certificate chain epoch after chain certifying certificate unmatch error")]
+    CertificateChainEpochAfterChainCertifyingCertificateUnmatch,
 
     /// Error raised when validating the certificate chain if the chain loops.
     #[error("certificate chain infinite loop error")]
@@ -428,7 +439,7 @@ impl MithrilCertificateVerifier {
         previous_certificate: &Certificate,
     ) -> StdResult<()> {
         if previous_certificate.is_genesis()
-            && previous_certificate.epoch.offset_by(1).ok() != Some(certificate.epoch)
+            && !Self::is_in_the_epoch_following(certificate, previous_certificate)
         {
             return Err(anyhow!(
                 CertificateVerifierError::CertificateChainEpochAfterGenesisUnmatch
@@ -436,6 +447,38 @@ impl MithrilCertificateVerifier {
         }
 
         Ok(())
+    }
+
+    /// Verify that the certificate is in the epoch following its previous certificate, when that
+    /// one certifies the full certificate chain: its proof binds the signed parts of its protocol
+    /// message only, which chain the next epoch.
+    fn verify_is_in_the_epoch_following_a_chain_certifying_previous_certificate(
+        &self,
+        certificate: &Certificate,
+        previous_certificate: &Certificate,
+    ) -> StdResult<()> {
+        let previous_certificate_certifies_full_certificate_chain = previous_certificate
+            .signature
+            .aggregate_signature_type()
+            .is_some_and(|aggregate_signature_type| {
+                aggregate_signature_type.certifies_full_certificate_chain()
+            });
+        if previous_certificate_certifies_full_certificate_chain
+            && !Self::is_in_the_epoch_following(certificate, previous_certificate)
+        {
+            return Err(anyhow!(
+                CertificateVerifierError::CertificateChainEpochAfterChainCertifyingCertificateUnmatch
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn is_in_the_epoch_following(
+        certificate: &Certificate,
+        previous_certificate: &Certificate,
+    ) -> bool {
+        previous_certificate.epoch.offset_by(1).ok() == Some(certificate.epoch)
     }
 
     fn verify_aggregate_verification_key_chaining(
@@ -629,6 +672,10 @@ impl CertificateVerifier for MithrilCertificateVerifier {
             previous_certificate,
         )?;
         self.verify_is_in_the_epoch_following_a_genesis_previous_certificate(
+            certificate,
+            previous_certificate,
+        )?;
+        self.verify_is_in_the_epoch_following_a_chain_certifying_previous_certificate(
             certificate,
             previous_certificate,
         )?;
@@ -869,6 +916,28 @@ mod tests {
         let error = verifier
             .verify_genesis_certificate_fields_match_protocol_message(&genesis_certificate)
             .expect_err("verification should reject a genesis without a signed key");
+
+        assert_error_matches!(
+            CertificateVerifierError::GenesisCertificateAVKUnmatch,
+            error
+        )
+    }
+
+    #[test]
+    fn verify_genesis_certificate_fields_fails_if_signed_aggregate_verification_key_is_not_decodable()
+     {
+        let fake_certificates = setup_certificate_chain(2, 1);
+        let verifier = MockDependencyInjector::new()
+            .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+        let mut genesis_certificate = fake_certificates.genesis_certificate().clone();
+        genesis_certificate.protocol_message.set_message_part(
+            ProtocolMessagePartKey::NextAggregateVerificationKey,
+            "not-a-key".to_string(),
+        );
+
+        let error = verifier
+            .verify_genesis_certificate_fields_match_protocol_message(&genesis_certificate)
+            .expect_err("verification should reject a signed key that can not be decoded");
 
         assert_error_matches!(
             CertificateVerifierError::GenesisCertificateAVKUnmatch,
@@ -2406,6 +2475,120 @@ mod tests {
                 CertificateVerifierError::MissingAncillaryVerifierData,
                 error
             );
+        }
+    }
+
+    #[cfg(feature = "snark")]
+    mod chain_certifying_previous_certificate {
+        use super::*;
+
+        use crate::test::double::fake_data::ivc_snark_aggregate_signature;
+
+        fn with_ivc_snark_proof_type(mut certificate: Certificate) -> Certificate {
+            if let CertificateSignature::MultiSignature(entity_type, _) =
+                certificate.signature.clone()
+            {
+                certificate.signature = CertificateSignature::MultiSignature(
+                    entity_type,
+                    ivc_snark_aggregate_signature(),
+                );
+                certificate.hash = certificate.try_compute_hash().unwrap();
+            } else {
+                panic!("Certificate signature should be a multi signature");
+            }
+            certificate
+        }
+
+        fn chained_to(
+            mut certificate: Certificate,
+            previous_certificate: &Certificate,
+        ) -> Certificate {
+            certificate.previous_hash = previous_certificate.hash.clone();
+            certificate.hash = certificate.try_compute_hash().unwrap();
+            certificate
+        }
+
+        #[tokio::test]
+        async fn verify_standard_certificate_success_if_previous_certificate_certifies_the_full_chain_in_the_previous_epoch()
+         {
+            let fake_certificates = setup_certificate_chain(3, 1);
+            let verifier = MockDependencyInjector::new()
+                .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+            let previous_certificate = with_ivc_snark_proof_type(fake_certificates[1].clone());
+            let certificate = chained_to(fake_certificates[0].clone(), &previous_certificate);
+            assert_eq!(previous_certificate.epoch.next(), certificate.epoch);
+
+            verifier
+                .verify_standard_certificate(&certificate, &previous_certificate)
+                .await
+                .expect("verify_standard_certificate should not fail");
+        }
+
+        #[tokio::test]
+        async fn verify_standard_certificate_fails_if_previous_certificate_certifies_the_full_chain_in_the_same_epoch()
+         {
+            let fake_certificates = setup_certificate_chain(5, 2);
+            let verifier = MockDependencyInjector::new()
+                .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+            let previous_certificate = with_ivc_snark_proof_type(fake_certificates[1].clone());
+            let certificate = chained_to(fake_certificates[0].clone(), &previous_certificate);
+            assert_eq!(previous_certificate.epoch, certificate.epoch);
+
+            let error = verifier
+                .verify_standard_certificate(&certificate, &previous_certificate)
+                .await
+                .expect_err("verify_standard_certificate should fail");
+
+            assert_error_matches!(
+                CertificateVerifierError::CertificateChainEpochAfterChainCertifyingCertificateUnmatch,
+                error
+            )
+        }
+
+        #[test]
+        fn verify_epoch_following_a_chain_certifying_certificate_fails_if_the_previous_certificate_is_in_the_last_epoch()
+         {
+            let fake_certificates = setup_certificate_chain(3, 1);
+            let verifier = MockDependencyInjector::new()
+                .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+            let mut previous_certificate = with_ivc_snark_proof_type(fake_certificates[1].clone());
+            let mut certificate = fake_certificates[0].clone();
+            previous_certificate.epoch = Epoch(u64::MAX);
+            certificate.epoch = Epoch(u64::MAX);
+
+            let error = verifier
+                .verify_is_in_the_epoch_following_a_chain_certifying_previous_certificate(
+                    &certificate,
+                    &previous_certificate,
+                )
+                .expect_err(
+                    "verification should reject a chain certifying certificate without next epoch",
+                );
+
+            assert_error_matches!(
+                CertificateVerifierError::CertificateChainEpochAfterChainCertifyingCertificateUnmatch,
+                error
+            )
+        }
+
+        #[test]
+        fn verify_epoch_following_a_chain_certifying_certificate_ignores_a_previous_certificate_that_does_not_certify_the_full_chain()
+         {
+            let fake_certificates = setup_certificate_chain(5, 2);
+            let verifier = MockDependencyInjector::new()
+                .build_certificate_verifier(Arc::new(fake_certificates.genesis_verifier.clone()));
+            let previous_certificate = fake_certificates[1].clone();
+            let certificate = fake_certificates[0].clone();
+            assert_eq!(previous_certificate.epoch, certificate.epoch);
+
+            verifier
+                .verify_is_in_the_epoch_following_a_chain_certifying_previous_certificate(
+                    &certificate,
+                    &previous_certificate,
+                )
+                .expect(
+                    "a concatenation previous certificate of the same epoch should be accepted",
+                );
         }
     }
 }

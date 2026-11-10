@@ -7,7 +7,7 @@ edition = { workspace = true }
 homepage = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
-include = ["**/*.rs", "Cargo.toml", "README.md", ".gitignore", "openapi.yaml"]
+include = ["**/*.rs", "Cargo.toml", "README.md", ".gitignore", "openapi.yaml", "src/test/double/assets/ivc_snark_aggregate_signature.asset"]
 
 [package.metadata.docs.rs]
 all-features = true
