@@ -78,6 +78,25 @@ ARTIFACTS_DIR=artifacts ./devnet-query.sh
 ARTIFACTS_DIR=artifacts ./devnet-stop.sh
 ```
 
+## One step run of the Leios devnet
+
+The Leios mode runs a Cardano node supporting Leios (here a release of `input-output-hk/ouroboros-leios` given by `CARDANO_BINARY_URL`) in the Dijkstra era from epoch 0, gives the pools BLS keys, makes the local roots trustable and shrinks the block body so that a transaction load overflows the blocks and gets endorser blocks announced and certified.
+
+```bash
+# Run the Leios devnet (cardano-node 11.2.0 or later, hard fork at epoch 0)
+# Use Leios: enables the Leios mode
+# Cardano binary URL: the archive of a Cardano node supporting Leios (the official release of the node version by default)
+# Active slots coefficient: a low value spaces the blocks so that a certifying block can follow its announcing block (1.0 by default)
+ARTIFACTS_DIR=artifacts CARDANO_NODE_VERSION=11.2.0 USE_LEIOS=true CARDANO_BINARY_URL=https://github.com/input-output-hk/ouroboros-leios/releases/download/rc-2026w46/cardano-node-leios-x86_64-linux.tar.gz SLOT_LENGTH=0.2 EPOCH_LENGTH=100 ACTIVE_SLOTS_COEFF=0.1 ./devnet-run.sh
+
+# Submit a transaction load on node-pool1 for a bounded duration (80 transactions per second for 120 seconds by default)
+# Load TPS: the target rate of the transaction load
+# Load duration: the duration of the transaction load in seconds
+cd artifacts && LOAD_TPS=80 LOAD_DURATION=120 ./load-mithril.sh
+```
+
+The Leios periods and the block body size of the generated genesis are tuned for the devnet and can be overridden with `LEIOS_ANNOUNCEMENT_PERIOD_MS`, `LEIOS_VOTE_PERIOD_MS`, `LEIOS_DIFFUSION_PERIOD_MS` and `LEIOS_MAX_BLOCK_BODY_SIZE`.
+
 ## Step by step run with custom configuration
 
 ```bash

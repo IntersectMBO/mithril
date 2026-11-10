@@ -27,8 +27,12 @@ NUM_SPO_NODES=$NUM_POOL_NODES
 INIT_SUPPLY=12000000
 TOTAL_SUPPLY=2000000000000
 DELEGATED_SUPPLY=240000000002
-ACTIVE_SLOTS_COEFF=1.0
 SECURITY_PARAM=10
+NUM_UTXO_KEYS=${NUM_SPO_NODES}
+if [ "${USE_LEIOS}" = "true" ]; then
+  # One more genesis UTxO key for the transaction load of the Leios mode
+  NUM_UTXO_KEYS=$(( NUM_SPO_NODES + 1 ))
+fi
 START_GENESIS_DELAY=5
 
 START_TIME="$(${DATE} -d "now + ${START_GENESIS_DELAY} seconds" +%s)"
@@ -136,7 +140,7 @@ $CARDANO_CLI $CARDANO_CLI_ERA genesis create-staked --genesis-dir "${ARTIFACTS_D
   --supply ${TOTAL_SUPPLY} \
   --supply-delegated ${DELEGATED_SUPPLY} \
   --gen-stake-delegs ${NUM_SPO_NODES} \
-  --gen-utxo-keys ${NUM_SPO_NODES}
+  --gen-utxo-keys ${NUM_UTXO_KEYS}
 
 ## Customize the Shelley genesis file
 if [ "${CARDANO_LATEST_ERA}" = "dijkstra" ]; then
@@ -172,6 +176,11 @@ if [ "$(version_lt ${CARDANO_NODE_VERSION_RELEASE} 11.1.0)" = "false" ]; then
     | del(.extraConfig)
   ' > ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp
   mv ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp ${ARTIFACTS_DIR_TEMP}/genesis.json
+fi
+
+## Give the pools BLS keys and tune the genesis files for the Leios mode
+if [ "${USE_LEIOS}" = "true" ]; then
+  . ${SCRIPT_DIRECTORY}/mkfiles/lib/mkfiles-leios-genesis.sh
 fi
 
 # Create configuration file for the snapshot converter, the genesis hashes are mandatory since cardano-node 11.2.0
@@ -228,6 +237,10 @@ for N in ${POOL_NODES_N}; do
   cp ${ARTIFACTS_DIR_TEMP}/pools/kes${N}.vkey node-pool${N}/shelley/kes.vkey
   cp ${ARTIFACTS_DIR_TEMP}/pools/opcert${N}.counter node-pool${N}/shelley/opcert.counter  
   cp ${ARTIFACTS_DIR_TEMP}/pools/opcert${N}.cert node-pool${N}/shelley/opcert.cert  
+  if [ "${USE_LEIOS}" = "true" ]; then
+    cp ${ARTIFACTS_DIR_TEMP}/pools/bls${N}.skey node-pool${N}/shelley/bls.skey
+    cp ${ARTIFACTS_DIR_TEMP}/pools/bls${N}.vkey node-pool${N}/shelley/bls.vkey
+  fi
 done
 
 # Prepare staking
