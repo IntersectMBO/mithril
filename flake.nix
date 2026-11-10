@@ -81,9 +81,10 @@
           isCircuitKeyOrAsset =
             lib.hasInfix "/mithril-stm/src/circuits/" path
             && lib.any (suffix: lib.hasSuffix suffix base) [".asset" ".vkey"];
+          isTestDoubleAsset = lib.hasInfix "/src/test/double/assets/" path && lib.hasSuffix ".asset" base;
         in
           type == "directory" || matchesSuffix || isCargoFile || isCargoConfig || isOpenApiYaml
-                || isFakeAggregatorDefaultData || isTestsAsset || isGoldenVector || isCircuitKeyOrAsset;
+                || isFakeAggregatorDefaultData || isTestsAsset || isGoldenVector || isCircuitKeyOrAsset || isTestDoubleAsset;
 
         clean = root:
           lib.cleanSourceWith {
