@@ -26,7 +26,7 @@ include = [
     "src/circuits/halo2_ivc/tests/assets/same_epoch_step_output.asset",
     "src/circuits/halo2_ivc/tests/assets/first_step_cert.asset",
     "src/circuits/halo2_ivc/tests/assets/genesis_benchmark_fixture.asset",
-    "src/proof_system/halo2_snark/golden_vectors/*.txt"
+    "src/proof_system/halo2_snark/golden_vectors/*.txt",
 ]
 
 [package.metadata.docs.rs]
@@ -47,6 +47,7 @@ benchmark-internals = ["dep:rand_chacha"]
 snark = [
     "dep:ff",
     "dep:group",
+    "dep:hex",
     "dep:midnight-circuits",
     "dep:midnight-curves",
     "dep:midnight-proofs",
@@ -69,7 +70,7 @@ ciborium = { workspace = true }
 digest = { workspace = true }
 ff = { version = "0.13.1", optional = true }
 group = { version = "0.13.0", optional = true }
-hex = { workspace = true }
+hex = { workspace = true, optional = true }
 # Pin `midnight` crates. Updates must be done following this runbook: `<repository_root>/docs/runbook/update-circuit-keys`
 midnight-circuits = { version = "=7.2.2", optional = true }
 midnight-curves = { version = "=0.3.1", optional = true }
@@ -80,7 +81,6 @@ num-integer = { version = "0.1", optional = true }
 num-traits = { version = "0.2.19", optional = true }
 rand_chacha = { workspace = true, optional = true }
 rand_core = { workspace = true, features = ["std"] }
-rayon = { workspace = true }
 serde = { workspace = true }
 serde_bytes = "0.11.19"
 sha2 = { version = "0.11.0", optional = true }
@@ -103,12 +103,14 @@ rug = { version = "1.30.0", optional = true }
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }
 fs2 = "0.4.3"
+hex = { workspace = true }
 mockall = { workspace = true }
 num-bigint = "0.4.6"
 num-rational = "0.4.2"
 proptest = "1.11.0"
 rand = "0.10.3"
 rand_chacha = { workspace = true }
+rayon = { workspace = true }
 serde_json = { workspace = true }
 tempfile = "3.27.0"
 

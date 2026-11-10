@@ -14,11 +14,11 @@ axum = "0.8.9"
 mithril-common = { path = "../../mithril-common" }
 pastey = "0.2.3"
 prometheus = "0.14.0"
-reqwest = { workspace = true, features = ["charset", "http2", "system-proxy", "stream"] }
 slog = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
 prometheus-parse = "0.2.5"
+reqwest = { workspace = true, features = ["charset", "http2", "system-proxy", "stream"] }
 slog-async = { workspace = true }
 slog-term = { workspace = true }

@@ -23,10 +23,14 @@ rustls = ["mithril-client/rustls"]
 test-node = []
 snark = ["mithril-client/snark"]
 
-[dependencies]
+[target.'cfg(target_family = "wasm")'.dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+# This getrandom version is required without the snark feature, and it can be removed once the snark feature is no longer optional.
+getrandom = { version = "0.2", features = ["js"] }
+# This getrandom version is required with the snark feature (because of Midnight ZK dependency)
+getrandom-snark = { package = "getrandom", version = "0.4.3", features = ["wasm_js"] }
 js-sys = "0.3.106"
 mithril-client = { path = "../mithril-client", default-features = false, features = ["unstable"] }
 serde = { workspace = true }
@@ -50,15 +54,9 @@ web-sys = { version = "0.3.106", features = [
     "IdbVersionChangeEvent",
 ] }
 
-[target.'cfg(all(target_family = "wasm"))'.dependencies]
-# This getrandom version is required without the snark feature, and it can be removed once the snark feature is no longer optional.
-getrandom = { version = "0.2", features = ["js"] }
-# This getrandom version is required with the snark feature (because of Midnight ZK dependency)
-getrandom-snark = { package = "getrandom", version = "0.4.3", features = ["wasm_js"] }
-
 [build-dependencies]
 mithril-build-script = { path = "../internal/mithril-build-script" }
 
-[dev-dependencies]
+[target.'cfg(target_family = "wasm")'.dev-dependencies]
 mithril-common = { path = "../mithril-common", default-features = false }
 wasm-bindgen-test = "0.3.79"

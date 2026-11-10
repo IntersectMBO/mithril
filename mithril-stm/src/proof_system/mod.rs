@@ -16,6 +16,14 @@ macro_rules! cfg_rug {
     };
 }
 
+// `rug-backend` + `num-integer-backend` together leave every `cfg_rug!` block empty, which would
+// make `cargo::unused_dependencies` flag `rug`. `num-integer-backend` wins in that case.
+#[cfg(all(
+    feature = "rug-backend",
+    not(any(target_family = "wasm", target_env = "musl", windows))
+))]
+use rug as _;
+
 mod concatenation;
 #[cfg(feature = "snark")]
 mod halo2_snark;

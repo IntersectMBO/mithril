@@ -14,9 +14,9 @@ default = []
 
 [dependencies]
 clap = { workspace = true }
-config = { workspace = true }
 mithril-doc-derive = { path = "../mithril-doc-derive" }
 
 [dev-dependencies]
+config = { workspace = true }
 mithril-cli-helper = { path = "../mithril-cli-helper" }
 regex = "1.13.1"

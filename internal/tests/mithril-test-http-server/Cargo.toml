@@ -9,10 +9,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-reqwest = { workspace = true }
 tokio = { workspace = true }
 warp = { workspace = true }
 
 [dev-dependencies]
+reqwest = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
