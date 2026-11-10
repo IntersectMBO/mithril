@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 #[cfg(feature = "snark")]
@@ -17,8 +18,8 @@ use crate::{
     certificate_chain::CertificateGenesisProducer,
     crypto_helper::{
         GenesisSigner, ProtocolAggregateVerificationKey,
-        ProtocolAggregateVerificationKeyForConcatenation, ProtocolClosedKeyRegistration,
-        ProtocolInitializer, ProtocolOpCert, ProtocolSigner,
+        ProtocolAggregateVerificationKeyForConcatenation, ProtocolClerk,
+        ProtocolClosedKeyRegistration, ProtocolInitializer, ProtocolOpCert, ProtocolSigner,
         ProtocolSignerVerificationKeyForConcatenation,
         ProtocolSignerVerificationKeySignatureForConcatenation, ProtocolStakeDistribution,
     },
@@ -27,7 +28,7 @@ use crate::{
         ProtocolParameters, Signer, SignerWithStake, SingleSignature, Stake, StakeDistribution,
         StakeDistributionParty, SupportedEra,
     },
-    protocol::{SignerBuilder, ToMessage},
+    protocol::ToMessage,
     test::crypto_helper::ProtocolInitializerTestExtension,
 };
 
@@ -37,7 +38,7 @@ pub struct MithrilFixture {
     protocol_parameters: ProtocolParameters,
     signers: Vec<SignerFixture>,
     stake_distribution: ProtocolStakeDistribution,
-    epoch: Epoch,
+    aggregate_verification_key: OnceLock<ProtocolAggregateVerificationKey>,
 }
 
 /// A signer fixture, containing a [signer entity][SignerWithStake] with its
@@ -154,13 +155,12 @@ impl MithrilFixture {
         protocol_parameters: ProtocolParameters,
         signers: Vec<SignerFixture>,
         stake_distribution: ProtocolStakeDistribution,
-        epoch: Epoch,
     ) -> Self {
         Self {
             protocol_parameters,
             signers,
             stake_distribution,
-            epoch,
+            aggregate_verification_key: OnceLock::new(),
         }
     }
 
@@ -228,14 +228,25 @@ impl MithrilFixture {
     }
 
     /// Compute the Aggregate Verification Key for this fixture.
+    ///
+    /// The key is computed once, from the closed key registration shared by the fixture signers,
+    /// instead of registering the signers again.
     pub fn compute_aggregate_verification_key(&self) -> ProtocolAggregateVerificationKey {
-        SignerBuilder::new(
-            &self.signers_with_stake(),
-            &self.protocol_parameters,
-            self.epoch,
-        )
-        .unwrap()
-        .compute_aggregate_verification_key()
+        self.aggregate_verification_key
+            .get_or_init(|| {
+                let closed_key_registration = &self
+                    .signers
+                    .first()
+                    .expect("a fixture must have at least one signer to compute its AVK")
+                    .protocol_closed_key_registration;
+
+                ProtocolClerk::new_clerk_from_closed_key_registration(
+                    &self.protocol_parameters.clone().into(),
+                    closed_key_registration,
+                )
+                .compute_aggregate_verification_key()
+            })
+            .clone()
     }
 
     /// Compute the Aggregate Verification Key for concatenation for this fixture.
@@ -274,6 +285,8 @@ impl MithrilFixture {
     }
 
     /// Recreate every signer's Proof of Bound Possession for the given epoch, keeping their keys.
+    ///
+    /// The keys and the stakes do not change, so the Aggregate Verification Key does not either.
     pub fn bound_to_epoch(&self, epoch: Epoch) -> Self {
         Self {
             signers: self
@@ -281,7 +294,6 @@ impl MithrilFixture {
                 .iter()
                 .map(|signer| signer.bound_to(epoch, signer.signer_with_stake.stake))
                 .collect(),
-            epoch,
             ..self.clone()
         }
     }
@@ -448,9 +460,27 @@ impl SignerFixture {
 
 #[cfg(test)]
 mod tests {
+    use crate::protocol::SignerBuilder;
     use crate::test::builder::MithrilFixtureBuilder;
 
     use super::*;
+
+    #[test]
+    fn compute_aggregate_verification_key_equals_the_key_of_a_new_registration_of_the_signers() {
+        let fixture = MithrilFixtureBuilder::default()
+            .with_signers(3)
+            .build_at_epoch(Epoch(1));
+
+        let registered_key = SignerBuilder::new(
+            &fixture.signers_with_stake(),
+            &fixture.protocol_parameters(),
+            Epoch(1),
+        )
+        .unwrap()
+        .compute_aggregate_verification_key();
+
+        assert_eq!(registered_key, fixture.compute_aggregate_verification_key());
+    }
 
     #[test]
     fn bound_to_epoch_keeps_the_keys_and_the_stakes() {
@@ -464,14 +494,16 @@ mod tests {
             fixture.stake_distribution(),
             rebound_fixture.stake_distribution()
         );
+        let rebound_registered_key = SignerBuilder::new(
+            &rebound_fixture.signers_with_stake(),
+            &rebound_fixture.protocol_parameters(),
+            Epoch(3),
+        )
+        .unwrap()
+        .compute_aggregate_verification_key();
         assert_eq!(
-            fixture.compute_and_encode_concatenation_aggregate_verification_key(),
-            rebound_fixture.compute_and_encode_concatenation_aggregate_verification_key()
-        );
-        #[cfg(feature = "snark")]
-        assert_eq!(
-            fixture.compute_and_encode_snark_aggregate_verification_key(),
-            rebound_fixture.compute_and_encode_snark_aggregate_verification_key()
+            fixture.compute_aggregate_verification_key(),
+            rebound_registered_key
         );
     }
 

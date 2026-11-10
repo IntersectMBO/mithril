@@ -18,7 +18,7 @@ clippy_all_crates() {
         fi
 
         if [[ " mithril-stm " == *" ${package_name} "* ]]; then
-            additional_args+=(--features "snark,benchmark-internals")
+            additional_args+=(--features "benchmark-internals")
         fi
         
         echo -e " Running clippy for package: ${package_name}"
@@ -26,6 +26,12 @@ clippy_all_crates() {
             echo -e " Clippy check failed for package: ${package_name}"
             exit_code=1
         fi
+    done
+
+    # Only these crates can leave out the default `snark` feature, the others get it from their dependencies
+    for package_name in mithril-stm mithril-common; do
+        echo -e " Running clippy for package: ${package_name} without the snark feature"
+        cargo clippy --all-targets --package "${package_name}" --no-default-features --features num-integer-backend -- -D warnings || exit_code=1
     done
 
     return "$exit_code"

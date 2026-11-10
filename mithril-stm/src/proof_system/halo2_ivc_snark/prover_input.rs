@@ -143,8 +143,7 @@ mod tests {
     use rand_core::SeedableRng;
 
     use crate::{
-        BaseFieldElement, MithrilMembershipDigest, Parameters, SchnorrSigningKey,
-        SchnorrVerificationKey,
+        BaseFieldElement, MithrilMembershipDigest, SchnorrSigningKey, SchnorrVerificationKey,
         circuits::halo2_ivc::{
             PREIMAGE_CURRENT_EPOCH_BYTES, PREIMAGE_NEXT_MERKLE_TREE_COMMITMENT_BYTES,
             PREIMAGE_NEXT_PROTOCOL_PARAMETERS_BYTES, PREIMAGE_SIZE,
@@ -158,7 +157,7 @@ mod tests {
                     load_embedded_recursive_chain_state_asset,
                     load_embedded_verification_context_asset,
                 },
-                generators::setup::{QUORUM_SIZE, SIGNER_COUNT, TOTAL_STAKE},
+                generators::setup::TOTAL_STAKE,
             },
             types::{
                 CertificateCircuitVerificationKeyRepresentation, EpochNumber,
@@ -195,13 +194,7 @@ mod tests {
     }
 
     fn wrap_snark_proof(certificate_proof_bytes: Vec<u8>) -> SnarkProof<MithrilMembershipDigest> {
-        let parameters = Parameters {
-            k: QUORUM_SIZE as u64,
-            m: (QUORUM_SIZE * 10) as u64,
-            phi_f: 0.2,
-        };
-        let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
-        SnarkProof::new(certificate_proof_bytes, parameters, merkle_tree_depth)
+        SnarkProof::new(certificate_proof_bytes)
     }
 
     fn wrap_avk(

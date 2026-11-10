@@ -93,16 +93,12 @@ impl Ord for MerkleTreeConcatenationLeaf {
 }
 
 #[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
 /// The values that are committed in the Merkle Tree for `SnarkProof`.
 /// Namely, a verified `SchnorrVerificationKey` and its corresponding target value.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct MerkleTreeSnarkLeaf(pub VerificationKeyForSnark, pub LotteryTargetValue);
 
 #[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
 impl MerkleTreeLeaf for MerkleTreeSnarkLeaf {
     fn as_bytes_for_merkle_tree(&self) -> Vec<u8> {
         self.to_canonical_bytes()
@@ -138,8 +134,6 @@ impl MerkleTreeSnarkLeaf {
 }
 
 #[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
 impl From<MerkleTreeSnarkLeaf> for (VerificationKeyForSnark, LotteryTargetValue) {
     fn from(leaf: MerkleTreeSnarkLeaf) -> (VerificationKeyForSnark, LotteryTargetValue) {
         (leaf.0, leaf.1)
@@ -147,8 +141,6 @@ impl From<MerkleTreeSnarkLeaf> for (VerificationKeyForSnark, LotteryTargetValue)
 }
 
 #[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
 impl PartialOrd for MerkleTreeSnarkLeaf {
     /// Ordering of MT Values.
     ///
@@ -160,8 +152,6 @@ impl PartialOrd for MerkleTreeSnarkLeaf {
 }
 
 #[cfg(feature = "snark")]
-// TODO: remove this allow dead_code directive when function is called or snark is activated
-#[allow(dead_code)]
 impl Ord for MerkleTreeSnarkLeaf {
     fn cmp(&self, other: &Self) -> Ordering {
         self.1.cmp(&other.1).then(self.0.cmp(&other.0))

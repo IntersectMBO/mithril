@@ -4,7 +4,9 @@ use rand_core::{RngCore, SeedableRng};
 
 use crate::{
     crypto_helper::{ColdKeyGenerator, KesPeriod, OpCert, ProtocolStakeDistribution, Sum6KesBytes},
-    entities::{Epoch, PartyId, ProtocolParameters, Stake, StakeDistribution},
+    entities::{
+        Epoch, PartyId, ProtocolParameters, Stake, StakeDistribution, StakeDistributionParty,
+    },
     test::{
         builder::MithrilFixture,
         crypto_helper::{self, SerDeShelleyFileFormatTestExtension},
@@ -105,7 +107,6 @@ impl MithrilFixtureBuilder {
             self.protocol_parameters.clone(),
             signers,
             protocol_stake_distribution,
-            epoch,
         )
     }
 
@@ -113,6 +114,15 @@ impl MithrilFixtureBuilder {
     /// Bound Possession (when applicable) for the Epoch 0.
     pub fn build(&self) -> MithrilFixture {
         Self::build_at_epoch(self, Epoch(0))
+    }
+
+    /// Generate the parties (party id and stake) of the signers that [Self::build] would create,
+    /// without creating their keys nor registering them.
+    pub fn build_stake_distribution_parties(&self) -> Vec<StakeDistributionParty> {
+        self.generate_stake_distribution()
+            .into_iter()
+            .map(|(party_id, stake)| StakeDistributionParty { party_id, stake })
+            .collect()
     }
 
     fn generate_stake_distribution(&self) -> ProtocolStakeDistribution {
@@ -251,6 +261,16 @@ mod tests {
         let result = MithrilFixtureBuilder::default().with_signers(4).build();
 
         assert_eq!(4, result.signers_with_stake().len());
+    }
+
+    #[test]
+    fn build_stake_distribution_parties_returns_the_parties_of_the_built_fixture() {
+        let builder = MithrilFixtureBuilder::default().with_signers(4);
+
+        assert_eq!(
+            builder.build().stake_distribution_parties(),
+            builder.build_stake_distribution_parties()
+        );
     }
 
     #[test]

@@ -5,33 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.14.0 (10-29-2026)
+
+### Changed
+
+- **BREAKING** The `snark` feature is enabled by default. Build with `--no-default-features --features num-integer-backend` to leave the SNARK proof systems out.
+- **BREAKING** `SnarkProof::new` takes only the circuit proof bytes, and `SnarkProof` no longer holds or serializes the parameters and the Merkle tree depth.
+- The SNARK lottery target is computed with num-integer arithmetic whatever the arithmetic backend, which fixes the `rug-backend` and `snark` build.
+- `rand_chacha` is enabled by the `benchmark-internals` feature instead of `snark`.
+
+### Removed
+
+- Removed the unused `rand` dependency.
+
 ## 0.13.1 (10-29-2026)
 
 ### Added
 
-- Added `Parameters::validate`, checking that `phi_f` lies in `]0, 1]` and that `k` is at least 1 and at most `m`. Closing a registration validates its parameters.
-- The SNARK part of a single signature carries the index of the signer in the SNARK Merkle tree, returned by `SingleSignature::get_snark_signer_index`, so an epoch can mix signers with and without a SNARK key. With the `snark` feature, the CBOR encoding of `SingleSignature` and `SingleSignatureWithRegisteredParty` includes it.
+- **BREAKING** Added `Parameters::validate`, checking that `phi_f` lies in `]0, 1]` and that `k` is at least 1 and at most `m`. Closing a registration validates its parameters.
+- **BREAKING** The SNARK part of a single signature carries the index of the signer in the SNARK Merkle tree, returned by `SingleSignature::get_snark_signer_index`, so an epoch can mix signers with and without a SNARK key. With the `snark` feature, the CBOR encoding of `SingleSignature` and `SingleSignatureWithRegisteredParty` includes it.
 
 ### Changed
 
 - The key registration accepts duplicated verification keys, and closing it keeps the entry with the highest stake for each key, separately for each proof system.
 - Each proof system computes its total stake on its own deduplicated entries, and the SNARK part is absent when that total is zero.
-- Closing a registration without any entry fails with the new `RegisterError::EmptyRegistration`.
+- **BREAKING** Closing a registration without any entry fails with the new `RegisterError::EmptyRegistration`.
 - An invalid Schnorr verification key is dropped instead of rejecting its registration entry.
 - The concatenation closed registration entries no longer hold SNARK fields.
-- `SingleSignature::verify` takes the signer's SNARK verification key instead of its SNARK registration entry, and verifies the SNARK part with it.
-- Renamed `SchnorrVerificationKey::is_valid` to `validate`.
-- The rigid slot of the SNARK aggregate verification key drops its 4 unused leaf count bytes and takes 40 bytes.
+- **BREAKING** `SingleSignature::verify` takes the signer's SNARK verification key instead of its SNARK registration entry, and verifies the SNARK part with it.
+- **BREAKING** Renamed `SchnorrVerificationKey::is_valid` to `validate`.
+- **BREAKING** The rigid slot of the SNARK aggregate verification key drops its 4 unused leaf count bytes and takes 40 bytes.
 - Regenerated the recursive circuit production verification key and the IVC test assets.
 - Updated the SNARK book for the key deduplication, the total stake of each proof system and the SNARK signer index.
 
 ### Removed
 
-- Removed `RegisterError::EntryAlreadyRegistered` and `RegisterError::SnarkProofSignerCreation`.
-- Removed `SingleSignature::get_snark_signature_indices`.
-- Removed `ClosedRegistrationEntry::without_snark_fields`.
-- Removed `ClosedKeyRegistration::get_registration_entry_for_index`.
-- Removed the `From<&ClosedKeyRegistration>` implementations of `AggregateVerificationKeyForConcatenation` and `AggregateVerificationKeyForSnark`. `AggregateVerificationKey::from` computes both.
+- **BREAKING** Removed `RegisterError::EntryAlreadyRegistered` and `RegisterError::SnarkProofSignerCreation`.
+- **BREAKING** Removed `SingleSignature::get_snark_signature_indices`.
+- **BREAKING** Removed `ClosedRegistrationEntry::without_snark_fields`.
+- **BREAKING** Removed `ClosedKeyRegistration::get_registration_entry_for_index`.
+- **BREAKING** Removed the `From<&ClosedKeyRegistration>` implementations of `AggregateVerificationKeyForConcatenation` and `AggregateVerificationKeyForSnark`. `AggregateVerificationKey::from` computes both.
 
 ## 0.13.0 (10-13-2026)
 

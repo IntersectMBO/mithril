@@ -619,7 +619,7 @@ mod tests {
 
     use crate::{
         AggregationError, AncillaryGenesisData, AncillaryProofInput, AncillaryProverData,
-        MithrilMembershipDigest, Parameters, SnarkProof,
+        MithrilMembershipDigest, SnarkProof,
         circuits::{
             halo2::{
                 NON_RECURSIVE_CIRCUIT_VERIFICATION_KEY_FOR_PRODUCTION,
@@ -643,7 +643,7 @@ mod tests {
         },
         codec::TryFromBytes,
         proof_system::{
-            AggregateVerificationKeyForSnark, MERKLE_TREE_DEPTH_FOR_SNARK,
+            AggregateVerificationKeyForSnark,
             halo2_ivc_snark::{
                 build_standard_rolling_state, errors::IvcProofError,
                 verifier_setup::IvcVerifierSetup,
@@ -1287,13 +1287,7 @@ mod tests {
         NonRecursiveCircuitVerifyingKey,
         RecursiveCircuitVerifyingKey,
     ) {
-        let params = Parameters {
-            k: 1,
-            m: 10,
-            phi_f: 0.9,
-        };
-        let certificate_proof =
-            SnarkProof::<MithrilMembershipDigest>::new(vec![], params, MERKLE_TREE_DEPTH_FOR_SNARK);
+        let certificate_proof = SnarkProof::<MithrilMembershipDigest>::new(vec![]);
         let avk =
             AggregateVerificationKeyForSnark::<MithrilMembershipDigest>::from_bytes(&[0u8; 40])
                 .expect("all-zero AVK bytes should decode");
@@ -1581,13 +1575,7 @@ mod tests {
         fn wrap_snark_proof(
             certificate_proof_bytes: Vec<u8>,
         ) -> SnarkProof<MithrilMembershipDigest> {
-            let parameters = Parameters {
-                k: QUORUM_SIZE as u64,
-                m: (QUORUM_SIZE * 10) as u64,
-                phi_f: 0.2,
-            };
-            let merkle_tree_depth = SIGNER_COUNT.next_power_of_two().trailing_zeros();
-            SnarkProof::new(certificate_proof_bytes, parameters, merkle_tree_depth)
+            SnarkProof::new(certificate_proof_bytes)
         }
 
         fn wrap_avk(root: &[u8; 32]) -> AggregateVerificationKeyForSnark<MithrilMembershipDigest> {
@@ -1785,6 +1773,38 @@ mod tests {
             165, 46, 223, 230, 163, 227, 24, 134, 150, 95, 90, 198, 158, 196, 140, 63, 23, 25, 130,
             109, 5, 106, 229, 163, 226, 93, 149, 227, 137, 194, 84, 16,
         ];
+
+        const GOLDEN_IVC_PROOF_CBOR_BYTES: &[u8] =
+            include_bytes!("golden_vectors/golden_vector_ivc_proof.cbor");
+
+        #[test]
+        #[ignore]
+        fn generate_golden_ivc_proof_cbor_bytes() {
+            let step_output = load_embedded_next_epoch_step_output_asset()
+                .expect("recursive step output asset should load");
+            let proof = IvcProof::<Blake2b256>::new(
+                step_output.ivc_proof,
+                step_output.next_state,
+                step_output.next_accumulator,
+            );
+            let bytes = proof.to_bytes().expect("IVC proof encoding should not fail");
+            let path = concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/proof_system/halo2_ivc_snark/golden_vectors/golden_vector_ivc_proof.cbor"
+            );
+            std::fs::write(path, &bytes)
+                .unwrap_or_else(|e| panic!("failed to write the IVC proof bytes to {path}: {e}"));
+        }
+
+        #[test]
+        fn cbor_golden_bytes_can_be_decoded() {
+            // Pins the wire format of the IVC proofs stored in certificates: any change to the
+            // encoding of a field, or any field added or removed, breaks the round trip.
+            let decoded = IvcProof::<Blake2b256>::from_bytes(GOLDEN_IVC_PROOF_CBOR_BYTES)
+                .expect("CBOR golden bytes deserialization should not fail");
+            let re_encoded = decoded.to_bytes().expect("re-encode should not fail");
+            assert_eq!(GOLDEN_IVC_PROOF_CBOR_BYTES, re_encoded.as_slice());
+        }
 
         #[test]
         fn golden_combiner_r_for_stored_recursive_step_output() {

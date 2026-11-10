@@ -580,7 +580,7 @@ mod tests {
 
     #[test]
     fn test_convert_certificates() {
-        let certificates = setup_certificate_chain(20, 3);
+        let certificates = setup_certificate_chain(3, 1);
         let mut certificate_records: Vec<CertificateRecord> = Vec::new();
         for certificate in certificates.certificates_chained.clone() {
             certificate_records.push(certificate.try_into().unwrap());

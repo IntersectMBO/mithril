@@ -315,11 +315,8 @@ impl IvcBenchEnv {
             TransitionPath::Genesis => unreachable!("genesis handled by prepare_genesis_step"),
         };
 
-        let snark_proof: SnarkProof<MithrilMembershipDigest> = SnarkProof::new(
-            asset.certificate_proof.clone().into_vec(),
-            benchmark_parameters(),
-            merkle_tree_depth(),
-        );
+        let snark_proof: SnarkProof<MithrilMembershipDigest> =
+            SnarkProof::new(asset.certificate_proof.clone().into_vec());
         let aggregate_verification_key =
             aggregate_verification_key_for_root(&asset.aggregate_verification_key_merkle_root)?;
         let preimage = ProtocolMessagePreimage(asset.message_preimage);
@@ -600,7 +597,7 @@ mod tests {
     // Slow runtime smoke: builds the full IVC setup (recursive keygen) once and exercises every
     // façade operation on all three transition paths, confirming fixture assembly, proving,
     // verification, and folding all succeed. Opt-in — run with
-    // `cargo test -p mithril-stm --features snark,benchmark-internals -- --ignored`
+    // `cargo test -p mithril-stm --features benchmark-internals -- --ignored`
     // (the façade, and hence this test, is gated behind `benchmark-internals`).
     #[test]
     #[ignore = "slow: builds the full IVC setup via recursive keygen"]

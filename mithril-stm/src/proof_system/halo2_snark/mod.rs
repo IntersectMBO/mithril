@@ -81,13 +81,7 @@ mod tests {
             let schnorr_sk = SchnorrSigningKey::generate(rng);
             let schnorr_vk = VerificationKeyForSnark::new_from_signing_key(schnorr_sk.clone());
 
-            let entry = RegistrationEntry::new(
-                bls_vk,
-                1,
-                #[cfg(feature = "snark")]
-                Some(schnorr_vk),
-            )
-            .unwrap();
+            let entry = RegistrationEntry::new(bls_vk, 1, Some(schnorr_vk)).unwrap();
             key_reg.register_by_entry(&entry);
 
             if i == 0 {
