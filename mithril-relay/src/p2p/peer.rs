@@ -6,7 +6,7 @@ use libp2p::{
     futures::StreamExt,
     gossipsub::{self, ValidationMode},
     noise, ping,
-    swarm::{self, DialError, NetworkBehaviour},
+    swarm::{self, DialError},
     tls, yamux,
 };
 use mithril_common::{
@@ -25,11 +25,23 @@ use crate::{mithril_p2p_topic, p2p::PeerError};
 /// The idle connection timeout for a P2P connection
 const P2P_IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// [Peer] custom network behaviour
-#[derive(NetworkBehaviour)]
-pub struct PeerBehaviour {
-    gossipsub: gossipsub::Behaviour,
-    ping: ping::Behaviour,
+pub use behaviour::*;
+
+mod behaviour {
+    // The `NetworkBehaviour` derive generates a `|event| Either::Right(event)` closure for each
+    // sub-behaviour. `ping::Behaviour`'s handler input event is `Infallible`, so rustc flags that
+    // call as unreachable. Lint attributes on the struct don't reach the generated `impl`, hence
+    // this module-level allow.
+    #![allow(unreachable_code)]
+
+    use libp2p::{gossipsub, ping, swarm::NetworkBehaviour};
+
+    /// [Peer][super::Peer] custom network behaviour
+    #[derive(NetworkBehaviour)]
+    pub struct PeerBehaviour {
+        pub(super) gossipsub: gossipsub::Behaviour,
+        pub(super) ping: ping::Behaviour,
+    }
 }
 
 /// [Peer] event that is polled from the swarm
