@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use mithril_common::StdResult;
 use mithril_common::crypto_helper::ManifestSigner;
+use mithril_common::entities::SignedEntityTypeDiscriminants;
 use mithril_file_archiver::FileArchiver;
+use mithril_signed_entity_preloader::PreloadTaskRunner;
 
 use crate::artifact_builder::{
     AncillaryArtifactBuilder, AncillaryFileUploader, CardanoBlocksTransactionsArtifactBuilder,
@@ -27,8 +29,9 @@ use crate::services::ancillary_signer::{
     AncillarySigner, AncillarySignerWithGcpKms, AncillarySignerWithSecretKey,
 };
 use crate::services::{
-    CompressedArchiveSnapshotter, DumbSnapshotter, MithrilSignedEntityService, SignedEntityService,
-    SignedEntityServiceArtifactsDependencies, Snapshotter,
+    CompressedArchiveSnapshotter, DumbSnapshotter, ImmutablesArchivesPreloader,
+    MithrilSignedEntityService, SignedEntityService, SignedEntityServiceArtifactsDependencies,
+    Snapshotter,
 };
 use crate::tools::DEFAULT_GCP_CREDENTIALS_JSON_ENV_VAR;
 use crate::tools::kubo_rpc_client::IpfsMfsDirPath;
@@ -418,12 +421,48 @@ impl DependenciesBuilder {
         }
     }
 
+    async fn build_immutable_artifact_builder(&mut self) -> Result<Arc<ImmutableArtifactBuilder>> {
+        let immutable_dir = self.get_cardano_db_artifacts_dir()?.join(IMMUTABLE_ARCHIVES_DIR);
+        let immutable_builder = ImmutableArtifactBuilder::new(
+            immutable_dir,
+            self.build_cardano_database_immutable_uploaders().await?,
+            self.get_snapshotter().await?,
+            self.root_logger(),
+        )?;
+
+        Ok(Arc::new(immutable_builder))
+    }
+
+    async fn get_immutable_artifact_builder(&mut self) -> Result<Arc<ImmutableArtifactBuilder>> {
+        get_dependency!(self.immutable_artifact_builder)
+    }
+
+    /// Create a [PreloadTaskRunner] running an [ImmutablesArchivesPreloader].
+    pub async fn create_immutables_archives_preloader(
+        &mut self,
+    ) -> Result<Arc<PreloadTaskRunner<ImmutablesArchivesPreloader>>> {
+        let activation = self
+            .configuration
+            .compute_allowed_signed_entity_types_discriminants()?
+            .contains(&SignedEntityTypeDiscriminants::CardanoDatabase);
+        let immutables_archives_preloader = PreloadTaskRunner::new(
+            ImmutablesArchivesPreloader::new(
+                self.get_immutable_artifact_builder().await?,
+                self.get_immutable_file_observer().await?,
+                activation,
+            ),
+            self.get_signed_entity_type_lock().await?,
+            self.root_logger(),
+        );
+
+        Ok(Arc::new(immutables_archives_preloader))
+    }
+
     async fn build_cardano_database_artifact_builder(
         &mut self,
         cardano_node_version: Version,
     ) -> Result<CardanoDatabaseArtifactBuilder> {
         let snapshot_dir = self.configuration.get_snapshot_dir()?;
-        let immutable_dir = self.get_cardano_db_artifacts_dir()?.join(IMMUTABLE_ARCHIVES_DIR);
 
         let ancillary_builder = Arc::new(AncillaryArtifactBuilder::new(
             self.build_cardano_database_ancillary_uploaders().await?,
@@ -432,12 +471,7 @@ impl DependenciesBuilder {
             self.root_logger(),
         )?);
 
-        let immutable_builder = Arc::new(ImmutableArtifactBuilder::new(
-            immutable_dir,
-            self.build_cardano_database_immutable_uploaders().await?,
-            self.get_snapshotter().await?,
-            self.root_logger(),
-        )?);
+        let immutable_builder = self.get_immutable_artifact_builder().await?;
 
         let digests_path = snapshot_dir.join("pending_cardano_database_digests");
         let digests_snapshotter = self.build_digests_snapshotter(digests_path.clone()).await?;
@@ -464,7 +498,7 @@ impl DependenciesBuilder {
 
 #[cfg(test)]
 mod tests {
-    use mithril_common::temp_dir_create;
+    use mithril_common::{temp_dir, temp_dir_create};
     use mithril_persistence::sqlite::ConnectionBuilder;
 
     use crate::ServeCommandConfiguration;
@@ -539,5 +573,40 @@ mod tests {
         assert!(ancillary_dir.exists());
         assert!(immutable_dir.exists());
         assert!(digests_dir.exists());
+    }
+
+    #[tokio::test]
+    async fn immutables_archive_preloader_activated_with_cardano_database_signed_entity_type_in_configuration()
+     {
+        assert_immutables_archives_preloader_activation(
+            SignedEntityTypeDiscriminants::CardanoDatabase.to_string(),
+            true,
+        )
+        .await;
+        assert_immutables_archives_preloader_activation(
+            SignedEntityTypeDiscriminants::MithrilStakeDistribution.to_string(),
+            false,
+        )
+        .await;
+    }
+
+    async fn assert_immutables_archives_preloader_activation(
+        signed_entity_types: String,
+        expected_activation: bool,
+    ) {
+        let configuration = ServeCommandConfiguration {
+            signed_entity_types: Some(signed_entity_types),
+            ..ServeCommandConfiguration::new_sample(temp_dir!())
+        };
+        let mut dep_builder = DependenciesBuilder::new_with_stdout_logger(Arc::new(configuration));
+
+        let immutables_archives_preloader =
+            dep_builder.create_immutables_archives_preloader().await.unwrap();
+
+        let is_activated = immutables_archives_preloader.is_activated().await.unwrap();
+        assert_eq!(
+            expected_activation, is_activated,
+            "'is_activated' expected {expected_activation}, but was {is_activated}"
+        );
     }
 }

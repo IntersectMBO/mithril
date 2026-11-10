@@ -38,7 +38,7 @@ use mithril_common::{MITHRIL_SIGNER_VERSION_HEADER, StdResult};
 
 use mithril_era::{EraChecker, EraReader};
 use mithril_signed_entity_lock::SignedEntityTypeLock;
-use mithril_signed_entity_preloader::CardanoTransactionsPreloader;
+use mithril_signed_entity_preloader::{CardanoTransactionsPreloader, PreloadTaskRunner};
 use mithril_ticker::{MithrilTickerService, TickerService};
 
 use mithril_persistence::database::{ApplicationNodeType, SqlMigration};
@@ -458,13 +458,15 @@ impl<'a> DependenciesBuilder<'a> {
             network_configuration_service.clone(),
             ticker_service.clone(),
         );
-        let cardano_transactions_preloader = Arc::new(CardanoTransactionsPreloader::new(
+        let cardano_transactions_preloader = Arc::new(PreloadTaskRunner::new(
+            CardanoTransactionsPreloader::new(
+                preloader_chain_data_importer,
+                self.config.preload_security_parameter,
+                chain_observer.clone(),
+                Arc::new(preloader_activation),
+            ),
             signed_entity_type_lock.clone(),
-            preloader_chain_data_importer,
-            self.config.preload_security_parameter,
-            chain_observer.clone(),
             self.root_logger(),
-            Arc::new(preloader_activation),
         ));
         let signed_beacon_repository = Arc::new(SignedBeaconRepository::new(
             sqlite_connection.clone(),

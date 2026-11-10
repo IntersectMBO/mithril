@@ -411,7 +411,7 @@ mod tests {
     use mithril_protocol_config::test::double::configuration_provider::FakeMithrilNetworkConfigurationProvider;
     use mithril_signed_entity_lock::SignedEntityTypeLock;
     use mithril_signed_entity_preloader::{
-        CardanoTransactionsPreloader, CardanoTransactionsPreloaderActivation,
+        CardanoTransactionsPreloader, CardanoTransactionsPreloaderActivation, PreloadTaskRunner,
     };
     use mithril_ticker::{MithrilTickerService, TickerService};
 
@@ -528,13 +528,15 @@ mod tests {
         let metrics_service = Arc::new(MetricsService::new(logger.clone()).unwrap());
         let signed_entity_type_lock = Arc::new(SignedEntityTypeLock::default());
         let security_parameter = BlockNumber(0);
-        let cardano_transactions_preloader = Arc::new(CardanoTransactionsPreloader::new(
+        let cardano_transactions_preloader = Arc::new(PreloadTaskRunner::new(
+            CardanoTransactionsPreloader::new(
+                transactions_importer.clone(),
+                security_parameter,
+                chain_observer.clone(),
+                Arc::new(CardanoTransactionsPreloaderActivation::new(true)),
+            ),
             signed_entity_type_lock.clone(),
-            transactions_importer.clone(),
-            security_parameter,
-            chain_observer.clone(),
             logger.clone(),
-            Arc::new(CardanoTransactionsPreloaderActivation::new(true)),
         ));
         let upkeep_service = Arc::new(MockUpkeepService::new());
         let certifier = Arc::new(SignerCertifierService::new(

@@ -15,6 +15,8 @@ As a minor extension, we have adopted a slightly different versioning convention
 
 - New `tools clear-immutables-archives-cache` command in the Mithril aggregator to clear the cache of the immutable files archives, needed to rebuild byte-identical archives when the compression changes (e.g. a `zstd` library upgrade).
 
+- The Mithril aggregator creates the missing immutable files archives at startup, instead of during the next Cardano database snapshot creation. Note: this is only done if the `CardanoDatabase` signed entity is enabled in its configuration, and the Cardano database is not certified while the archives are being created.
+
 - Support for stable certificate chain cache in the client library, CLI and WASM, which no longer requires the `unstable` feature of the library, the `--unstable` flag of the CLI or the `unstable` option of the WASM client.
 
 - **BREAKING** changes in Mithril client library:

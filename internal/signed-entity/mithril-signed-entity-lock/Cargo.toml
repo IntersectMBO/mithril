@@ -1,6 +1,6 @@
 [package]
 name = "mithril-signed-entity-lock"
-version = "0.0.7"
+version = "0.1.0"
 description = "A non-blocking lock mechanism for signed entity type."
 authors = { workspace = true }
 edition = { workspace = true }
@@ -10,7 +10,3 @@ repository = { workspace = true }
 
 [dependencies]
 mithril-common = { path = "../../../mithril-common" }
-tokio = { workspace = true }
-
-[dev-dependencies]
-tokio = { workspace = true, features = ["macros"] }
