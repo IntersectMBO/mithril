@@ -449,7 +449,7 @@ Run the 'tools recompute-certificates-hash' command in release mode with the def
 ./mithril-aggregator tools recompute-certificates-hash
 ```
 
-Run the 'tools clear-immutables-archives-cache' command to clear the cache directory of the immutable files compressed archives (`<snapshot_directory>/cardano-database/immutable`). This will trigger a full re-computation of all the immutable files compressed archives when the next Cardano database artifact is built.
+Run the 'tools clear-immutables-archives-cache' command to clear the cache directory of the immutable files compressed archives (`<snapshot_directory>/cardano-database/immutable`). This will trigger a full re-computation of all the immutable files compressed archives at the next startup of the aggregator.
 
 By default, the command only displays a summary of the archives found in the cache directory, without deleting anything:
 
