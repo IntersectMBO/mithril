@@ -1,7 +1,7 @@
 [package]
 name = "mithril-dmq"
 description = "Mechanisms to publish and consume messages of a 'Decentralized Message Queue network' through a DMQ node"
-version = "0.1.30"
+version = "0.1.31"
 authors.workspace = true
 documentation.workspace = true
 edition.workspace = true
@@ -27,11 +27,11 @@ pallas-network = { version = "1.4.0" }
 serde = { workspace = true }
 serde_bytes = "0.11.19"
 slog = { workspace = true }
-slog-scope = "4.4.1"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt-multi-thread"] }
 
 [dev-dependencies]
 mockall = { workspace = true }
 slog-async = { workspace = true }
+slog-scope = "4.4.1"
 slog-term = { workspace = true }

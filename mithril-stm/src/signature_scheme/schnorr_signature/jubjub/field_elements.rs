@@ -168,10 +168,7 @@ impl ScalarFieldElement {
 
     /// Checks if the scalar field element is zero
     pub(crate) fn is_zero(&self) -> bool {
-        if self.0 == JubjubScalar::zero() {
-            return true;
-        }
-        false
+        self.0 == JubjubScalar::zero()
     }
 
     #[cfg(test)]
