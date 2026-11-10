@@ -25,6 +25,10 @@ for (( i=1; i<=${NUM_POOL_NODES}; i++ ))
     USER_ADDRS=("${USER_ADDRS[@]}" "user${i}")
     POOL_ADDRS=("${POOL_ADDRS[@]}" "pool-owner${i}")
 done
+if [ "${USE_LEIOS}" = "true" ]; then
+  LOAD_ADDR="utxo$(( NUM_POOL_NODES + 1 ))"
+  UTXO_ADDRS=("${UTXO_ADDRS[@]}" "${LOAD_ADDR}")
+fi
 POOL_NODES=${POOL_NODES[@]}
 POOL_NODES_N=${POOL_NODES_N[@]}
 UTXO_ADDRS=${UTXO_ADDRS[@]}

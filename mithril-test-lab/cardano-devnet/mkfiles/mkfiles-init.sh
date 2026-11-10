@@ -35,6 +35,9 @@ fi
 if [ -z "${CARDANO_NODE_VERSION_RELEASE}" ]; then 
   CARDANO_NODE_VERSION_RELEASE=$(echo "${CARDANO_NODE_VERSION}" | cut -d'-' -f1)
 fi
+if [ -z "${USE_LEIOS}" ]; then
+  USE_LEIOS=false
+fi
 if [ -z "${CARDANO_BINARY_URL}" ]; then 
   if [ "$(version_lt ${CARDANO_NODE_VERSION_RELEASE} 10.6.0)" = "true" ]; then
     CARDANO_BINARY_URL="https://github.com/IntersectMBO/cardano-node/releases/download/${CARDANO_NODE_VERSION}/cardano-node-${CARDANO_NODE_VERSION_RELEASE}-${OPERATING_SYSTEM}.tar.gz"
@@ -46,6 +49,10 @@ if [ "$(version_lt ${CARDANO_NODE_VERSION_RELEASE} 11.2.0)" = "true" ]; then
   CARDANO_LATEST_ERA=conway
 else
   CARDANO_LATEST_ERA=dijkstra
+fi
+if [ "${USE_LEIOS}" = "true" ] && [ "${CARDANO_LATEST_ERA}" != "dijkstra" ]; then
+  echo "Error: USE_LEIOS requires a Cardano node whose latest era is Dijkstra (11.2.0 or later), got ${CARDANO_NODE_VERSION}"
+  exit 1
 fi
 if [ -z "${CARDANO_CLI_ERA}" ]; then
     CARDANO_CLI_ERA=latest
@@ -85,6 +92,15 @@ fi
 if [ -z "${EPOCH_LENGTH}" ]; then 
   EPOCH_LENGTH="100"
 fi
+if [ -z "${ACTIVE_SLOTS_COEFF}" ]; then
+  ACTIVE_SLOTS_COEFF="1.0"
+fi
+if [ -z "${LOAD_TPS}" ]; then
+  LOAD_TPS="80"
+fi
+if [ -z "${LOAD_DURATION}" ]; then
+  LOAD_DURATION="120"
+fi
 if [ -z "${LISTENING_ADDR}" ]; then
   LISTENING_ADDR="127.0.0.1"
 fi
@@ -101,6 +117,11 @@ echo ">> Cardano Latest Era: ${CARDANO_LATEST_ERA}"
 echo ">> Cardano Hard Fork Latest Era At Epoch [env::CARDANO_HARD_FORK_LATEST_ERA_AT_EPOCH]: ${CARDANO_HARD_FORK_LATEST_ERA_AT_EPOCH}"
 echo ">> Cardano Slot Length [env::SLOT_LENGTH]: ${SLOT_LENGTH}s"
 echo ">> Cardano Epoch Length [env::EPOCH_LENGTH]: ${EPOCH_LENGTH}s"
+echo ">> Cardano Active Slots Coefficient [env::ACTIVE_SLOTS_COEFF]: ${ACTIVE_SLOTS_COEFF}"
+echo ">> Cardano Leios Mode [env::USE_LEIOS]: ${USE_LEIOS}"
+if [ "${USE_LEIOS}" = "true" ]; then
+  echo ">> Cardano Leios Load [env::LOAD_TPS, env::LOAD_DURATION]: ${LOAD_TPS} tps for ${LOAD_DURATION}s"
+fi
 echo ">> Cardano Listening Address [env::LISTENING_ADDR]: ${LISTENING_ADDR}"
 
 # Check if root directory already exists

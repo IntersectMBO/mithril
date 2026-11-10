@@ -33,6 +33,11 @@ EOF
 done
 
 for NODE in ${POOL_NODES}; do
+  POOL_LEIOS_ARGS=""
+  if [ "${USE_LEIOS}" = "true" ]; then
+    POOL_LEIOS_ARGS="  --shelley-bls-key                 ${NODE}/shelley/bls.skey \\
+"
+  fi
   cat >> ${NODE}/start-node.sh <<EOF
 #!/usr/bin/env bash
 
@@ -46,7 +51,7 @@ $CARDANO_NODE run \\
   --shelley-kes-key                 ${NODE}/shelley/kes.skey \\
   --shelley-vrf-key                 ${NODE}/shelley/vrf.skey \\
   --shelley-operational-certificate ${NODE}/shelley/opcert.cert \\
-  --port                            $(cat ${NODE}/port) \\
+${POOL_LEIOS_ARGS}  --port                            $(cat ${NODE}/port) \\
   > ${NODE}/node.log
 EOF
   chmod u+x ${NODE}/start-node.sh
@@ -146,6 +151,10 @@ done
 
 chmod u+x start-dmq.sh
 
+STOP_LEIOS_LOAD=""
+if [ "${USE_LEIOS}" = "true" ]; then
+  STOP_LEIOS_LOAD=$'\necho ">> Stop transaction load"\nif [ -f load-supervisor.pid ]; then kill $(cat load-supervisor.pid) 2> /dev/null || true; rm -f load-supervisor.pid; fi\nkillall -q tx-firehose || true\n'
+fi
 cat >> stop.sh <<EOF
 #!/usr/bin/env bash
 
@@ -154,6 +163,6 @@ killall cardano-node
 
 echo ">> Stop DMQ network"
 killall -q dmq-node || true
-
+${STOP_LEIOS_LOAD}
 EOF
 chmod u+x stop.sh
