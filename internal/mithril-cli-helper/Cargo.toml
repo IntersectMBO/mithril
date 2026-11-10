@@ -1,6 +1,6 @@
 [package]
 name = "mithril-cli-helper"
-version = "0.0.9"
+version = "0.0.10"
 description = "An internal crate to provide tools for cli."
 authors = { workspace = true }
 edition = { workspace = true }
