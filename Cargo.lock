@@ -4360,7 +4360,7 @@ dependencies = [
 
 [[package]]
 name = "mithril-aggregator"
-version = "0.10.31"
+version = "0.10.32"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4954,14 +4954,14 @@ dependencies = [
 
 [[package]]
 name = "mithril-signed-entity-lock"
-version = "0.0.7"
+version = "0.1.0"
 dependencies = [
  "mithril-common",
 ]
 
 [[package]]
 name = "mithril-signed-entity-preloader"
-version = "0.0.13"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4977,7 +4977,7 @@ dependencies = [
 
 [[package]]
 name = "mithril-signer"
-version = "1.2.9"
+version = "1.2.10"
 dependencies = [
  "anyhow",
  "async-trait",
