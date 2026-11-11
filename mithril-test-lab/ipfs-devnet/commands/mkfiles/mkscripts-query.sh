@@ -224,7 +224,13 @@ fi
 # Main
 # ---------------------------------------------------------------------------
 
-IPFS_PATH="$NODE_PATH" "$IPFS_BIN" "$@"
+readonly AUTH_SECRET_FILE="${NODE_PATH%/}/rpc-auth-secret"
+
+if [[ -f "$AUTH_SECRET_FILE" ]]; then
+  IPFS_PATH="$NODE_PATH" "$IPFS_BIN" --api-auth "$(cat "$AUTH_SECRET_FILE")" "$@"
+else
+  IPFS_PATH="$NODE_PATH" "$IPFS_BIN" "$@"
+fi
 EOF
   } > "$script_path"
 

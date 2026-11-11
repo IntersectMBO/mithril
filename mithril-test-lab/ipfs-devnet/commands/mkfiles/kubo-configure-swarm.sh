@@ -25,12 +25,13 @@ display_help() {
     echo "  -h, --help                 Print this help"
     echo "  -o, --overwrite            Allow overwriting existing configuration"
     echo "  -s, --swarm-dir <dir>      Directory that will contains the swarm nodes (required)"
+    echo "  -a, --rpc-auth-nodes <int> Number of nodes, from the first one, with RPC authentication [default: 0]"
     echo
     exit 0
 }
 
 # Generate a 64 chars long random hex string
-generate_swarm_key() {
+generate_random_hex_string() {
   od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
 }
 
@@ -109,6 +110,22 @@ configure_node() {
   IPFS_PATH="$node_dir" "$ipfs_bin_path" config Plugins.Plugins.telemetry.Config.Mode off
 }
 
+configure_node_rpc_auth() {
+  local -r node_id="$1"
+  local -r ipfs_bin_path="$2"
+  local -r swarm_dir="${3%/}"
+
+  local -r node_dir="$swarm_dir/kubo-node-$node_id"
+  local auth_secret
+  auth_secret="basic:mithril:$(generate_random_hex_string)"
+
+  # Only readable by the current user
+  (umask 077 && printf '%s\n' "$auth_secret" > "$node_dir/rpc-auth-secret")
+
+  IPFS_PATH="$node_dir" "$ipfs_bin_path" config --json API.Authorizations \
+    "{\"mithril\": {\"AuthSecret\": \"${auth_secret}\", \"AllowedPaths\": [\"/api/v0\"]}}"
+}
+
 configure_node_peers() {
   local -r node_id="$1"
   local -r number_of_nodes="$2"
@@ -145,7 +162,7 @@ configure_node_peers() {
 # Argument parsing
 # ---------------------------------------------------------------------------
 
-declare IPFS_BIN="" SWARM_DIR="" NUMBER_OF_NODES="" OVERWRITE=false
+declare IPFS_BIN="" SWARM_DIR="" NUMBER_OF_NODES="" OVERWRITE=false RPC_AUTH_NODES=""
 
 while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
       -b | --ipfs-bin-path) shift; IPFS_BIN=${1:-} ;;
@@ -153,6 +170,7 @@ while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
       -h | --help ) display_help ;;
       -o | --overwrite ) OVERWRITE=true ;;
       -s | --swarm-dir) shift; SWARM_DIR=${1:-} ;;
+      -a | --rpc-auth-nodes) shift; RPC_AUTH_NODES=${1:-} ;;
       *) error_exit "Unknown option: $1" ;;
     esac
     shift
@@ -160,7 +178,7 @@ done
 
 check_requirements "od" "tr"
 
-readonly SWARM_DIR NUMBER_OF_NODES=${NUMBER_OF_NODES:-2} OVERWRITE
+readonly SWARM_DIR NUMBER_OF_NODES=${NUMBER_OF_NODES:-2} OVERWRITE RPC_AUTH_NODES=${RPC_AUTH_NODES:-0}
 
 require_option "$IPFS_BIN" "-b, --ipfs-bin-path"
 
@@ -172,6 +190,10 @@ require_positive_integer "-n, --number" "$NUMBER_OF_NODES"
 
 if (( NUMBER_OF_NODES < 2 )); then
   error_exit "Invalid value for -n, --number: '$NUMBER_OF_NODES'. Expected at least 2."
+fi
+
+if ! [[ "$RPC_AUTH_NODES" =~ ^[0-9]+$ ]] || (( RPC_AUTH_NODES > NUMBER_OF_NODES )); then
+  error_exit "Invalid value for -a, --rpc-auth-nodes: '$RPC_AUTH_NODES'. Expected an integer between 0 and $NUMBER_OF_NODES."
 fi
 
 # ---------------------------------------------------------------------------
@@ -187,7 +209,7 @@ for ((node_id = 1; node_id <= NUMBER_OF_NODES; node_id++)); do
   require_free_port $((SWARM_PORT_BASE + node_id))
 done
 
-SWARM_KEY="$(generate_swarm_key)"
+SWARM_KEY="$(generate_random_hex_string)"
 readonly SWARM_KEY
 echo ">> Swarm key generated (not displayed)."
 
@@ -202,5 +224,8 @@ printf '%s\n' "${PEER_IDS[@]}"
 for ((node_id = 1; node_id <= NUMBER_OF_NODES; node_id++)); do
   configure_node "$node_id" "$SWARM_KEY" "$IPFS_BIN" "$SWARM_DIR"
   configure_node_peers "$node_id" "$NUMBER_OF_NODES" "$IPFS_BIN" "$SWARM_DIR" "${PEER_IDS[@]}"
+  if (( node_id <= RPC_AUTH_NODES )); then
+    configure_node_rpc_auth "$node_id" "$IPFS_BIN" "$SWARM_DIR"
+  fi
 done
 echo ">> Kubo nodes configuration finished"

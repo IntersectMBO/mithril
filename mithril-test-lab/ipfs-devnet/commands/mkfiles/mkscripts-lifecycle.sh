@@ -59,6 +59,18 @@ error_exit() {
 
 readonly READY_TIMEOUT_SECONDS=30
 
+# Run 'ipfs id' against a node, authenticating if its RPC API is protected
+ipfs_id() {
+  local -r node_path="${1%/}"
+  local -r auth_secret_file="${node_path}/rpc-auth-secret"
+
+  if [[ -f "$auth_secret_file" ]]; then
+    IPFS_PATH="$node_path" "$IPFS_BIN" --api-auth "$(cat "$auth_secret_file")" id
+  else
+    IPFS_PATH="$node_path" "$IPFS_BIN" id
+  fi
+}
+
 # A node is ready once its daemon has written the 'api' file and answers RPC calls.
 # Without the 'api' file check, 'ipfs id' would run offline against the repository and succeed.
 wait_for_node_ready() {
@@ -68,7 +80,7 @@ wait_for_node_ready() {
   local i
 
   for ((i = 0; i < READY_TIMEOUT_SECONDS * 2; i++)); do
-    if [[ -f "${node_path%/}/api" ]] && IPFS_PATH="$node_path" "$IPFS_BIN" id >/dev/null 2>&1; then
+    if [[ -f "${node_path%/}/api" ]] && ipfs_id "$node_path" >/dev/null 2>&1; then
       echo ">> Kubo node ready: '$node_path'"
       return 0
     fi
