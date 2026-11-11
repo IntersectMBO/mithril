@@ -576,6 +576,8 @@ impl App {
                 swarm_target_dir,
                 kubo_version: None,
                 mode,
+                // Ignores the client which doesn't support authentication yet
+                rpc_authenticated_nodes: args.network_topology.number_of_aggregators,
             })
             .await?;
             Some(devnet)

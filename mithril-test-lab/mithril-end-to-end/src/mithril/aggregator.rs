@@ -223,13 +223,19 @@ impl Aggregator {
             env.insert("DMQ_NODE_SOCKET_PATH", dmq_node_socket_path.as_str());
         }
         if let Some(node) = aggregator_config.ipfs_kubo_node {
-            env.insert(
-                "IPFS_RPC_SERVER_CONFIG",
-                format!(
-                    r#"{{"url": "{}", "mfs_folder_name": "mithril-snapshots", "ipns_key_name": "{}"}}"#,
-                    node.rpc_url, IPNS_KEY_NAME_FOR_SNAPSHOT
-                ),
-            );
+            let mut ipfs_rpc_server_config = serde_json::json!({
+                "url": node.rpc_url.to_string(),
+                "mfs_folder_name": "mithril-snapshots",
+                "ipns_key_name": IPNS_KEY_NAME_FOR_SNAPSHOT,
+            });
+            if let Some(auth) = &node.rpc_basic_auth {
+                ipfs_rpc_server_config["credentials"] = serde_json::json!({
+                    "type": "basic",
+                    "username": auth.username,
+                    "password": auth.password,
+                });
+            }
+            env.insert("IPFS_RPC_SERVER_CONFIG", ipfs_rpc_server_config.to_string());
             env.insert("IPFS_SHARE", "90");
         }
 
