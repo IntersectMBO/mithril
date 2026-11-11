@@ -4366,6 +4366,7 @@ dependencies = [
  "async-trait",
  "axum",
  "axum-test",
+ "base64 0.23.1",
  "blockfrost",
  "chrono",
  "ciborium",

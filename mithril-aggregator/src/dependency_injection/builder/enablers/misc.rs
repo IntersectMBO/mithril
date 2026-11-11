@@ -157,8 +157,11 @@ impl DependenciesBuilder {
         &self,
         ipfs_rpc_config: &IpfsRpcServerConfig,
     ) -> Result<Arc<KuboRpcClient>> {
-        let kubo_rpc_client =
-            KuboRpcClient::new(ipfs_rpc_config.sanitized_url()?, self.root_logger())?;
+        let kubo_rpc_client = KuboRpcClient::new(
+            ipfs_rpc_config.sanitized_url()?,
+            self.root_logger(),
+            ipfs_rpc_config.credentials.clone(),
+        )?;
 
         Ok(Arc::new(kubo_rpc_client))
     }
