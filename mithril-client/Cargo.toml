@@ -1,6 +1,6 @@
 [package]
 name = "mithril-client"
-version = "0.15.1"
+version = "0.15.2"
 description = "Mithril client library"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -71,7 +71,7 @@ flume = { version = "0.12.0", optional = true }
 futures = "0.3.34"
 mithril-aggregator-client = { path = "../internal/mithril-aggregator-client", version = "0.4.0" }
 mithril-circuit-key-registry = { path = "../internal/mithril-circuit-key-registry", version = "0.2.1", optional = true }
-mithril-common = { path = "../mithril-common", version = "0.9.1", default-features = false }
+mithril-common = { path = "../mithril-common", version = "0.9.2", default-features = false }
 reqwest = { workspace = true, default-features = false, features = ["charset", "http2", "query", "stream", "system-proxy"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
