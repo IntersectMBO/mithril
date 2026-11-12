@@ -2,7 +2,7 @@
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum SignatureError {
     /// There is an index out of bounds
-    #[error("Received index, {0}, is higher than what the security parameter allows, {1}.")]
+    #[error("Received index, {0}, is not lower than the lottery size, {1}.")]
     IndexBoundFailed(u64, u64),
 
     /// The lottery was actually lost for the signature

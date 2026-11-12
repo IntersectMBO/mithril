@@ -802,6 +802,37 @@ mod tests {
         }
 
         #[test]
+        fn verify_fails_with_index_equal_to_m() {
+            let ctx = build_single_signature_context(2, [0u8; 32]);
+            let mut signature = ctx
+                .signer_1
+                .create_single_signature(&TEST_MESSAGE)
+                .expect("signature should be created");
+
+            let params = test_parameters();
+            signature.set_concatenation_signature_indices(&[params.m]);
+
+            let error = signature
+                .verify(
+                    &params,
+                    &ctx.vk_1.vk,
+                    &1,
+                    &ctx.avk,
+                    &TEST_MESSAGE,
+                    #[cfg(feature = "snark")]
+                    None,
+                )
+                .expect_err("Verification should fail with an index equal to m");
+            assert!(
+                matches!(
+                    error.downcast_ref::<SignatureError>(),
+                    Some(SignatureError::IndexBoundFailed(_, _))
+                ),
+                "Unexpected error variant: {error:?}"
+            );
+        }
+
+        #[test]
         fn verify_fails_with_wrong_message() {
             let ctx = build_single_signature_context(2, [0u8; 32]);
             let signature = ctx

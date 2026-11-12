@@ -61,7 +61,7 @@ impl SingleSignatureForConcatenation {
         total_stake: &Stake,
     ) -> StmResult<()> {
         for &index in &self.indexes {
-            if index > params.m {
+            if index >= params.m {
                 return Err(anyhow!(SignatureError::IndexBoundFailed(index, params.m)));
             }
 
