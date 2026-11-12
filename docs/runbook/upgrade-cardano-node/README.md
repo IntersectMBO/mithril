@@ -104,6 +104,7 @@ Update the Cardano node version to `$CARDANO_NODE_VERSION` in the GitHub environ
 - `dev-preview`
 - `dev-follower-preview`
 - `dev-mainnet`
+- `dev-dijkstranet`
 - `testing-preview`
 - `pre-release-preview`
 - `release-preprod`
@@ -111,5 +112,8 @@ Update the Cardano node version to `$CARDANO_NODE_VERSION` in the GitHub environ
 
 > [!NOTE]
 > The `pre-release-preview`, `release-preprod`, and `release-mainnet` environments are usually updated in the next distribution cycle rather than immediately, depending on the release schedule.
+
+> [!IMPORTANT]
+> The Cardano node release archive does not ship the Dijkstranet configuration: before updating `dev-dijkstranet`, add the configuration files of the new version from the [Dijkstranet environment](https://book.play.dev.cardano.org/environments-pre/dijkstra/) to the `dijkstranet/cardano-node` folder of the new version folder in `mithril-infra/assets/docker/cardano/config` (eg `11.3/dijkstranet/cardano-node`), and keep the previous `dijkstranet` folder until `dev-dijkstranet` runs the new version.
 
 For more information about the CD, please refer to [Release process and versioning](https://mithril.network/doc/adr/3).
