@@ -22,4 +22,5 @@ slog = { workspace = true, features = ["max_level_trace", "release_max_level_deb
 slog-async = { workspace = true }
 slog-bunyan = { workspace = true }
 slog-term = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["fs", "macros", "process", "rt-multi-thread"] }
