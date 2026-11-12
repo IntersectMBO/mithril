@@ -23,6 +23,7 @@ services:
       - IPFS_STORAGE_MAX=${AGGREGATOR_IPFS_STORAGE_MAX}
       - IPFS_IPNS_SIGNING_KEY_NAME=${AGGREGATOR_IPFS_IPNS_SIGNING_KEY_NAME}
       - IPFS_IPNS_SIGNING_KEY=${AGGREGATOR_IPFS_IPNS_SIGNING_KEY}
+      - IPFS_RPC_AUTH_TOKEN=${AGGREGATOR_IPFS_RPC_AUTH_TOKEN}
     volumes:
       - ../data/${NETWORK}/mithril-aggregator/ipfs:/data/ipfs
       - ./ipfs/container-init.d:/container-init.d:ro
@@ -31,7 +32,14 @@ services:
       - "${AGGREGATOR_IPFS_SWARM_PORT}:${AGGREGATOR_IPFS_SWARM_PORT}/udp"
     pids_limit: 2048
     healthcheck:
-      test: ["CMD", "ipfs", "--api=/ip4/127.0.0.1/tcp/5001", "id"]
+      test:
+        - CMD-SHELL
+        - |
+          if [ -n "$$IPFS_RPC_AUTH_TOKEN" ]; then
+            ipfs --api=/ip4/127.0.0.1/tcp/5001 --api-auth "bearer:$$IPFS_RPC_AUTH_TOKEN" id
+          else
+            ipfs --api=/ip4/127.0.0.1/tcp/5001 id
+          fi
       interval: 30s
       timeout: 5s
       retries: 3

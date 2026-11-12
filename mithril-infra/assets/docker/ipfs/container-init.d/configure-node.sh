@@ -56,3 +56,9 @@ if [ -n "${IPFS_IPNS_SIGNING_KEY:-}" ]; then
   printf '%s\n' "${IPFS_IPNS_SIGNING_KEY}" > "$ipns_key_file"
   ipfs key import --format=pem-pkcs8-cleartext "${IPFS_IPNS_SIGNING_KEY_NAME}" "$ipns_key_file" > /dev/null
 fi
+
+if [ -n "${IPFS_RPC_AUTH_TOKEN:-}" ]; then
+  ipfs config --json API.Authorizations "{\"mithril-aggregator\": {\"AuthSecret\": \"bearer:${IPFS_RPC_AUTH_TOKEN}\", \"AllowedPaths\": [\"/api/v0\"]}}"
+else
+  ipfs config --json API.Authorizations '{}'
+fi

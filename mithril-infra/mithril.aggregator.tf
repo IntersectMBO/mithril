@@ -37,6 +37,7 @@ resource "null_resource" "mithril_aggregator" {
     mithril_ipfs_storage_max                                                     = var.mithril_ipfs_storage_max,
     mithril_ipfs_ipns_signing_key                                                = sha256(var.mithril_ipfs_ipns_signing_key),
     mithril_ipfs_ipns_signing_key_name                                           = var.mithril_ipfs_ipns_signing_key_name,
+    mithril_ipfs_rpc_auth_token                                                  = sha256(var.mithril_ipfs_rpc_auth_token),
     mithril_aggregator_ipfs_share                                                = var.mithril_aggregator_ipfs_share,
     ipfs_image_id                                                                = var.ipfs_image_id,
     ipfs_image_registry                                                          = var.ipfs_image_registry,
@@ -199,7 +200,7 @@ EOT
       ,
       <<-EOT
 if [ "${var.mithril_ipfs_enabled}" = "true" ]; then
-  export IPFS_RPC_SERVER_CONFIG=$(jq -nc --arg url '${local.mithril_aggregator_ipfs_rpc_api_url}' --arg ipns_key_name '${var.mithril_ipfs_ipns_signing_key_name}' --arg ipns_enabled '${var.mithril_ipfs_ipns_signing_key != ""}' '{"url": $url} + if $ipns_enabled == "true" then {"ipns_key_name": $ipns_key_name} else {} end')
+  export IPFS_RPC_SERVER_CONFIG=$(jq -nc --arg url '${local.mithril_aggregator_ipfs_rpc_api_url}' --arg ipns_key_name '${var.mithril_ipfs_ipns_signing_key_name}' --arg ipns_enabled '${var.mithril_ipfs_ipns_signing_key != ""}' --arg rpc_auth_token '${var.mithril_ipfs_rpc_auth_token}' '{"url": $url} + if $ipns_enabled == "true" then {"ipns_key_name": $ipns_key_name} else {} end + if $rpc_auth_token != "" then {"credentials": {"type": "bearer", "token": $rpc_auth_token}} else {} end')
 fi
 EOT
       ,
@@ -231,6 +232,7 @@ EOT
       "export AGGREGATOR_IPFS_IPNS_SIGNING_KEY_NAME='${var.mithril_ipfs_ipns_signing_key_name}'",
       "export AGGREGATOR_IPFS_IPNS_SIGNING_KEY='${local.mithril_aggregator_ipfs_ipns_signing_key}'",
       "export AGGREGATOR_IPFS_SHARE='${var.mithril_aggregator_ipfs_share}'",
+      "export AGGREGATOR_IPFS_RPC_AUTH_TOKEN='${var.mithril_ipfs_rpc_auth_token}'",
       "export P2P_BOOTSTRAP_PEER='${var.mithril_p2p_network_bootstrap_peer}'",
       "export ENABLE_METRICS_SERVER=true",
       "export METRICS_SERVER_IP=0.0.0.0",
