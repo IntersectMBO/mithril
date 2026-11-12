@@ -17,7 +17,7 @@ pub enum CardanoNetwork {
     /// The Cardano mainnet network
     MainNet,
 
-    /// A Cardano test network (preview, preprod or private testnet)
+    /// A Cardano test network (preview, preprod, dijkstranet or private testnet)
     TestNet(MagicId),
 }
 
@@ -30,6 +30,8 @@ impl CardanoNetwork {
     pub const PREVIEW_MAGIC_ID: MagicId = 2;
     /// Devnet magic ID
     pub const DEVNET_MAGIC_ID: MagicId = 42;
+    /// Dijkstranet magic ID
+    pub const DIJKSTRANET_MAGIC_ID: MagicId = 6;
 
     /// Instantiates a CardanoNetwork from its code and magic id
     pub fn from_code(
@@ -41,6 +43,7 @@ impl CardanoNetwork {
             "preview" => Ok(CardanoNetwork::TestNet(Self::PREVIEW_MAGIC_ID)),
             "preprod" => Ok(CardanoNetwork::TestNet(Self::PREPROD_MAGIC_ID)),
             "devnet" => Ok(CardanoNetwork::TestNet(Self::DEVNET_MAGIC_ID)),
+            "dijkstranet" => Ok(CardanoNetwork::TestNet(Self::DIJKSTRANET_MAGIC_ID)),
             "private" => {
                 if let Some(magic) = network_magic {
                     Ok(CardanoNetwork::TestNet(magic))
@@ -51,7 +54,7 @@ impl CardanoNetwork {
                 }
             }
             what => Err(CardanoNetworkError::ParseFromCode(format!(
-                "could not parse network '{what}', the only recognized networks are: mainnet, devnet, testnet, preview, preprod and private"
+                "could not parse network '{what}', the only recognized networks are: mainnet, devnet, testnet, preview, preprod, dijkstranet and private"
             ))),
         }
     }
@@ -84,6 +87,7 @@ impl Display for CardanoNetwork {
                 Self::PREVIEW_MAGIC_ID => write!(f, "preview"),
                 Self::PREPROD_MAGIC_ID => write!(f, "preprod"),
                 Self::DEVNET_MAGIC_ID => write!(f, "devnet"),
+                Self::DIJKSTRANET_MAGIC_ID => write!(f, "dijkstranet"),
                 _ => write!(f, "private"),
             },
         }
@@ -148,6 +152,14 @@ mod tests {
         assert_eq!(
             CardanoNetwork::from_code("devnet".to_string(), Some(123)).unwrap(),
             CardanoNetwork::TestNet(CardanoNetwork::DEVNET_MAGIC_ID)
+        );
+        assert_eq!(
+            CardanoNetwork::from_code("dijkstranet".to_string(), None).unwrap(),
+            CardanoNetwork::TestNet(CardanoNetwork::DIJKSTRANET_MAGIC_ID)
+        );
+        assert_eq!(
+            CardanoNetwork::from_code("dijkstranet".to_string(), Some(123)).unwrap(),
+            CardanoNetwork::TestNet(CardanoNetwork::DIJKSTRANET_MAGIC_ID)
         );
         assert_eq!(
             CardanoNetwork::from_code("private".to_string(), Some(123)).unwrap(),
@@ -232,6 +244,10 @@ mod tests {
             CardanoNetwork::TestNet(CardanoNetwork::PREPROD_MAGIC_ID),
             "preprod",
         );
+        assert_all_conversions_eq(
+            CardanoNetwork::TestNet(CardanoNetwork::DIJKSTRANET_MAGIC_ID),
+            "dijkstranet",
+        );
         assert_all_conversions_eq(CardanoNetwork::TestNet(123456), "private");
     }
 
@@ -258,6 +274,10 @@ mod tests {
         assert_magic_id_conversion_roundtrip(
             CardanoNetwork::DEVNET_MAGIC_ID,
             CardanoNetwork::TestNet(CardanoNetwork::DEVNET_MAGIC_ID),
+        );
+        assert_magic_id_conversion_roundtrip(
+            CardanoNetwork::DIJKSTRANET_MAGIC_ID,
+            CardanoNetwork::TestNet(CardanoNetwork::DIJKSTRANET_MAGIC_ID),
         );
         assert_magic_id_conversion_roundtrip(123456, CardanoNetwork::TestNet(123456));
     }
