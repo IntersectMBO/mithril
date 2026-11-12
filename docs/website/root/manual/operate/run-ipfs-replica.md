@@ -21,6 +21,7 @@ A Mithril aggregator can publish the immutable archives of its Cardano database 
 The replication works as follows:
 
 - The aggregator adds each new immutable archive to a directory and publishes the latest version of this directory under an **IPNS name**
+- The Mithril network gives this IPNS name a stable and human readable [DNSLink](https://dnslink.dev/) name in its domain (eg, `/ipns/immutables.testing-preview.api.mithril.network`)
 - The replica resolves the IPNS name periodically and pins the new version of the directory, fetching only the missing archives
 - The replica keeps the previous versions of the directory pinned, as older snapshots still reference them
 - The replica announces the archives to the IPFS network and serves them to the Mithril clients.
