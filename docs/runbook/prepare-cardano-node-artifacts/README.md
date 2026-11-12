@@ -260,7 +260,11 @@ The following GitHub environments can be used for testing:
 - `dev-preview`
 - `dev-follower-preview`
 - `dev-mainnet`
+- `dev-dijkstranet`
 - `testing-preview`
+
+> [!IMPORTANT]
+> The Cardano node release archive does not ship the Dijkstranet configuration: before testing with `dev-dijkstranet`, add the configuration files from the [Dijkstranet environment](https://book.play.dev.cardano.org/environments-pre/dijkstra/) to `mithril-infra/assets/docker/cardano/config/${CARDANO_CONFIG_VERSION}/dijkstranet/cardano-node`.
 
 ## Step 8: Cleanup (Optional)
 
