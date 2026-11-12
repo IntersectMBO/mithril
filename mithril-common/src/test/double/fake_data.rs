@@ -969,3 +969,15 @@ pub fn snark_aggregate_signature() -> ProtocolMultiSignature {
     ])
     .unwrap()
 }
+
+/// Fake IVC SNARK aggregate signature
+///
+/// Serialized from the next epoch step output asset of mithril-stm (its `IvcProof` built from the
+/// proof bytes, the state and the accumulator of the asset, wrapped in `AggregateSignature::IvcSnark`
+/// and written with `to_bytes`). Regenerate it the same way when the encoding of the IVC proof or
+/// of the aggregate signature changes.
+#[cfg(feature = "snark")]
+pub fn ivc_snark_aggregate_signature() -> ProtocolMultiSignature {
+    ProtocolMultiSignature::from_bytes(include_bytes!("assets/ivc_snark_aggregate_signature.asset"))
+        .expect("the embedded IVC SNARK aggregate signature asset should decode")
+}

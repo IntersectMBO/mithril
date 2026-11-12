@@ -1,13 +1,13 @@
 [package]
 name = "mithril-common"
-version = "0.9.0"
+version = "0.9.1"
 description = "Common types, interfaces, and utilities for Mithril nodes."
 authors = { workspace = true }
 edition = { workspace = true }
 homepage = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
-include = ["**/*.rs", "Cargo.toml", "README.md", ".gitignore", "openapi.yaml"]
+include = ["**/*.rs", "Cargo.toml", "README.md", ".gitignore", "openapi.yaml", "src/test/double/assets/ivc_snark_aggregate_signature.asset"]
 
 [package.metadata.docs.rs]
 all-features = true

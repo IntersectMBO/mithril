@@ -86,7 +86,11 @@ A certificate chain is considered valid when there is at least one valid certifi
 
 A **non-genesis certificate** is valid if and only if the `AVK` used to verify the multi-signature is also part of the signed message used to create a valid multi-signature in a previously sealed certificate.
 
-The genesis certificate is valid if and only if its genesis signature is verified with the advertised public genesis key.
+The genesis certificate is valid if and only if its genesis signature is verified with the advertised public genesis key, and its `AVK` and protocol parameters are the ones of the message signed by the genesis signature.
+
+The certificate following the genesis certificate is valid only if it is in the next epoch: the `AVK` signed by the genesis certificate is the one of the next epoch.
+
+The certificate following a certificate whose recursive SNARK aggregate signature certifies the whole chain is valid only if it is in the next epoch too: such a signature covers the signed message of its certificate only, so the `AVK` and protocol parameters it chains are the signed ones of the next epoch.
 
 An implementation of the algorithm would work as follows for a certificate:
 
@@ -98,23 +102,26 @@ An implementation of the algorithm would work as follows for a certificate:
 - **Step 6**: Retrieve the `previous_certificate` that has the hash `previous_hash`:
   - **Step 6.1**: If it is not a `genesis_certificate`:
     - **Step 6.1.1**: Verify (or fail) that the `previous_hash` of the `previous_certificate` is valid by computing it and comparing it with the `hash` field of the certificate:
-    - **Step 6.1.2**: Verify the `current_avk`:
-      - **Step 6.1.2.1**: If the `current_certificate` is the `first_certificate` of the epoch
-        - **Step 6.1.2.1.1**: Verify (or fail) that the `current_avk` of the `current_certificate` is part of the message signed by the multi-signature of the `previous_certificate`
-        - **Step 6.1.2.1.2**: Verify (or fail) that the `current_protocol_parameters` of the `current_certificate` is part of the message signed by the multi-signature of the `previous_certificate`
-      - **Step 6.1.2.2**: Else verify (or fail) that the `current_avk` of the `current_certificate` is the same as the `current_avk` of the `previous_certificate`
-    - **Step 6.1.3**: Verify (or fail) that the `multi_signature` of the `previous_certificate` is valid
-    - **Step 6.1.4**: Use the `previous_certificate` as `current_certificate` and start again at **Step 2**
+    - **Step 6.1.2**: If the `previous_certificate` carries a recursive SNARK aggregate signature, verify (or fail) that the `current_epoch` of the `current_certificate` is the epoch following the `current_epoch` of the `previous_certificate`
+    - **Step 6.1.3**: Verify the `current_avk`:
+      - **Step 6.1.3.1**: If the `current_certificate` is the `first_certificate` of the epoch
+        - **Step 6.1.3.1.1**: Verify (or fail) that the `current_avk` of the `current_certificate` is part of the message signed by the multi-signature of the `previous_certificate`
+        - **Step 6.1.3.1.2**: Verify (or fail) that the `current_protocol_parameters` of the `current_certificate` is part of the message signed by the multi-signature of the `previous_certificate`
+      - **Step 6.1.3.2**: Else verify (or fail) that the `current_avk` of the `current_certificate` is the same as the `current_avk` of the `previous_certificate`
+    - **Step 6.1.4**: Verify (or fail) that the `multi_signature` of the `previous_certificate` is valid
+    - **Step 6.1.5**: Use the `previous_certificate` as `current_certificate` and start again at **Step 2**
   - **Step 6.2**: If it is a `genesis_certificate`:
     - **Step 6.2.1**: Verify (or fail) that the `previous_hash` of the `previous_certificate` is valid by computing it and comparing it with the `hash` field of the certificate
     - **Step 6.2.2**: Verify (or fail) that the `current_epoch` of the `previous_certificate` is part of the message signed by the genesis_certificate of the `previous_certificate`
     - **Step 6.2.3**: Verify (or fail) that the `current_avk` of the `current_certificate` is part of the message signed by the genesis signature of the `previous_certificate`
     - **Step 6.2.4**: Verify (or fail) that the `current_protocol_parameters` of the `current_certificate` is part of the message signed by the genesis signature of the `previous_certificate`
-    - **Step 6.2.5**: The certificate is valid (success).
+    - **Step 6.2.5**: Verify (or fail) that the `current_epoch` of the `current_certificate` is the epoch following the `current_epoch` of the `previous_certificate`
+    - **Step 6.2.6**: Verify (or fail) that the `current_avk` and the `current_protocol_parameters` of the `previous_certificate` are the ones of the message signed by its genesis signature, and that its SNARK `current_avk` is the one of the signed message when both are present
+    - **Step 6.2.7**: The certificate is valid (success).
 
 :::tip
 
-Steps 4 and 6.1.3 check that a certificate's multi-signature is valid. Mithril supports several ways to produce and verify this, see [aggregation flavors](./aggregation/).
+Steps 4 and 6.1.4 check that a certificate's multi-signature is valid. Mithril supports several ways to produce and verify this, see [aggregation flavors](./aggregation/).
 
 :::
 
