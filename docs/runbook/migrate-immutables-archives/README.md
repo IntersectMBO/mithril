@@ -1,18 +1,17 @@
-# Migrate the immutable files archives of Mithril aggregator
+# Migrate the immutable files archives of a Mithril aggregator
 
 This runbook describes how to migrate the immutable files archives of a Mithril aggregator to a new format (e.g. after a compression change or a `zstd` library upgrade that produces different archives).
 
-The migration consists in clearing the immutable files archives cache of the aggregator, with the `tools clear-immutables-archives-cache` command, and then restarting the aggregator so that the `ImmutablesArchivesPreloader` job re-creates all the archives at startup.
+The migration consists of clearing the immutable files archives cache of the aggregator, with the `tools clear-immutables-archives-cache` command, and then restarting the aggregator so that the `ImmutablesArchivesPreloader` job re-creates all the archives at startup.
 
 > [!IMPORTANT]
 >
 > - The aggregator must be running a distribution that produces the new archives format (i.e. the target distribution must already be deployed on the network).
 > - While the archives are being re-created, the `CardanoDatabase` signed entity type is locked and is not certified by the aggregator. This can take a while on networks with many immutable files (e.g. `mainnet`).
+> - This runbook only migrates the archives of the local cache of the aggregator. The archives already uploaded to remote storages (`gcp` snapshot uploader, IPFS) are not replaced, as the aggregator never overwrites an existing remote archive: they keep the previous format. They remain valid for the existing and future Cardano database snapshots, since the snapshots only certify the content of the archives.
 
 > [!WARNING]
 > If the aggregator uses the `local` snapshot uploader, the immutable files archives are served directly from the cache directory. Deleting them breaks the download of the existing Cardano database snapshots until the `ImmutablesArchivesPreloader` job has re-created the archives.
->
-> This is not an issue with the `gcp` snapshot uploader (default for the Mithril networks infrastructure), as the archives are served from the cloud storage.
 
 ## Configure environment variables
 
@@ -118,22 +117,22 @@ docker start mithril-aggregator
 Monitor the logs of the `ImmutablesArchivesPreloader` job:
 
 ```bash
-docker logs -f --tail 1000 mithril-aggregator | grep ImmutablesArchivesPreloader
+docker logs -f --tail 1000 mithril-aggregator | grep -E "ImmutablesArchivesPreloader|Failed to preload the immutables archives"
 ```
 
-The job logs a `Started` message when it begins, and a `Finished` message when all the archives have been re-created. Wait for the `Finished` message.
+The job logs a `Started` message when it begins and a `Finished` message when the preload attempt ends. Wait for `Finished`, then verify that no `Failed to preload the immutables archives` warning was logged before proceeding.
+
+> [!NOTE]
+> If the `Failed to preload the immutables archives` warning was logged, the archives were not all re-created. The missing archives will be created during the next Cardano database snapshot creation, or you can restart the aggregator to run the job again (the archives already re-created are kept).
 
 > [!NOTE]
 > The duration of the job depends on the number of immutable files of the network, e.g. it took ~35 minutes for ~29,500 immutable files on `testing-preview`.
 
-To follow the progress of the job, display the last immutable trio being archived (requires the `debug` log level) and compare it with the last immutable file number of the Cardano node:
+To follow the progress of the job, display the last immutable trio being archived (requires the `debug` log level) and compare it with the last immutable file number of the Cardano node (approximately the highest immutable file number displayed by the dry run of the [Inspect the immutable files archives cache](#inspect-the-immutable-files-archives-cache) step):
 
 ```bash
 docker logs --tail 1000 mithril-aggregator | grep "Snapshotting immutable trio" | tail -n 1
 ```
-
-> [!NOTE]
-> If the job fails, a `Failed to preload the immutables archives` warning is logged. In that case, the missing archives will be created during the next Cardano database snapshot creation, or you can restart the aggregator to run the job again.
 
 Then, make sure that the certification of the Cardano database resumes by monitoring the new Cardano database snapshots in the [Mithril explorer](https://mithril.network/explorer/?aggregator=**URL_ENCODED_AGGREGATOR_ENDPOINT**).
 
