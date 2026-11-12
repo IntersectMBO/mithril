@@ -1,11 +1,11 @@
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
 use crate::{
     StdResult,
-    crypto_helper::{MKTree, MKTreeNode, MKTreeStoreInMemory},
+    crypto_helper::{MKTree, MKTreeNode, MKTreeStoreInMemory, decode_bech32, encode_bech32},
     entities::{Epoch, ProtocolMessage, ProtocolMessagePartKey, StakeDistribution},
     signable_builder::SignableBuilder,
 };
@@ -59,6 +59,32 @@ impl CardanoStakeDistributionSignableBuilder {
 
         MKTree::new(&leaves)
     }
+
+    /// Check that every key of a [StakeDistribution] is a canonical pool id.
+    ///
+    /// A canonical pool id is the lowercase bech32 encoding, with the `pool` human readable part, of
+    /// a 28-byte pool hash, as the chain observers produce it. Enforcing it keeps each Merkle leaf
+    /// unambiguous, since the boundary between the pool id and its decimal stake cannot be moved.
+    pub fn check_pool_ids(pools_with_stake: &StakeDistribution) -> StdResult<()> {
+        const POOL_HASH_SIZE: usize = 28;
+        const POOL_HRP: &str = "pool";
+
+        for pool_id in pools_with_stake.keys() {
+            let is_canonical = decode_bech32(pool_id).ok().is_some_and(|(hrp, data)| {
+                hrp == POOL_HRP
+                    && data.len() == POOL_HASH_SIZE
+                    && encode_bech32(POOL_HRP, &data)
+                        .is_ok_and(|reencoded| reencoded.as_str() == pool_id.as_str())
+            });
+            if !is_canonical {
+                return Err(anyhow!(
+                    "Invalid pool id in the Cardano stake distribution: {pool_id:?}"
+                ));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -89,6 +115,8 @@ impl SignableBuilder<Epoch> for CardanoStakeDistributionSignableBuilder {
 
 #[cfg(test)]
 mod tests {
+    use bech32::primitives::iter::{ByteIterExt, Fe32IterExt};
+    use bech32::{Bech32, Bech32m, Fe32, Hrp};
     use mockall::predicate::eq;
 
     use crate::entities::ProtocolMessagePartKey;
@@ -193,5 +221,62 @@ mod tests {
             expected_mktree.compute_root().unwrap().to_hex(),
         );
         assert_eq!(signable_expected, signable);
+    }
+
+    fn canonical_pool_id() -> String {
+        encode_bech32("pool", &[0u8; 28]).unwrap()
+    }
+
+    fn pool_id_with_padding_bit_set() -> String {
+        let mut data_characters: Vec<Fe32> = [0u8; 28].iter().copied().bytes_to_fes().collect();
+        let last_character = data_characters.last_mut().unwrap();
+        *last_character = Fe32::try_from(last_character.to_u8() | 1).unwrap();
+        data_characters
+            .into_iter()
+            .with_checksum::<Bech32>(&Hrp::parse("pool").unwrap())
+            .chars()
+            .collect::<String>()
+    }
+
+    #[test]
+    fn check_pool_ids_accepts_canonical_pool_ids() {
+        let genuine = StakeDistribution::from([(canonical_pool_id(), 1000)]);
+
+        CardanoStakeDistributionSignableBuilder::check_pool_ids(&genuine)
+            .expect("canonical pool ids must be accepted");
+    }
+
+    #[test]
+    fn check_pool_ids_rejects_keys_that_are_not_canonical_pool_ids() {
+        let pool_id = canonical_pool_id();
+
+        for bad_key in [
+            format!("{pool_id}1234"),
+            "pool-123".to_string(),
+            pool_id.to_uppercase(),
+            encode_bech32("stake", &[0u8; 28]).unwrap(),
+            encode_bech32("pool", &[0u8; 27]).unwrap(),
+            encode_bech32("pool", &[0u8; 32]).unwrap(),
+            bech32::encode::<Bech32m>(Hrp::parse("pool").unwrap(), &[0u8; 28]).unwrap(),
+            pool_id_with_padding_bit_set(),
+        ] {
+            let altered = StakeDistribution::from([(bad_key.clone(), 5)]);
+            assert!(
+                CardanoStakeDistributionSignableBuilder::check_pool_ids(&altered).is_err(),
+                "key '{bad_key}' must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn check_pool_ids_rejects_a_bad_key_following_a_canonical_pool_id() {
+        let pool_id = canonical_pool_id();
+        let mixed =
+            StakeDistribution::from([(pool_id.clone(), 1000), (format!("{pool_id}1234"), 5)]);
+
+        assert!(
+            CardanoStakeDistributionSignableBuilder::check_pool_ids(&mixed).is_err(),
+            "a bad key following a canonical pool id must be rejected"
+        );
     }
 }

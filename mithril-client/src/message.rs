@@ -173,6 +173,15 @@ impl MessageBuilder {
         certificate: &MithrilCertificate,
         cardano_stake_distribution: &CardanoStakeDistribution,
     ) -> MithrilResult<ProtocolMessage> {
+        CardanoStakeDistributionSignableBuilder::check_pool_ids(
+            &cardano_stake_distribution.stake_distribution,
+        )
+        .with_context(|| {
+            format!(
+                "Invalid Cardano stake distribution for epoch {}",
+                cardano_stake_distribution.epoch
+            )
+        })?;
         let mk_tree =
             CardanoStakeDistributionSignableBuilder::compute_merkle_tree_from_stake_distribution(
                 cardano_stake_distribution.stake_distribution.clone(),
@@ -195,5 +204,44 @@ impl MessageBuilder {
 impl Default for MessageBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use mithril_common::crypto_helper::encode_bech32;
+
+    use crate::CardanoStakeDistribution;
+    use crate::common::test::Dummy;
+
+    use super::*;
+
+    fn stake_distribution_with_single_key(key: String) -> CardanoStakeDistribution {
+        let mut cardano_stake_distribution = CardanoStakeDistribution::dummy();
+        cardano_stake_distribution.stake_distribution.clear();
+        cardano_stake_distribution.stake_distribution.insert(key, 1000);
+        cardano_stake_distribution
+    }
+
+    #[test]
+    fn compute_cardano_stake_distribution_message_rejects_keys_that_are_not_pool_ids() {
+        let certificate = MithrilCertificate::dummy();
+        let pool_id = encode_bech32("pool", &[0u8; 28]).unwrap();
+        let altered = stake_distribution_with_single_key(format!("{pool_id}1234"));
+
+        MessageBuilder::new()
+            .compute_cardano_stake_distribution_message(&certificate, &altered)
+            .expect_err("a distribution with a key that is not a pool id must be rejected");
+    }
+
+    #[test]
+    fn compute_cardano_stake_distribution_message_accepts_canonical_pool_ids() {
+        let certificate = MithrilCertificate::dummy();
+        let pool_id = encode_bech32("pool", &[0u8; 28]).unwrap();
+        let genuine = stake_distribution_with_single_key(pool_id);
+
+        MessageBuilder::new()
+            .compute_cardano_stake_distribution_message(&certificate, &genuine)
+            .expect("a distribution with canonical pool ids must be accepted");
     }
 }
