@@ -52,6 +52,16 @@ resource "google_dns_record_set" "mithril-aggregator-cdn-endpoint-cname" {
   rrdatas      = [var.mithril_aggregator_cdn_cname]
 }
 
+resource "google_dns_record_set" "mithril-immutables-dnslink" {
+  count = var.mithril_ipfs_ipns_name != "" ? 1 : 0
+
+  name         = "_dnslink.immutables.${google_dns_managed_zone.mithril-api-zone.dns_name}"
+  managed_zone = google_dns_managed_zone.mithril-api-zone.name
+  type         = "TXT"
+  ttl          = 300
+  rrdatas      = ["\"dnslink=/ipns/${var.mithril_ipfs_ipns_name}\""]
+}
+
 resource "google_dns_record_set" "mithril-signer-endpoint" {
   for_each = var.mithril_signers
 
