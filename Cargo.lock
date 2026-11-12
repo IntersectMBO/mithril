@@ -5271,6 +5271,7 @@ dependencies = [
  "slog-async",
  "slog-bunyan",
  "slog-term",
+ "thiserror 2.0.21",
  "tokio",
 ]
 
