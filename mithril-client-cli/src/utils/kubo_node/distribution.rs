@@ -49,7 +49,9 @@ pub struct KuboDistribution {
     /// Name of the release asset, e.g. `kubo_v0.43.1_linux-amd64.tar.gz`
     pub asset_name: String,
     /// Expected SHA-256 of the release asset, hex encoded
-    pub sha256: &'static str,
+    pub sha256: String,
+    /// Path of the Kubo binary inside the unpacked release asset
+    pub binary_path_in_archive: &'static str,
 }
 
 impl KuboDistribution {
@@ -88,7 +90,12 @@ impl KuboDistribution {
 
         Ok(Self {
             asset_name: format!("kubo_{KUBO_VERSION}_{kubo_platform}.{extension}"),
-            sha256,
+            sha256: sha256.to_string(),
+            binary_path_in_archive: if os == "windows" {
+                "kubo/ipfs.exe"
+            } else {
+                "kubo/ipfs"
+            },
         })
     }
 }
@@ -104,7 +111,9 @@ mod tests {
         assert_eq!(
             KuboDistribution {
                 asset_name: "kubo_v0.43.1_linux-amd64.tar.gz".to_string(),
-                sha256: "3f2bf974ab2a3ec6d997fac7d8cb46f59983a7cddd0b55ef998e6ce379155fb2",
+                sha256: "3f2bf974ab2a3ec6d997fac7d8cb46f59983a7cddd0b55ef998e6ce379155fb2"
+                    .to_string(),
+                binary_path_in_archive: "kubo/ipfs",
             },
             distribution
         );
@@ -117,7 +126,9 @@ mod tests {
         assert_eq!(
             KuboDistribution {
                 asset_name: "kubo_v0.43.1_linux-arm64.tar.gz".to_string(),
-                sha256: "e09237abadd9578d7a73dd2e2b718848b78437cb56e48cc9742b23ce9ebac829",
+                sha256: "e09237abadd9578d7a73dd2e2b718848b78437cb56e48cc9742b23ce9ebac829"
+                    .to_string(),
+                binary_path_in_archive: "kubo/ipfs",
             },
             distribution
         );
@@ -130,7 +141,9 @@ mod tests {
         assert_eq!(
             KuboDistribution {
                 asset_name: "kubo_v0.43.1_darwin-arm64.tar.gz".to_string(),
-                sha256: "63ab05f578190a39aaba1e80b697644a9b717f5dc6a5485ec7a2bded68f9374f",
+                sha256: "63ab05f578190a39aaba1e80b697644a9b717f5dc6a5485ec7a2bded68f9374f"
+                    .to_string(),
+                binary_path_in_archive: "kubo/ipfs",
             },
             distribution
         );
@@ -143,7 +156,9 @@ mod tests {
         assert_eq!(
             KuboDistribution {
                 asset_name: "kubo_v0.43.1_windows-amd64.zip".to_string(),
-                sha256: "c25871516dec4d97ce1d160a26c1e3fdad294cb0eea065c0c0343bcfca86c524",
+                sha256: "c25871516dec4d97ce1d160a26c1e3fdad294cb0eea065c0c0343bcfca86c524"
+                    .to_string(),
+                binary_path_in_archive: "kubo/ipfs.exe",
             },
             distribution
         );
