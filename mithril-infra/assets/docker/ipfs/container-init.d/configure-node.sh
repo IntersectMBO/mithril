@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-for variable in IPFS_SWARM_PORT IPFS_PUBLIC_ADDRESS IPFS_STORAGE_MAX; do
+for variable in IPFS_SWARM_PORT IPFS_PUBLIC_ADDRESS; do
   eval "value=\${$variable:-}"
   if [ -z "$value" ]; then
     echo "configure-node: $variable is not set" >&2
@@ -38,7 +38,6 @@ ipfs config --json Internal.Bitswap.EngineTaskWorkerCount 32
 ipfs config --json Internal.Bitswap.EngineBlockstoreWorkerCount 256
 ipfs config --json Internal.Bitswap.MaxOutstandingBytesPerPeer 8388608
 
-ipfs config Datastore.StorageMax "${IPFS_STORAGE_MAX}"
 ipfs config --json Experimental.FilestoreEnabled true
 ipfs config Plugins.Plugins.telemetry.Config.Mode off
 

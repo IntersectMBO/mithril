@@ -428,12 +428,6 @@ variable "mithril_ipfs_enabled" {
   default     = false
 }
 
-variable "mithril_ipfs_storage_max" {
-  type        = string
-  description = "The maximum disk space used by the IPFS node datastore"
-  default     = "50GB"
-}
-
 variable "mithril_ipfs_ipns_signing_key" {
   type        = string
   description = "The IPNS signing key in PEM PKCS#8 format base64 encoded, imported by the IPFS node to publish the immutable archives directory (optional, the aggregator does not publish to IPNS if empty)"
