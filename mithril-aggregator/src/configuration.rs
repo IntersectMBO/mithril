@@ -514,9 +514,12 @@ pub struct ServeCommandConfiguration {
     /// where the snapshots will be stored. Defaults to "mithril" if not specified.
     /// `ipns_key_name` (optional) if set, publishes the snapshot MFS folder to IPNS under this key name. The
     /// key must already exist in the Kubo node keystore.
+    /// `credentials` (optional) authenticates to a Kubo node that has `API.Authorizations` set, either
+    /// with `"type": "basic"` and a `username` and `password`, or with `"type": "bearer"` and a `token`.
     #[example = "\
-    `{ \"url\": \"http://localhost:5001/\" }`\
-    or `{ \"url\": \"http://localhost:5001/\", \"mfs_folder_name\": \"custom-folder\", \"ipns_key_name\": \"ipns-key\" }`\
+    `{ \"url\": \"http://localhost:5001/\" }`<br/>\
+    or `{ \"url\": \"http://localhost:5001/\", \"mfs_folder_name\": \"custom-folder\", \"ipns_key_name\": \"ipns-key\" }`<br/>\
+    or `{ \"url\": \"http://localhost:5001/\", \"credentials\": { \"type\": \"bearer\", \"token\": \"my-token\" } }`\
     "]
     #[serde(
         default,
