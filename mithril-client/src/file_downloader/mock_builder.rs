@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use mithril_cardano_node_internal_database::entities::AncillaryFilesManifest;
+use mithril_cardano_node_internal_database::{
+    IMMUTABLE_DIR, entities::AncillaryFilesManifest, immutable_trio_names,
+};
 use mithril_common::{
     StdResult,
     crypto_helper::ManifestSigner,
@@ -131,6 +133,25 @@ impl MockFileDownloaderBuilder {
                 File::create(target_dir.join(AncillaryFilesManifest::ANCILLARY_MANIFEST_FILE_NAME))
                     .unwrap();
             serde_json::to_writer(ancillary_file, &ancillary_manifest).unwrap();
+            Ok(())
+        }))
+    }
+
+    /// The MockFileDownloader will succeed and will create the immutable trio of the downloaded
+    /// immutable file number in the `immutable` subdirectory of the target directory.
+    pub fn with_success_and_create_fake_immutable_files(self) -> Self {
+        self.with_returning(Box::new(|_, _, target_dir: &Path, _, download_event| {
+            if let DownloadEvent::Immutable {
+                immutable_file_number,
+                ..
+            } = download_event
+            {
+                let immutable_dir = target_dir.join(IMMUTABLE_DIR);
+                std::fs::create_dir_all(&immutable_dir).unwrap();
+                for filename in immutable_trio_names(immutable_file_number) {
+                    File::create(immutable_dir.join(filename)).unwrap();
+                }
+            }
             Ok(())
         }))
     }
