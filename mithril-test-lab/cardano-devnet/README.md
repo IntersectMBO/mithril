@@ -63,6 +63,11 @@ ARTIFACTS_DIR=artifacts NUM_FULL_NODES=2 NUM_POOL_NODES=5 ./devnet-run.sh
 # Epoch Length: the duration of a Cardano Epoch
 ARTIFACTS_DIR=artifacts SLOT_LENGTH=0.5 EPOCH_LENGTH=120 ./devnet-run.sh
 
+# Run devnet with cardano-node 11.2.0 and a hard fork from Conway to Dijkstra at epoch 2
+# Cardano node version: the latest era is Dijkstra from cardano-node 11.2.0 and Conway before
+# Cardano hard fork latest era at epoch: the epoch of the hard fork to Dijkstra (0 by default, cardano-node 11.2.0 or later only), the devnet forks to every era up to Conway at epoch 0
+ARTIFACTS_DIR=artifacts CARDANO_NODE_VERSION=11.2.0 CARDANO_HARD_FORK_LATEST_ERA_AT_EPOCH=2 ./devnet-run.sh
+
 # Logs devnet
 ARTIFACTS_DIR=artifacts LINES=10 ./devnet-log.sh
 

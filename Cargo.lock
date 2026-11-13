@@ -4778,6 +4778,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap",
+ "hex",
  "indicatif",
  "mithril-cardano-node-chain",
  "mithril-cardano-node-internal-database",
@@ -5576,9 +5577,8 @@ dependencies = [
 
 [[package]]
 name = "pallas-addresses"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7da690b8fc6776782e0a0b069cddcebed114807e7373b46620f6d8e899cd2ee5"
+version = "1.5.0-rc.2"
+source = "git+https://github.com/jpraynaud/pallas.git?rev=c6c584163e9f3f67c56d9496fd19f6b90ef74daf#c6c584163e9f3f67c56d9496fd19f6b90ef74daf"
 dependencies = [
  "base58",
  "bech32 0.11.1",
@@ -5592,9 +5592,8 @@ dependencies = [
 
 [[package]]
 name = "pallas-codec"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02127db5290c42ea6f6138896acf6196c8a6783d9d26dfe6870fd5ea0ce31440"
+version = "1.5.0-rc.2"
+source = "git+https://github.com/jpraynaud/pallas.git?rev=c6c584163e9f3f67c56d9496fd19f6b90ef74daf#c6c584163e9f3f67c56d9496fd19f6b90ef74daf"
 dependencies = [
  "hex",
  "minicbor",
@@ -5604,9 +5603,8 @@ dependencies = [
 
 [[package]]
 name = "pallas-crypto"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02480d918380d37a4e21c1d84c984f79bdc5e439f1de97ee1e08f1451b26f1c5"
+version = "1.5.0-rc.2"
+source = "git+https://github.com/jpraynaud/pallas.git?rev=c6c584163e9f3f67c56d9496fd19f6b90ef74daf#c6c584163e9f3f67c56d9496fd19f6b90ef74daf"
 dependencies = [
  "cryptoxide",
  "hex",
@@ -5618,9 +5616,8 @@ dependencies = [
 
 [[package]]
 name = "pallas-hardano"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd0286efce0dc398a8443010271811ed227463b70875fb810c746052bc0e9f61"
+version = "1.5.0-rc.2"
+source = "git+https://github.com/jpraynaud/pallas.git?rev=c6c584163e9f3f67c56d9496fd19f6b90ef74daf#c6c584163e9f3f67c56d9496fd19f6b90ef74daf"
 dependencies = [
  "binary-layout",
  "hex",
@@ -5639,9 +5636,8 @@ dependencies = [
 
 [[package]]
 name = "pallas-network"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d54e2357923b8db5fde4de5aba8807a653ecb4e21e62829014a36fbd13f11748"
+version = "1.5.0-rc.2"
+source = "git+https://github.com/jpraynaud/pallas.git?rev=c6c584163e9f3f67c56d9496fd19f6b90ef74daf#c6c584163e9f3f67c56d9496fd19f6b90ef74daf"
 dependencies = [
  "byteorder",
  "hex",
@@ -5657,9 +5653,8 @@ dependencies = [
 
 [[package]]
 name = "pallas-primitives"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd1f296363961ee9e62a0979ee03d425aae8247d54705dc5efe07a4e06c11aa4"
+version = "1.5.0-rc.2"
+source = "git+https://github.com/jpraynaud/pallas.git?rev=c6c584163e9f3f67c56d9496fd19f6b90ef74daf#c6c584163e9f3f67c56d9496fd19f6b90ef74daf"
 dependencies = [
  "hex",
  "pallas-codec",
@@ -5670,9 +5665,8 @@ dependencies = [
 
 [[package]]
 name = "pallas-traverse"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbb8352327793e8f6d614b3026a9de6bbc2f6bf0ecbf236f2fcf9ef8a4aafc12"
+version = "1.5.0-rc.2"
+source = "git+https://github.com/jpraynaud/pallas.git?rev=c6c584163e9f3f67c56d9496fd19f6b90ef74daf#c6c584163e9f3f67c56d9496fd19f6b90ef74daf"
 dependencies = [
  "hex",
  "itertools 0.14.0",

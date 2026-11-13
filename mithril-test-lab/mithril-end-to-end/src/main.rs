@@ -277,7 +277,7 @@ struct CardanoDevnetArgs {
     #[clap(long, default_value = "11.1.3")]
     cardano_node_version: semver::Version,
 
-    /// Epoch at which hard fork to the latest Cardano era will be made (starts with the latest era by default)
+    /// Epoch of the hard fork from Conway to Dijkstra, requires cardano-node 11.2.0 or later
     #[clap(long, default_value_t = 0)]
     cardano_hard_fork_latest_era_at_epoch: u16,
 
@@ -289,6 +289,21 @@ struct CardanoDevnetArgs {
     /// URL to download cardano binaries from (if not set, it will default to the official cardano releases)
     #[clap(long)]
     cardano_binary_url: Option<String>,
+}
+
+impl CardanoDevnetArgs {
+    fn validate(&self) -> StdResult<()> {
+        if self.cardano_hard_fork_latest_era_at_epoch != 0
+            && !Devnet::runs_dijkstra(&self.cardano_node_version)
+        {
+            return Err(anyhow!(
+                "The 'cardano_hard_fork_latest_era_at_epoch' parameter requires cardano-node {} or later: the devnet forks to every era up to Conway at epoch 0 and only forks to Dijkstra later",
+                Devnet::MIN_CARDANO_NODE_VERSION_WITH_DIJKSTRA
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 impl Cli {
@@ -303,6 +318,8 @@ impl Cli {
     }
 
     fn validate(&self) -> StdResult<()> {
+        self.cardano_devnet.validate()?;
+
         if !self.network_topology.use_relays && self.network_topology.number_of_aggregators >= 2 {
             return Err(anyhow!(
                 "The 'use_relays' parameter must be activated to run more than one aggregator"
@@ -616,6 +633,9 @@ impl App {
                     artifacts_dir,
                     bin_dir: args.bin_directory,
                     cardano_node_version: args.cardano_devnet.cardano_node_version,
+                    cardano_hard_fork_latest_era_at_epoch: args
+                        .cardano_devnet
+                        .cardano_hard_fork_latest_era_at_epoch,
                     mithril_run_interval: args.mithril.mithril_run_interval,
                     mithril_era: args.mithril.mithril_era,
                     mithril_era_reader_adapter: args.mithril.mithril_era_reader_adapter,
@@ -893,6 +913,54 @@ mod tests {
             AppResult::from(Err(anyhow!(SignalError("an error".to_string())))),
             AppResult::Cancelled(_)
         ));
+    }
+
+    #[test]
+    fn validate_refuses_a_hard_fork_epoch_above_zero_before_cardano_node_11_2_0() {
+        let args = Cli::parse_from([
+            "",
+            "--cardano-node-version",
+            "11.1.3",
+            "--cardano-hard-fork-latest-era-at-epoch",
+            "2",
+        ]);
+
+        let error = args.validate().unwrap_err().to_string();
+
+        assert!(error.contains("11.2.0"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn validate_accepts_a_hard_fork_epoch_above_zero_from_cardano_node_11_2_0() {
+        let args = Cli::parse_from([
+            "",
+            "--cardano-node-version",
+            "11.2.0",
+            "--cardano-hard-fork-latest-era-at-epoch",
+            "2",
+        ]);
+
+        args.validate().unwrap();
+    }
+
+    #[test]
+    fn validate_accepts_a_hard_fork_epoch_above_zero_from_a_cardano_node_11_2_0_pre_release() {
+        let args = Cli::parse_from([
+            "",
+            "--cardano-node-version",
+            "11.2.0-pre",
+            "--cardano-hard-fork-latest-era-at-epoch",
+            "2",
+        ]);
+
+        args.validate().unwrap();
+    }
+
+    #[test]
+    fn validate_accepts_the_default_hard_fork_epoch_before_cardano_node_11_2_0() {
+        let args = Cli::parse_from(["", "--cardano-node-version", "11.1.3"]);
+
+        args.validate().unwrap();
     }
 
     #[test]

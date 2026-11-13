@@ -13,8 +13,9 @@ use crate::{
     AggregateSignatureType, Aggregator, MithrilInfrastructure, NodeVersion,
     toolkit::ScenarioToolkit,
     utils::{
-        randomly_take_blocks_hashes, randomly_take_transactions_hashes,
-        retrieve_blocks_transactions_from_immutable_files,
+        check_payments_hashes_are_in_blocks, randomly_take_blocks_hashes,
+        randomly_take_sub_transactions_hashes, randomly_take_transactions_hashes,
+        retrieve_blocks_transactions_from_immutable_files, unique_hashes,
     },
 };
 
@@ -389,7 +390,29 @@ impl FullScenario {
         let blocks_transactions =
             retrieve_blocks_transactions_from_immutable_files(&immutable_files_directory)?;
 
-        let transaction_hashes = randomly_take_transactions_hashes(&blocks_transactions, 5);
+        let devnet_transaction_hashes =
+            infrastructure.devnet().mithril_payments_transaction_hashes()?;
+        let devnet_sub_transaction_hashes =
+            infrastructure.devnet().mithril_payments_sub_transaction_hashes()?;
+        check_payments_hashes_are_in_blocks(
+            &blocks_transactions,
+            &devnet_transaction_hashes,
+            &devnet_sub_transaction_hashes,
+        )?;
+        let transaction_hashes = unique_hashes(
+            [
+                randomly_take_transactions_hashes(&blocks_transactions, 5),
+                randomly_take_sub_transactions_hashes(
+                    &blocks_transactions,
+                    infrastructure.cardano_node_version(),
+                    infrastructure.cardano_hard_fork_latest_era_at_epoch(),
+                    5,
+                )?,
+                devnet_transaction_hashes,
+                devnet_sub_transaction_hashes,
+            ]
+            .concat(),
+        );
         let block_hashes = randomly_take_blocks_hashes(&blocks_transactions, 5);
 
         // Verify that the aggregator is still producing a certificate chain

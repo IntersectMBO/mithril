@@ -12,8 +12,9 @@ use crate::{
     Aggregator, MithrilInfrastructure,
     toolkit::ScenarioToolkit,
     utils::{
-        randomly_take_blocks_hashes, randomly_take_transactions_hashes,
-        retrieve_blocks_transactions_from_immutable_files,
+        check_payments_hashes_are_in_blocks, randomly_take_blocks_hashes,
+        randomly_take_sub_transactions_hashes, randomly_take_transactions_hashes,
+        retrieve_blocks_transactions_from_immutable_files, unique_hashes,
     },
 };
 
@@ -51,6 +52,7 @@ impl MinimalScenario {
             &spec.signed_entity_type,
             SignedEntityTypeDiscriminants::CardanoStakeDistribution
                 | SignedEntityTypeDiscriminants::CardanoTransactions
+                | SignedEntityTypeDiscriminants::CardanoBlocksTransactions
         ) {
             // Transfer some funds on the devnet to have some Cardano transactions to sign.
             // This step needs to be executed early in the process so that the transactions are available
@@ -142,6 +144,14 @@ impl MinimalScenario {
         Ok(())
     }
 
+    fn certifies_cardano_transactions(signed_entity_type: &SignedEntityTypeDiscriminants) -> bool {
+        matches!(
+            signed_entity_type,
+            SignedEntityTypeDiscriminants::CardanoTransactions
+                | SignedEntityTypeDiscriminants::CardanoBlocksTransactions
+        )
+    }
+
     async fn verify_artifacts_production(
         &self,
         target_epoch: Epoch,
@@ -155,7 +165,38 @@ impl MinimalScenario {
         let blocks_transactions =
             retrieve_blocks_transactions_from_immutable_files(&immutable_files_directory)?;
 
-        let transaction_hashes = randomly_take_transactions_hashes(&blocks_transactions, 5);
+        let devnet_transaction_hashes =
+            infrastructure.devnet().mithril_payments_transaction_hashes()?;
+        let devnet_sub_transaction_hashes =
+            infrastructure.devnet().mithril_payments_sub_transaction_hashes()?;
+        check_payments_hashes_are_in_blocks(
+            &blocks_transactions,
+            &devnet_transaction_hashes,
+            &devnet_sub_transaction_hashes,
+        )?;
+        let sub_transaction_hashes =
+            if Self::certifies_cardano_transactions(&self.signed_entity_type) {
+                [
+                    randomly_take_sub_transactions_hashes(
+                        &blocks_transactions,
+                        infrastructure.cardano_node_version(),
+                        infrastructure.cardano_hard_fork_latest_era_at_epoch(),
+                        5,
+                    )?,
+                    devnet_sub_transaction_hashes,
+                ]
+                .concat()
+            } else {
+                vec![]
+            };
+        let transaction_hashes = unique_hashes(
+            [
+                randomly_take_transactions_hashes(&blocks_transactions, 5),
+                devnet_transaction_hashes,
+                sub_transaction_hashes,
+            ]
+            .concat(),
+        );
         let block_hashes = randomly_take_blocks_hashes(&blocks_transactions, 5);
 
         // Verify that the aggregator is still producing a certificate chain
@@ -240,5 +281,29 @@ impl MinimalScenario {
         }
 
         Ok(target_epoch)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_cardano_transactions_modes_certify_cardano_transactions() {
+        assert!(MinimalScenario::certifies_cardano_transactions(
+            &SignedEntityTypeDiscriminants::CardanoTransactions
+        ));
+        assert!(MinimalScenario::certifies_cardano_transactions(
+            &SignedEntityTypeDiscriminants::CardanoBlocksTransactions
+        ));
+        assert!(!MinimalScenario::certifies_cardano_transactions(
+            &SignedEntityTypeDiscriminants::CardanoDatabase
+        ));
+        assert!(!MinimalScenario::certifies_cardano_transactions(
+            &SignedEntityTypeDiscriminants::MithrilStakeDistribution
+        ));
+        assert!(!MinimalScenario::certifies_cardano_transactions(
+            &SignedEntityTypeDiscriminants::CardanoStakeDistribution
+        ));
     }
 }
