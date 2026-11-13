@@ -7,7 +7,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use tokio::fs;
 
-use crate::discovery::cardano::{NodeProcess, ProcessProbe};
+use crate::discovery::cardano::{NodeProcess, ProcessOwner, ProcessProbe};
 
 /// Lists the `cardano-node` processes from `/proc`, resolving their user from `/etc/passwd`
 pub struct ProcfsProcessProbe {
@@ -88,17 +88,18 @@ async fn read_node_process(
         return None;
     }
 
-    let uid = fs::read_to_string(dir.join("status"))
+    let owner = fs::read_to_string(dir.join("status"))
         .await
         .ok()
-        .and_then(|status| parse_uid(&status));
+        .and_then(|status| parse_owner(&status));
 
     Some(NodeProcess {
         pid,
         executable: executable.unwrap_or(program),
         args: cmdline.collect(),
         working_dir: fs::read_link(dir.join("cwd")).await.ok(),
-        user: uid.and_then(|uid| users.get(&uid).cloned()),
+        user: owner.and_then(|owner| users.get(&owner.uid).cloned()),
+        owner,
     })
 }
 
@@ -122,15 +123,23 @@ fn parse_cmdline(content: &[u8]) -> Vec<String> {
         .collect()
 }
 
-/// Extract the real uid from a `/proc/<pid>/status` content, ie: `Uid:\t1001\t1001\t1001\t1001`
-fn parse_uid(status: &str) -> Option<u32> {
-    status
-        .lines()
-        .find_map(|line| line.strip_prefix("Uid:"))?
-        .split_whitespace()
-        .next()?
-        .parse()
-        .ok()
+/// Extract the real uid and gid from a `/proc/<pid>/status` content,
+/// ie: `Uid:\t1001\t1001\t1001\t1001` and `Gid:\t1001\t1001\t1001\t1001`
+fn parse_owner(status: &str) -> Option<ProcessOwner> {
+    let real_id = |prefix: &str| -> Option<u32> {
+        status
+            .lines()
+            .find_map(|line| line.strip_prefix(prefix))?
+            .split_whitespace()
+            .next()?
+            .parse()
+            .ok()
+    };
+
+    Some(ProcessOwner {
+        uid: real_id("Uid:")?,
+        gid: real_id("Gid:")?,
+    })
 }
 
 /// Map the uids to the user names of a passwd file, ie: `cardano:x:1001:1001::/home/cardano:/bin/bash`
@@ -173,13 +182,14 @@ mod tests {
             self.root.join("proc")
         }
 
+        /// Add a process whose primary group has the same identifier as its user
         fn add_process(&self, pid: u32, cmdline: &[&str], uid: u32) -> PathBuf {
             let dir = self.proc_root().join(pid.to_string());
             write_file(&dir.join("cmdline"), cmdline_bytes(cmdline));
             write_file(
                 &dir.join("status"),
                 format!(
-                    "Name:\tcardano-node\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\nGid:\t0\t0\t0\t0\n"
+                    "Name:\tcardano-node\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\nGid:\t{uid}\t{uid}\t{uid}\t{uid}\n"
                 ),
             );
             dir
@@ -218,6 +228,10 @@ mod tests {
                 args: vec!["run".to_string(), "--port".to_string(), "3001".to_string()],
                 working_dir: Some(PathBuf::from("/home/cardano")),
                 user: Some("cardano".to_string()),
+                owner: Some(ProcessOwner {
+                    uid: 1001,
+                    gid: 1001
+                }),
             }],
             processes
         );
@@ -269,6 +283,10 @@ mod tests {
                 args: vec!["run".to_string()],
                 working_dir: None,
                 user: Some("cardano".to_string()),
+                owner: Some(ProcessOwner {
+                    uid: 1001,
+                    gid: 1001
+                }),
             }],
             processes
         );
@@ -293,6 +311,39 @@ mod tests {
 
         let processes = proc.probe().cardano_node_processes().await.unwrap();
 
+        assert_eq!(None, processes[0].user);
+    }
+
+    #[tokio::test]
+    async fn reads_the_real_user_and_group_of_the_process() {
+        let proc = FakeProc::new("procfs_reads_the_real_user_and_group");
+        let dir = proc.add_process(1234, &["cardano-node", "run"], 0);
+        // Real, effective, saved set and filesystem identifiers: only the real ones are kept
+        write_file(
+            &dir.join("status"),
+            "Name:\tcardano-node\nUid:\t1001\t0\t0\t0\nGid:\t2002\t0\t0\t0\n",
+        );
+
+        let processes = proc.probe().cardano_node_processes().await.unwrap();
+
+        assert_eq!(
+            Some(ProcessOwner {
+                uid: 1001,
+                gid: 2002
+            }),
+            processes[0].owner
+        );
+    }
+
+    #[tokio::test]
+    async fn leaves_the_owner_unknown_when_the_status_is_not_readable() {
+        let proc = FakeProc::new("procfs_leaves_the_owner_unknown");
+        let dir = proc.add_process(1234, &["cardano-node", "run"], 1001);
+        std::fs::remove_file(dir.join("status")).unwrap();
+
+        let processes = proc.probe().cardano_node_processes().await.unwrap();
+
+        assert_eq!(None, processes[0].owner);
         assert_eq!(None, processes[0].user);
     }
 
