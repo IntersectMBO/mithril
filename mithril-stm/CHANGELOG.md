@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.14.3 (11-13-2026)
+
+### Changed
+
+- **BREAKING** The `hash` field of `IvcProof` isn't serialized anymore. Versions older than `0.14.3` can't decode the new bytes because the `hash` field is missing but older serialized values can be decoded.
+
 ## 0.14.0 (10-29-2026)
 
 ### Changed
