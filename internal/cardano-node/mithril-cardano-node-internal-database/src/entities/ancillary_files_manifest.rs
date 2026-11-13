@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,10 @@ use mithril_common::entities::SignableManifest;
 use mithril_common::{StdError, StdResult};
 
 /// Alias of [SignableManifest] for Ancillary files
+///
+/// A deserialized manifest only holds paths that stay inside the directory they are joined to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "SignableManifest<PathBuf, String>")]
 pub struct AncillaryFilesManifest {
     /// Inner manifest
     #[serde(flatten)]
@@ -34,6 +37,12 @@ pub enum AncillaryFilesManifestVerifyError {
         /// Actual hash of the file
         actual_hash: String,
     },
+    /// A path of the manifest is not a plain relative path
+    #[error("File path `{file_path:?}` is not a relative path made of normal components only")]
+    UnsafeFilePath {
+        /// Path of the manifest that is not a plain relative path
+        file_path: PathBuf,
+    },
     /// An error occurred while computing the hash of a file
     #[error("Failed to compute hash for file `{file_path}`")]
     HashCompute {
@@ -42,6 +51,24 @@ pub enum AncillaryFilesManifestVerifyError {
         /// Source of the error
         source: StdError,
     },
+}
+
+impl TryFrom<SignableManifest<PathBuf, String>> for AncillaryFilesManifest {
+    type Error = AncillaryFilesManifestVerifyError;
+
+    fn try_from(signable_manifest: SignableManifest<PathBuf, String>) -> Result<Self, Self::Error> {
+        if let Some(file_path) = signable_manifest
+            .data
+            .keys()
+            .find(|file_path| !Self::is_plain_relative_path(file_path))
+        {
+            return Err(AncillaryFilesManifestVerifyError::UnsafeFilePath {
+                file_path: file_path.clone(),
+            });
+        }
+
+        Ok(Self { signable_manifest })
+    }
 }
 
 impl AncillaryFilesManifest {
@@ -85,14 +112,17 @@ impl AncillaryFilesManifest {
 
     /// Creates a new manifest, without a signature, from the files in the provided paths
     ///
-    /// The hash of each file will be computed and stored in the manifest
-    pub async fn from_paths(
-        base_directory: &std::path::Path,
-        paths: Vec<PathBuf>,
-    ) -> StdResult<Self> {
+    /// The hash of each file will be computed and stored in the manifest.
+    /// A path that does not stay inside the base directory is rejected.
+    pub async fn from_paths(base_directory: &Path, paths: Vec<PathBuf>) -> StdResult<Self> {
         let mut data = BTreeMap::new();
 
         for path in paths {
+            if !Self::is_plain_relative_path(&path) {
+                return Err(
+                    AncillaryFilesManifestVerifyError::UnsafeFilePath { file_path: path }.into(),
+                );
+            }
             let file_path = base_directory.join(&path);
             let hash = Self::compute_file_hash(&file_path).await.with_context(|| {
                 format!("Failed to compute hash for file `{}`", file_path.display())
@@ -108,7 +138,7 @@ impl AncillaryFilesManifest {
     /// Checks if the files in the manifest are present in the base directory and have the same hash
     pub async fn verify_data(
         &self,
-        base_directory: &std::path::Path,
+        base_directory: &Path,
     ) -> Result<(), AncillaryFilesManifestVerifyError> {
         for (file_path, expected_hash) in &self.signable_manifest.data {
             let file_path = base_directory.join(file_path);
@@ -131,7 +161,15 @@ impl AncillaryFilesManifest {
         Ok(())
     }
 
-    async fn compute_file_hash(file_path: &std::path::Path) -> StdResult<String> {
+    /// A path made of normal components only: not empty, not absolute, without any `.` or `..`.
+    fn is_plain_relative_path(file_path: &Path) -> bool {
+        let mut components = file_path.components().peekable();
+
+        components.peek().is_some()
+            && components.all(|component| matches!(component, Component::Normal(_)))
+    }
+
+    async fn compute_file_hash(file_path: &Path) -> StdResult<String> {
         let mut file = tokio::fs::File::open(&file_path).await?;
         let mut hasher = Sha256::new();
 
@@ -177,6 +215,35 @@ mod tests {
 
         const TEST_SIGNATURE: &str = "b5690fe641ee240248d1335092392fefe2399fb11a4bfaddffc790676f4d48a9c34ec648699a3e3b0ba0de8c8bcde5855f16b88eb644d12a9ba1044b5ba91b07";
 
+        fn signable_manifest_with_path(path: &str) -> SignableManifest<PathBuf, String> {
+            SignableManifest {
+                data: BTreeMap::from([
+                    (PathBuf::from("file1"), "hash1".to_string()),
+                    (PathBuf::from(path), "hash2".to_string()),
+                ]),
+                signature: Some(TEST_SIGNATURE.try_into().unwrap()),
+            }
+        }
+
+        fn assert_unsafe_file_path_is_rejected(unsafe_path: &str) {
+            let signable_manifest = signable_manifest_with_path(unsafe_path);
+            let signable_manifest_json = serde_json::to_string(&signable_manifest).unwrap();
+
+            let error = AncillaryFilesManifest::try_from(signable_manifest)
+                .expect_err("an unsafe path must be rejected");
+
+            assert!(
+                matches!(
+                    &error,
+                    AncillaryFilesManifestVerifyError::UnsafeFilePath { file_path }
+                        if file_path == Path::new(unsafe_path)
+                ),
+                "unexpected error: {error:?}"
+            );
+            serde_json::from_str::<AncillaryFilesManifest>(&signable_manifest_json)
+                .expect_err("an unsafe path must be rejected when deserializing");
+        }
+
         #[test]
         fn can_deserialize_signed_manifest_into_ancillary_files_manifest() {
             let data = BTreeMap::from([
@@ -194,6 +261,39 @@ mod tests {
             let deserialized_ancillary_manifest: AncillaryFilesManifest =
                 serde_json::from_str(&signable_manifest_json).unwrap();
             assert_eq!(expected_ancillary_manifest, deserialized_ancillary_manifest);
+        }
+
+        #[test]
+        fn can_deserialize_a_manifest_with_a_nested_relative_path() {
+            let signable_manifest = signable_manifest_with_path("ledger/123/state");
+
+            AncillaryFilesManifest::try_from(signable_manifest)
+                .expect("a nested relative path stays inside its directory");
+        }
+
+        #[test]
+        fn cannot_deserialize_a_manifest_with_an_absolute_path() {
+            assert_unsafe_file_path_is_rejected("/etc/hostname");
+        }
+
+        #[test]
+        fn cannot_deserialize_a_manifest_with_a_parent_directory_path() {
+            assert_unsafe_file_path_is_rejected("../outside");
+        }
+
+        #[test]
+        fn cannot_deserialize_a_manifest_with_a_nested_parent_directory_path() {
+            assert_unsafe_file_path_is_rejected("ledger/../../outside");
+        }
+
+        #[test]
+        fn cannot_deserialize_a_manifest_with_a_current_directory_path() {
+            assert_unsafe_file_path_is_rejected("./ledger");
+        }
+
+        #[test]
+        fn cannot_deserialize_a_manifest_with_an_empty_path() {
+            assert_unsafe_file_path_is_rejected("");
         }
 
         #[test]
@@ -255,6 +355,28 @@ mod tests {
                 AncillaryFilesManifest::new(data.clone(), TEST_SIGNATURE.try_into().unwrap())
                     .compute_hash(),
                 AncillaryFilesManifest::new_without_signature(data).compute_hash(),
+            );
+        }
+
+        #[tokio::test]
+        async fn from_paths_rejects_a_path_outside_the_base_directory() {
+            let test_dir = temp_dir_create!();
+            std::fs::create_dir(test_dir.join("base")).unwrap();
+            File::create(test_dir.join("outside.txt")).unwrap();
+
+            let error = AncillaryFilesManifest::from_paths(
+                &test_dir.join("base"),
+                vec![PathBuf::from("../outside.txt")],
+            )
+            .await
+            .expect_err("a path outside the base directory must be rejected");
+
+            assert!(
+                matches!(
+                    error.downcast_ref::<AncillaryFilesManifestVerifyError>(),
+                    Some(AncillaryFilesManifestVerifyError::UnsafeFilePath { .. })
+                ),
+                "unexpected error: {error:?}"
             );
         }
 
