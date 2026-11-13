@@ -9,6 +9,7 @@ use mithril_cardano_node_internal_database::entities::{
 };
 use mithril_common::crypto_helper::{ManifestVerifier, ManifestVerifierVerificationKey};
 
+use crate::utils::move_file;
 use crate::{MithrilError, MithrilResult};
 
 /// Verifies the ancillary files contained in an unpacked ancillary archive
@@ -91,7 +92,7 @@ impl ValidatedAncillaryManifest {
 
         for file in &self.ancillary_files {
             let target_path = final_location.join(file);
-            tokio::fs::rename(&self.base_directory.join(file), &target_path)
+            move_file(&self.base_directory.join(file), &target_path)
                 .await
                 .with_context(|| format!("Failed to move file: `{file:?}`"))?;
         }

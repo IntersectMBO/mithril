@@ -101,6 +101,13 @@ impl InternalArtifactDownloader {
         download_unpack_options
             .verify_compatibility(&immutable_file_number_range, last_immutable_file_number)?;
         download_unpack_options.verify_can_write_to_target_directory(target_dir)?;
+        if !target_dir.is_dir() {
+            anyhow::bail!(
+                "Target directory '{}' does not exist or is not a directory",
+                target_dir.display()
+            );
+        }
+        self.remove_stale_staging_directories(target_dir).await;
 
         let expected_files_after_download = UnexpectedDownloadedFileVerifier::new(
             target_dir,
@@ -161,6 +168,7 @@ impl InternalArtifactDownloader {
         let download_result = self
             .batch_download_unpack(tasks, download_unpack_options.max_parallel_downloads)
             .await;
+        self.remove_staging_directories(target_dir, &download_id).await;
         expected_files_after_download.remove_unexpected_files().await?;
         download_result?;
 
@@ -189,6 +197,13 @@ impl InternalArtifactDownloader {
             .map(|n| n.to_owned())
             .collect::<BTreeSet<_>>();
 
+        if immutable_locations.locations.iter().any(Self::is_uncompressed) {
+            slog::warn!(
+                self.logger,
+                "Uncompressed immutable locations are skipped, immutable archives must be compressed"
+            );
+        }
+
         let mut immutable_tasks = vec![];
         #[cfg(feature = "unstable")]
         let ipfs_circuit_breaker = CircuitBreaker::default();
@@ -205,6 +220,20 @@ impl InternalArtifactDownloader {
             )?);
         }
         Ok(immutable_tasks)
+    }
+
+    /// Tell if an immutable location serves uncompressed archives, which are never downloaded.
+    fn is_uncompressed(location: &ImmutablesLocation) -> bool {
+        matches!(
+            location,
+            ImmutablesLocation::CloudStorage {
+                compression_algorithm: None,
+                ..
+            } | ImmutablesLocation::Ipfs {
+                compression_algorithm: None,
+                ..
+            }
+        )
     }
 
     fn new_immutable_download_task(
@@ -227,6 +256,10 @@ impl InternalArtifactDownloader {
         let locations_to_try: Vec<_> = locations_sorted
             .into_iter()
             .filter_map(|location| {
+                if Self::is_uncompressed(&location) {
+                    return None;
+                }
+
                 let (file_downloader, uri, compression_algorithm, circuit_breaker) = match location
                 {
                     ImmutablesLocation::CloudStorage {
@@ -299,6 +332,16 @@ impl InternalArtifactDownloader {
         for location in locations_sorted {
             let location_to_try = match location {
                 AncillaryLocation::CloudStorage {
+                    compression_algorithm: None,
+                    ..
+                } => {
+                    slog::warn!(
+                        self.logger,
+                        "Uncompressed ancillary locations are skipped, the ancillary archive must be compressed"
+                    );
+                    continue;
+                }
+                AncillaryLocation::CloudStorage {
                     uri,
                     compression_algorithm,
                 } => {
@@ -319,6 +362,10 @@ impl InternalArtifactDownloader {
             locations_to_try.push(location_to_try);
         }
 
+        if locations_to_try.is_empty() {
+            anyhow::bail!("No valid location found for the ancillary files");
+        }
+
         Ok(DownloadTask {
             kind: DownloadKind::Ancillary {
                 verifier: ancillary_verifier.clone(),
@@ -330,6 +377,46 @@ impl InternalArtifactDownloader {
                 download_id: download_id.to_string(),
             },
         })
+    }
+
+    /// Remove the staging directories of this download that a cancelled task may have left behind.
+    async fn remove_staging_directories(&self, target_dir: &Path, download_id: &str) {
+        self.remove_directories(target_dir, |name| {
+            DownloadTask::is_staging_directory_name(name, download_id)
+        })
+        .await;
+    }
+
+    /// Remove the staging directories that an earlier download left behind, for instance when its
+    /// process was killed.
+    ///
+    /// The staging directories of any download are removed, which is why only one download at a
+    /// time is supported for a target directory.
+    async fn remove_stale_staging_directories(&self, target_dir: &Path) {
+        self.remove_directories(
+            target_dir,
+            DownloadTask::is_staging_directory_name_of_any_download,
+        )
+        .await;
+    }
+
+    /// Remove the directories of the target directory whose name is selected, warning when a
+    /// removal fails.
+    async fn remove_directories(&self, target_dir: &Path, is_removed: impl Fn(&str) -> bool) {
+        let Ok(mut entries) = tokio::fs::read_dir(target_dir).await else {
+            return;
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if is_removed(&name)
+                && let Err(e) = tokio::fs::remove_dir_all(entry.path()).await
+            {
+                slog::warn!(
+                    self.logger, "Failed to remove download staging directory '{}'", entry.path().display();
+                    "error" => ?e
+                );
+            }
+        }
     }
 
     /// Download and unpack the files in parallel.
@@ -346,8 +433,9 @@ impl InternalArtifactDownloader {
         }
 
         while let Some(result) = join_set.join_next().await {
-            if let Err(error) = result? {
-                join_set.abort_all();
+            let task_result = result.map_err(anyhow::Error::from).and_then(|r| r);
+            if let Err(error) = task_result {
+                join_set.shutdown().await;
                 anyhow::bail!(error);
             }
 
@@ -403,6 +491,13 @@ mod tests {
 
     use super::*;
 
+    fn immutables_only_options() -> DownloadUnpackOptions {
+        DownloadUnpackOptions {
+            include_ancillary: false,
+            ..DownloadUnpackOptions::default()
+        }
+    }
+
     fn artifact_downloader_for_test() -> InternalArtifactDownloader {
         InternalArtifactDownloader::new(
             Arc::new(MockFileDownloader::new()),
@@ -417,15 +512,216 @@ mod tests {
     }
 
     mod download_unpack {
-        use mithril_cardano_node_internal_database::IMMUTABLE_DIR;
+        use std::future::pending;
+        use std::path::PathBuf;
+
+        use anyhow::anyhow;
+        use async_trait::async_trait;
+        use slog::Logger;
+
+        use mithril_cardano_node_internal_database::{IMMUTABLE_DIR, immutable_trio_names};
+        use mithril_common::StdResult;
         use mithril_common::assert_dir_eq;
         use mithril_common::crypto_helper::ManifestSigner;
         use mithril_common::entities::CompressionAlgorithm;
         use mithril_common::messages::DigestsMessagePart;
 
+        use crate::cardano_database_client::CardanoDatabaseClient;
         use crate::file_downloader::{FakeAncillaryFileBuilder, MockFileDownloader};
 
         use super::*;
+
+        fn create_fake_immutable_trio(unpack_dir: &Path, download_event: &DownloadEvent) {
+            if let DownloadEvent::Immutable {
+                immutable_file_number,
+                ..
+            } = download_event
+            {
+                let staged_immutable_dir = unpack_dir.join(IMMUTABLE_DIR);
+                fs::create_dir_all(&staged_immutable_dir).unwrap();
+                for filename in immutable_trio_names(*immutable_file_number) {
+                    fs::File::create(staged_immutable_dir.join(filename)).unwrap();
+                }
+            }
+        }
+
+        fn cloud_storage_location(
+            uri_template: &str,
+            compression_algorithm: Option<CompressionAlgorithm>,
+        ) -> ImmutablesLocation {
+            ImmutablesLocation::CloudStorage {
+                uri: MultiFilesUri::Template(TemplateUri(uri_template.to_string())),
+                compression_algorithm,
+            }
+        }
+
+        fn snapshot_with_immutable_locations(
+            last_immutable_file_number: ImmutableFileNumber,
+            locations: Vec<ImmutablesLocation>,
+        ) -> CardanoDatabaseSnapshot {
+            CardanoDatabaseSnapshot {
+                beacon: CardanoDbBeacon {
+                    immutable_file_number: last_immutable_file_number,
+                    epoch: Epoch(123),
+                },
+                immutables: ImmutablesMessagePart {
+                    average_size_uncompressed: 512,
+                    locations,
+                },
+                ..CardanoDatabaseSnapshot::dummy()
+            }
+        }
+
+        fn uncompressed_then_compressed_locations() -> Vec<ImmutablesLocation> {
+            vec![
+                cloud_storage_location("http://a-uncompressed/{immutable_file_number}.tar", None),
+                cloud_storage_location(
+                    "http://b-compressed/{immutable_file_number}.tar.zst",
+                    Some(CompressionAlgorithm::Zstandard),
+                ),
+            ]
+        }
+
+        fn downloader_staging_valid_trios() -> MockFileDownloader {
+            let mut mock_downloader = MockFileDownloader::new();
+            mock_downloader.expect_download_unpack().returning(
+                |_, _, unpack_dir, _, download_event| {
+                    create_fake_immutable_trio(unpack_dir, &download_event);
+                    Ok(())
+                },
+            );
+            mock_downloader
+        }
+
+        fn downloader_never_called() -> MockFileDownloader {
+            let mut mock_downloader = MockFileDownloader::new();
+            mock_downloader.expect_download_unpack().times(0);
+            mock_downloader
+        }
+
+        fn client_with_http_downloader(
+            file_downloader: impl FileDownloader + 'static,
+        ) -> CardanoDatabaseClient {
+            CardanoDatabaseClientDependencyInjector::new()
+                .with_http_file_downloader(Arc::new(file_downloader))
+                .build_cardano_database_client()
+        }
+
+        fn client_ending_the_first_immutable_while_the_ancillary_download_runs(
+            first_immutable_outcome: FirstImmutableOutcome,
+        ) -> CardanoDatabaseClient {
+            CardanoDatabaseClientDependencyInjector::new()
+                .with_http_file_downloader(Arc::new(EndFirstWhenSiblingIsStagedFileDownloader {
+                    first_immutable_outcome,
+                    staged_downloads: 3,
+                }))
+                .with_ancillary_verifier(
+                    ManifestSigner::create_deterministic_signer().verification_key(),
+                )
+                .build_cardano_database_client()
+        }
+
+        fn all_downloads_in_parallel_options() -> DownloadUnpackOptions {
+            DownloadUnpackOptions {
+                include_ancillary: true,
+                max_parallel_downloads: 3,
+                ..DownloadUnpackOptions::default()
+            }
+        }
+
+        fn artifact_downloader(
+            http_file_downloader: MockFileDownloader,
+            logger: Logger,
+        ) -> InternalArtifactDownloader {
+            InternalArtifactDownloader::new(
+                Arc::new(http_file_downloader),
+                #[cfg(feature = "unstable")]
+                None,
+                None,
+                FeedbackSender::new(&[]),
+                logger,
+                #[cfg(feature = "unstable")]
+                Arc::new(MockCardanoDatabaseAggregatorRequest::new()),
+            )
+        }
+
+        fn assert_no_staging_directory_is_left(target_dir: &Path) {
+            let leftover = staging_directories(target_dir);
+            assert!(
+                leftover.is_empty(),
+                "orphan staging directories: {leftover:?}"
+            );
+        }
+
+        fn staging_directories(target_dir: &Path) -> Vec<PathBuf> {
+            fs::read_dir(target_dir)
+                .unwrap()
+                .flatten()
+                .filter(|entry| {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    name.starts_with("immutable-") || name.starts_with("ancillary-")
+                })
+                .map(|entry| entry.path())
+                .collect()
+        }
+
+        /// How the download of the first immutable file ends once a sibling task is staged
+        enum FirstImmutableOutcome {
+            /// The download returns an error
+            Fails,
+            /// The download panics
+            Panics,
+        }
+
+        /// Ends the download of the first immutable file once a sibling task has created its
+        /// staging directory, the other downloads never complete.
+        struct EndFirstWhenSiblingIsStagedFileDownloader {
+            /// How the download of the first immutable file ends
+            first_immutable_outcome: FirstImmutableOutcome,
+            /// Number of staging directories that must exist before the first download ends
+            staged_downloads: usize,
+        }
+
+        impl EndFirstWhenSiblingIsStagedFileDownloader {
+            /// Upper bound of the scheduler yields spent waiting for the sibling staging directory
+            const MAX_YIELDS: usize = 1_000_000;
+        }
+
+        #[async_trait]
+        impl FileDownloader for EndFirstWhenSiblingIsStagedFileDownloader {
+            async fn download_unpack(
+                &self,
+                _location: &FileDownloaderUri,
+                _file_size: u64,
+                target_dir: &Path,
+                _compression_algorithm: Option<CompressionAlgorithm>,
+                download_event_type: DownloadEvent,
+            ) -> StdResult<()> {
+                match download_event_type {
+                    DownloadEvent::Immutable {
+                        immutable_file_number: 0,
+                        ..
+                    } => {
+                        let database_dir = target_dir.parent().unwrap();
+                        for _ in 0..Self::MAX_YIELDS {
+                            if staging_directories(database_dir).len() >= self.staged_downloads {
+                                return match self.first_immutable_outcome {
+                                    FirstImmutableOutcome::Fails => {
+                                        Err(anyhow!("first immutable fails"))
+                                    }
+                                    FirstImmutableOutcome::Panics => {
+                                        panic!("first immutable panics")
+                                    }
+                                };
+                            }
+                            tokio::task::yield_now().await;
+                        }
+                        panic!("the sibling staging directory was never created");
+                    }
+                    _ => pending().await,
+                }
+            }
+        }
 
         #[tokio::test]
         async fn download_unpack_fails_with_invalid_immutable_file_range() {
@@ -472,14 +768,16 @@ mod tests {
             let target_dir = temp_dir_create!();
             let client = CardanoDatabaseClientDependencyInjector::new()
                 .with_http_file_downloader(Arc::new({
-                    MockFileDownloaderBuilder::default()
-                        .with_times(total_immutable_files as usize)
-                        .with_failure()
-                        .build()
+                    let mut mock_downloader = MockFileDownloader::new();
+                    mock_downloader
+                        .expect_download_unpack()
+                        .times(1..=total_immutable_files as usize)
+                        .returning(|_, _, _, _, _| Err(anyhow!("Download unpack failed")));
+                    mock_downloader
                 }))
                 .build_cardano_database_client();
 
-            client
+            let error = client
                 .download_unpack(
                     &cardano_db_snapshot,
                     &immutable_file_range,
@@ -488,6 +786,354 @@ mod tests {
                 )
                 .await
                 .expect_err("download_unpack should fail");
+
+            assert!(
+                error.to_string().contains("All locations failed"),
+                "unexpected error: {error:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn download_unpack_leaves_no_staging_directory_when_a_task_panics() {
+            let target_dir = temp_dir_create!();
+            let client = client_with_http_downloader(EndFirstWhenSiblingIsStagedFileDownloader {
+                first_immutable_outcome: FirstImmutableOutcome::Panics,
+                staged_downloads: 2,
+            });
+
+            client
+                .download_unpack(
+                    &CardanoDatabaseSnapshot::dummy(),
+                    &ImmutableFileRange::UpTo(1),
+                    &target_dir,
+                    DownloadUnpackOptions {
+                        include_ancillary: false,
+                        max_parallel_downloads: 2,
+                        ..DownloadUnpackOptions::default()
+                    },
+                )
+                .await
+                .expect_err("a panicking task fails the batch");
+
+            assert_no_staging_directory_is_left(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn download_unpack_leaves_no_staging_directory_when_a_task_panics_while_the_ancillary_download_runs()
+         {
+            let target_dir = temp_dir_create!();
+            let client = client_ending_the_first_immutable_while_the_ancillary_download_runs(
+                FirstImmutableOutcome::Panics,
+            );
+
+            client
+                .download_unpack(
+                    &CardanoDatabaseSnapshot::dummy(),
+                    &ImmutableFileRange::UpTo(1),
+                    &target_dir,
+                    all_downloads_in_parallel_options(),
+                )
+                .await
+                .expect_err("a panicking task fails the batch");
+
+            assert_no_staging_directory_is_left(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn download_unpack_leaves_no_staging_directory_when_a_task_fails_while_the_ancillary_download_runs()
+         {
+            let target_dir = temp_dir_create!();
+            let client = client_ending_the_first_immutable_while_the_ancillary_download_runs(
+                FirstImmutableOutcome::Fails,
+            );
+
+            client
+                .download_unpack(
+                    &CardanoDatabaseSnapshot::dummy(),
+                    &ImmutableFileRange::UpTo(1),
+                    &target_dir,
+                    all_downloads_in_parallel_options(),
+                )
+                .await
+                .expect_err("a failing task fails the batch");
+
+            assert_no_staging_directory_is_left(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn download_unpack_warns_once_when_an_uncompressed_immutable_location_is_listed() {
+            let (logger, log_inspector) = TestLogger::memory();
+            let target_dir = temp_dir_create!();
+            let cardano_db_snapshot =
+                snapshot_with_immutable_locations(2, uncompressed_then_compressed_locations());
+            let artifact_downloader = artifact_downloader(downloader_staging_valid_trios(), logger);
+
+            artifact_downloader
+                .download_unpack(
+                    &cardano_db_snapshot,
+                    &ImmutableFileRange::Range(1, 2),
+                    &target_dir,
+                    immutables_only_options(),
+                    #[cfg(feature = "unstable")]
+                    IpfsShare::Custom(Percentage::ZERO),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(
+                1,
+                log_inspector
+                    .search_logs("Uncompressed immutable locations are skipped")
+                    .len(),
+                "logs:\n{log_inspector}"
+            );
+        }
+
+        #[tokio::test]
+        async fn download_unpack_leaves_no_staging_directory_when_the_batch_is_aborted() {
+            let target_dir = temp_dir_create!();
+            let client = client_with_http_downloader(EndFirstWhenSiblingIsStagedFileDownloader {
+                first_immutable_outcome: FirstImmutableOutcome::Fails,
+                staged_downloads: 2,
+            });
+
+            let error = client
+                .download_unpack(
+                    &CardanoDatabaseSnapshot::dummy(),
+                    &ImmutableFileRange::UpTo(1),
+                    &target_dir,
+                    DownloadUnpackOptions {
+                        include_ancillary: false,
+                        max_parallel_downloads: 2,
+                        ..DownloadUnpackOptions::default()
+                    },
+                )
+                .await
+                .expect_err("the batch must fail");
+            assert!(
+                error
+                    .to_string()
+                    .contains("All locations failed for immutable_file_00000"),
+                "the first immutable must be the failing task, got: {error:?}"
+            );
+
+            assert_no_staging_directory_is_left(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn download_unpack_fails_when_the_target_directory_does_not_exist() {
+            let target_dir = temp_dir_create!().join("missing");
+            let client = client_with_http_downloader(downloader_never_called());
+
+            let error = client
+                .download_unpack(
+                    &CardanoDatabaseSnapshot::dummy(),
+                    &ImmutableFileRange::UpTo(1),
+                    &target_dir,
+                    immutables_only_options(),
+                )
+                .await
+                .expect_err("download_unpack must fail when the target directory does not exist");
+
+            assert!(
+                error.to_string().contains("does not exist or is not a directory"),
+                "unexpected error: {error:?}"
+            );
+
+            assert!(
+                !target_dir.exists(),
+                "the target directory must not be created"
+            );
+        }
+
+        #[tokio::test]
+        async fn download_unpack_fails_before_any_download_when_the_target_is_a_file() {
+            let target_dir = temp_dir_create!().join("file");
+            fs::File::create(&target_dir).unwrap();
+            let client = client_with_http_downloader(downloader_never_called());
+
+            let error = client
+                .download_unpack(
+                    &CardanoDatabaseSnapshot::dummy(),
+                    &ImmutableFileRange::UpTo(1),
+                    &target_dir,
+                    immutables_only_options(),
+                )
+                .await
+                .expect_err("a target that is not a directory must be rejected");
+
+            assert!(
+                error.to_string().contains("does not exist or is not a directory"),
+                "unexpected error: {error:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn remove_staging_directories_removes_only_the_staging_directories_of_this_download()
+        {
+            let target_dir = temp_dir_create!();
+            for name in [
+                "immutable-00001-this",
+                "ancillary-this",
+                "immutable-00001-other",
+                IMMUTABLE_DIR,
+                "notes-this",
+            ] {
+                fs::create_dir_all(target_dir.join(name)).unwrap();
+            }
+            fs::File::create(target_dir.join("immutable-00001-this").join("partial")).unwrap();
+            let artifact_downloader =
+                artifact_downloader(MockFileDownloader::new(), TestLogger::stdout());
+
+            artifact_downloader
+                .remove_staging_directories(&target_dir, "this")
+                .await;
+
+            assert_dir_eq!(
+                &target_dir,
+                format!("* {IMMUTABLE_DIR}/\n* immutable-00001-other/\n* notes-this/")
+            );
+        }
+
+        #[tokio::test]
+        async fn download_unpack_fails_when_the_only_immutable_location_is_uncompressed() {
+            let target_dir = temp_dir_create!();
+            let cardano_db_snapshot = snapshot_with_immutable_locations(
+                1,
+                vec![cloud_storage_location(
+                    "http://whatever/{immutable_file_number}.tar",
+                    None,
+                )],
+            );
+            let client = client_with_http_downloader(downloader_never_called());
+
+            let error = client
+                .download_unpack(
+                    &cardano_db_snapshot,
+                    &ImmutableFileRange::Range(1, 1),
+                    &target_dir,
+                    immutables_only_options(),
+                )
+                .await
+                .expect_err("an uncompressed immutable location must be rejected");
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("No valid location found for immutable file number 1"),
+                "unexpected error: {error:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn download_unpack_removes_a_staging_directory_that_a_task_left_behind() {
+            let target_dir = temp_dir_create!();
+            let client = CardanoDatabaseClientDependencyInjector::new()
+                .with_http_file_downloader(Arc::new({
+                    let mut mock_downloader = MockFileDownloader::new();
+                    mock_downloader.expect_download_unpack().returning(
+                        |_, _, unpack_dir, _, download_event| {
+                            let left_behind_dir = unpack_dir
+                                .parent()
+                                .unwrap()
+                                .join(format!("immutable-99999-{}", download_event.download_id()));
+                            fs::create_dir_all(left_behind_dir).unwrap();
+                            create_fake_immutable_trio(unpack_dir, &download_event);
+                            Ok(())
+                        },
+                    );
+                    mock_downloader
+                }))
+                .build_cardano_database_client();
+
+            client
+                .download_unpack(
+                    &CardanoDatabaseSnapshot::dummy(),
+                    &ImmutableFileRange::UpTo(1),
+                    &target_dir,
+                    immutables_only_options(),
+                )
+                .await
+                .expect("the download must succeed");
+
+            assert_no_staging_directory_is_left(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn download_unpack_removes_the_staging_directories_left_by_an_earlier_download() {
+            let target_dir = temp_dir_create!();
+            let earlier_download_id = "0c8d8ea5-7b0c-4d7d-9d7f-5a4a3b1f2e10";
+            for name in [
+                format!("immutable-00007-{earlier_download_id}"),
+                format!("ancillary-{earlier_download_id}"),
+            ] {
+                fs::create_dir_all(target_dir.join(&name)).unwrap();
+                fs::File::create(target_dir.join(&name).join("partial")).unwrap();
+            }
+            let client = client_with_http_downloader(downloader_staging_valid_trios());
+
+            client
+                .download_unpack(
+                    &CardanoDatabaseSnapshot::dummy(),
+                    &ImmutableFileRange::UpTo(1),
+                    &target_dir,
+                    DownloadUnpackOptions {
+                        allow_override: true,
+                        ..immutables_only_options()
+                    },
+                )
+                .await
+                .expect("the download must succeed");
+
+            assert_dir_eq!(
+                &target_dir,
+                format!(
+                    "* {IMMUTABLE_DIR}/
+                    ** 00000.chunk
+                    ** 00000.primary
+                    ** 00000.secondary
+                    ** 00001.chunk
+                    ** 00001.primary
+                    ** 00001.secondary
+                    * clean
+                    * protocolMagicId"
+                )
+            );
+        }
+
+        #[tokio::test]
+        async fn download_unpack_uses_the_compressed_immutable_location_when_an_uncompressed_one_is_listed()
+         {
+            let target_dir = temp_dir_create!();
+            let cardano_db_snapshot =
+                snapshot_with_immutable_locations(1, uncompressed_then_compressed_locations());
+            let client = CardanoDatabaseClientDependencyInjector::new()
+                .with_http_file_downloader(Arc::new({
+                    let mut mock_downloader = MockFileDownloader::new();
+                    mock_downloader
+                        .expect_download_unpack()
+                        .times(1)
+                        .withf(|location, _, _, compression_algorithm, _| {
+                            location.as_str() == "http://b-compressed/00001.tar.zst"
+                                && *compression_algorithm == Some(CompressionAlgorithm::Zstandard)
+                        })
+                        .returning(|_, _, unpack_dir, _, download_event| {
+                            create_fake_immutable_trio(unpack_dir, &download_event);
+                            Ok(())
+                        });
+                    mock_downloader
+                }))
+                .build_cardano_database_client();
+
+            client
+                .download_unpack(
+                    &cardano_db_snapshot,
+                    &ImmutableFileRange::Range(1, 1),
+                    &target_dir,
+                    immutables_only_options(),
+                )
+                .await
+                .expect("the compressed location must be used");
         }
 
         #[tokio::test]
@@ -556,12 +1202,10 @@ mod tests {
                 .with_http_file_downloader(Arc::new({
                     MockFileDownloaderBuilder::default()
                         .with_file_uri("http://whatever/00001.tar.zst")
-                        .with_target_dir(target_dir.clone())
-                        .with_success()
+                        .with_success_and_create_fake_immutable_files()
                         .next_call()
                         .with_file_uri("http://whatever/00002.tar.zst")
-                        .with_target_dir(target_dir.clone())
-                        .with_success()
+                        .with_success_and_create_fake_immutable_files()
                         .next_call()
                         .with_file_uri("http://whatever/ancillary.tar.zst")
                         .with_compression(Some(CompressionAlgorithm::Zstandard))
@@ -593,6 +1237,7 @@ mod tests {
             let immutable_file_range = ImmutableFileRange::Range(1, 3);
             let download_unpack_options = DownloadUnpackOptions {
                 include_ancillary: false,
+                max_parallel_downloads: 1,
                 ..DownloadUnpackOptions::default()
             };
             let cardano_db_snapshot = CardanoDatabaseSnapshot {
@@ -633,11 +1278,9 @@ mod tests {
                 .with_ipfs_file_downloader(Arc::new({
                     MockFileDownloaderBuilder::default()
                         .with_file_uri("WhateverCiD/00001.tar.zst")
-                        .with_target_dir(target_dir.clone())
-                        .with_success()
+                        .with_success_and_create_fake_immutable_files()
                         .next_call()
                         .with_file_uri("WhateverCiD/00002.tar.zst")
-                        .with_target_dir(target_dir.clone())
                         // unreachable trigger the circuit breaker
                         .with_unreachable_downloader_failure("ipfs")
                         .build()
@@ -645,12 +1288,10 @@ mod tests {
                 .with_http_file_downloader(Arc::new({
                     MockFileDownloaderBuilder::default()
                         .with_file_uri("http://whatever/00002.tar.zst")
-                        .with_target_dir(target_dir.clone())
-                        .with_success()
+                        .with_success_and_create_fake_immutable_files()
                         .next_call()
                         .with_file_uri("http://whatever/00003.tar.zst")
-                        .with_target_dir(target_dir.clone())
-                        .with_success()
+                        .with_success_and_create_fake_immutable_files()
                         .build()
                 }))
                 .build_cardano_database_client();
@@ -681,16 +1322,15 @@ mod tests {
             let client = CardanoDatabaseClientDependencyInjector::new()
                 .with_http_file_downloader(Arc::new({
                     let mut mock_downloader = MockFileDownloader::new();
-                    mock_downloader
-                        .expect_download_unpack()
-                        .returning(move |_, _, _, _, _| {
+                    mock_downloader.expect_download_unpack().returning(
+                        move |_, _, unpack_dir, _, download_event| {
+                            create_fake_immutable_trio(unpack_dir, &download_event);
                             // Simulate an additional file written mid-download
-                            if !immutable_dir.exists() {
-                                fs::create_dir(&immutable_dir).unwrap();
-                            }
+                            fs::create_dir_all(&immutable_dir).unwrap();
                             fs::File::create(immutable_dir.join("unexpected.md")).unwrap();
                             Ok(())
-                        });
+                        },
+                    );
                     mock_downloader
                 }))
                 .build_cardano_database_client();
@@ -707,7 +1347,17 @@ mod tests {
 
             assert_dir_eq!(
                 &target_dir,
-                format!("* {IMMUTABLE_DIR}/\n* clean\n * protocolMagicId")
+                format!(
+                    "* {IMMUTABLE_DIR}/
+                    ** 00000.chunk
+                    ** 00000.primary
+                    ** 00000.secondary
+                    ** 00001.chunk
+                    ** 00001.primary
+                    ** 00001.secondary
+                    * clean
+                    * protocolMagicId"
+                )
             );
         }
 
@@ -797,7 +1447,7 @@ mod tests {
                         uri: MultiFilesUri::Template(TemplateUri(
                             "Whatever_CID/{immutable_file_number}.tar.zst".to_string(),
                         )),
-                        compression_algorithm: None,
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     }],
                     average_size_uncompressed: 0,
                 },
@@ -810,9 +1460,14 @@ mod tests {
                 WeightedCoin::new(Percentage::ZERO, [0; 32]),
             );
 
+            let error = build_tasks_result.err().expect(
+                "building tasks should fail if all locations are IPFS and no IPFS file downloader is set",
+            );
             assert!(
-                build_tasks_result.is_err(),
-                "building tasks should fail if all location are IPFS and no IPFS file downloader is set"
+                error
+                    .to_string()
+                    .contains("No valid location found for immutable file number"),
+                "unexpected error: {error:?}"
             );
         }
 
@@ -829,7 +1484,7 @@ mod tests {
                     MockFileDownloaderBuilder::default()
                         .with_times(total_immutable_files as usize)
                         .with_compression(Some(CompressionAlgorithm::Zstandard))
-                        .with_success()
+                        .with_success_and_create_fake_immutable_files()
                         .build(),
                 ),
                 logger,
@@ -854,7 +1509,7 @@ mod tests {
                             uri: MultiFilesUri::Template(TemplateUri(
                                 "Whatever_CID/{immutable_file_number}.tar.zst".to_string(),
                             )),
-                            compression_algorithm: None,
+                            compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                         },
                     ],
                 },
@@ -866,10 +1521,7 @@ mod tests {
                     &cardano_database_snapshot,
                     &immutable_file_range,
                     &target_dir,
-                    DownloadUnpackOptions {
-                        include_ancillary: false,
-                        ..DownloadUnpackOptions::default()
-                    },
+                    immutables_only_options(),
                     IpfsShare::Custom(Percentage::new(10)),
                 )
                 .await
@@ -987,6 +1639,74 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn building_ancillary_download_tasks_skips_uncompressed_locations() {
+            let target_dir = temp_dir_create!();
+            let artifact_downloader = InternalArtifactDownloader {
+                ancillary_verifier: Some(Arc::new(fake_ancillary_verifier())),
+                ..artifact_downloader_for_test()
+            };
+
+            let task = artifact_downloader
+                .new_ancillary_download_task(
+                    &AncillaryMessagePart {
+                        locations: vec![
+                            AncillaryLocation::CloudStorage {
+                                uri: "http://a-uncompressed/ancillary.tar".to_string(),
+                                compression_algorithm: None,
+                            },
+                            AncillaryLocation::CloudStorage {
+                                uri: "http://b-compressed/ancillary.tar.zst".to_string(),
+                                compression_algorithm: Some(CompressionAlgorithm::Zstandard),
+                            },
+                        ],
+                        size_uncompressed: 0,
+                    },
+                    &target_dir,
+                    "download_id",
+                )
+                .unwrap();
+
+            assert_eq!(
+                vec!["http://b-compressed/ancillary.tar.zst"],
+                task.locations_to_try
+                    .iter()
+                    .map(|location| location.file_downloader_uri.as_str())
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        #[tokio::test]
+        async fn building_ancillary_download_tasks_fails_if_all_locations_are_uncompressed() {
+            let target_dir = temp_dir_create!();
+            let artifact_downloader = InternalArtifactDownloader {
+                ancillary_verifier: Some(Arc::new(fake_ancillary_verifier())),
+                ..artifact_downloader_for_test()
+            };
+
+            let error = artifact_downloader
+                .new_ancillary_download_task(
+                    &AncillaryMessagePart {
+                        locations: vec![AncillaryLocation::CloudStorage {
+                            uri: "http://a-uncompressed/ancillary.tar".to_string(),
+                            compression_algorithm: None,
+                        }],
+                        size_uncompressed: 0,
+                    },
+                    &target_dir,
+                    "download_id",
+                )
+                .err()
+                .expect("an uncompressed ancillary location must not be downloaded");
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("No valid location found for the ancillary files"),
+                "unexpected error: {error:?}"
+            );
+        }
+
+        #[tokio::test]
         async fn building_ancillary_download_tasks_fails_if_all_locations_are_unknown() {
             let target_dir = temp_dir_create!();
             let artifact_downloader = InternalArtifactDownloader {
@@ -1012,6 +1732,8 @@ mod tests {
 
     #[cfg(feature = "unstable")]
     mod ordering_ipfs_location {
+        use mithril_common::entities::CompressionAlgorithm;
+
         use super::*;
 
         fn immutable_locations() -> ImmutablesMessagePart {
@@ -1025,15 +1747,15 @@ mod tests {
                 locations: vec![
                     ImmutablesLocation::CloudStorage {
                         uri: template_uri("http://b"),
-                        compression_algorithm: None,
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     },
                     ImmutablesLocation::Ipfs {
                         uri: template_uri("ipfs"),
-                        compression_algorithm: None,
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     },
                     ImmutablesLocation::CloudStorage {
                         uri: template_uri("http://a"),
-                        compression_algorithm: None,
+                        compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     },
                 ],
                 average_size_uncompressed: 0,
