@@ -49,7 +49,6 @@ slog = { workspace = true, features = ["max_level_trace", "release_max_level_deb
 slog-async = { workspace = true }
 slog-bunyan = { workspace = true }
 slog-term = { workspace = true }
-tar = "0.4.46"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 zip = "9.1.1"
@@ -64,3 +63,4 @@ mimalloc = { version = "0.1.52" }
 httpmock = "0.8.3"
 mithril-common = { path = "../mithril-common" }
 mockall = { workspace = true }
+tar = "0.4.46"
