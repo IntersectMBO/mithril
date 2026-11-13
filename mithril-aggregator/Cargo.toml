@@ -1,6 +1,6 @@
 [package]
 name = "mithril-aggregator"
-version = "0.11.0"
+version = "0.11.1"
 description = "A Mithril Aggregator server"
 authors = { workspace = true }
 edition = { workspace = true }
@@ -27,6 +27,7 @@ snark = [
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+base64 = "0.23.1"
 blockfrost = { version = "1.3.0", default-features = false, features = ["rustls"] }
 chrono = { workspace = true }
 ciborium = { version = "0.2.2", optional = true }

@@ -453,6 +453,18 @@ variable "mithril_aggregator_ipfs_share" {
   default     = 5
 }
 
+variable "mithril_ipfs_rpc_auth_token" {
+  type        = string
+  description = "The bearer token protecting the IPFS node RPC API, used by the Mithril aggregator (optional, the RPC API is not protected if empty)"
+  sensitive   = true
+  default     = ""
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9]*$", var.mithril_ipfs_rpc_auth_token))
+    error_message = "The 'mithril_ipfs_rpc_auth_token' must only contain alphanumeric characters."
+  }
+}
+
 variable "ipfs_image_id" {
   type        = string
   description = "The IPFS image tag of service to deploy"

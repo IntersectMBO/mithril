@@ -1,13 +1,18 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use reqwest::{RequestBuilder, Response, StatusCode, Url};
+use reqwest::{
+    RequestBuilder, Response, StatusCode, Url,
+    header::{AUTHORIZATION, HeaderMap, HeaderValue},
+};
 use slog::{Logger, trace};
 
 use mithril_common::logging::LoggerExtensions;
 use mithril_common::{StdError, StdResult};
 
-use crate::tools::url_sanitizer::SanitizedUrlWithTrailingSlash;
+use crate::tools::{
+    kubo_rpc_client::KuboRpcCredentials, url_sanitizer::SanitizedUrlWithTrailingSlash,
+};
 
 /// Default timeout for the RPC request.
 pub const DEFAULT_TIMEOUT_SECS: u64 = 10;
@@ -68,10 +73,23 @@ pub struct KuboRpcClient {
 
 impl KuboRpcClient {
     /// Creates a new Kubo RPC client.
-    pub fn new(rpc_base_url: SanitizedUrlWithTrailingSlash, logger: Logger) -> StdResult<Self> {
+    pub fn new(
+        rpc_base_url: SanitizedUrlWithTrailingSlash,
+        logger: Logger,
+        credentials: Option<KuboRpcCredentials>,
+    ) -> StdResult<Self> {
+        let mut headers = HeaderMap::new();
+        if let Some(credentials) = credentials {
+            let mut value = HeaderValue::from_str(&credentials.to_header_value())
+                .with_context(|| "Invalid Kubo RPC credentials")?;
+            value.set_sensitive(true);
+            headers.insert(AUTHORIZATION, value);
+        }
+
         Ok(Self {
             rpc_base_url: rpc_base_url.into(),
             client: reqwest::Client::builder()
+                .default_headers(headers)
                 .build()
                 .with_context(|| "RPC client creation failed")?,
             logger: logger.new_with_component_name::<Self>(),
@@ -354,6 +372,89 @@ mod tests {
                 err.to_string(),
                 "Request to Kubo RPC failed: 500 Internal Server Error:"
             );
+        }
+    }
+
+    mod credentials {
+        use httpmock::MockServer;
+
+        use mithril_common::entities::ConfigSecret;
+
+        use crate::test::TestLogger;
+
+        use super::*;
+
+        fn setup_server_and_client_with_credentials(
+            credentials: KuboRpcCredentials,
+        ) -> (MockServer, KuboRpcClient) {
+            let server = MockServer::start();
+            let client = KuboRpcClient::new(
+                SanitizedUrlWithTrailingSlash::parse(&server.base_url()).unwrap(),
+                TestLogger::stdout(),
+                Some(credentials),
+            )
+            .unwrap();
+
+            (server, client)
+        }
+
+        #[tokio::test]
+        async fn send_basic_authorization_header() {
+            let (server, client) =
+                setup_server_and_client_with_credentials(KuboRpcCredentials::Basic {
+                    username: "Aladdin".to_string(),
+                    password: ConfigSecret::new("open sesame".to_string()),
+                });
+            server.mock(|when, then| {
+                when.method(POST)
+                    .path("/foo")
+                    .header("authorization", "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==");
+                then.status(200);
+            });
+
+            client.send(QueryWithoutResponse).await.unwrap();
+        }
+
+        #[tokio::test]
+        async fn send_bearer_authorization_header() {
+            let (server, client) =
+                setup_server_and_client_with_credentials(KuboRpcCredentials::Bearer {
+                    token: ConfigSecret::new("my-token".to_string()),
+                });
+            server.mock(|when, then| {
+                when.method(POST)
+                    .path("/foo")
+                    .header("authorization", "Bearer my-token");
+                then.status(200);
+            });
+
+            client.send(QueryWithoutResponse).await.unwrap();
+        }
+
+        #[tokio::test]
+        async fn send_no_authorization_header_without_credentials() {
+            let (server, client) = setup_server_and_client();
+            server.mock(|when, then| {
+                when.method(POST).path("/foo").header_missing("authorization");
+                then.status(200);
+            });
+
+            client.send(QueryWithoutResponse).await.unwrap();
+        }
+
+        #[test]
+        fn creating_client_with_invalid_credentials_fails_without_exposing_them() {
+            let Err(error) = KuboRpcClient::new(
+                SanitizedUrlWithTrailingSlash::parse("http://localhost:5001/").unwrap(),
+                TestLogger::stdout(),
+                Some(KuboRpcCredentials::Bearer {
+                    token: ConfigSecret::new("invalid-token\n".to_string()),
+                }),
+            ) else {
+                panic!("Client creation should fail with a token containing a newline");
+            };
+
+            assert!(!format!("{error:?}").contains("invalid-token"));
         }
     }
 }

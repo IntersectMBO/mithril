@@ -118,6 +118,10 @@ inputs:
     description: IPFS node Docker image registry (experimental).
     required: false
     default: "ipfs/kubo"
+  mithril_ipfs_rpc_auth_token:
+    description: IPFS node RPC API bearer token, used by the Mithril aggregator (optional, the RPC API is not protected if empty)
+    required: false
+    default: ""
   mithril_api_domain:
     description: Mithril network api domain root.
     required: true
@@ -333,6 +337,7 @@ runs:
           mithril_ipfs_storage_max                                                     = "${{ inputs.mithril_ipfs_storage_max }}"
           mithril_ipfs_ipns_signing_key                                                = "${{ steps.prepare.outputs.mithril_ipfs_ipns_signing_key_base64 }}"
           mithril_aggregator_ipfs_share                                                = "${{ inputs.mithril_aggregator_ipfs_share }}"
+          mithril_ipfs_rpc_auth_token                                                  = "${{ inputs.mithril_ipfs_rpc_auth_token }}"
           mithril_api_domain                                                           = "${{ inputs.mithril_api_domain }}"
           mithril_image_id                                                             = "${{ inputs.mithril_image_id }}"
           mithril_genesis_verification_key_url                                         = "${{ inputs.mithril_genesis_verification_key_url }}"

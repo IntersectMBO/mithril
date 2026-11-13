@@ -107,14 +107,15 @@ Downloads Kubo, configures the private network, and generates management scripts
 
 Options:
 
-| Option                     | Environment variable | Description                                                                                       | Default        |
-| -------------------------- | -------------------- | ------------------------------------------------------------------------------------------------- | -------------- |
-| `-s, --swarm-dir <dir>`    | `SWARM_DIR`          | **[Required]** Directory that will contain the swarm nodes.                                       | -              |
-| `-n, --number <int>`       | `NUMBER_OF_NODES`    | Number of Kubo nodes to configure. Must be at least 2.                                            | `2`            |
-| `-d, --download-dir <dir>` | `DOWNLOAD_DIR`       | Directory where the Kubo archive is downloaded.                                                   | `/tmp/kubo/`   |
-| `-v, --version <version>`  | `KUBO_VERSION`       | Kubo version to download, for example `v0.42.0`. If omitted, the latest released version is used. | Latest release |
-| `-o, --overwrite`          | `OVERWRITE`          | Replace an existing swarm configuration.                                                          | `false`        |
-| `-h, --help`               | -                    | Print command help.                                                                               | -              |
+| Option                       | Environment variable | Description                                                                                       | Default        |
+| ---------------------------- | -------------------- | ------------------------------------------------------------------------------------------------- | -------------- |
+| `-s, --swarm-dir <dir>`      | `SWARM_DIR`          | **[Required]** Directory that will contain the swarm nodes.                                       | -              |
+| `-n, --number <int>`         | `NUMBER_OF_NODES`    | Number of Kubo nodes to configure. Must be at least 2.                                            | `2`            |
+| `-d, --download-dir <dir>`   | `DOWNLOAD_DIR`       | Directory where the Kubo archive is downloaded.                                                   | `/tmp/kubo/`   |
+| `-v, --version <version>`    | `KUBO_VERSION`       | Kubo version to download, for example `v0.42.0`. If omitted, the latest released version is used. | Latest release |
+| `-o, --overwrite`            | `OVERWRITE`          | Replace an existing swarm configuration.                                                          | `false`        |
+| `-a, --rpc-auth-nodes <int>` | `RPC_AUTH_NODES`     | Number of nodes, starting from the first one, with RPC authentication.                            | `0`            |
+| `-h, --help`                 | -                    | Print command help.                                                                               | -              |
 
 > [!NOTE]
 > Command-line options take priority over environment variables.
@@ -172,6 +173,28 @@ OVERWRITE=1 ./ipfs-devnet.sh init --swarm-dir ./swarm --number 5
 
 > [!NOTE]
 > `OVERWRITE=0` and `OVERWRITE=false` are treated as disabled.
+
+#### Enable the RPC API authentication
+
+With `--rpc-auth-nodes N`, the RPC API of the first `N` nodes requires HTTP Basic authentication, configured with the Kubo [`API.Authorizations`](https://github.com/ipfs/kubo/blob/master/docs/config.md#apiauthorizations) setting.
+The RPC API of the other nodes stays open to any local client.
+
+For example, to protect the first two nodes of a swarm of three nodes:
+
+```shell
+./ipfs-devnet.sh init --swarm-dir ./swarm --number 3 --rpc-auth-nodes 2
+```
+
+Each protected node gets a random secret, stored in `kubo-node-N/rpc-auth-secret` and only readable by the current user.
+The secret uses the Kubo `AuthSecret` format: `basic:mithril:<password>`.
+
+The generated `start.sh` and `query.sh` scripts read this file and authenticate automatically.
+Other clients must send the credentials themselves, otherwise the node answers `403 Forbidden`.
+For example, with `curl`:
+
+```shell
+curl -X POST -u "mithril:$(cut -d: -f3 ./swarm/kubo-node-1/rpc-auth-secret)" http://127.0.0.1:5001/api/v0/id
+```
 
 ### `start`
 
@@ -346,6 +369,7 @@ Options forwardable to the generated `query.sh` after the top-level `--`:
 | `-h, --help`       | Print generated query command help.    | -       |
 
 The generated script automatically sets `IPFS_PATH` for the selected node and uses the Kubo `ipfs` binary downloaded during `init`.
+When the selected node has [RPC API authentication](#enable-the-rpc-api-authentication) enabled, the script also passes its secret to `ipfs` with the `--api-auth` option.
 
 Examples:
 
@@ -383,6 +407,7 @@ CID matches the Web UI expected by the running Kubo node. The command fails if n
 
 > [!IMPORTANT]
 > The swarm must be running before using this command, and `jq` must be installed.
+> The first node must not have [RPC API authentication](#enable-the-rpc-api-authentication) enabled, since the Web UI is imported through its RPC API.
 
 ```shell
 ./ipfs-devnet.sh load-webui [OPTIONS]

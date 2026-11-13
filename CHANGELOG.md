@@ -26,6 +26,7 @@ As a minor extension, we have adopted a slightly different versioning convention
   - IPFS:
     - The Mithril aggregator advertises the IPNS record of the immutable files directory in the `/` route when the `ipns_key_name` field of the `ipfs_rpc_server_config` configuration parameter is set.
     - New `ipfs_share` configuration parameter of the Mithril aggregator to set the share of the immutable files to download through IPFS, advertised in the `/` route.
+    - New `credentials` field of the `ipfs_rpc_server_config` configuration parameter of the Mithril aggregator to authenticate to a Kubo RPC API protected by `API.Authorizations`, with a Basic or a Bearer authorization.
     - The Mithril client library and CLI no longer download all the immutable files through IPFS first when an IPFS RPC URL is configured: IPFS is now tried first only for the share advertised by the aggregator, the other files try IPFS last.
   - The SNARK proof systems are enabled by default in the Mithril nodes, client and libraries. Only `mithril-stm` and `mithril-common` can still leave them out with `--no-default-features`.
 

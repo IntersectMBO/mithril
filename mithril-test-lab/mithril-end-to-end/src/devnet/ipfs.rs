@@ -34,6 +34,7 @@ pub struct IpfsDevnet {
 pub struct KuboNode {
     pub rpc_url: Url,
     pub working_dir: PathBuf,
+    pub rpc_basic_auth: Option<KuboRpcBasicAuth>,
     swarm_index: u8,
     command_builder: IpfsCommandBuilder,
 }
@@ -45,6 +46,7 @@ pub struct IpfsDevnetBootstrapArgs {
     pub swarm_target_dir: PathBuf,
     pub kubo_version: Option<semver::Version>,
     pub mode: IpfsDevnetMode,
+    pub rpc_authenticated_nodes: u8,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -165,13 +167,18 @@ impl IpfsDevnet {
         number_of_nodes: u8,
         swarm_dir: &Path,
         command_builder: &IpfsCommandBuilder,
-    ) -> Vec<KuboNode> {
+    ) -> StdResult<Vec<KuboNode>> {
         (1..=number_of_nodes)
-            .map(|n| KuboNode {
-                rpc_url: Url::parse(&format!("http://127.0.0.1:{}", 5000_u16 + n as u16)).unwrap(),
-                working_dir: swarm_dir.join(format!("kubo-node-{n}")),
-                swarm_index: n,
-                command_builder: command_builder.clone(),
+            .map(|n| {
+                let working_dir = swarm_dir.join(format!("kubo-node-{n}"));
+                Ok(KuboNode {
+                    rpc_url: Url::parse(&format!("http://127.0.0.1:{}", 5000_u16 + n as u16))
+                        .unwrap(),
+                    rpc_basic_auth: KuboRpcBasicAuth::read_from_node_dir(&working_dir)?,
+                    working_dir,
+                    swarm_index: n,
+                    command_builder: command_builder.clone(),
+                })
             })
             .collect()
     }
@@ -217,7 +224,7 @@ impl IpfsDevnet {
                 bootstrap_args.number_of_nodes,
                 &bootstrap_args.swarm_target_dir,
                 &command_builder,
-            ),
+            )?,
             mode: bootstrap_args.mode,
             command_builder,
         })
@@ -235,7 +242,13 @@ impl IpfsDevnet {
 
         let mut bootstrap_command = command_builder.build(
             "init",
-            &["--overwrite", "--number", &bootstrap_args.number_of_nodes.to_string()],
+            &[
+                "--overwrite",
+                "--number",
+                &bootstrap_args.number_of_nodes.to_string(),
+                "--rpc-auth-nodes",
+                &bootstrap_args.rpc_authenticated_nodes.to_string(),
+            ],
         );
 
         if let Some(kubo_version) = &bootstrap_args.kubo_version {
@@ -252,7 +265,7 @@ impl IpfsDevnet {
                     bootstrap_args.number_of_nodes,
                     &bootstrap_args.swarm_target_dir,
                     &command_builder,
-                ),
+                )?,
                 mode: bootstrap_args.mode,
                 command_builder,
             }),
@@ -397,5 +410,33 @@ impl KuboNode {
             .await?;
 
         Ok(ipfs_dir_path)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct KuboRpcBasicAuth {
+    pub username: String,
+    pub password: String,
+}
+
+impl KuboRpcBasicAuth {
+    /// Read the `basic:<username>:<password>` secret written by the devnet in a node directory, if any
+    fn read_from_node_dir(node_dir: &Path) -> StdResult<Option<Self>> {
+        let secret_path = node_dir.join("rpc-auth-secret");
+        if !secret_path.exists() {
+            return Ok(None);
+        }
+        let secret = std::fs::read_to_string(&secret_path)
+            .with_context(|| format!("Failed to read '{}'", secret_path.display()))?;
+        let (username, password) = secret
+            .trim()
+            .strip_prefix("basic:")
+            .and_then(|credentials| credentials.split_once(':'))
+            .with_context(|| format!("Invalid RPC auth secret in '{}'", secret_path.display()))?;
+
+        Ok(Some(Self {
+            username: username.to_string(),
+            password: password.to_string(),
+        }))
     }
 }
