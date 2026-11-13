@@ -1,9 +1,12 @@
 //! Command to setup a Mithril signer
 
+use anyhow::anyhow;
 use clap::Parser;
 use slog::info;
 
 use crate::CommandContext;
+use crate::runner::{RunOutcome, run};
+use crate::setups::signer::SignerEffectHandler;
 
 /// Set up a Mithril signer
 #[derive(Parser, Debug, Clone)]
@@ -14,7 +17,11 @@ impl SignerCommand {
     pub async fn execute(&self, context: CommandContext) -> anyhow::Result<()> {
         context.require_unstable("signer", None)?;
         info!(context.logger(), "signer command");
-        Ok(())
+
+        match run(&SignerEffectHandler).await.map_err(|reason| anyhow!(reason))? {
+            RunOutcome::Completed => Ok(()),
+            RunOutcome::Aborted => Err(anyhow!("Setup aborted by the user")),
+        }
     }
 }
 

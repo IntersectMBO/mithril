@@ -28,6 +28,8 @@ As a minor extension, we have adopted a slightly different versioning convention
     - New `ipfs_share` configuration parameter of the Mithril aggregator to set the share of the immutable files to download through IPFS, advertised in the `/` route.
     - The Mithril client library and CLI no longer download all the immutable files through IPFS first when an IPFS RPC URL is configured: IPFS is now tried first only for the share advertised by the aggregator, the other files try IPFS last.
   - The SNARK proof systems are enabled by default in the Mithril nodes, client and libraries. Only `mithril-stm` and `mithril-common` can still leave them out with `--no-default-features`.
+  - Mithril setup:
+    - The `signer` command of the Mithril setup runs a minimal setup orchestrator, which discovers, reviews in an interactive terminal table, validates and saves the signer configuration values.
 
 | Crate               | Version |
 | ------------------- | ------- |
