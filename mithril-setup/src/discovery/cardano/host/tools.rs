@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use tokio::fs;
 use tokio::process::Command;
 
-use crate::discovery::cardano::ToolProbe;
+use crate::discovery::cardano::{ProcessOwner, ToolProbe};
 
 /// Runs the node binary and looks for `cardano-cli` beside it, then in the search path
 pub struct HostToolProbe {
@@ -33,9 +33,17 @@ impl HostToolProbe {
 
 #[async_trait]
 impl ToolProbe for HostToolProbe {
-    async fn node_version_output(&self, node_executable: &Path) -> anyhow::Result<String> {
+    async fn node_version_output(
+        &self,
+        node_executable: &Path,
+        run_as: ProcessOwner,
+    ) -> anyhow::Result<String> {
+        // Dropping to the node identity also clears the supplementary groups when the setup
+        // runs as root, so that the node binary can't do more than the node itself
         let output = Command::new(node_executable)
             .arg("--version")
+            .uid(run_as.uid)
+            .gid(run_as.gid)
             .output()
             .await
             .with_context(|| format!("Could not run '{} --version'", node_executable.display()))?;
@@ -86,13 +94,24 @@ mod tests {
     // System binaries stand for the node: running a script written by the test could fail with
     // `ETXTBSY` when a process forked concurrently by another test inherits its write descriptor
     mod node_version_output {
+        use std::os::unix::fs::MetadataExt;
+
         use super::*;
+
+        /// Identity of the test process: switching to it is allowed without privileges
+        fn current_owner() -> ProcessOwner {
+            let metadata = std::fs::metadata("/proc/self").unwrap();
+            ProcessOwner {
+                uid: metadata.uid(),
+                gid: metadata.gid(),
+            }
+        }
 
         #[tokio::test]
         async fn succeeds_when_the_version_command_succeeds() {
             // The output of `true --version` depends on the platform (GNU coreutils, BusyBox, …)
             let result = HostToolProbe::new(vec![])
-                .node_version_output(Path::new("true"))
+                .node_version_output(Path::new("true"), current_owner())
                 .await;
 
             assert!(result.is_ok(), "Expected Ok, got {result:?}");
@@ -101,7 +120,7 @@ mod tests {
         #[tokio::test]
         async fn fails_when_the_version_command_fails() {
             let result = HostToolProbe::new(vec![])
-                .node_version_output(Path::new("false"))
+                .node_version_output(Path::new("false"), current_owner())
                 .await;
 
             assert!(result.is_err(), "Expected Err, got {result:?}");
@@ -110,7 +129,26 @@ mod tests {
         #[tokio::test]
         async fn fails_when_the_executable_does_not_exist() {
             let result = HostToolProbe::new(vec![])
-                .node_version_output(Path::new("/this/does/not/exist/cardano-node"))
+                .node_version_output(
+                    Path::new("/this/does/not/exist/cardano-node"),
+                    current_owner(),
+                )
+                .await;
+
+            assert!(result.is_err(), "Expected Err, got {result:?}");
+        }
+
+        #[tokio::test]
+        async fn fails_when_the_identity_of_the_node_can_not_be_taken() {
+            let mut owner = current_owner();
+            if owner.uid == 0 {
+                // Root can take any identity
+                return;
+            }
+            owner.uid = 0;
+
+            let result = HostToolProbe::new(vec![])
+                .node_version_output(Path::new("true"), owner)
                 .await;
 
             assert!(result.is_err(), "Expected Err, got {result:?}");
