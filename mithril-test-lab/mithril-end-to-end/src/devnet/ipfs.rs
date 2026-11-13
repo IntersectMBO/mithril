@@ -240,16 +240,14 @@ impl IpfsDevnet {
         let command_builder =
             IpfsCommandBuilder::new(&devnet_script_path, &bootstrap_args.swarm_target_dir);
 
-        let number_of_nodes = bootstrap_args.number_of_nodes.to_string();
-        let rpc_authenticated_nodes = bootstrap_args.rpc_authenticated_nodes.to_string();
         let mut bootstrap_command = command_builder.build(
             "init",
             &[
                 "--overwrite",
                 "--number",
-                &number_of_nodes,
+                &bootstrap_args.number_of_nodes.to_string(),
                 "--rpc-auth-nodes",
-                &rpc_authenticated_nodes,
+                &bootstrap_args.rpc_authenticated_nodes.to_string(),
             ],
         );
 
