@@ -8,11 +8,11 @@ pub(crate) struct NodeCommandLine {
     pub config: Option<String>,
     pub topology: Option<String>,
     pub kes_key: Option<String>,
+    pub kes_agent_socket: Option<String>,
     pub operational_certificate: Option<String>,
     pub host_addr: Option<String>,
     pub host_ipv6_addr: Option<String>,
     pub port: Option<String>,
-    pub kes_agent_socket: Option<String>,
     pub bulk_credentials_file: Option<String>,
     pub immutable_database_path: Option<String>,
     pub volatile_database_path: Option<String>,
@@ -77,6 +77,11 @@ impl NodeCommandLine {
             || self.bulk_credentials_file.is_some();
 
         has_credentials && !self.start_as_non_producing_node
+    }
+
+    /// Check if the node is using a KES agent
+    pub fn is_using_kes_agent(&self) -> bool {
+        self.kes_agent_socket.is_some()
     }
 }
 
@@ -269,5 +274,19 @@ mod tests {
         ]);
 
         assert!(!command_line.is_block_producer());
+    }
+
+    #[test]
+    fn a_node_using_a_kes_agent_is_detected_as_using_a_kes_agent() {
+        let command_line = parse(&["run", "--shelley-kes-agent-socket", "/run/kes-agent.socket"]);
+
+        assert!(command_line.is_using_kes_agent());
+    }
+
+    #[test]
+    fn a_node_not_using_a_kes_agent_is_detected_as_not_using_a_kes_agent() {
+        let command_line = parse(&["run", "--shelley-kes-key", "kes.skey"]);
+
+        assert!(!command_line.is_using_kes_agent());
     }
 }
