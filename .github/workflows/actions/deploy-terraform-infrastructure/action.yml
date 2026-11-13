@@ -297,6 +297,11 @@ runs:
         MITHRIL_IPFS_IPNS_SIGNING_KEY_BASE64=$(printf '%s' '${{ inputs.mithril_ipfs_ipns_signing_key }}' | base64 -w 0)
         echo "::add-mask::$MITHRIL_IPFS_IPNS_SIGNING_KEY_BASE64"
         echo "mithril_ipfs_ipns_signing_key_base64=$MITHRIL_IPFS_IPNS_SIGNING_KEY_BASE64" >> $GITHUB_OUTPUT
+        MITHRIL_IPFS_IPNS_NAME=""
+        if [[ -n "$MITHRIL_IPFS_IPNS_SIGNING_KEY_BASE64" ]]; then
+          MITHRIL_IPFS_IPNS_NAME=$(echo "$MITHRIL_IPFS_IPNS_SIGNING_KEY_BASE64" | bash ./mithril-infra/assets/tools/utils/ipns-name.sh)
+        fi
+        echo "mithril_ipfs_ipns_name=$MITHRIL_IPFS_IPNS_NAME" >> $GITHUB_OUTPUT
 
     - name: Prepare terraform variables
       shell: bash
@@ -332,6 +337,7 @@ runs:
           mithril_ipfs_enabled                                                         = "${{ inputs.mithril_ipfs_enabled }}"
           mithril_ipfs_storage_max                                                     = "${{ inputs.mithril_ipfs_storage_max }}"
           mithril_ipfs_ipns_signing_key                                                = "${{ steps.prepare.outputs.mithril_ipfs_ipns_signing_key_base64 }}"
+          mithril_ipfs_ipns_name                                                       = "${{ steps.prepare.outputs.mithril_ipfs_ipns_name }}"
           mithril_aggregator_ipfs_share                                                = "${{ inputs.mithril_aggregator_ipfs_share }}"
           mithril_api_domain                                                           = "${{ inputs.mithril_api_domain }}"
           mithril_image_id                                                             = "${{ inputs.mithril_image_id }}"

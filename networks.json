@@ -184,7 +184,7 @@
           },
           "ipfs": {
             "immutable-archives": {
-              "ipns-name": "/ipns/k51qzi5uqu5dj0elu5jdwms8znznw21ost6ewfd46me2q7xuptgeew6z732xr9"
+              "ipns-name": "/ipns/immutables.testing-preview.api.mithril.network"
             }
           }
         }

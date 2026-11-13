@@ -447,6 +447,17 @@ variable "mithril_ipfs_ipns_signing_key_name" {
   default     = "mithril-snapshot"
 }
 
+variable "mithril_ipfs_ipns_name" {
+  type        = string
+  description = "The IPNS name of the IPNS signing key (e.g. 'k51...', computed with 'assets/tools/utils/ipns-name.sh'), published as a DNSLink record under the 'immutables' name of the DNS zone (optional, the record is not created if empty)"
+  default     = ""
+
+  validation {
+    condition     = can(regex("^[a-z0-9]*$", var.mithril_ipfs_ipns_name))
+    error_message = "The 'mithril_ipfs_ipns_name' must be the bare IPNS name (e.g. 'k51...'), without the '/ipns/' prefix."
+  }
+}
+
 variable "mithril_aggregator_ipfs_share" {
   type        = number
   description = "The aggregator advertised share of immutables to download through IPFS from the clients (0-100 inclusive)"

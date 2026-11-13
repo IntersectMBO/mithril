@@ -6,6 +6,8 @@ When IPFS is enabled on a Mithril network, the aggregator publishes the IPFS dir
 
 The signing key is provided to the deployment by the `IPFS_IPNS_SIGNING_KEY` secret of the GitHub environment of the network, in PEM PKCS#8 format. This secret is optional (e.g. for a follower aggregator): the aggregator does not publish to IPNS when it is empty.
 
+The deployment computes the IPNS name from the signing key and publishes it as a [DNSLink](https://dnslink.dev/) TXT record in the DNS zone of the network, so that third parties follow the stable name `/ipns/immutables.<NETWORK>.api.mithril.network` (e.g. `/ipns/immutables.testing-preview.api.mithril.network`) instead of the IPNS name. The record is not created when the secret is empty.
+
 > [!IMPORTANT]
 > :fire: The IPNS signing key is a private key: anyone who holds it can publish content under the IPNS name of the network. It must not be stored anywhere other than the GitHub environment secret and the IPFS node of the aggregator.
 
@@ -58,7 +60,7 @@ The command outputs the IPNS name, and the immutable archives directory is then 
 
 Copy the full content of `$KEY_DIRECTORY/ipns-signing-key.pem` (including the `BEGIN` and `END` lines) into the `IPFS_IPNS_SIGNING_KEY` secret of the GitHub environment of the network.
 
-The key is imported by the IPFS node at the next deployment of the network.
+The key is imported by the IPFS node and the DNSLink record is updated at the next deployment of the network.
 
 Then delete the local copy of the signing key:
 
@@ -71,6 +73,22 @@ rm -rf $KEY_DIRECTORY
 The IPFS node replaces its signing key with the one of the deployment at each start.
 
 > [!WARNING]
-> Rotating the signing key changes the IPNS name of the network. The third-party nodes that follow the previous IPNS name must be informed of the new one before the rotation is deployed. This coordination is planned to be handled with DNSLink, which is not implemented yet.
+> Rotating the signing key changes the IPNS name of the network. The third-party nodes that follow the DNSLink name of the network are switched to the new IPNS name by the deployment, whereas the nodes that follow the previous IPNS name directly must be informed of the new one before the rotation is deployed.
 
 To rotate the signing key, create a new signing key, compute its IPNS name and register it as described above.
+
+## Verify the DNSLink record
+
+Export the name of the network:
+
+```bash
+export NETWORK=**NETWORK**
+```
+
+Verify that the DNSLink record points to the IPNS name:
+
+```bash
+dig +short TXT _dnslink.immutables.$NETWORK.api.mithril.network
+```
+
+The command outputs `"dnslink=/ipns/<IPNS_NAME>"`.
