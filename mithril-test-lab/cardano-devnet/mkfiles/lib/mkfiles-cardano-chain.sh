@@ -191,14 +191,20 @@ function write_datums_for_address {
         --tx-file node-pool\${N}/tx/tx\${N}-\${CONTEXT}-datum.tx \\
         --testnet-magic ${NETWORK_MAGIC}
 
+    ## Compute the submitted transaction id
+    TX_ID_SUBMITTED=\$(CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction txid --tx-file node-pool\${N}/tx/tx\${N}-\${CONTEXT}-datum.tx)
+    if [[ "\${TX_ID_SUBMITTED}" =~ txhash ]]; then
+        TX_ID_SUBMITTED=\$(echo \$TX_ID_SUBMITTED | jq -r '.txhash')
+    fi
+
     ## Wait at least for 10 blocks so that the transaction is confirmed
     wait_for_elapsed_blocks "\${N}" 10
 
-    ## Wait for all pool nodes to see the new datum
+    ## Wait for all pool nodes to see the new datum, written by the submitted transaction
     for (( i=1; i<=${NUM_POOL_NODES}; i++ )); do
         INLINE_DATUM=\$(CARDANO_NODE_SOCKET_PATH=node-pool\${i}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} query utxo \\
         --testnet-magic ${NETWORK_MAGIC} --address \$(cat addresses/\${ADDR}.addr) --out-file /dev/stdout \\
-        | jq  -r '. [] | select(.inlineDatum | . != null and . != "") | .inlineDatum.fields[].bytes' | xxd -r -p | jq)
+        | jq -r --arg tx_id "\${TX_ID_SUBMITTED}" 'with_entries(select(.key | startswith(\$tx_id))) | .[] | select(.inlineDatum | . != null and . != "") | .inlineDatum.fields[].bytes' | xxd -r -p | jq)
         echo ">>>>>> \${CONTEXT} address inline datum retrieved on node-pool\${i}: \${INLINE_DATUM}"
         if [ "\${INLINE_DATUM}" == "" ]; then
             touch \${ERROR_FILE}
