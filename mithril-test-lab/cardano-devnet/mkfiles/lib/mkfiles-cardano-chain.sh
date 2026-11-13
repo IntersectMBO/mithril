@@ -99,7 +99,7 @@ function send_funds_to_address {
     for (( i=1; i<=${NUM_POOL_NODES}; i++ )); do
         TOTAL_UTXOS_FOR_TX_ID=\$(CARDANO_NODE_SOCKET_PATH=node-pool\${i}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} query utxo \\
         --testnet-magic ${NETWORK_MAGIC} --address \$(cat addresses/\${ADDR}.addr) --out-file /dev/stdout \\
-        | jq '. | with_entries(select(.key | startswith("${TX_ID_SUBMITTED}"))) | length')
+        | jq --arg tx_id "\${TX_ID_SUBMITTED}" '. | with_entries(select(.key | startswith(\$tx_id))) | length')
         echo ">>>>>> \${CONTEXT} address funds retrieved on node-pool\${i}: \${TOTAL_UTXOS_FOR_TX_ID}"
         if [ "\${TOTAL_UTXOS_FOR_TX_ID}" == "0" ]; then
             touch "\${ERROR_FILE}"
