@@ -115,6 +115,7 @@ pub struct IvcProof<H: TranscriptHash> {
     #[serde(with = "midnight_accumulator_serde")]
     accumulator: Accumulator<BlstrsEmulation>,
     /// Phantom marker tying the proof to its transcript hash type.
+    #[serde(skip)]
     hash: PhantomData<H>,
 }
 
