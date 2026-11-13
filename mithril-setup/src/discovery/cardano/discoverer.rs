@@ -114,7 +114,12 @@ impl CardanoDiscoverer {
                 port: command_line.port.as_deref().and_then(|port| port.parse().ok()),
             },
             node_version: self.node_version(&process).await,
-            cardano_cli_path: self.tools.find_cardano_cli(&process.executable).await.ok().flatten(),
+            cardano_cli_path: self
+                .tools
+                .find_cardano_cli(process.executable.as_deref())
+                .await
+                .ok()
+                .flatten(),
             service_user: process.user,
         })
     }
@@ -124,7 +129,7 @@ impl CardanoDiscoverer {
     async fn node_version(&self, process: &NodeProcess) -> Option<String> {
         let output = self
             .tools
-            .node_version_output(&process.executable, process.owner?)
+            .node_version_output(process.executable.as_deref()?, process.owner?)
             .await
             .ok()?;
 
@@ -268,7 +273,7 @@ pub(crate) mod tests {
 
         async fn find_cardano_cli(
             &self,
-            _node_executable: &Path,
+            _node_executable: Option<&Path>,
         ) -> anyhow::Result<Option<PathBuf>> {
             Ok(self.cardano_cli.clone())
         }
@@ -277,7 +282,7 @@ pub(crate) mod tests {
     fn node_process(pid: u32, args: &[&str]) -> NodeProcess {
         NodeProcess {
             pid,
-            executable: PathBuf::from("/usr/local/bin/cardano-node"),
+            executable: Some(PathBuf::from("/usr/local/bin/cardano-node")),
             args: args.iter().map(|arg| arg.to_string()).collect(),
             working_dir: None,
             user: None,
@@ -701,6 +706,24 @@ pub(crate) mod tests {
         async fn does_not_run_the_version_command_when_the_identity_of_the_node_is_unknown() {
             let process = NodeProcess {
                 owner: None,
+                ..block_producer_process(&[])
+            };
+            let tools = FakeToolProbe {
+                version_output: Some("cardano-node 10.1.4 - linux-x86_64 - ghc-9.6".to_string()),
+                ..Default::default()
+            };
+            let version_run_as = tools.version_run_as.clone();
+
+            let discovery = discover(process, tools).await;
+
+            assert_eq!(None, discovery.node_version);
+            assert!(version_run_as.lock().unwrap().is_empty());
+        }
+
+        #[tokio::test]
+        async fn does_not_run_the_version_command_when_the_node_executable_is_unknown() {
+            let process = NodeProcess {
+                executable: None,
                 ..block_producer_process(&[])
             };
             let tools = FakeToolProbe {

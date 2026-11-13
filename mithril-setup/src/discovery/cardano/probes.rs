@@ -10,8 +10,8 @@ pub struct NodeProcess {
     /// Process identifier
     pub pid: u32,
 
-    /// Path of the executable of the process
-    pub executable: PathBuf,
+    /// Absolute path of the executable of the process, if known
+    pub executable: Option<PathBuf>,
 
     /// Arguments of the process, without the program name
     pub args: Vec<String>,
@@ -64,5 +64,9 @@ pub trait ToolProbe: Send + Sync {
     ) -> anyhow::Result<String>;
 
     /// Returns the path of the `cardano-cli` executable, looking first beside the node executable
-    async fn find_cardano_cli(&self, node_executable: &Path) -> anyhow::Result<Option<PathBuf>>;
+    /// when it is known, then in the search path
+    async fn find_cardano_cli(
+        &self,
+        node_executable: Option<&Path>,
+    ) -> anyhow::Result<Option<PathBuf>>;
 }
