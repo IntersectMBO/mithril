@@ -6,7 +6,6 @@ use std::{
 use anyhow::Context;
 use flume::{Receiver, Sender};
 use futures::stream::{BoxStream, StreamExt};
-use tar::Archive;
 
 use mithril_common::StdResult;
 
@@ -14,6 +13,7 @@ use crate::common::CompressionAlgorithm;
 use crate::feedback::FeedbackSender;
 use crate::utils::StreamReader;
 
+use super::archive_unpacker::{TarArchiveUnpacker, UnpackedFilePermissions};
 use super::interface::DownloadEvent;
 
 /// A byte stream to download, together with its best-known total size.
@@ -54,20 +54,28 @@ pub(super) async fn download_unpack(
         unpack_file(receiver, compression_algorithm, &dest_dir, download_id)
     });
 
-    stream_to_channel(feedback_sender, downloaded, &sender, download_event_type).await?;
+    let streamed =
+        stream_to_channel(feedback_sender, downloaded, &sender, download_event_type).await;
     drop(sender);
+    let unpacked = unpack_thread.await.with_context(|| {
+        format!(
+            "Unpack: panic while unpacking to dir '{}'",
+            target_dir.display()
+        )
+    })?;
 
-    unpack_thread
-        .await
-        .with_context(|| {
+    match (streamed, unpacked) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Ok(()), Err(unpack_error)) => Err(unpack_error)
+            .with_context(|| format!("Unpack: could not unpack to dir '{}'", target_dir.display())),
+        (Err(stream_error), Ok(())) => Err(stream_error),
+        (Err(stream_error), Err(unpack_error)) => Err(unpack_error).with_context(|| {
             format!(
-                "Unpack: panic while unpacking to dir '{}'",
+                "Unpack: could not unpack to dir '{}', the download failed too: {stream_error:#}",
                 target_dir.display()
             )
-        })?
-        .with_context(|| format!("Unpack: could not unpack to dir '{}'", target_dir.display()))?;
-
-    Ok(())
+        }),
+    }
 }
 
 /// Drain `downloaded` into `sender`, reporting start/progress/completed feedback events.
@@ -115,6 +123,11 @@ async fn stream_to_channel(
     Ok(())
 }
 
+/// Unpacker of the database archives: every unpacked file is a data file that its owner can read
+/// and write, never executable, never writable by others.
+const DATABASE_FILES_UNPACKER: TarArchiveUnpacker =
+    TarArchiveUnpacker::new(UnpackedFilePermissions::Fixed(0o644));
+
 fn unpack_file(
     stream: Receiver<Vec<u8>>,
     compression_algorithm: Option<CompressionAlgorithm>,
@@ -126,13 +139,14 @@ fn unpack_file(
         Some(CompressionAlgorithm::Zstandard) => {
             let zstandard_decoder = zstd::Decoder::new(input)
                 .with_context(|| "Unpack failed: Create Zstandard decoder error")?;
-            let mut file_archive = Archive::new(zstandard_decoder);
-            file_archive.unpack(unpack_dir).with_context(|| {
-                format!(
-                    "Could not unpack with 'Zstd' from streamed data to directory '{}'",
-                    unpack_dir.display()
-                )
-            })?;
+            DATABASE_FILES_UNPACKER
+                .unpack(zstandard_decoder, unpack_dir)
+                .with_context(|| {
+                    format!(
+                        "Could not unpack with 'Zstd' from streamed data to directory '{}'",
+                        unpack_dir.display()
+                    )
+                })?;
         }
         None => {
             let file_path = unpack_dir.join(download_id);
@@ -151,14 +165,31 @@ fn unpack_file(
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::sync::Arc;
 
     use futures::stream;
+    use tar::{Builder, EntryType, Header};
+
     use mithril_common::temp_dir_create;
 
     use crate::feedback::{FeedbackReceiver, StackFeedbackReceiver};
+    use crate::file_downloader::archive_unpacker::ArchiveEntryRejection;
 
     use super::*;
+
+    /// Payload size large enough to keep the stream longer than the channel between the download
+    /// and the unpack thread.
+    const STREAMED_PAYLOAD_SIZE: u32 = 1 << 20;
+
+    /// Bytes that a compressor can not shrink, so that the compressed stream keeps its size.
+    fn incompressible_payload(size_in_bytes: u32) -> Vec<u8> {
+        const MULTIPLICATIVE_HASH_MULTIPLIER: u32 = 2_654_435_761;
+
+        (0..size_in_bytes)
+            .map(|index| (index.wrapping_mul(MULTIPLICATIVE_HASH_MULTIPLIER) >> 24) as u8)
+            .collect()
+    }
 
     fn synthetic_stream(chunks: Vec<&'static [u8]>) -> BoxStream<'static, StdResult<Vec<u8>>> {
         stream::iter(chunks.into_iter().map(|c| Ok(c.to_vec()))).boxed()
@@ -274,6 +305,92 @@ mod tests {
             error
                 .to_string()
                 .contains("Download: could not read from byte stream"),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn download_unpack_waits_for_the_unpack_thread_before_returning_a_stream_error() {
+        let target_dir = temp_dir_create!();
+        let feedback_sender = FeedbackSender::new(&[]);
+        let failing_stream: BoxStream<'static, StdResult<Vec<u8>>> =
+            stream::iter(vec![Ok(b"partial".to_vec()), Err(anyhow::anyhow!("boom"))]).boxed();
+
+        let error = download_unpack(
+            &feedback_sender,
+            DownloadedStream {
+                stream: failing_stream,
+                size: 2,
+            },
+            &target_dir,
+            None,
+            DownloadEvent::Digest {
+                download_id: "id".to_string(),
+            },
+        )
+        .await
+        .expect_err("the stream error must be returned");
+
+        assert!(
+            error
+                .to_string()
+                .contains("Download: could not read from byte stream"),
+            "unexpected error: {error:?}"
+        );
+        assert_eq!(
+            fs::read(target_dir.join("id")).unwrap(),
+            b"partial",
+            "the unpack thread must have written its input before the function returned"
+        );
+    }
+
+    #[tokio::test]
+    async fn download_unpack_reports_the_archive_rejection_reason_over_the_stream_error() {
+        let target_dir = temp_dir_create!();
+        let payload = incompressible_payload(STREAMED_PAYLOAD_SIZE);
+        let mut archive_bytes = Vec::new();
+        {
+            let mut builder = Builder::new(&mut archive_bytes);
+            let mut link_header = Header::new_gnu();
+            link_header.set_entry_type(EntryType::Symlink);
+            link_header.set_size(0);
+            link_header.set_mode(0o777);
+            builder
+                .append_link(&mut link_header, "link", "/outside/target")
+                .unwrap();
+            let mut payload_header = Header::new_gnu();
+            payload_header.set_size(payload.len() as u64);
+            payload_header.set_mode(0o644);
+            builder
+                .append_data(&mut payload_header, "payload", payload.as_slice())
+                .unwrap();
+            builder.finish().unwrap();
+        }
+        let compressed = zstd::encode_all(archive_bytes.as_slice(), 1).unwrap();
+        let chunks: Vec<StdResult<Vec<u8>>> =
+            compressed.chunks(4096).map(|chunk| Ok(chunk.to_vec())).collect();
+        let archive_stream: BoxStream<'static, StdResult<Vec<u8>>> = stream::iter(chunks).boxed();
+
+        let error = download_unpack(
+            &FeedbackSender::new(&[]),
+            DownloadedStream {
+                stream: archive_stream,
+                size: compressed.len() as u64,
+            },
+            &target_dir,
+            Some(CompressionAlgorithm::Zstandard),
+            DownloadEvent::Digest {
+                download_id: "id".to_string(),
+            },
+        )
+        .await
+        .expect_err("a rejected entry must fail the download");
+
+        assert_eq!(
+            Some(&ArchiveEntryRejection::UnexpectedEntryType(
+                EntryType::Symlink
+            )),
+            error.downcast_ref::<ArchiveEntryRejection>(),
             "unexpected error: {error:?}"
         );
     }
