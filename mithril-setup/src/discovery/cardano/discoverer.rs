@@ -31,6 +31,16 @@ pub enum CardanoDiscoveryError {
         nodes: Vec<NodeInstance>,
     },
 
+    /// The running block producer node is not handled by Mithril
+    #[error("The running Cardano block producer is not handled by Mithril: {node:?} {reason}")]
+    BlockProducerNotHandled {
+        /// The running block producer node
+        node: NodeInstance,
+
+        /// Reason
+        reason: String,
+    },
+
     /// A probe failed to observe the machine
     #[error("Cardano node discovery failed")]
     Probe(#[from] anyhow::Error),
@@ -173,13 +183,21 @@ fn select_block_producer(nodes: Vec<DetectedNode>) -> Result<DetectedNode, Carda
         0 => Err(CardanoDiscoveryError::NoBlockProducer {
             nodes: relays.into_iter().map(|node| node.instance).collect(),
         }),
-        1 => Ok(block_producers.remove(0)),
+        1 => {
+            let node = block_producers.remove(0);
+            if node.command_line.is_using_kes_agent() {
+                return Err(CardanoDiscoveryError::BlockProducerNotHandled {
+                    node: node.instance,
+                    reason: "The node is using a KES agent, use KES keys instead".to_string(),
+                });
+            }
+            Ok(node)
+        }
         _ => Err(CardanoDiscoveryError::SeveralBlockProducers {
             nodes: block_producers.into_iter().map(|node| node.instance).collect(),
         }),
     }
 }
-
 #[cfg(test)]
 pub(crate) mod tests {
     use std::collections::HashMap;
@@ -455,6 +473,32 @@ pub(crate) mod tests {
         }
 
         #[tokio::test]
+        async fn fails_when_block_producer_is_using_kes_agent() {
+            let discoverer = discoverer(
+                FakeProcessProbe {
+                    processes: vec![node_process(
+                        42,
+                        &["run", "--shelley-kes-agent-socket", "/opt/cardano/kes-agent.socket"],
+                    )],
+                    ..Default::default()
+                },
+                FakeServiceProbe::default(),
+                FakeToolProbe::default(),
+            );
+            let result = discoverer.discover().await;
+            match result {
+                Err(CardanoDiscoveryError::BlockProducerNotHandled { node, reason }) => {
+                    assert_eq!(42, node.pid);
+                    assert_eq!(
+                        "The node is using a KES agent, use KES keys instead",
+                        reason
+                    );
+                }
+                _ => panic!("Expected BlockProducerNotHandled, got {result:?}"),
+            }
+        }
+
+        #[tokio::test]
         async fn selects_the_block_producer_among_relays() {
             let discoverer = discoverer(
                 FakeProcessProbe {
@@ -703,26 +747,6 @@ pub(crate) mod tests {
                 Some(PathBuf::from("keys/node.cert")),
                 discovery.operational_certificate_path
             );
-        }
-
-        #[tokio::test]
-        async fn collects_the_kes_agent_socket_of_a_block_producer_using_a_kes_agent() {
-            let process = NodeProcess {
-                working_dir: Some(PathBuf::from("/home/cardano")),
-                ..node_process(
-                    42,
-                    &["run", "--shelley-kes-agent-socket", "kes-agent.socket"],
-                )
-            };
-
-            let discovery = discover(process, FakeToolProbe::default()).await;
-
-            assert_eq!(
-                Some(PathBuf::from("/home/cardano/kes-agent.socket")),
-                discovery.kes_agent_socket
-            );
-            assert_eq!(None, discovery.kes_key_path);
-            assert_eq!(None, discovery.operational_certificate_path);
         }
 
         #[tokio::test]
