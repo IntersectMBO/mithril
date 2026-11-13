@@ -98,10 +98,6 @@ inputs:
     description: Deploy an IPFS node and upload the Cardano database immutable archives to it (experimental).
     required: false
     default: "false"
-  mithril_ipfs_storage_max:
-    description: Maximum disk space used by the IPFS node datastore (experimental).
-    required: false
-    default: "50GB"
   mithril_ipfs_ipns_signing_key:
     description: IPNS signing key in PEM PKCS#8 format used by the IPFS node to publish the immutable archives directory (optional, the aggregator does not publish to IPNS if empty, experimental).
     required: false
@@ -330,7 +326,6 @@ runs:
           mithril_p2p_signer_relay_signer_registration_mode                            = "${{ inputs.mithril_p2p_signer_relay_signer_registration_mode }}"
           mithril_p2p_signer_relay_signature_registration_mode                         = "${{ inputs.mithril_p2p_signer_relay_signature_registration_mode }}"
           mithril_ipfs_enabled                                                         = "${{ inputs.mithril_ipfs_enabled }}"
-          mithril_ipfs_storage_max                                                     = "${{ inputs.mithril_ipfs_storage_max }}"
           mithril_ipfs_ipns_signing_key                                                = "${{ steps.prepare.outputs.mithril_ipfs_ipns_signing_key_base64 }}"
           mithril_aggregator_ipfs_share                                                = "${{ inputs.mithril_aggregator_ipfs_share }}"
           mithril_api_domain                                                           = "${{ inputs.mithril_api_domain }}"
