@@ -87,6 +87,9 @@ async fn read_node_process(
     if !is_cardano_node(&program) && !executable.as_deref().is_some_and(is_cardano_node) {
         return None;
     }
+    // A relative program name can't be resolved: the working directory of the process is
+    // not readable either when its executable link is not
+    let executable = executable.or_else(|| program.is_absolute().then_some(program));
 
     let owner = fs::read_to_string(dir.join("status"))
         .await
@@ -95,7 +98,7 @@ async fn read_node_process(
 
     Some(NodeProcess {
         pid,
-        executable: executable.unwrap_or(program),
+        executable,
         args: cmdline.collect(),
         working_dir: fs::read_link(dir.join("cwd")).await.ok(),
         user: owner.and_then(|owner| users.get(&owner.uid).cloned()),
@@ -224,7 +227,7 @@ mod tests {
         assert_eq!(
             vec![NodeProcess {
                 pid: 1234,
-                executable: PathBuf::from("/usr/local/bin/cardano-node"),
+                executable: Some(PathBuf::from("/usr/local/bin/cardano-node")),
                 args: vec!["run".to_string(), "--port".to_string(), "3001".to_string()],
                 working_dir: Some(PathBuf::from("/home/cardano")),
                 user: Some("cardano".to_string()),
@@ -279,7 +282,7 @@ mod tests {
         assert_eq!(
             vec![NodeProcess {
                 pid: 1234,
-                executable: PathBuf::from("/opt/cardano/bin/cardano-node"),
+                executable: Some(PathBuf::from("/opt/cardano/bin/cardano-node")),
                 args: vec!["run".to_string()],
                 working_dir: None,
                 user: Some("cardano".to_string()),
@@ -293,6 +296,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn leaves_the_executable_unknown_when_only_a_relative_program_name_is_readable() {
+        // The program name is relative to the working directory of the node, which can't be read
+        // either, so it can't be resolved
+        let proc = FakeProc::new("procfs_leaves_the_executable_unknown");
+        proc.add_process(1234, &["cardano-node", "run"], 1001);
+        proc.add_process(1235, &["./bin/cardano-node", "run"], 1001);
+
+        let processes = proc.probe().cardano_node_processes().await.unwrap();
+
+        let detected: Vec<(u32, Option<PathBuf>)> = processes
+            .into_iter()
+            .map(|process| (process.pid, process.executable))
+            .collect();
+        assert_eq!(vec![(1234, None), (1235, None)], detected);
+    }
+
+    #[tokio::test]
     async fn detects_a_node_whose_executable_was_replaced_on_disk() {
         let proc = FakeProc::new("procfs_detects_a_replaced_executable");
         let dir = proc.add_process(1234, &["./node", "run"], 0);
@@ -300,8 +320,14 @@ mod tests {
 
         let processes = proc.probe().cardano_node_processes().await.unwrap();
 
-        let pids: Vec<u32> = processes.iter().map(|process| process.pid).collect();
-        assert_eq!(vec![1234], pids);
+        let detected: Vec<(u32, Option<PathBuf>)> = processes
+            .into_iter()
+            .map(|process| (process.pid, process.executable))
+            .collect();
+        assert_eq!(
+            vec![(1234, Some(PathBuf::from("/usr/local/bin/cardano-node")))],
+            detected
+        );
     }
 
     #[tokio::test]
