@@ -88,6 +88,25 @@ debug = "line-tables-only"
 # Not cached by `Swatinem/rust-cache`, so generating them is a waste of resources
 incremental = false
 
+# Optimize the cryptographic dependencies (curves, hashes, KES, big integers) while leaving the
+# workspace crates at the profile's base `opt-level = 0`. With the `snark` feature enabled by
+# default, the signer registrations, signatures and certificate verifications that the tests of
+# most crates run spend most of their time in these crates, and run considerably slower
+# unoptimized. The dependency build cost is paid once per `Swatinem/rust-cache` key.
+[profile.ci-tests.package]
+blake2 = { opt-level = 3 }
+blake2b_simd = { opt-level = 3 }
+blst = { opt-level = 3 }
+curve25519-dalek = { opt-level = 3 }
+ed25519-dalek = { opt-level = 3 }
+kes-summed-ed25519 = { opt-level = 3 }
+midnight-circuits = { opt-level = 3 }
+midnight-curves = { opt-level = 3 }
+midnight-proofs = { opt-level = 3 }
+midnight-zk-stdlib = { opt-level = 3 }
+num-bigint = { opt-level = 3 }
+sha2 = { opt-level = 3 }
+
 # Variant of `ci-tests` used *only* by the `mithril-stm` Rust test job (selected via
 # `--cargo-profile ci-tests-snark` in the matching CI matrix entry). All other test jobs keep
 # using `ci-tests` and are unaffected by the `opt-level = 3` overrides below.

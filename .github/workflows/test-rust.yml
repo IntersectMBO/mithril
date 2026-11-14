@@ -28,6 +28,10 @@ jobs:
             # Optimizes (opt-level 3) the crypto deps and `mithril-stm` so the slow SNARK tests
             # run faster, at the cost of a longer (cache-amortized) build.
             slow-cargo-profile: ci-tests-snark
+            # Shares its cache key with the workspace job above, which also builds most of its
+            # dependencies. Only that job saves the cache, so that this shorter job can't save a
+            # narrower cache first.
+            never-save-cache: true
           - os: ubuntu-24.04-arm
             test-args: --features full,unstable --workspace
             cargo-profile: ci-tests
@@ -70,7 +74,7 @@ jobs:
           cache-version: ${{ vars.CACHE_VERSION }}
           cargo-tools: cargo-nextest
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          never-save-cache: ${{ inputs.disable-cache-save }}
+          never-save-cache: ${{ inputs.never-save-cache || matrix.never-save-cache || false }}
 
       - id: prepare
         name: Prepare
