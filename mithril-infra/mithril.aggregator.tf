@@ -203,7 +203,7 @@ if [ "${var.mithril_ipfs_enabled}" = "true" ]; then
 fi
 EOT
       ,
-      "export BLOCKFROST_PARAMETERS='${var.mithril_aggregator_blockfrost_parameters}'",
+      "if [ -n '${var.mithril_aggregator_blockfrost_parameters}' ]; then export BLOCKFROST_PARAMETERS='${var.mithril_aggregator_blockfrost_parameters}'; fi",
       "export ALLOW_UNPARSABLE_BLOCK=${var.mithril_aggregator_allow_unparsable_block}",
       "export CARDANO_BLOCKS_TRANSACTIONS_PROVER_CACHE_POOL_SIZE=${var.mithril_aggregator_cardano_blocks_transactions_prover_cache_pool_size}",
       "export CARDANO_BLOCKS_TRANSACTIONS_DATABASE_CONNECTION_POOL_SIZE=${var.mithril_aggregator_cardano_blocks_transactions_database_connection_pool_size}",
