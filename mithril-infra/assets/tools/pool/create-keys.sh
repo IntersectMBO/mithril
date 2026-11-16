@@ -47,6 +47,13 @@ CARDANO_CLI_CMD ${CARDANO_ERA} node key-gen-VRF \
 --verification-key-file ${POOL_ARTIFACTS_DIR}/vrf.vkey \
 --signing-key-file ${POOL_ARTIFACTS_DIR}/vrf.skey
 
+## Generate BLS Key pair (required to register a pool from the Dijkstra era)
+if [ "${CARDANO_ERA}" = "dijkstra" ]; then
+    CARDANO_CLI_CMD ${CARDANO_ERA} node key-gen-BLS \
+    --verification-key-file ${POOL_ARTIFACTS_DIR}/bls.vkey \
+    --signing-key-file ${POOL_ARTIFACTS_DIR}/bls.skey
+fi
+
 ## Generate the KES Key pair
 CARDANO_CLI_CMD ${CARDANO_ERA} node key-gen-KES \
 --verification-key-file ${POOL_ARTIFACTS_DIR}/kes.vkey \
