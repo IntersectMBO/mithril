@@ -22,6 +22,7 @@ display_help() {
     echo "  -o, --overwrite            Allow overwriting existing swarm [default:false]"
     echo "  -s, --swarm-dir <dir>      Directory that will contain the swarm nodes (required)"
     echo "  -v, --version <version>    Specific version to run (omit to use the latest version)"
+    echo "  -a, --rpc-auth-nodes <int> Number of nodes, from the first one, with RPC authentication [default: 0]"
     echo
     echo "Environment variables:"
     echo "  DOWNLOAD_DIR               Directory where the binary archive will be downloaded"
@@ -29,6 +30,7 @@ display_help() {
     echo "  NUMBER_OF_NODES            Number of nodes to configure"
     echo "  SWARM_DIR                  Directory that will contain the swarm nodes"
     echo "  OVERWRITE                  Allow overwriting existing swarm when set to any value except '0' or 'false'"
+    echo "  RPC_AUTH_NODES             Number of nodes with RPC authentication"
     echo
     echo "Options and environment variables can be mixed; when both are provided for the same setting,"
     echo "the command-line option takes priority."
@@ -49,6 +51,7 @@ fi
 declare DOWNLOAD_DIR="${DOWNLOAD_DIR:-}" SWARM_DIR="${SWARM_DIR:-}"
 declare KUBO_VERSION="${KUBO_VERSION:-}" NUMBER_OF_NODES="${NUMBER_OF_NODES:-}"
 declare OVERWRITE="$OVERWRITE_FROM_ENV"
+declare RPC_AUTH_NODES="${RPC_AUTH_NODES:-}"
 
 while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
       -d | --download-dir)
@@ -73,6 +76,11 @@ while [[ "${1:-}" == -* && ! "${1:-}" == "--" ]]; do case "$1" in
         ;;
       -o | --overwrite) OVERWRITE=true ;;
       -h | --help ) display_help ;;
+      -a | --rpc-auth-nodes)
+        shift
+        require_value "--rpc-auth-nodes" "${1:-}"
+        RPC_AUTH_NODES=$1
+        ;;
       *) error_exit "Unknown option: $1" ;;
     esac
     shift
@@ -80,6 +88,7 @@ done
 
 readonly DOWNLOAD_DIR=${DOWNLOAD_DIR:-"/tmp/kubo/"} NUMBER_OF_NODES=${NUMBER_OF_NODES:-2}
 readonly KUBO_VERSION SWARM_DIR OVERWRITE
+readonly RPC_AUTH_NODES=${RPC_AUTH_NODES:-0}
 
 if [[ "${1:-}" == "--" ]]; then
   shift
@@ -118,6 +127,7 @@ configure_args=(
   --ipfs-bin-path "${SWARM_DIR%/}/bin/ipfs"
   --number "$NUMBER_OF_NODES"
   --swarm-dir "$SWARM_DIR"
+  --rpc-auth-nodes "$RPC_AUTH_NODES"
 )
 
 if "$OVERWRITE"; then

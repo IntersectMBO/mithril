@@ -28,7 +28,9 @@ use mithril_protocol_config::cardano_chain::message::ProtocolConfigurationForEpo
 use crate::http_server::SERVER_BASE_PATH;
 use crate::services::ancillary_signer::GcpCryptoKeyVersionResourceName;
 use crate::tools::DEFAULT_GCP_CREDENTIALS_JSON_ENV_VAR;
-use crate::tools::url_sanitizer::SanitizedUrlWithTrailingSlash;
+use crate::tools::{
+    kubo_rpc_client::KuboRpcCredentials, url_sanitizer::SanitizedUrlWithTrailingSlash,
+};
 
 /// Different kinds of execution environments
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
@@ -512,9 +514,12 @@ pub struct ServeCommandConfiguration {
     /// where the snapshots will be stored. Defaults to "mithril" if not specified.
     /// `ipns_key_name` (optional) if set, publishes the snapshot MFS folder to IPNS under this key name. The
     /// key must already exist in the Kubo node keystore.
+    /// `credentials` (optional) authenticates to a Kubo node that has `API.Authorizations` set, either
+    /// with `"type": "basic"` and a `username` and `password`, or with `"type": "bearer"` and a `token`.
     #[example = "\
-    `{ \"url\": \"http://localhost:5001/\" }`\
-    or `{ \"url\": \"http://localhost:5001/\", \"mfs_folder_name\": \"custom-folder\", \"ipns_key_name\": \"ipns-key\" }`\
+    `{ \"url\": \"http://localhost:5001/\" }`<br/>\
+    or `{ \"url\": \"http://localhost:5001/\", \"mfs_folder_name\": \"custom-folder\", \"ipns_key_name\": \"ipns-key\" }`<br/>\
+    or `{ \"url\": \"http://localhost:5001/\", \"credentials\": { \"type\": \"bearer\", \"token\": \"my-token\" } }`\
     "]
     #[serde(
         default,
@@ -739,6 +744,9 @@ pub struct IpfsRpcServerConfig {
     /// The key must already exist in the IPFS node keystore. If it is missing or the publication
     /// fails, a warning is logged and the snapshot upload still succeeds.
     pub ipns_key_name: Option<String>,
+
+    /// Optional credentials, required if the Kubo node has `API.Authorizations` set
+    pub credentials: Option<KuboRpcCredentials>,
 }
 
 impl IpfsRpcServerConfig {
@@ -1586,6 +1594,7 @@ mod test {
                 url: "http://localhost:5001/".to_string(),
                 mfs_folder_name: default_mfs_folder_name(),
                 ipns_key_name: None,
+                credentials: None,
             }
         );
 
@@ -1599,6 +1608,7 @@ mod test {
                 url: "http://localhost:5001/".to_string(),
                 mfs_folder_name: "altered".to_string(),
                 ipns_key_name: None,
+                credentials: None,
             }
         );
 
@@ -1612,8 +1622,46 @@ mod test {
                 url: "http://localhost:5001/".to_string(),
                 mfs_folder_name: default_mfs_folder_name(),
                 ipns_key_name: Some("my-key".to_string()),
+                credentials: None,
             }
         );
+    }
+
+    #[test]
+    fn deserializing_ipfs_rpc_server_parameters_with_credentials() {
+        let deserialized_with_basic: IpfsRpcServerConfig = serde_json::from_str(
+            r#"{ "url": "http://localhost:5001/", "credentials": { "type": "basic", "username": "mithril", "password": "s3cr3t" } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            deserialized_with_basic.credentials,
+            Some(KuboRpcCredentials::Basic {
+                username: "mithril".to_string(),
+                password: ConfigSecret::new("s3cr3t".to_string()),
+            })
+        );
+
+        let deserialized_with_bearer: IpfsRpcServerConfig = serde_json::from_str(
+            r#"{ "url": "http://localhost:5001/", "credentials": { "type": "bearer", "token": "s3cr3t" } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            deserialized_with_bearer.credentials,
+            Some(KuboRpcCredentials::Bearer {
+                token: ConfigSecret::new("s3cr3t".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn deserializing_ipfs_rpc_server_parameters_with_invalid_credentials_fails() {
+        for json in [
+            r#"{ "url": "http://localhost:5001/", "credentials": { "type": "digest", "token": "s3cr3t" } }"#,
+            r#"{ "url": "http://localhost:5001/", "credentials": { "type": "basic", "username": "mithril" } }"#,
+        ] {
+            serde_json::from_str::<IpfsRpcServerConfig>(json)
+                .expect_err(&format!("Deserialization should fail for: {json}"));
+        }
     }
 
     #[test]

@@ -4645,12 +4645,13 @@ dependencies = [
 
 [[package]]
 name = "mithril-aggregator"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "anyhow",
  "async-trait",
  "axum",
  "axum-test",
+ "base64 0.23.1",
  "blockfrost",
  "chrono",
  "ciborium",
@@ -5058,7 +5059,7 @@ dependencies = [
 
 [[package]]
 name = "mithril-end-to-end"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "async-trait",
