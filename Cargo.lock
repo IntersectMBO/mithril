@@ -5232,6 +5232,7 @@ dependencies = [
  "config",
  "mithril-doc",
  "ratatui",
+ "serde",
  "serde_json",
  "slog",
  "slog-async",

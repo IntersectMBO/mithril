@@ -8,6 +8,7 @@ mod command_line;
 mod discoverer;
 mod discovery;
 pub mod host;
+mod node_files;
 mod probes;
 
 pub use discoverer::*;
