@@ -31,7 +31,7 @@ Usage:
   IPNS_NAME=<name> [OPTIONAL_VARIABLES] bash setup_ipfs_replica.sh
 
 Required variables:
-  IPNS_NAME          IPNS name of the immutable archives (eg, /ipns/k51...)
+  IPNS_NAME          IPNS name of the immutable archives (eg, /ipns/immutables.testing-preview.api.mithril.network)
 
 Optional variables:
   DEPLOYMENT         'binary' (default) or 'docker'
