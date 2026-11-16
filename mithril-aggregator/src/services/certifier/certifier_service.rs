@@ -867,6 +867,7 @@ mod tests {
         }
 
         async fn prepare_certification_after_a_concatenation_certificate(
+            snapshot_directory: PathBuf,
             aggregate_signature_type: AggregateSignatureType,
             mithril_era: SupportedEra,
         ) -> PreparedCertification {
@@ -879,7 +880,7 @@ mod tests {
                 .with_signers(3)
                 .build_at_epoch(beacon.epoch);
             let mut certifier_service =
-                setup_certifier_service(temp_dir!(), &fixture, beacon.epoch).await;
+                setup_certifier_service(snapshot_directory, &fixture, beacon.epoch).await;
             let multi_signature: ProtocolMultiSignature =
                 fake_keys::multi_signature()[0].try_into().unwrap();
             let mut mock_multi_signer = MockMultiSigner::new();
@@ -935,10 +936,12 @@ mod tests {
         }
 
         async fn create_certificate_after_a_concatenation_certificate(
+            snapshot_directory: PathBuf,
             aggregate_signature_type: AggregateSignatureType,
             mithril_era: SupportedEra,
         ) -> CreatedCertificate {
             let prepared = prepare_certification_after_a_concatenation_certificate(
+                snapshot_directory,
                 aggregate_signature_type,
                 mithril_era,
             )
@@ -962,6 +965,7 @@ mod tests {
         #[tokio::test]
         async fn chains_to_the_most_recent_master_certificate_for_concatenation() {
             let created = create_certificate_after_a_concatenation_certificate(
+                temp_dir!(),
                 AggregateSignatureType::Concatenation,
                 SupportedEra::Pythagoras,
             )
@@ -978,6 +982,7 @@ mod tests {
         async fn chains_to_the_genesis_certificate_rather_than_a_concatenation_certificate_for_ivc_snark()
          {
             let created = create_certificate_after_a_concatenation_certificate(
+                temp_dir!(),
                 AggregateSignatureType::IvcSnark,
                 SupportedEra::Lagrange,
             )
@@ -991,6 +996,7 @@ mod tests {
         async fn fails_to_find_a_parent_certificate_for_ivc_snark_after_a_legacy_genesis_certificate()
          {
             let prepared = prepare_certification_after_a_concatenation_certificate(
+                temp_dir!(),
                 AggregateSignatureType::IvcSnark,
                 SupportedEra::Pythagoras,
             )
