@@ -3,6 +3,8 @@
 
 mod binary_provider;
 mod distribution;
+mod node_config;
 
 pub use binary_provider::*;
 pub use distribution::*;
+pub use node_config::*;
