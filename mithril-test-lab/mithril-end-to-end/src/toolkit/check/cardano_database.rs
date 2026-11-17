@@ -1,5 +1,4 @@
 use anyhow::{Context, anyhow};
-use reqwest::Url;
 use slog_scope::{info, warn};
 
 use mithril_common::{
@@ -47,12 +46,8 @@ impl CheckCardanoDatabaseToolkit {
             )
             .await?;
         self.node_producing_cardano_database_digests_map(aggregator).await?;
-        self.verify_with_client(
-            client,
-            client_ipfs_node.map(|n| n.rpc_url.clone()),
-            &artifact.hash,
-        )
-        .await?;
+        self.verify_with_client(client, client_ipfs_node, &artifact.hash)
+            .await?;
 
         if aggregator.is_leader()
             && let Some(client_kubo_node) = client_ipfs_node
@@ -146,7 +141,7 @@ impl CheckCardanoDatabaseToolkit {
     pub async fn verify_with_client(
         &self,
         client: &mut Client,
-        ipfs_rpc_url: Option<Url>,
+        client_ipfs_node: Option<&KuboNode>,
         hash: &str,
     ) -> StdResult<()> {
         client
@@ -178,15 +173,17 @@ impl CheckCardanoDatabaseToolkit {
             .run(ClientCommand::CardanoDbV2(CardanoDbV2Command::Download {
                 hash: hash.to_string(),
                 ipfs_rpc_url: None,
+                ipfs_rpc_auth_token: None,
             }))
             .await?;
         info!("Client downloaded & restored the cardano database snapshot"; "hash" => &hash, "storage_source" => "local");
 
-        if ipfs_rpc_url.is_some() {
+        if let Some(client_ipfs_node) = client_ipfs_node {
             let cdb_download_with_ipfs_output = client
                 .run(ClientCommand::CardanoDbV2(CardanoDbV2Command::Download {
                     hash: hash.to_string(),
-                    ipfs_rpc_url,
+                    ipfs_rpc_url: Some(client_ipfs_node.rpc_url.clone()),
+                    ipfs_rpc_auth_token: client_ipfs_node.rpc_auth_token.clone(),
                 }))
                 .await?;
             info!("Client downloaded & restored the cardano database snapshot"; "hash" => &hash, "storage_source" => "ipfs");
