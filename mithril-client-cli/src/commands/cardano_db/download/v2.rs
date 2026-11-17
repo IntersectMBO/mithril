@@ -44,6 +44,7 @@ pub(super) struct PreparedCardanoDbV2Download {
     pub(super) include_ancillary: bool,
     pub(super) ancillary_verification_key: Option<String>,
     pub(super) ipfs_rpc_url: Option<String>,
+    pub(super) ipfs_rpc_auth_token: Option<String>,
     pub(super) ipfs_share: Option<Percentage>,
     pub(super) allow_override: bool,
 }
@@ -67,6 +68,25 @@ impl PreparedCardanoDbV2Download {
             if self.ipfs_rpc_url.is_none() {
                 print_simple_warning(
                     "`--ipfs-share` is ignored because `--ipfs-rpc-url` is not set.",
+                    context.is_json_output_enabled(),
+                );
+            }
+        }
+
+        if self.ipfs_rpc_auth_token.is_some() {
+            context.require_unstable(
+                "cardano-db download --ipfs-rpc-url <url> --ipfs-rpc-auth-token <token>",
+                None,
+            )?;
+
+            if self.ipfs_rpc_url.is_none() {
+                print_simple_warning(
+                    "`--ipfs-rpc-auth-token` is ignored because `--ipfs-rpc-url` is not set.",
+                    context.is_json_output_enabled(),
+                );
+            } else if self.ipfs_rpc_url_contains_credentials() {
+                print_simple_warning(
+                    "`--ipfs-rpc-auth-token` is ignored because `--ipfs-rpc-url` contains credentials, which take precedence.",
                     context.is_json_output_enabled(),
                 );
             }
@@ -100,6 +120,7 @@ impl PreparedCardanoDbV2Download {
             )))
             .set_ancillary_verification_key(self.ancillary_verification_key.clone())
             .with_ipfs_rpc_url(self.ipfs_rpc_url.clone())
+            .with_ipfs_rpc_auth_token(self.ipfs_rpc_auth_token.clone())
             .build()?;
 
         let get_list_of_artifact_ids = || async {
@@ -228,6 +249,15 @@ impl PreparedCardanoDbV2Download {
         )?;
 
         Ok(())
+    }
+
+    /// Whether the IPFS RPC URL contains credentials, which take precedence over the IPFS RPC
+    /// authentication token
+    fn ipfs_rpc_url_contains_credentials(&self) -> bool {
+        self.ipfs_rpc_url
+            .as_deref()
+            .and_then(|url| reqwest::Url::parse(url).ok())
+            .is_some_and(|url| !url.username().is_empty() || url.password().is_some())
     }
 
     fn compute_total_immutables_restored_size(
@@ -365,6 +395,7 @@ mod tests {
             include_ancillary: false,
             ancillary_verification_key: None,
             ipfs_rpc_url: None,
+            ipfs_rpc_auth_token: None,
             ipfs_share: Some(Percentage::new(42)),
             allow_override: false,
         };
@@ -382,6 +413,67 @@ mod tests {
             error.to_string().contains("--ipfs-share"),
             "Expected error to mention '--ipfs-share', got: {error}"
         );
+    }
+
+    #[tokio::test]
+    async fn ipfs_rpc_auth_token_requires_unstable() {
+        let prepared_command = PreparedCardanoDbV2Download {
+            hash: "whatever_hash".to_string(),
+            download_dir: "whatever_dir".to_string(),
+            start: None,
+            end: None,
+            include_ancillary: false,
+            ancillary_verification_key: None,
+            ipfs_rpc_url: None,
+            ipfs_rpc_auth_token: Some("my-token".to_string()),
+            ipfs_share: None,
+            allow_override: false,
+        };
+        let unstable_enabled = false;
+        let context = CommandContext::new(
+            ConfigParameters::default(),
+            unstable_enabled,
+            true,
+            Logger::root(slog::Discard, slog::o!()),
+        );
+
+        let error = prepared_command.execute(&context).await.unwrap_err();
+
+        assert!(
+            error.to_string().contains("--ipfs-rpc-auth-token"),
+            "Expected error to mention '--ipfs-rpc-auth-token', got: {error}"
+        );
+    }
+
+    #[test]
+    fn ipfs_rpc_url_contains_credentials_when_it_has_a_username_or_a_password() {
+        let prepared_command = |ipfs_rpc_url: Option<&str>| PreparedCardanoDbV2Download {
+            hash: "whatever_hash".to_string(),
+            download_dir: "whatever_dir".to_string(),
+            start: None,
+            end: None,
+            include_ancillary: false,
+            ancillary_verification_key: None,
+            ipfs_rpc_url: ipfs_rpc_url.map(str::to_string),
+            ipfs_rpc_auth_token: Some("my-token".to_string()),
+            ipfs_share: None,
+            allow_override: false,
+        };
+
+        for ipfs_rpc_url in [
+            "http://user:password@127.0.0.1:5001/",
+            "http://user@127.0.0.1:5001/",
+            "http://:password@127.0.0.1:5001/",
+        ] {
+            assert!(
+                prepared_command(Some(ipfs_rpc_url)).ipfs_rpc_url_contains_credentials(),
+                "'{ipfs_rpc_url}' should be detected as containing credentials"
+            );
+        }
+        assert!(
+            !prepared_command(Some("http://127.0.0.1:5001/")).ipfs_rpc_url_contains_credentials()
+        );
+        assert!(!prepared_command(None).ipfs_rpc_url_contains_credentials());
     }
 
     #[test]
