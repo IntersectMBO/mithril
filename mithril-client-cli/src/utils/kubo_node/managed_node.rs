@@ -15,7 +15,7 @@ use mithril_client::MithrilResult;
 
 use crate::utils::{ReqwestGitHubApiClient, ReqwestHttpDownloader};
 
-use super::{KuboBinaryProvider, KuboDistribution, KuboNodeConfig};
+use super::{KuboArchive, KuboArchiveProvider, KuboDistribution, KuboNodeConfig};
 
 /// Maximum duration to wait for the RPC API of the daemon to answer after its start
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -64,22 +64,22 @@ impl ManagedKuboNode {
         std::env::temp_dir().join("mithril-client")
     }
 
-    /// Get the Kubo binary of the current platform, downloaded on first use and cached in the user
+    /// Get the Kubo release archive of the current platform, downloaded on first use and cached in the user
     /// cache directory, then [start][Self::start] a node with its repository in `parent_dir`,
     /// created if missing.
     pub async fn download_and_start(
         parent_dir: &Path,
         github_token: Option<String>,
     ) -> MithrilResult<Self> {
-        let binary = KuboBinaryProvider::new(
-            KuboBinaryProvider::default_install_dir()?,
+        let archive = KuboArchiveProvider::new(
+            KuboArchiveProvider::default_install_dir()?,
             KuboDistribution::for_platform(std::env::consts::OS, std::env::consts::ARCH)?,
             Arc::new(ReqwestGitHubApiClient::new(github_token)?),
             Arc::new(ReqwestHttpDownloader::new()?),
         )
         .provide()
         .await
-        .with_context(|| "Failed to get the Kubo binary")?;
+        .with_context(|| "Failed to get the Kubo release archive")?;
         fs::create_dir_all(parent_dir).with_context(|| {
             format!(
                 "Failed to create the Kubo repositories directory '{}'",
@@ -87,16 +87,18 @@ impl ManagedKuboNode {
             )
         })?;
 
-        Self::start(&binary, parent_dir).await
+        Self::start(&archive, parent_dir).await
     }
 
-    /// Initialize a Kubo repository in a new directory of `parent_dir`, configure it (see
-    /// [KuboNodeConfig]) and start its daemon, waiting until its RPC API answers.
+    /// Unpack the Kubo binary of the `archive` in a new directory of `parent_dir`, then initialize
+    /// a Kubo repository in it with the unpacked binary, configure it (see [KuboNodeConfig]) and
+    /// start its daemon, waiting until its RPC API answers.
     ///
     /// On failure, or if cancelled, the started processes are killed and the repository is
     /// removed.
-    pub async fn start(binary: &Path, parent_dir: &Path) -> MithrilResult<Self> {
+    pub async fn start(archive: &KuboArchive, parent_dir: &Path) -> MithrilResult<Self> {
         let repository_dir = RepositoryDir::create(parent_dir)?;
+        let binary = &archive.unpack_binary(repository_dir.path())?;
         run_ipfs(binary, repository_dir.path(), &KuboNodeConfig::init_args()).await?;
         for setting in KuboNodeConfig::settings() {
             run_ipfs(binary, repository_dir.path(), &setting.config_args()).await?;
@@ -359,6 +361,13 @@ mod tests {
         fs::read_dir(dir).unwrap().count()
     }
 
+    /// Kubo like tar.gz archive, in `dir`, holding an executable `kubo/ipfs` shell script with the
+    /// given body
+    #[cfg(unix)]
+    fn fake_kubo_archive(dir: &Path, script_body: &str) -> KuboArchive {
+        KuboArchive::fake(dir, format!("#!/bin/sh\n{script_body}\n").as_bytes())
+    }
+
     mod rpc_url_from_api_address {
         use super::*;
 
@@ -441,10 +450,36 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn start_fails_and_removes_its_repository_when_a_setup_command_fails() {
-        let parent_dir = temp_dir_create!();
+    async fn start_runs_the_binary_unpacked_in_its_repository() {
+        let test_dir = temp_dir_create!();
+        let parent_dir = test_dir.join("parent");
+        fs::create_dir(&parent_dir).unwrap();
+        let run_binary_file = test_dir.join("run_binary");
+        let archive = fake_kubo_archive(
+            &test_dir,
+            &format!("echo \"$0\" > \"{}\"\nexit 1", run_binary_file.display()),
+        );
 
-        let error = ManagedKuboNode::start(Path::new("false"), &parent_dir)
+        ManagedKuboNode::start(&archive, &parent_dir)
+            .await
+            .err()
+            .expect("Start should fail when a setup command fails");
+
+        let run_binary = PathBuf::from(fs::read_to_string(&run_binary_file).unwrap().trim());
+        let repository_dir = run_binary.parent().and_then(Path::parent).unwrap();
+        assert_eq!(Some(parent_dir.as_path()), repository_dir.parent());
+        assert!(run_binary.ends_with("kubo/ipfs"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn start_fails_and_removes_its_repository_when_a_setup_command_fails() {
+        let test_dir = temp_dir_create!();
+        let parent_dir = test_dir.join("parent");
+        fs::create_dir(&parent_dir).unwrap();
+        let archive = fake_kubo_archive(&test_dir, "exit 1");
+
+        let error = ManagedKuboNode::start(&archive, &parent_dir)
             .await
             .err()
             .expect("Start should fail when a setup command fails");
@@ -460,26 +495,24 @@ mod tests {
     /// interrupted by a shutdown signal)
     #[cfg(unix)]
     mod start_cancelled {
-        use std::os::unix::fs::PermissionsExt;
-
         use super::*;
 
-        /// Fake `ipfs` binary succeeding on all commands but `hanging_command`, on which it writes
-        /// its pid to `pid_file` then hangs
-        fn fake_ipfs_hanging_on(script_dir: &Path, hanging_command: &str) -> (PathBuf, PathBuf) {
-            let binary = script_dir.join("ipfs");
-            let pid_file = script_dir.join("pid");
-            fs::write(
-                &binary,
-                format!(
-                    "#!/bin/sh\nif [ \"$1\" = \"{hanging_command}\" ]; then echo $$ > \"{}\"; exec sleep 30; fi\n",
+        /// Archive of a fake `ipfs` binary succeeding on all commands but `hanging_command`, on
+        /// which it writes its pid to `pid_file` then hangs
+        fn fake_kubo_archive_hanging_on(
+            dir: &Path,
+            hanging_command: &str,
+        ) -> (KuboArchive, PathBuf) {
+            let pid_file = dir.join("pid");
+            let archive = fake_kubo_archive(
+                dir,
+                &format!(
+                    "if [ \"$1\" = \"{hanging_command}\" ]; then echo $$ > \"{}\"; exec sleep 30; fi",
                     pid_file.display()
                 ),
-            )
-            .unwrap();
-            fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+            );
 
-            (binary, pid_file)
+            (archive, pid_file)
         }
 
         fn is_process_alive(pid: &str) -> bool {
@@ -499,7 +532,7 @@ mod tests {
         ) -> (PathBuf, String) {
             let parent_dir = test_dir.join("parent");
             fs::create_dir(&parent_dir).unwrap();
-            let (binary, pid_file) = fake_ipfs_hanging_on(test_dir, hanging_command);
+            let (archive, pid_file) = fake_kubo_archive_hanging_on(test_dir, hanging_command);
 
             let wait_for_pid = async {
                 loop {
@@ -512,7 +545,7 @@ mod tests {
                 }
             };
             tokio::select! {
-                result = ManagedKuboNode::start(&binary, &parent_dir) => {
+                result = ManagedKuboNode::start(&archive, &parent_dir) => {
                     panic!("Start should hang on '{hanging_command}', got: {:?}", result.err())
                 }
                 pid = tokio::time::timeout(Duration::from_secs(10), wait_for_pid) => {
