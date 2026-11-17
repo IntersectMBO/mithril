@@ -18,6 +18,8 @@ mod utils;
 pub use certificate_chain_cache::*;
 pub use command_context::*;
 pub use configuration::*;
+pub use utils::{run_until_signal, shutdown_signal};
+
 /// Error Clap
 pub type ClapError = clap::error::Error;
 

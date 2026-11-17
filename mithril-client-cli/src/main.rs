@@ -4,11 +4,13 @@ use anyhow::{Context, anyhow};
 use clap::{CommandFactory, Parser, Subcommand};
 use config::{Map, Source, Value};
 use mithril_cli_helper::{register_config_value, register_config_value_option};
-use slog::{Drain, Fuse, Level, Logger, debug};
+use slog::{Drain, IgnoreResult, Level, Logger, debug};
+use slog_async::{Async, AsyncGuard};
 use slog_term::Decorator;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Arc;
+use std::time::Duration;
 use std::{fs::File, path::PathBuf};
 
 use mithril_client::MithrilResult;
@@ -22,7 +24,7 @@ use mithril_client_cli::commands::{
 };
 use mithril_client_cli::{
     CertificateChainCacheConfiguration, CertificateChainCacheMode, ClapError, CommandContext,
-    ConfigParameters,
+    ConfigParameters, run_until_signal, shutdown_signal,
 };
 
 enum LogOutputType {
@@ -185,25 +187,34 @@ impl Args {
         }
     }
 
-    fn wrap_drain<D: Decorator + Send + 'static>(&self, decorator: D) -> Fuse<slog_async::Async> {
-        let drain = slog_term::CompactFormat::new(decorator).build().fuse();
-        let drain = slog::LevelFilter::new(drain, self.log_level()).fuse();
-
-        slog_async::Async::new(drain).build().fuse()
+    fn wrap_drain<D>(&self, decorator: D) -> (IgnoreResult<Async>, AsyncGuard)
+    where
+        D: Decorator + Send + 'static,
+    {
+        self.wrap_async(slog_term::CompactFormat::new(decorator).build().fuse())
     }
 
-    fn build_logger(&self) -> MithrilResult<Logger> {
+    fn wrap_async<D>(&self, drain: D) -> (IgnoreResult<Async>, AsyncGuard)
+    where
+        D: Drain<Ok = (), Err = slog::Never> + Send + 'static,
+    {
+        let drain = slog::LevelFilter::new(drain, self.log_level()).fuse();
+        let (drain, guard) = Async::new(drain).build_with_guard();
+
+        (drain.ignore_res(), guard)
+    }
+
+    fn build_logger(&self) -> MithrilResult<(Logger, AsyncGuard)> {
         let log_output_type = self.get_log_output_type();
         let writer = log_output_type.get_writer()?;
 
-        let drain = if self.log_format_json {
+        let (drain, guard) = if self.log_format_json {
             let drain = slog_bunyan::with_name("mithril-client", writer)
                 .set_pretty(false)
                 .build()
                 .fuse();
-            let drain = slog::LevelFilter::new(drain, self.log_level()).fuse();
 
-            slog_async::Async::new(drain).build().fuse()
+            self.wrap_async(drain)
         } else {
             match log_output_type {
                 LogOutputType::StdErr => self.wrap_drain(slog_term::TermDecorator::new().build()),
@@ -211,7 +222,7 @@ impl Args {
             }
         };
 
-        Ok(Logger::root(Arc::new(drain), slog::o!()))
+        Ok((Logger::root(Arc::new(drain), slog::o!()), guard))
     }
 
     fn parse_with_decorator(
@@ -310,8 +321,11 @@ impl ArtifactCommands {
     }
 }
 
-#[tokio::main]
-async fn main() -> MithrilResult<()> {
+/// Maximum time waited for the blocking tasks still running once the command is done, e.g. a
+/// blocking task of a command interrupted by a shutdown signal
+const BLOCKING_TASKS_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
+
+fn main() -> MithrilResult<()> {
     // Load args
     let args = Args::parse_with_decorator(&|result: Result<Args, ClapError>| {
         Args::handle_removed_commands_decorator(
@@ -324,9 +338,21 @@ async fn main() -> MithrilResult<()> {
             ],
         )
     });
-    let logger = args.build_logger()?;
+    let (logger, log_guard) = args.build_logger()?;
 
-    args.execute(logger).await
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .with_context(|| "Can not build the tokio runtime")?;
+    // When interrupted, the command is dropped so its resources are released (e.g. the managed
+    // IPFS node is stopped)
+    let result = runtime.block_on(run_until_signal(args.execute(logger), shutdown_signal()));
+    // Unlike dropping the runtime, does not wait indefinitely for the remaining blocking tasks
+    runtime.shutdown_timeout(BLOCKING_TASKS_SHUTDOWN_TIMEOUT);
+    // Write the pending logs, including those of the blocking tasks abandoned by the shutdown
+    drop(log_guard);
+
+    result
 }
 
 #[cfg(test)]
