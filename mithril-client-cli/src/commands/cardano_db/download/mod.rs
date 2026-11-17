@@ -54,6 +54,19 @@ pub struct CardanoDbDownloadCommand {
     #[clap(long, env = "IPFS_RPC_URL")]
     ipfs_rpc_url: Option<String>,
 
+    /// `unstable` Download through a Kubo node run by the client for the duration of the download.
+    ///
+    /// The Kubo binary is downloaded from its GitHub releases and cached in the user cache
+    /// directory, and the node repository is created in the system temporary directory and
+    /// removed once the download is done.
+    #[clap(long, env = "IPFS_MANAGED_NODE", conflicts_with = "ipfs_rpc_url")]
+    ipfs_managed_node: bool,
+
+    /// GitHub token for authenticated API calls, used to download the Kubo binary of the managed
+    /// IPFS node.
+    #[clap(long, env = "GITHUB_TOKEN")]
+    github_token: Option<String>,
+
     /// `unstable` Share of the immutable files for which IPFS is tried first.
     ///
     /// Accepted values: a number from 0 to 100, `prefer` (alias of 100) or `fallback` (alias of
@@ -124,6 +137,8 @@ impl CardanoDbDownloadCommand {
             include_ancillary: self.include_ancillary,
             ancillary_verification_key,
             ipfs_rpc_url: self.ipfs_rpc_url.clone(),
+            ipfs_managed_node: self.ipfs_managed_node,
+            github_token: self.github_token.clone(),
             ipfs_share: self.ipfs_share,
             allow_override: self.allow_override,
         })
@@ -222,6 +237,8 @@ mod tests {
             download_dir: Some(std::path::PathBuf::from("whatever_dir")),
             genesis_verification_key: "whatever".to_string().into(),
             ipfs_rpc_url: None,
+            ipfs_managed_node: false,
+            github_token: None,
             ipfs_share: None,
             include_ancillary: true,
             ancillary_verification_key: "whatever".to_string().into(),
@@ -317,6 +334,24 @@ mod tests {
                 .unwrap();
 
             assert!(arg.is_hide_set());
+        }
+    }
+
+    mod ipfs_managed_node {
+        use super::*;
+
+        #[test]
+        fn conflicts_with_ipfs_rpc_url() {
+            let error = CardanoDbDownloadCommand::try_parse_from([
+                "download",
+                "whatever_digest",
+                "--ipfs-managed-node",
+                "--ipfs-rpc-url",
+                "http://127.0.0.1:5001",
+            ])
+            .expect_err("Should fail when both an IPFS RPC URL and a managed node are requested");
+
+            assert_eq!(clap::error::ErrorKind::ArgumentConflict, error.kind());
         }
     }
 
