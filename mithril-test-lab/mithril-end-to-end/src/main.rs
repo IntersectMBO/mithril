@@ -576,8 +576,9 @@ impl App {
                 swarm_target_dir,
                 kubo_version: None,
                 mode,
-                // Ignores the client which doesn't support authentication yet
-                rpc_authenticated_nodes: args.network_topology.number_of_aggregators,
+                // All the nodes: the aggregators authenticate with Basic credentials and the
+                // Mithril Client with a Bearer token
+                rpc_authenticated_nodes: args.network_topology.number_of_aggregators + 1,
             })
             .await?;
             Some(devnet)
