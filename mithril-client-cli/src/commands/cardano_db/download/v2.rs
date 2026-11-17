@@ -45,7 +45,9 @@ pub(super) struct PreparedCardanoDbV2Download {
     pub(super) ancillary_verification_key: Option<String>,
     pub(super) ipfs_rpc_url: Option<String>,
     pub(super) ipfs_rpc_auth_token: Option<String>,
+    pub(super) ipfs_managed_node: bool,
     pub(super) ipfs_share: Option<Percentage>,
+    pub(super) github_token: Option<String>,
     pub(super) allow_override: bool,
 }
 
@@ -59,15 +61,23 @@ impl PreparedCardanoDbV2Download {
                 })?;
         }
 
+        if self.ipfs_managed_node {
+            context
+                .require_unstable("cardano-db download --ipfs-managed-node", None)
+                .with_context(|| {
+                    "IPFS managed node requested with `--ipfs-managed-node` or the `IPFS_MANAGED_NODE` environment variable"
+                })?;
+        }
+
         if self.ipfs_share.is_some() {
             context.require_unstable(
                 "cardano-db download --ipfs-rpc-url <url> --ipfs-share <share>",
                 None,
             )?;
 
-            if self.ipfs_rpc_url.is_none() {
+            if self.ipfs_rpc_url.is_none() && !self.ipfs_managed_node {
                 print_simple_warning(
-                    "`--ipfs-share` is ignored because `--ipfs-rpc-url` is not set.",
+                    "`--ipfs-share` is ignored because neither `--ipfs-rpc-url` nor `--ipfs-managed-node` is set.",
                     context.is_json_output_enabled(),
                 );
             }
@@ -385,9 +395,8 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn ipfs_share_requires_unstable() {
-        let prepared_command = PreparedCardanoDbV2Download {
+    fn dummy_prepared_command() -> PreparedCardanoDbV2Download {
+        PreparedCardanoDbV2Download {
             hash: "whatever_hash".to_string(),
             download_dir: "whatever_dir".to_string(),
             start: None,
@@ -396,18 +405,34 @@ mod tests {
             ancillary_verification_key: None,
             ipfs_rpc_url: None,
             ipfs_rpc_auth_token: None,
-            ipfs_share: Some(Percentage::new(42)),
+            ipfs_managed_node: false,
+            ipfs_share: None,
+            github_token: None,
             allow_override: false,
-        };
+        }
+    }
+
+    fn context_without_unstable() -> CommandContext {
         let unstable_enabled = false;
-        let context = CommandContext::new(
+        CommandContext::new(
             ConfigParameters::default(),
             unstable_enabled,
             true,
             Logger::root(slog::Discard, slog::o!()),
-        );
+        )
+    }
 
-        let error = prepared_command.execute(&context).await.unwrap_err();
+    #[tokio::test]
+    async fn ipfs_share_requires_unstable() {
+        let prepared_command = PreparedCardanoDbV2Download {
+            ipfs_share: Some(Percentage::new(42)),
+            ..dummy_prepared_command()
+        };
+
+        let error = prepared_command
+            .execute(&context_without_unstable())
+            .await
+            .unwrap_err();
 
         assert!(
             error.to_string().contains("--ipfs-share"),
@@ -418,16 +443,9 @@ mod tests {
     #[tokio::test]
     async fn ipfs_rpc_auth_token_requires_unstable() {
         let prepared_command = PreparedCardanoDbV2Download {
-            hash: "whatever_hash".to_string(),
-            download_dir: "whatever_dir".to_string(),
-            start: None,
-            end: None,
-            include_ancillary: false,
-            ancillary_verification_key: None,
             ipfs_rpc_url: None,
             ipfs_rpc_auth_token: Some("my-token".to_string()),
-            ipfs_share: None,
-            allow_override: false,
+            ..dummy_prepared_command()
         };
         let unstable_enabled = false;
         let context = CommandContext::new(
@@ -448,16 +466,9 @@ mod tests {
     #[test]
     fn ipfs_rpc_url_contains_credentials_when_it_has_a_username_or_a_password() {
         let prepared_command = |ipfs_rpc_url: Option<&str>| PreparedCardanoDbV2Download {
-            hash: "whatever_hash".to_string(),
-            download_dir: "whatever_dir".to_string(),
-            start: None,
-            end: None,
-            include_ancillary: false,
-            ancillary_verification_key: None,
             ipfs_rpc_url: ipfs_rpc_url.map(str::to_string),
             ipfs_rpc_auth_token: Some("my-token".to_string()),
-            ipfs_share: None,
-            allow_override: false,
+            ..dummy_prepared_command()
         };
 
         for ipfs_rpc_url in [
@@ -474,6 +485,24 @@ mod tests {
             !prepared_command(Some("http://127.0.0.1:5001/")).ipfs_rpc_url_contains_credentials()
         );
         assert!(!prepared_command(None).ipfs_rpc_url_contains_credentials());
+    }
+
+    #[tokio::test]
+    async fn ipfs_managed_node_requires_unstable() {
+        let prepared_command = PreparedCardanoDbV2Download {
+            ipfs_managed_node: true,
+            ..dummy_prepared_command()
+        };
+
+        let error = prepared_command
+            .execute(&context_without_unstable())
+            .await
+            .unwrap_err();
+
+        assert!(
+            format!("{error:?}").contains("--ipfs-managed-node"),
+            "Expected error to mention '--ipfs-managed-node', got: {error:?}"
+        );
     }
 
     #[test]

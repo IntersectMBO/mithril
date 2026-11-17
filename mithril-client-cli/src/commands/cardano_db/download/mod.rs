@@ -65,6 +65,15 @@ pub struct CardanoDbDownloadCommand {
     #[clap(long, env = "IPFS_RPC_AUTH_TOKEN", hide_env_values = true)]
     ipfs_rpc_auth_token: Option<String>,
 
+    /// `unstable` Enable the IPFS download through a Kubo node run by the client for the duration
+    /// of the download, instead of the node set with `--ipfs-rpc-url`.
+    ///
+    /// The Kubo binary is downloaded from its GitHub releases and cached in the user cache
+    /// directory, and the node repository is created in the system temporary directory and
+    /// removed once the download is done.
+    #[clap(long, env = "IPFS_MANAGED_NODE", conflicts_with = "ipfs_rpc_url")]
+    ipfs_managed_node: bool,
+
     /// `unstable` Share of the immutable files for which IPFS is tried first.
     ///
     /// Accepted values: a number from 0 to 100, `prefer` (alias of 100) or `fallback` (alias of
@@ -75,6 +84,11 @@ pub struct CardanoDbDownloadCommand {
     /// Hidden: this parameter will be removed once the IPFS download is fully deployed.
     #[clap(long, env = "IPFS_SHARE", hide = true, value_parser = parse_ipfs_share)]
     ipfs_share: Option<Percentage>,
+
+    /// GitHub token for authenticated API calls, used to download the Kubo binary of the managed
+    /// IPFS node.
+    #[clap(long, env = "GITHUB_TOKEN")]
+    github_token: Option<String>,
 
     /// Include ancillary files in the download, if set the `ancillary_verification_key` is required
     /// in order to verify the ancillary files.
@@ -136,7 +150,9 @@ impl CardanoDbDownloadCommand {
             ancillary_verification_key,
             ipfs_rpc_url: self.ipfs_rpc_url.clone(),
             ipfs_rpc_auth_token: self.ipfs_rpc_auth_token.clone(),
+            ipfs_managed_node: self.ipfs_managed_node,
             ipfs_share: self.ipfs_share,
+            github_token: self.github_token.clone(),
             allow_override: self.allow_override,
         })
     }
@@ -235,6 +251,8 @@ mod tests {
             genesis_verification_key: "whatever".to_string().into(),
             ipfs_rpc_url: None,
             ipfs_rpc_auth_token: None,
+            ipfs_managed_node: false,
+            github_token: None,
             ipfs_share: None,
             include_ancillary: true,
             ancillary_verification_key: "whatever".to_string().into(),
@@ -360,6 +378,24 @@ mod tests {
                 .unwrap();
 
             assert!(arg.is_hide_env_values_set());
+        }
+    }
+
+    mod ipfs_managed_node {
+        use super::*;
+
+        #[test]
+        fn conflicts_with_ipfs_rpc_url() {
+            let error = CardanoDbDownloadCommand::try_parse_from([
+                "download",
+                "whatever_digest",
+                "--ipfs-managed-node",
+                "--ipfs-rpc-url",
+                "http://127.0.0.1:5001",
+            ])
+            .expect_err("Should fail when both an IPFS RPC URL and a managed node are requested");
+
+            assert_eq!(clap::error::ErrorKind::ArgumentConflict, error.kind());
         }
     }
 
