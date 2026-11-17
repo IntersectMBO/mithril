@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, anyhow};
+use async_trait::async_trait;
 use chrono::Utc;
 use clap::{Parser, ValueEnum};
 
@@ -116,8 +117,9 @@ impl TryFrom<CardanoNetwork> for CardanoNetworkCliArg {
 }
 
 #[cfg_attr(test, mockall::automock)]
+#[async_trait]
 trait SnapshotConverter {
-    fn convert(&self, input_path: &Path, output_path: &Path) -> MithrilResult<()>;
+    async fn convert(&self, input_path: &Path, output_path: &Path) -> MithrilResult<()>;
 }
 #[derive(Clone)]
 struct SnapshotConverterConfig {
@@ -145,8 +147,9 @@ impl SnapshotConverterBin {
     }
 }
 
+#[async_trait]
 impl SnapshotConverter for SnapshotConverterBin {
-    fn convert(&self, input_path: &Path, output_path: &Path) -> MithrilResult<()> {
+    async fn convert(&self, input_path: &Path, output_path: &Path) -> MithrilResult<()> {
         let commands = match self {
             SnapshotConverterBin::From11_1(cfg) => {
                 build_commands_from_11_1(input_path, output_path, cfg.clone())?
@@ -165,13 +168,18 @@ impl SnapshotConverter for SnapshotConverterBin {
             }
         };
 
-        for mut command in commands {
-            let status = command.status().with_context(|| {
-                format!(
-                    "Failed to execute snapshot-converter binary at {}",
-                    self.converter_bin().display()
-                )
-            })?;
+        for command in commands {
+            // Run asynchronously, and killed if cancelled (e.g. by a shutdown signal)
+            let status = tokio::process::Command::from(command)
+                .kill_on_drop(true)
+                .status()
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to execute snapshot-converter binary at {}",
+                        self.converter_bin().display()
+                    )
+                })?;
 
             if !status.success() {
                 return Err(anyhow!(
@@ -497,6 +505,7 @@ impl SnapshotConverterCommand {
                 config_path,
                 self,
             )
+            .await
             .with_context(|| {
                 format!(
                     "Failed to convert ledger snapshot to flavor: {}",
@@ -597,7 +606,7 @@ impl SnapshotConverterCommand {
         Ok(archive_path)
     }
 
-    fn convert_ledger_state_snapshot(
+    async fn convert_ledger_state_snapshot(
         step_number: u16,
         progress_printer: &ProgressPrinter,
         work_dir: &Path,
@@ -636,6 +645,7 @@ impl SnapshotConverterCommand {
             &snapshots,
             Box::new(converter_bin),
         )
+        .await
     }
 
     fn print_successful_result(
@@ -719,7 +729,7 @@ Snapshot location: {}
         Ok(())
     }
 
-    fn try_convert(
+    async fn try_convert(
         progress_printer: &ProgressPrinter,
         work_dir: &Path,
         utxo_hd_flavor: &UTxOHDFlavor,
@@ -742,7 +752,7 @@ Snapshot location: {}
                 utxo_hd_flavor,
             )?;
 
-            match converter.convert(&input_path, &output_path) {
+            match converter.convert(&input_path, &output_path).await {
                 Ok(()) => {
                     progress_printer.print_message(&format!(
                         "Successfully converted ledger state snapshot: '{snapshot_path_display}'",
@@ -1895,8 +1905,8 @@ mod tests {
             move |p: &Path| p.to_string_lossy().contains(&filename)
         }
 
-        #[test]
-        fn conversion_succeed_and_is_called_once_if_first_conversion_succeeds() {
+        #[tokio::test]
+        async fn conversion_succeed_and_is_called_once_if_first_conversion_succeeds() {
             let temp_dir = temp_dir_create!();
             let snapshots = create_dummy_snapshots(&temp_dir, 2);
 
@@ -1917,11 +1927,12 @@ mod tests {
                 &snapshots,
                 Box::new(converter),
             )
+            .await
             .unwrap();
         }
 
-        #[test]
-        fn conversion_falls_back_if_first_conversion_fails() {
+        #[tokio::test]
+        async fn conversion_falls_back_if_first_conversion_fails() {
             let temp_dir = temp_dir_create!();
             let snapshots = create_dummy_snapshots(&temp_dir, 2);
 
@@ -1950,11 +1961,12 @@ mod tests {
                 &snapshots,
                 Box::new(converter),
             )
+            .await
             .expect("Should succeed even if the first conversion fails");
         }
 
-        #[test]
-        fn conversion_fails_if_all_attempts_fail() {
+        #[tokio::test]
+        async fn conversion_fails_if_all_attempts_fail() {
             let temp_dir = temp_dir_create!();
             let snapshots = create_dummy_snapshots(&temp_dir, 2);
             let mut converter = MockSnapshotConverter::new();
@@ -1970,7 +1982,56 @@ mod tests {
                 &snapshots,
                 Box::new(converter),
             )
+            .await
             .expect_err("Should fail if all conversion attempts fail");
+        }
+    }
+
+    #[cfg(unix)]
+    mod snapshot_conversion_cancellation {
+        use std::os::unix::fs::PermissionsExt;
+        use std::time::Duration;
+
+        use super::*;
+
+        #[tokio::test]
+        async fn kills_the_converter_when_cancelled() {
+            let temp_dir = temp_dir_create!();
+            let started_file = temp_dir.join("started");
+            let done_file = temp_dir.join("done");
+            let converter_bin = temp_dir.join("fake-snapshot-converter");
+            std::fs::write(
+                &converter_bin,
+                format!(
+                    "#!/bin/sh\ntouch \"{}\"\nsleep 1\ntouch \"{}\"\n",
+                    started_file.display(),
+                    done_file.display()
+                ),
+            )
+            .unwrap();
+            std::fs::set_permissions(&converter_bin, std::fs::Permissions::from_mode(0o755))
+                .unwrap();
+            let converter = SnapshotConverterBin::UpTo10_5(SnapshotConverterConfig {
+                converter_bin,
+                config_path: PathBuf::new(),
+                utxo_hd_flavor: UTxOHDFlavor::Lmdb,
+                hide_output: true,
+            });
+
+            let wait_for_converter_start = async {
+                while !started_file.exists() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            };
+            tokio::select! {
+                result = converter.convert(Path::new("in"), Path::new("out")) => {
+                    panic!("Conversion should be cancelled, got: {result:?}")
+                }
+                _ = tokio::time::timeout(Duration::from_secs(10), wait_for_converter_start) => {}
+            }
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+
+            assert!(!done_file.exists(), "The converter should be killed");
         }
     }
 

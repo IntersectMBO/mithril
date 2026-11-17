@@ -4,10 +4,14 @@ use std::future::{Future, pending};
 use mithril_client::MithrilResult;
 
 /// Wait until the process receives a shutdown signal: `Ctrl-C` (`SIGINT` on unix), or `SIGTERM`
-/// and `SIGHUP` (e.g. when the terminal is closed) on unix.
+/// on unix.
 ///
 /// Once called, the default behavior of those signals (terminating the process) is replaced for
 /// the rest of the process lifetime.
+///
+/// Those signals are listened to even if they were ignored when the process started, e.g. `SIGINT`
+/// for the background jobs of a non-interactive shell (`mithril-client … &` in a script), which are
+/// then interrupted by it instead of ignoring it.
 ///
 /// If the signals can not be listened to, it never completes.
 pub async fn shutdown_signal() {
@@ -18,44 +22,36 @@ pub async fn shutdown_signal() {
     };
 
     #[cfg(unix)]
-    let (terminate, hangup) = {
-        use tokio::signal::unix::SignalKind;
-        (
-            unix_signal(SignalKind::terminate()),
-            unix_signal(SignalKind::hangup()),
-        )
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut terminate) => {
+                terminate.recv().await;
+            }
+            Err(_) => pending::<()>().await,
+        }
     };
     #[cfg(not(unix))]
-    let (terminate, hangup) = (pending::<()>(), pending::<()>());
+    let terminate = pending::<()>();
 
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
-        _ = hangup => {},
-    }
-}
-
-/// Wait until the process receives the given unix signal, never completes if it can not be
-/// listened to.
-#[cfg(unix)]
-async fn unix_signal(kind: tokio::signal::unix::SignalKind) {
-    match tokio::signal::unix::signal(kind) {
-        Ok(mut signal) => {
-            signal.recv().await;
-        }
-        Err(_) => pending::<()>().await,
     }
 }
 
 /// Run the given future until it completes, or until the given signal is received, in which case
 /// the future is dropped and an error is returned.
+///
+/// The signal is polled first, so that it is listened to (e.g. its handler installed) before the
+/// future runs.
 pub async fn run_until_signal<T>(
     future: impl Future<Output = MithrilResult<T>>,
     signal: impl Future<Output = ()>,
 ) -> MithrilResult<T> {
     tokio::select! {
-        result = future => result,
+        biased;
         _ = signal => Err(anyhow!("Interrupted by a shutdown signal")),
+        result = future => result,
     }
 }
 
@@ -79,6 +75,26 @@ mod tests {
             run_until_signal(ready(Err(anyhow::anyhow!("future error"))), pending()).await;
 
         assert_eq!("future error", result.unwrap_err().to_string());
+    }
+
+    #[tokio::test]
+    async fn listens_to_the_signal_before_running_the_future() {
+        // Repeated as the polling order could be randomly right
+        for _ in 0..20 {
+            let polls = std::sync::Mutex::new(Vec::new());
+            let signal = async {
+                polls.lock().unwrap().push("signal");
+                pending::<()>().await
+            };
+            let future = async {
+                polls.lock().unwrap().push("future");
+                Ok(())
+            };
+
+            run_until_signal(future, signal).await.unwrap();
+
+            assert_eq!(vec!["signal", "future"], *polls.lock().unwrap());
+        }
     }
 
     #[tokio::test]
