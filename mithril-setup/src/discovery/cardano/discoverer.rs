@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::discovery::cardano::command_line::NodeCommandLine;
-use crate::discovery::cardano::host::{CgroupServiceProbe, HostToolProbe, ProcfsProcessProbe};
+use crate::discovery::cardano::host::{
+    CgroupServiceProbe, HostFileProbe, HostToolProbe, ProcfsProcessProbe,
+};
 use crate::discovery::cardano::{
-    CardanoDiscovery, ListeningAddress, NodeInstance, NodeProcess, ProcessProbe, ServiceProbe,
-    ToolProbe,
+    CardanoDiscovery, FileProbe, ListeningAddress, NodeInstance, NodeProcess, ProcessProbe,
+    ServiceProbe, ToolProbe,
 };
 
 /// Reasons why the Cardano block producer node could not be discovered
@@ -51,6 +53,7 @@ pub struct CardanoDiscoverer {
     processes: Arc<dyn ProcessProbe>,
     services: Arc<dyn ServiceProbe>,
     tools: Arc<dyn ToolProbe>,
+    files: Arc<dyn FileProbe>,
 }
 
 impl CardanoDiscoverer {
@@ -59,11 +62,13 @@ impl CardanoDiscoverer {
         processes: Arc<dyn ProcessProbe>,
         services: Arc<dyn ServiceProbe>,
         tools: Arc<dyn ToolProbe>,
+        files: Arc<dyn FileProbe>,
     ) -> Self {
         Self {
             processes,
             services,
             tools,
+            files,
         }
     }
 
@@ -73,6 +78,7 @@ impl CardanoDiscoverer {
             Arc::new(ProcfsProcessProbe::default()),
             Arc::new(CgroupServiceProbe::default()),
             Arc::new(HostToolProbe::from_env()),
+            Arc::new(HostFileProbe),
         )
     }
 
@@ -279,6 +285,21 @@ pub(crate) mod tests {
         }
     }
 
+    #[derive(Default)]
+    pub struct FakeFileProbe {
+        files: HashMap<PathBuf, String>,
+    }
+
+    #[async_trait]
+    impl FileProbe for FakeFileProbe {
+        async fn read_to_string(&self, path: &Path) -> anyhow::Result<String> {
+            self.files
+                .get(path)
+                .cloned()
+                .ok_or_else(|| anyhow!("file not found: {}", path.display()))
+        }
+    }
+
     fn node_process(pid: u32, args: &[&str]) -> NodeProcess {
         NodeProcess {
             pid,
@@ -295,12 +316,24 @@ pub(crate) mod tests {
         gid: 1001,
     };
 
-    fn discoverer(
+    /// Fake probes of a discoverer under test, each test only sets the probes it needs
+    #[derive(Default)]
+    struct FakeProbes {
         processes: FakeProcessProbe,
         services: FakeServiceProbe,
         tools: FakeToolProbe,
-    ) -> CardanoDiscoverer {
-        CardanoDiscoverer::new(Arc::new(processes), Arc::new(services), Arc::new(tools))
+        files: FakeFileProbe,
+    }
+
+    impl FakeProbes {
+        fn discoverer(self) -> CardanoDiscoverer {
+            CardanoDiscoverer::new(
+                Arc::new(self.processes),
+                Arc::new(self.services),
+                Arc::new(self.tools),
+                Arc::new(self.files),
+            )
+        }
     }
 
     #[tokio::test]
@@ -315,11 +348,7 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn returns_no_instance_when_no_node_is_running() {
-            let discoverer = discoverer(
-                FakeProcessProbe::default(),
-                FakeServiceProbe::default(),
-                FakeToolProbe::default(),
-            );
+            let discoverer = FakeProbes::default().discoverer();
 
             let nodes = discoverer.detect_nodes().await.unwrap();
 
@@ -328,14 +357,14 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn detects_a_node_running_as_a_host_process() {
-            let discoverer = discoverer(
-                FakeProcessProbe {
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
                     processes: vec![node_process(42, &["run"])],
                     ..Default::default()
                 },
-                FakeServiceProbe::default(),
-                FakeToolProbe::default(),
-            );
+                ..Default::default()
+            }
+            .discoverer();
 
             let nodes = discoverer.detect_nodes().await.unwrap();
 
@@ -350,16 +379,17 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn detects_a_node_running_as_a_systemd_service() {
-            let discoverer = discoverer(
-                FakeProcessProbe {
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
                     processes: vec![node_process(42, &["run"])],
                     ..Default::default()
                 },
-                FakeServiceProbe {
+                services: FakeServiceProbe {
                     units: HashMap::from([(42, "cardano-node.service".to_string())]),
                 },
-                FakeToolProbe::default(),
-            );
+                ..Default::default()
+            }
+            .discoverer();
 
             let nodes = discoverer.detect_nodes().await.unwrap();
 
@@ -374,16 +404,17 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn detects_several_nodes() {
-            let discoverer = discoverer(
-                FakeProcessProbe {
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
                     processes: vec![node_process(42, &["run"]), node_process(43, &["run"])],
                     ..Default::default()
                 },
-                FakeServiceProbe {
+                services: FakeServiceProbe {
                     units: HashMap::from([(43, "relay.service".to_string())]),
                 },
-                FakeToolProbe::default(),
-            );
+                ..Default::default()
+            }
+            .discoverer();
 
             let nodes = discoverer.detect_nodes().await.unwrap();
 
@@ -404,14 +435,14 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn fails_when_the_processes_can_not_be_listed() {
-            let discoverer = discoverer(
-                FakeProcessProbe {
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
                     fails: true,
                     ..Default::default()
                 },
-                FakeServiceProbe::default(),
-                FakeToolProbe::default(),
-            );
+                ..Default::default()
+            }
+            .discoverer();
 
             let result = discoverer.detect_nodes().await;
 
@@ -432,11 +463,7 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn fails_when_no_node_is_running() {
-            let discoverer = discoverer(
-                FakeProcessProbe::default(),
-                FakeServiceProbe::default(),
-                FakeToolProbe::default(),
-            );
+            let discoverer = FakeProbes::default().discoverer();
 
             let result = discoverer.discover().await;
 
@@ -448,17 +475,17 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn fails_when_only_relays_are_running() {
-            let discoverer = discoverer(
-                FakeProcessProbe {
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
                     processes: vec![
                         node_process(42, &["run", "--port", "3001"]),
                         node_process(43, &["run", "--port", "3002"]),
                     ],
                     ..Default::default()
                 },
-                FakeServiceProbe::default(),
-                FakeToolProbe::default(),
-            );
+                ..Default::default()
+            }
+            .discoverer();
 
             let result = discoverer.discover().await;
 
@@ -473,8 +500,8 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn fails_when_several_block_producers_are_running() {
-            let discoverer = discoverer(
-                FakeProcessProbe {
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
                     processes: vec![
                         node_process(42, &BLOCK_PRODUCER_ARGS),
                         node_process(43, &["run"]),
@@ -482,9 +509,9 @@ pub(crate) mod tests {
                     ],
                     ..Default::default()
                 },
-                FakeServiceProbe::default(),
-                FakeToolProbe::default(),
-            );
+                ..Default::default()
+            }
+            .discoverer();
 
             let result = discoverer.discover().await;
 
@@ -499,17 +526,17 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn fails_when_block_producer_is_using_kes_agent() {
-            let discoverer = discoverer(
-                FakeProcessProbe {
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
                     processes: vec![node_process(
                         42,
                         &["run", "--shelley-kes-agent-socket", "/opt/cardano/kes-agent.socket"],
                     )],
                     ..Default::default()
                 },
-                FakeServiceProbe::default(),
-                FakeToolProbe::default(),
-            );
+                ..Default::default()
+            }
+            .discoverer();
             let result = discoverer.discover().await;
             match result {
                 Err(CardanoDiscoveryError::BlockProducerNotHandled { node, reason }) => {
@@ -525,19 +552,20 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn selects_the_block_producer_among_relays() {
-            let discoverer = discoverer(
-                FakeProcessProbe {
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
                     processes: vec![
                         node_process(42, &["run"]),
                         node_process(43, &BLOCK_PRODUCER_ARGS),
                     ],
                     ..Default::default()
                 },
-                FakeServiceProbe {
+                services: FakeServiceProbe {
                     units: HashMap::from([(43, "cardano-bp.service".to_string())]),
                 },
-                FakeToolProbe::default(),
-            );
+                ..Default::default()
+            }
+            .discoverer();
 
             let discovery = discoverer.discover().await.unwrap();
 
@@ -565,17 +593,17 @@ pub(crate) mod tests {
                 .copied()
                 .chain(["--start-as-non-producing-node"])
                 .collect();
-            let discoverer = discoverer(
-                FakeProcessProbe {
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
                     processes: vec![
                         node_process(42, &standby_args),
                         node_process(43, &BLOCK_PRODUCER_ARGS),
                     ],
                     ..Default::default()
                 },
-                FakeServiceProbe::default(),
-                FakeToolProbe::default(),
-            );
+                ..Default::default()
+            }
+            .discoverer();
 
             let discovery = discoverer.discover().await.unwrap();
 
@@ -584,14 +612,14 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn fails_when_the_processes_can_not_be_listed() {
-            let discoverer = discoverer(
-                FakeProcessProbe {
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
                     fails: true,
                     ..Default::default()
                 },
-                FakeServiceProbe::default(),
-                FakeToolProbe::default(),
-            );
+                ..Default::default()
+            }
+            .discoverer();
 
             let result = discoverer.discover().await;
 
@@ -615,16 +643,18 @@ pub(crate) mod tests {
         }
 
         async fn discover(process: NodeProcess, tools: FakeToolProbe) -> CardanoDiscovery {
-            discoverer(
-                FakeProcessProbe {
+            FakeProbes {
+                processes: FakeProcessProbe {
                     processes: vec![process],
                     ..Default::default()
                 },
-                FakeServiceProbe {
+                services: FakeServiceProbe {
                     units: HashMap::from([(42, "cardano-node.service".to_string())]),
                 },
                 tools,
-            )
+                ..Default::default()
+            }
+            .discoverer()
             .discover()
             .await
             .unwrap()
