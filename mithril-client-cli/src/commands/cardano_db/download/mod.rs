@@ -54,6 +54,17 @@ pub struct CardanoDbDownloadCommand {
     #[clap(long, env = "IPFS_RPC_URL")]
     ipfs_rpc_url: Option<String>,
 
+    /// `unstable` Set the token to authenticate to a Kubo node's RPC API.
+    ///
+    /// The token is sent as a Bearer token with every request to the Kubo RPC API, so the Kubo
+    /// node must have a matching `bearer:<token>` auth secret in its `API.Authorizations`
+    /// configuration.
+    ///
+    /// It is only used with `--ipfs-rpc-url`. If that URL also contains credentials, they take
+    /// precedence and the token is ignored with a warning.
+    #[clap(long, env = "IPFS_RPC_AUTH_TOKEN", hide_env_values = true)]
+    ipfs_rpc_auth_token: Option<String>,
+
     /// `unstable` Share of the immutable files for which IPFS is tried first.
     ///
     /// Accepted values: a number from 0 to 100, `prefer` (alias of 100) or `fallback` (alias of
@@ -124,6 +135,7 @@ impl CardanoDbDownloadCommand {
             include_ancillary: self.include_ancillary,
             ancillary_verification_key,
             ipfs_rpc_url: self.ipfs_rpc_url.clone(),
+            ipfs_rpc_auth_token: self.ipfs_rpc_auth_token.clone(),
             ipfs_share: self.ipfs_share,
             allow_override: self.allow_override,
         })
@@ -222,6 +234,7 @@ mod tests {
             download_dir: Some(std::path::PathBuf::from("whatever_dir")),
             genesis_verification_key: "whatever".to_string().into(),
             ipfs_rpc_url: None,
+            ipfs_rpc_auth_token: None,
             ipfs_share: None,
             include_ancillary: true,
             ancillary_verification_key: "whatever".to_string().into(),
@@ -317,6 +330,36 @@ mod tests {
                 .unwrap();
 
             assert!(arg.is_hide_set());
+        }
+    }
+
+    mod ipfs_rpc_auth_token {
+        use clap::CommandFactory;
+
+        use super::*;
+
+        #[test]
+        fn parse_the_token_from_the_command_line() {
+            let command = CardanoDbDownloadCommand::try_parse_from([
+                "download",
+                "whatever_digest",
+                "--ipfs-rpc-auth-token",
+                "my-token",
+            ])
+            .unwrap();
+
+            assert_eq!(Some("my-token".to_string()), command.ipfs_rpc_auth_token);
+        }
+
+        #[test]
+        fn env_value_is_hidden() {
+            let command = CardanoDbDownloadCommand::command();
+            let arg = command
+                .get_arguments()
+                .find(|arg| arg.get_id() == "ipfs_rpc_auth_token")
+                .unwrap();
+
+            assert!(arg.is_hide_env_values_set());
         }
     }
 
