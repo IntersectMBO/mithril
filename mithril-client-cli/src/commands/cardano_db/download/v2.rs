@@ -23,6 +23,7 @@ use crate::{
     utils::{
         CardanoDbDownloadChecker, CardanoDbUtils, ExpanderUtils, IndicatifFeedbackReceiver,
         ManagedKuboNode, ProgressOutputType, ProgressPrinter, print_simple_warning,
+        run_until_signal, shutdown_signal,
     },
 };
 
@@ -119,15 +120,19 @@ impl PreparedCardanoDbV2Download {
             None => self.ipfs_rpc_auth_token.clone(),
         };
 
-        let download_result = self
-            .download(
-                context,
-                &progress_printer,
-                progress_output_type,
-                ipfs_rpc_url,
-                ipfs_rpc_auth_token,
-            )
-            .await;
+        let download = self.download(
+            context,
+            &progress_printer,
+            progress_output_type,
+            ipfs_rpc_url,
+            ipfs_rpc_auth_token,
+        );
+        let download_result = if managed_ipfs_node.is_some() {
+            // Stop the managed node below instead of leaving it running when interrupted
+            run_until_signal(download, shutdown_signal()).await
+        } else {
+            download.await
+        };
 
         if let Some(node) = managed_ipfs_node
             && let Err(error) = node.stop().await

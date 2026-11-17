@@ -53,7 +53,7 @@ slog-async = { workspace = true }
 slog-bunyan = { workspace = true }
 slog-term = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["macros", "process", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "process", "rt-multi-thread", "signal"] }
 zip = "9.1.1"
 
 [target.'cfg(all(not(target_os = "windows"), not(all(target_os = "linux", target_arch = "aarch64"))))'.dependencies]

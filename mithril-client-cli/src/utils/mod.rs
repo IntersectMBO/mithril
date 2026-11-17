@@ -14,6 +14,7 @@ mod http_downloader;
 mod kubo_node;
 mod multi_download_progress_reporter;
 mod progress_reporter;
+mod shutdown_signal;
 mod version;
 
 pub use archive_unpacker::*;
@@ -29,6 +30,7 @@ pub use http_downloader::*;
 pub use kubo_node::*;
 pub use multi_download_progress_reporter::*;
 pub use progress_reporter::*;
+pub use shutdown_signal::*;
 pub use version::*;
 
 use anyhow::Context;
