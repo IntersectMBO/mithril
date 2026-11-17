@@ -68,9 +68,9 @@ pub struct CardanoDbDownloadCommand {
     /// `unstable` Enable the IPFS download through a Kubo node run by the client for the duration
     /// of the download, instead of the node set with `--ipfs-rpc-url`.
     ///
-    /// The Kubo binary is downloaded from its GitHub releases and cached in the user cache
-    /// directory, and the node repository is created in the system temporary directory and
-    /// removed once the download is done.
+    /// The Kubo release archive is downloaded from its GitHub releases and cached in the user cache
+    /// directory. At each start, the Kubo binary is unpacked in the node repository, created in the
+    /// system temporary directory and removed once the download is done.
     #[clap(long, env = "IPFS_MANAGED_NODE", conflicts_with = "ipfs_rpc_url")]
     ipfs_managed_node: bool,
 
@@ -85,7 +85,7 @@ pub struct CardanoDbDownloadCommand {
     #[clap(long, env = "IPFS_SHARE", hide = true, value_parser = parse_ipfs_share)]
     ipfs_share: Option<Percentage>,
 
-    /// GitHub token for authenticated API calls, used to download the Kubo binary of the managed
+    /// GitHub token for authenticated API calls, used to download the Kubo release of the managed
     /// IPFS node.
     #[clap(long, env = "GITHUB_TOKEN")]
     github_token: Option<String>,
