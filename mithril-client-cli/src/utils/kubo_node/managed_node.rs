@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, anyhow, bail};
@@ -11,7 +12,9 @@ use tokio::time::Instant;
 
 use mithril_client::MithrilResult;
 
-use super::KuboNodeConfig;
+use crate::utils::{ReqwestGitHubApiClient, ReqwestHttpDownloader};
+
+use super::{KuboBinaryProvider, KuboDistribution, KuboNodeConfig};
 
 /// Maximum duration to wait for the RPC API of the daemon to answer after its start
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -53,6 +56,38 @@ pub struct ManagedKuboNode {
 }
 
 impl ManagedKuboNode {
+    /// Default parent directory of the repositories of the managed nodes, in the system temporary
+    /// directory
+    pub fn default_parent_dir() -> PathBuf {
+        std::env::temp_dir().join("mithril-client")
+    }
+
+    /// Get the Kubo binary of the current platform, downloaded on first use and cached in the user
+    /// cache directory, then [start][Self::start] a node with its repository in `parent_dir`,
+    /// created if missing.
+    pub async fn download_and_start(
+        parent_dir: &Path,
+        github_token: Option<String>,
+    ) -> MithrilResult<Self> {
+        let binary = KuboBinaryProvider::new(
+            KuboBinaryProvider::default_install_dir()?,
+            KuboDistribution::for_platform(std::env::consts::OS, std::env::consts::ARCH)?,
+            Arc::new(ReqwestGitHubApiClient::new(github_token)?),
+            Arc::new(ReqwestHttpDownloader::new()?),
+        )
+        .provide()
+        .await
+        .with_context(|| "Failed to get the Kubo binary")?;
+        fs::create_dir_all(parent_dir).with_context(|| {
+            format!(
+                "Failed to create the Kubo repositories directory '{}'",
+                parent_dir.display()
+            )
+        })?;
+
+        Self::start(&binary, parent_dir).await
+    }
+
     /// Initialize a Kubo repository in a new directory of `parent_dir`, configure it (see
     /// [KuboNodeConfig]) and start its daemon, waiting until its RPC API answers.
     ///
@@ -389,30 +424,19 @@ mod tests {
         assert_eq!(0, dir_entries_count(&parent_dir));
     }
 
+    #[test]
+    fn default_parent_dir_is_a_subdirectory_of_the_system_temp_dir() {
+        assert_eq!(
+            std::env::temp_dir().join("mithril-client"),
+            ManagedKuboNode::default_parent_dir()
+        );
+    }
+
     /// Tests against the real Kubo binary, downloaded in the user cache directory.
     ///
     /// Run them with `cargo test -p mithril-client-cli managed_node -- --ignored`.
     mod with_the_real_kubo_binary {
-        use std::sync::Arc;
-
-        use crate::utils::{
-            KuboBinaryProvider, KuboDistribution, ReqwestGitHubApiClient, ReqwestHttpDownloader,
-        };
-
         use super::*;
-
-        async fn kubo_binary() -> PathBuf {
-            KuboBinaryProvider::new(
-                KuboBinaryProvider::default_install_dir().unwrap(),
-                KuboDistribution::for_platform(std::env::consts::OS, std::env::consts::ARCH)
-                    .unwrap(),
-                Arc::new(ReqwestGitHubApiClient::new(None).unwrap()),
-                Arc::new(ReqwestHttpDownloader::new().unwrap()),
-            )
-            .provide()
-            .await
-            .unwrap()
-        }
 
         async fn rpc_version_is_reachable(rpc_url: &Url) -> bool {
             Client::builder()
@@ -428,11 +452,9 @@ mod tests {
         #[tokio::test]
         #[ignore = "downloads and runs the real Kubo binary"]
         async fn starts_a_reachable_node_then_shuts_it_down_and_removes_its_repository() {
-            let parent_dir = temp_dir_create!();
+            let parent_dir = temp_dir_create!().join("missing_parent_dir");
 
-            let node = ManagedKuboNode::start(&kubo_binary().await, &parent_dir)
-                .await
-                .unwrap();
+            let node = ManagedKuboNode::download_and_start(&parent_dir, None).await.unwrap();
             let rpc_url = node.rpc_url().clone();
 
             assert!(rpc_version_is_reachable(&rpc_url).await);
@@ -454,9 +476,7 @@ mod tests {
         async fn kills_the_daemon_and_removes_its_repository_when_dropped_without_being_stopped() {
             let parent_dir = temp_dir_create!();
 
-            let node = ManagedKuboNode::start(&kubo_binary().await, &parent_dir)
-                .await
-                .unwrap();
+            let node = ManagedKuboNode::download_and_start(&parent_dir, None).await.unwrap();
             let rpc_url = node.rpc_url().clone();
             drop(node);
 
