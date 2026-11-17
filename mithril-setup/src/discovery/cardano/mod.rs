@@ -13,4 +13,5 @@ mod probes;
 
 pub use discoverer::*;
 pub use discovery::*;
+pub use node_files::*;
 pub use probes::*;
