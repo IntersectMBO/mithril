@@ -22,7 +22,7 @@ use crate::{
     },
     utils::{
         CardanoDbDownloadChecker, CardanoDbUtils, ExpanderUtils, IndicatifFeedbackReceiver,
-        ProgressOutputType, ProgressPrinter, print_simple_warning,
+        ManagedKuboNode, ProgressOutputType, ProgressPrinter, print_simple_warning,
     },
 };
 
@@ -82,6 +82,47 @@ impl PreparedCardanoDbV2Download {
             }
         }
 
+        let progress_output_type = if context.is_json_output_enabled() {
+            ProgressOutputType::JsonReporter
+        } else {
+            ProgressOutputType::Tty
+        };
+        let progress_printer = ProgressPrinter::new(progress_output_type, 7);
+
+        let managed_ipfs_node = self.start_managed_ipfs_node(&progress_printer).await?;
+        let ipfs_rpc_url = match &managed_ipfs_node {
+            Some(node) => Some(node.rpc_url().to_string()),
+            None => self.ipfs_rpc_url.clone(),
+        };
+
+        let download_result = self
+            .download(
+                context,
+                &progress_printer,
+                progress_output_type,
+                ipfs_rpc_url,
+            )
+            .await;
+
+        if let Some(node) = managed_ipfs_node
+            && let Err(error) = node.stop().await
+        {
+            print_simple_warning(
+                &format!("Failed to stop the managed IPFS node: {error:#}"),
+                context.is_json_output_enabled(),
+            );
+        }
+
+        download_result
+    }
+
+    async fn download(
+        &self,
+        context: &CommandContext,
+        progress_printer: &ProgressPrinter,
+        progress_output_type: ProgressOutputType,
+        ipfs_rpc_url: Option<String>,
+    ) -> MithrilResult<()> {
         let ipfs_share = self.ipfs_share.map(IpfsShare::Custom).unwrap_or_default();
 
         let restoration_options = RestorationOptions {
@@ -95,12 +136,6 @@ impl PreparedCardanoDbV2Download {
             disk_space_safety_margin_ratio: DISK_SPACE_SAFETY_MARGIN_RATIO,
         };
 
-        let progress_output_type = if context.is_json_output_enabled() {
-            ProgressOutputType::JsonReporter
-        } else {
-            ProgressOutputType::Tty
-        };
-        let progress_printer = ProgressPrinter::new(progress_output_type, 7);
         let client = context
             .setup_mithril_client_builder()?
             .with_capabilities(SignedEntityTypeDiscriminants::CardanoDatabase.into())
@@ -109,7 +144,7 @@ impl PreparedCardanoDbV2Download {
                 context.logger().clone(),
             )))
             .set_ancillary_verification_key(self.ancillary_verification_key.clone())
-            .with_ipfs_rpc_url(self.ipfs_rpc_url.clone())
+            .with_ipfs_rpc_url(ipfs_rpc_url)
             .build()?;
 
         let get_list_of_artifact_ids = || async {
@@ -145,7 +180,7 @@ impl PreparedCardanoDbV2Download {
 
         Self::check_local_disk_info(
             1,
-            &progress_printer,
+            progress_printer,
             &restoration_options,
             &cardano_db_message,
             self.allow_override,
@@ -153,7 +188,7 @@ impl PreparedCardanoDbV2Download {
 
         let certificate = shared_steps::fetch_certificate_and_verifying_chain(
             2,
-            &progress_printer,
+            progress_printer,
             &client,
             &cardano_db_message.certificate_hash,
         )
@@ -162,7 +197,7 @@ impl PreparedCardanoDbV2Download {
         Self::download_and_unpack_cardano_database_snapshot(
             context.logger(),
             3,
-            &progress_printer,
+            progress_printer,
             client.cardano_database_v2(),
             &cardano_db_message,
             &restoration_options,
@@ -178,7 +213,7 @@ impl PreparedCardanoDbV2Download {
 
         let verified_digests = shared_steps::download_and_verify_digests(
             4,
-            &progress_printer,
+            progress_printer,
             &client,
             &certificate,
             &cardano_db_message,
@@ -199,7 +234,7 @@ impl PreparedCardanoDbV2Download {
 
         let merkle_proof = shared_steps::verify_cardano_database(
             5,
-            &progress_printer,
+            progress_printer,
             &client,
             &certificate,
             &cardano_db_message,
@@ -211,7 +246,7 @@ impl PreparedCardanoDbV2Download {
 
         let message = shared_steps::compute_cardano_db_snapshot_message(
             6,
-            &progress_printer,
+            progress_printer,
             &certificate,
             &merkle_proof,
         )
@@ -220,7 +255,7 @@ impl PreparedCardanoDbV2Download {
         shared_steps::verify_message_matches_certificate(
             context.logger(),
             7,
-            &progress_printer,
+            progress_printer,
             &certificate,
             &message,
             &cardano_db_message,
@@ -238,6 +273,24 @@ impl PreparedCardanoDbV2Download {
         )?;
 
         Ok(())
+    }
+
+    async fn start_managed_ipfs_node(
+        &self,
+        progress_printer: &ProgressPrinter,
+    ) -> MithrilResult<Option<ManagedKuboNode>> {
+        if self.ipfs_managed_node {
+            progress_printer.print_message("Starting the managed IPFS node…")?;
+            let node = ManagedKuboNode::download_and_start(
+                &ManagedKuboNode::default_parent_dir(),
+                self.github_token.clone(),
+            )
+            .await
+            .with_context(|| "Can not start the managed IPFS node")?;
+            Ok(Some(node))
+        } else {
+            Ok(None)
+        }
     }
 
     fn compute_total_immutables_restored_size(
