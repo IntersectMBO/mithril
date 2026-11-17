@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, anyhow, bail};
 use reqwest::{Client, Url};
+use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::time::Instant;
 
@@ -49,10 +50,11 @@ const KUBO_ENV_VAR_PREFIXES: [&str; 3] = ["IPFS_", "GOLOG_", "LIBP2P_"];
 /// The repository is removed once the node is stopped, or dropped (in which case the daemon is
 /// killed).
 pub struct ManagedKuboNode {
-    daemon: Child,
+    // Dropped before the repository directory, as fields are dropped in declaration order
+    daemon: KuboProcess,
     rpc_url: Url,
     http_client: Client,
-    repository_dir: PathBuf,
+    repository_dir: RepositoryDir,
 }
 
 impl ManagedKuboNode {
@@ -91,33 +93,25 @@ impl ManagedKuboNode {
     /// Initialize a Kubo repository in a new directory of `parent_dir`, configure it (see
     /// [KuboNodeConfig]) and start its daemon, waiting until its RPC API answers.
     ///
-    /// On failure, the repository is removed.
+    /// On failure, or if cancelled, the started processes are killed and the repository is
+    /// removed.
     pub async fn start(binary: &Path, parent_dir: &Path) -> MithrilResult<Self> {
-        let repository_dir = create_repository_dir(parent_dir)?;
-        let node = Self::set_up_and_start(binary, repository_dir.clone()).await;
-        if node.is_err() {
-            let _ = remove_repository_dir(&repository_dir);
-        }
-
-        node
-    }
-
-    async fn set_up_and_start(binary: &Path, repository_dir: PathBuf) -> MithrilResult<Self> {
-        run_ipfs(binary, &repository_dir, &KuboNodeConfig::init_args()).await?;
+        let repository_dir = RepositoryDir::create(parent_dir)?;
+        run_ipfs(binary, repository_dir.path(), &KuboNodeConfig::init_args()).await?;
         for setting in KuboNodeConfig::settings() {
-            run_ipfs(binary, &repository_dir, &setting.config_args()).await?;
+            run_ipfs(binary, repository_dir.path(), &setting.config_args()).await?;
         }
 
-        let daemon_log_path = repository_dir.join(DAEMON_LOG_FILE);
+        let daemon_log_path = repository_dir.path().join(DAEMON_LOG_FILE);
         let daemon_log = File::create(&daemon_log_path)
             .with_context(|| format!("Failed to create '{}'", daemon_log_path.display()))?;
-        let mut daemon = ipfs_command(binary, &repository_dir)
-            .args(KuboNodeConfig::daemon_args())
-            .stdout(daemon_log.try_clone()?)
-            .stderr(daemon_log)
-            .kill_on_drop(true)
-            .spawn()
-            .with_context(|| format!("Failed to start the Kubo daemon '{}'", binary.display()))?;
+        let mut daemon = KuboProcess::spawn(
+            ipfs_command(binary, repository_dir.path())
+                .args(KuboNodeConfig::daemon_args())
+                .stdout(daemon_log.try_clone()?)
+                .stderr(daemon_log),
+        )
+        .with_context(|| format!("Failed to start the Kubo daemon '{}'", binary.display()))?;
 
         let http_client = Client::builder()
             // The RPC API is on the loopback interface, a system proxy must not be used
@@ -125,7 +119,7 @@ impl ManagedKuboNode {
             .timeout(RPC_CALL_TIMEOUT)
             .build()
             .with_context(|| "Failed to build the Kubo RPC HTTP client")?;
-        match wait_until_ready(&mut daemon, &http_client, &repository_dir).await {
+        match wait_until_ready(&mut daemon.0, &http_client, repository_dir.path()).await {
             Ok(rpc_url) => Ok(Self {
                 daemon,
                 rpc_url,
@@ -133,7 +127,8 @@ impl ManagedKuboNode {
                 repository_dir,
             }),
             Err(error) => {
-                kill_and_wait(&mut daemon);
+                // Killed before reading its output so that it is complete
+                drop(daemon);
                 Err(error).with_context(|| {
                     format!(
                         "Kubo daemon failed to start, its output:\n{}",
@@ -155,64 +150,86 @@ impl ManagedKuboNode {
     pub async fn stop(mut self) -> MithrilResult<()> {
         // The daemon may close the connection before answering, the result is checked through its exit
         let _ = call_rpc(&self.http_client, &self.rpc_url, "shutdown").await;
-        if tokio::time::timeout(SHUTDOWN_TIMEOUT, self.daemon.wait())
+        if tokio::time::timeout(SHUTDOWN_TIMEOUT, self.daemon.0.wait())
             .await
             .is_err()
         {
             self.daemon
+                .0
                 .kill()
                 .await
                 .with_context(|| "Failed to kill the Kubo daemon")?;
         }
 
-        remove_repository_dir(&self.repository_dir)
+        self.repository_dir.remove()
     }
 }
 
-impl Drop for ManagedKuboNode {
+/// Directory of a Kubo repository, removed when dropped
+#[derive(Debug)]
+struct RepositoryDir(PathBuf);
+
+impl RepositoryDir {
+    /// Create a new directory for a Kubo repository in `parent_dir`.
+    ///
+    /// Its name is made unique by the process id (concurrent clients) and the time (a reused
+    /// process id). Creating it fails if it already exists, so that a repository is never shared.
+    fn create(parent_dir: &Path) -> MithrilResult<Self> {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let path = parent_dir.join(format!("kubo-{}-{timestamp}", std::process::id()));
+        fs::create_dir(&path).with_context(|| {
+            format!(
+                "Failed to create the Kubo repository directory '{}'",
+                path.display()
+            )
+        })?;
+
+        Ok(Self(path))
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+
+    fn remove(&self) -> MithrilResult<()> {
+        fs::remove_dir_all(&self.0).with_context(|| {
+            format!(
+                "Failed to remove the Kubo repository directory '{}'",
+                self.0.display()
+            )
+        })
+    }
+}
+
+impl Drop for RepositoryDir {
     fn drop(&mut self) {
-        kill_and_wait(&mut self.daemon);
         // Already removed if the node was stopped
-        let _ = remove_repository_dir(&self.repository_dir);
+        let _ = self.remove();
     }
 }
 
-/// Create a new directory for the Kubo repository in `parent_dir`.
-///
-/// Its name is made unique by the process id (concurrent clients) and the time (a reused process id).
-/// Creating it fails if it already exists, so that a repository is never shared.
-fn create_repository_dir(parent_dir: &Path) -> MithrilResult<PathBuf> {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let repository_dir = parent_dir.join(format!("kubo-{}-{timestamp}", std::process::id()));
-    fs::create_dir(&repository_dir).with_context(|| {
-        format!(
-            "Failed to create the Kubo repository directory '{}'",
-            repository_dir.display()
-        )
-    })?;
+/// A Kubo process, killed when dropped
+struct KuboProcess(Child);
 
-    Ok(repository_dir)
+impl KuboProcess {
+    fn spawn(command: &mut Command) -> std::io::Result<Self> {
+        command.spawn().map(Self)
+    }
 }
 
-/// Remove the directory of the Kubo repository
-fn remove_repository_dir(repository_dir: &Path) -> MithrilResult<()> {
-    fs::remove_dir_all(repository_dir).with_context(|| {
-        format!(
-            "Failed to remove the Kubo repository directory '{}'",
-            repository_dir.display()
-        )
-    })
-}
-
-/// Kill the daemon, and wait (blocking, bounded by [KILL_TIMEOUT]) for its exit
-fn kill_and_wait(daemon: &mut Child) {
-    let _ = daemon.start_kill();
-    let deadline = std::time::Instant::now() + KILL_TIMEOUT;
-    while matches!(daemon.try_wait(), Ok(None)) && std::time::Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(50));
+impl Drop for KuboProcess {
+    /// Kill the process, and wait (blocking, bounded by [KILL_TIMEOUT]) for its exit, so that
+    /// its files can be removed (on Windows, the files of a process can not be removed until it has
+    /// exited)
+    fn drop(&mut self) {
+        let _ = self.0.start_kill();
+        let deadline = std::time::Instant::now() + KILL_TIMEOUT;
+        while matches!(self.0.try_wait(), Ok(None)) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 }
 
@@ -251,17 +268,22 @@ async fn run_ipfs<S: AsRef<str>>(
         binary.display(),
         args.iter().map(AsRef::as_ref).collect::<Vec<_>>().join(" ")
     );
-    let output = ipfs_command(binary, repository_dir)
-        .args(args.iter().map(AsRef::as_ref))
-        .output()
-        .await
-        .with_context(|| format!("Failed to run '{command_line}'"))?;
+    let mut process = KuboProcess::spawn(
+        ipfs_command(binary, repository_dir)
+            .args(args.iter().map(AsRef::as_ref))
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped()),
+    )
+    .with_context(|| format!("Failed to run '{command_line}'"))?;
+    let mut stderr_pipe = process.0.stderr.take().with_context(|| "stderr is piped")?;
+    let mut stderr = String::new();
+    let (status, _) = tokio::join!(process.0.wait(), stderr_pipe.read_to_string(&mut stderr));
+    let status = status.with_context(|| format!("Failed to run '{command_line}'"))?;
 
-    if !output.status.success() {
+    if !status.success() {
         bail!(
-            "Command '{command_line}' failed with {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
+            "Command '{command_line}' failed with {status}: {}",
+            stderr.trim()
         );
     }
 
@@ -356,18 +378,18 @@ mod tests {
         }
     }
 
-    mod create_repository_dir {
+    mod repository_dir {
         use super::*;
 
         #[test]
         fn creates_a_directory_named_after_the_process_id_in_the_parent_directory() {
             let parent_dir = temp_dir_create!();
 
-            let repository_dir = create_repository_dir(&parent_dir).unwrap();
+            let repository_dir = RepositoryDir::create(&parent_dir).unwrap();
 
-            assert!(repository_dir.is_dir());
-            assert_eq!(Some(parent_dir.as_path()), repository_dir.parent());
-            let dir_name = repository_dir.file_name().unwrap().to_string_lossy();
+            assert!(repository_dir.path().is_dir());
+            assert_eq!(Some(parent_dir.as_path()), repository_dir.path().parent());
+            let dir_name = repository_dir.path().file_name().unwrap().to_string_lossy();
             assert!(
                 dir_name.starts_with(&format!("kubo-{}-", std::process::id())),
                 "Unexpected repository directory name: {dir_name}"
@@ -378,8 +400,18 @@ mod tests {
         fn fails_when_the_parent_directory_does_not_exist() {
             let parent_dir = temp_dir_create!().join("missing");
 
-            create_repository_dir(&parent_dir)
+            RepositoryDir::create(&parent_dir)
                 .expect_err("Should fail when the parent directory does not exist");
+        }
+
+        #[test]
+        fn is_removed_when_dropped() {
+            let parent_dir = temp_dir_create!();
+
+            let repository_dir = RepositoryDir::create(&parent_dir).unwrap();
+            drop(repository_dir);
+
+            assert_eq!(0, dir_entries_count(&parent_dir));
         }
     }
 
@@ -422,6 +454,93 @@ mod tests {
             "Error should name the failing command: {error:?}"
         );
         assert_eq!(0, dir_entries_count(&parent_dir));
+    }
+
+    /// Start cancelled while a fake `ipfs` binary hangs on a command (as when the client is
+    /// interrupted by a shutdown signal)
+    #[cfg(unix)]
+    mod start_cancelled {
+        use std::os::unix::fs::PermissionsExt;
+
+        use super::*;
+
+        /// Fake `ipfs` binary succeeding on all commands but `hanging_command`, on which it writes
+        /// its pid to `pid_file` then hangs
+        fn fake_ipfs_hanging_on(script_dir: &Path, hanging_command: &str) -> (PathBuf, PathBuf) {
+            let binary = script_dir.join("ipfs");
+            let pid_file = script_dir.join("pid");
+            fs::write(
+                &binary,
+                format!(
+                    "#!/bin/sh\nif [ \"$1\" = \"{hanging_command}\" ]; then echo $$ > \"{}\"; exec sleep 30; fi\n",
+                    pid_file.display()
+                ),
+            )
+            .unwrap();
+            fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+
+            (binary, pid_file)
+        }
+
+        fn is_process_alive(pid: &str) -> bool {
+            std::process::Command::new("kill")
+                .args(["-0", pid])
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        }
+
+        /// Start a node in `test_dir/parent` with the fake binary, cancelling the start once the
+        /// hanging command runs, returns the parent directory and the pid of the hanging command
+        async fn start_then_cancel_while_hanging_on(
+            hanging_command: &str,
+            test_dir: &Path,
+        ) -> (PathBuf, String) {
+            let parent_dir = test_dir.join("parent");
+            fs::create_dir(&parent_dir).unwrap();
+            let (binary, pid_file) = fake_ipfs_hanging_on(test_dir, hanging_command);
+
+            let wait_for_pid = async {
+                loop {
+                    if let Ok(pid) = fs::read_to_string(&pid_file)
+                        && !pid.trim().is_empty()
+                    {
+                        return pid.trim().to_string();
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            };
+            tokio::select! {
+                result = ManagedKuboNode::start(&binary, &parent_dir) => {
+                    panic!("Start should hang on '{hanging_command}', got: {:?}", result.err())
+                }
+                pid = tokio::time::timeout(Duration::from_secs(10), wait_for_pid) => {
+                    (parent_dir, pid.expect("The hanging command should have been run"))
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn removes_its_repository_and_kills_a_running_setup_command() {
+            let (parent_dir, pid) =
+                start_then_cancel_while_hanging_on("init", &temp_dir_create!()).await;
+
+            assert!(
+                !is_process_alive(&pid),
+                "The setup command should be killed"
+            );
+            assert_eq!(0, dir_entries_count(&parent_dir));
+        }
+
+        #[tokio::test]
+        async fn removes_its_repository_and_kills_the_daemon() {
+            let (parent_dir, pid) =
+                start_then_cancel_while_hanging_on("daemon", &temp_dir_create!()).await;
+
+            assert!(!is_process_alive(&pid), "The daemon should be killed");
+            assert_eq!(0, dir_entries_count(&parent_dir));
+        }
     }
 
     #[test]
