@@ -50,6 +50,13 @@ pub trait ServiceProbe: Send + Sync {
     async fn systemd_unit_of(&self, pid: u32) -> anyhow::Result<Option<String>>;
 }
 
+/// Reads the files of the Cardano node
+#[async_trait]
+pub trait FileProbe: Send + Sync {
+    /// Returns the content of the given file
+    async fn read_to_string(&self, path: &Path) -> anyhow::Result<String>;
+}
+
 /// Inspects the Cardano binaries
 #[async_trait]
 pub trait ToolProbe: Send + Sync {
