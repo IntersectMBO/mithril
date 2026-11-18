@@ -91,6 +91,14 @@ The aggregators read their credentials from the `rpc-auth-secret` file of their 
 A spawned devnet only protects the nodes of the aggregators, since the client does not support the RPC authentication yet.
 An attached devnet must leave the last node, used by the client, unprotected (e.g. initialized with `--rpc-auth-nodes <number of aggregators>`).
 
+### Leios
+
+Run the devnet in Leios mode with `--use-leios`, with a Cardano node supporting Leios (here a release of `input-output-hk/ouroboros-leios` given with `--cardano-binary-url`, requires `--cardano-node-version 11.2.0` and a Linux x86_64 host). The pools vote on endorser blocks and a transaction load gets them certified:
+
+```bash
+./mithril-end-to-end -vvv --work-directory db/ --bin-directory ../../target/release --devnet-scripts-directory=../cardano-devnet --cardano-node-version 11.2.0 --use-leios --leios-load-duration 60 --cardano-epoch-length 150 --cardano-binary-url https://github.com/input-output-hk/ouroboros-leios/releases/download/rc-2026w46/cardano-node-leios-x86_64-linux.tar.gz
+```
+
 ### Note for MacOS users
 
 #### `sed` compatibility
