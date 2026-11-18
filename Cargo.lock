@@ -4872,6 +4872,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mithril-cardano-node-leios"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "mithril-common",
+ "pallas-hardano",
+ "pallas-traverse",
+ "semver",
+ "sqlite",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "mithril-circuit-key-registry"
 version = "0.2.1"
 dependencies = [
