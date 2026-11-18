@@ -91,6 +91,11 @@ impl MithrilCommand {
         })
     }
 
+    /// Get the working directory of the command.
+    pub fn work_dir(&self) -> &Path {
+        &self.work_dir
+    }
+
     /// Set the name of the file where the stderr (and stdout if an output_filename is not set) of
     /// the command will be redirected.
     ///

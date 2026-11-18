@@ -93,7 +93,7 @@ The authentication is disabled for the nodes without these files, for example in
 
 ### Leios
 
-Run the devnet in Leios mode with `--use-leios`, with a Cardano node supporting Leios (here a release of `input-output-hk/ouroboros-leios` given with `--cardano-binary-url`, requires `--cardano-node-version 11.2.0` and a Linux x86_64 host). The pools vote on endorser blocks and a transaction load gets them certified:
+Run the devnet in Leios mode with `--use-leios`, with a Cardano node supporting Leios (here a release of `input-output-hk/ouroboros-leios` given with `--cardano-binary-url`, requires `--cardano-node-version 11.2.0` and a Linux x86_64 host). The pools vote on endorser blocks, a transaction load gets them certified, and after the client has restored a Cardano database snapshot, the restored database must hold the closure of every endorser block certified in its immutable files:
 
 ```bash
 ./mithril-end-to-end -vvv --work-directory db/ --bin-directory ../../target/release --devnet-scripts-directory=../cardano-devnet --cardano-node-version 11.2.0 --use-leios --leios-load-duration 60 --cardano-epoch-length 150 --cardano-binary-url https://github.com/input-output-hk/ouroboros-leios/releases/download/rc-2026w46/cardano-node-leios-x86_64-linux.tar.gz

@@ -291,7 +291,8 @@ struct CardanoDevnetArgs {
     cardano_binary_url: Option<String>,
 
     /// Run the devnet in Leios mode (requires a Cardano node supporting Leios, cardano-node 11.2.0 or later
-    /// and a hard fork at epoch 0): the pools vote on endorser blocks and a transaction load gets them certified
+    /// and a hard fork at epoch 0): the pools vote on endorser blocks, a transaction load gets them certified, and the Cardano database
+    /// check verifies that the client restored the closure of every certified endorser block
     #[clap(long)]
     use_leios: bool,
 

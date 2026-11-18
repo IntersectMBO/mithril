@@ -5117,6 +5117,7 @@ dependencies = [
  "indicatif",
  "mithril-cardano-node-chain",
  "mithril-cardano-node-internal-database",
+ "mithril-cardano-node-leios",
  "mithril-common",
  "mithril-doc",
  "pallas-hardano",
