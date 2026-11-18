@@ -234,6 +234,12 @@ impl MinimalScenario {
                     infrastructure.signers().len(),
                 )
                 .await?;
+            if infrastructure.use_leios() && aggregator.is_leader() {
+                self.toolkit
+                    .check
+                    .cardano_database
+                    .leios_closures_are_restored(&client, infrastructure.cardano_node_version())?;
+            }
         }
 
         // Verify that Cardano transactions artifacts are produced and signed correctly

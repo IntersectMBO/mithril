@@ -1,10 +1,19 @@
+use std::path::Path;
+
 use anyhow::{Context, anyhow};
 use reqwest::Url;
 use slog_scope::{info, warn};
+use thiserror::Error;
 
+use mithril_cardano_node_internal_database::IMMUTABLE_DIR;
+use mithril_cardano_node_internal_database::entities::ImmutableFile;
+use mithril_cardano_node_leios::entities::CertifyingBlock;
+use mithril_cardano_node_leios::{
+    CertifyingBlocksReader, LeiosImmutableDatabase, LeiosImmutableDatabaseLayoutProvider,
+};
 use mithril_common::{
     StdResult,
-    entities::{Epoch, EpochSpecifier, ImmutableFileNumber},
+    entities::{BlockNumber, Epoch, EpochSpecifier, ImmutableFileNumber},
     messages::{CardanoDatabaseDigestListMessage, CardanoDatabaseSnapshotListItemMessage},
 };
 
@@ -17,6 +26,26 @@ use crate::{
 };
 
 use super::utils;
+
+/// Error raised when the Leios database restored by the client does not match the restored immutable files.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum RestoredLeiosDatabaseError {
+    /// No restored immutable file holds a certifying block, so the run proves nothing.
+    #[error("No block certifies an endorser block in the restored immutable files")]
+    NoCertifyingBlock,
+
+    /// The restored Leios database misses the closure of a certified endorser block.
+    #[error(
+        "No closure restored for endorser block {endorser_block_hash} certified by block {block_number}"
+    )]
+    MissingClosure {
+        /// Hash of the endorser block.
+        endorser_block_hash: String,
+
+        /// Number of the certifying block.
+        block_number: BlockNumber,
+    },
+}
 
 #[derive(Debug, Clone)]
 pub struct CheckCardanoDatabaseToolkit {
@@ -73,6 +102,79 @@ impl CheckCardanoDatabaseToolkit {
         }
 
         Ok(())
+    }
+
+    /// Checks that the database restored by the client holds the closure of every endorser block
+    /// certified in its immutable files, and that at least one endorser block is certified.
+    pub fn leios_closures_are_restored(
+        &self,
+        client: &Client,
+        cardano_node_version: &semver::Version,
+    ) -> StdResult<()> {
+        let certifying_blocks = Self::list_certifying_blocks_with_restored_closure(
+            &client.cardano_database_v2_download_dir(),
+            cardano_node_version,
+        )
+        .with_context(|| "Checking that the Leios closures are restored by the client")?;
+        info!("Client restored the Leios closures of the certifying blocks"; "closures" => certifying_blocks.len(), "last_certifying_block_number" => ?certifying_blocks.last().map(|block| block.block_number));
+
+        Ok(())
+    }
+
+    /// Lists the blocks of the restored immutable files that certify an endorser block, after checking
+    /// that there is at least one and that each has its closure in the restored Leios database.
+    ///
+    /// The last restored immutable file is the copy of the partial immutable file of the ancillary
+    /// archive: it is read up to its last whole block.
+    fn list_certifying_blocks_with_restored_closure(
+        restored_db_directory: &Path,
+        cardano_node_version: &semver::Version,
+    ) -> StdResult<Vec<CertifyingBlock>> {
+        let partial_immutable_file_number = ImmutableFile::list_all_in_dir(restored_db_directory)?
+            .last()
+            .map(|file| file.number)
+            .ok_or_else(|| {
+                anyhow!(
+                    "No immutable file restored in '{}'",
+                    restored_db_directory.display()
+                )
+            })?;
+        let immutable_directory = restored_db_directory.join(IMMUTABLE_DIR);
+        let mut certifying_blocks = match partial_immutable_file_number.checked_sub(1) {
+            Some(last_completed_immutable_file_number) => CertifyingBlocksReader::list_range(
+                &immutable_directory,
+                0..=last_completed_immutable_file_number,
+            )?,
+            None => Vec::new(),
+        };
+        certifying_blocks.extend(
+            CertifyingBlocksReader::list_partial_with_previous_chunk_dir(
+                &immutable_directory,
+                &immutable_directory,
+                partial_immutable_file_number,
+            )?,
+        );
+        if certifying_blocks.is_empty() {
+            return Err(RestoredLeiosDatabaseError::NoCertifyingBlock.into());
+        }
+
+        let database = LeiosImmutableDatabase::open_read_only(
+            restored_db_directory,
+            LeiosImmutableDatabaseLayoutProvider::layout_for_cardano_node_version(
+                cardano_node_version,
+            )?,
+        )?;
+        for certifying_block in &certifying_blocks {
+            if !database.has_closure(&certifying_block.endorser_block_hash)? {
+                return Err(RestoredLeiosDatabaseError::MissingClosure {
+                    endorser_block_hash: certifying_block.endorser_block_hash.clone(),
+                    block_number: certifying_block.block_number,
+                }
+                .into());
+            }
+        }
+
+        Ok(certifying_blocks)
     }
 
     pub async fn wait_for_artifact(
@@ -272,5 +374,102 @@ impl CheckCardanoDatabaseToolkit {
             }
         }
         .with_context(|| format!("Checking IPNS publication of aggregator `{}`", aggregator.name()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use mithril_cardano_node_leios::test::LeiosFixtures;
+    use mithril_common::test::TempDir;
+
+    use super::*;
+
+    const LEIOS_CARDANO_NODE_VERSION: semver::Version = semver::Version::new(11, 2, 0);
+
+    #[test]
+    fn list_certifying_blocks_with_restored_closure_returns_the_certifying_blocks() {
+        let db_directory = TempDir::create("check_cardano_database", "leios_closures_restored");
+        LeiosFixtures::copy_to(&db_directory);
+
+        let certifying_blocks =
+            CheckCardanoDatabaseToolkit::list_certifying_blocks_with_restored_closure(
+                &db_directory,
+                &LEIOS_CARDANO_NODE_VERSION,
+            )
+            .unwrap();
+
+        assert_eq!(
+            certifying_blocks
+                .iter()
+                .map(|block| block.block_number)
+                .collect::<Vec<_>>(),
+            vec![BlockNumber(36), BlockNumber(47), BlockNumber(55), BlockNumber(59)]
+        );
+    }
+
+    #[test]
+    fn list_certifying_blocks_with_restored_closure_reads_the_partial_last_immutable_file_up_to_its_last_whole_block()
+     {
+        let db_directory = TempDir::create("check_cardano_database", "leios_torn_partial_file");
+        LeiosFixtures::copy_to(&db_directory);
+        let last_chunk_path = db_directory.join(IMMUTABLE_DIR).join("00007.chunk");
+        let last_chunk = std::fs::read(&last_chunk_path).unwrap();
+        std::fs::write(&last_chunk_path, &last_chunk[..last_chunk.len() - 10]).unwrap();
+
+        let certifying_blocks =
+            CheckCardanoDatabaseToolkit::list_certifying_blocks_with_restored_closure(
+                &db_directory,
+                &LEIOS_CARDANO_NODE_VERSION,
+            )
+            .unwrap();
+
+        assert_eq!(
+            certifying_blocks
+                .iter()
+                .map(|block| block.block_number)
+                .collect::<Vec<_>>(),
+            vec![BlockNumber(36), BlockNumber(47), BlockNumber(55), BlockNumber(59)]
+        );
+    }
+
+    #[test]
+    fn list_certifying_blocks_with_restored_closure_fails_without_certifying_block() {
+        let db_directory = TempDir::create("check_cardano_database", "leios_no_certifying_block");
+        LeiosFixtures::copy_immutable_files_to(&db_directory, &[0, 1, 2, 3]);
+
+        let error = CheckCardanoDatabaseToolkit::list_certifying_blocks_with_restored_closure(
+            &db_directory,
+            &LEIOS_CARDANO_NODE_VERSION,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<RestoredLeiosDatabaseError>(),
+            Some(&RestoredLeiosDatabaseError::NoCertifyingBlock)
+        );
+    }
+
+    #[test]
+    fn list_certifying_blocks_with_restored_closure_fails_when_a_closure_is_missing() {
+        let db_directory = TempDir::create("check_cardano_database", "leios_closure_missing");
+        LeiosFixtures::copy_to(&db_directory);
+        LeiosFixtures::delete_closure(
+            &LeiosFixtures::open_node_connection(&db_directory),
+            LeiosFixtures::ENDORSER_BLOCK_HASHES[1],
+        );
+
+        let error = CheckCardanoDatabaseToolkit::list_certifying_blocks_with_restored_closure(
+            &db_directory,
+            &LEIOS_CARDANO_NODE_VERSION,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<RestoredLeiosDatabaseError>(),
+            Some(&RestoredLeiosDatabaseError::MissingClosure {
+                endorser_block_hash: LeiosFixtures::ENDORSER_BLOCK_HASHES[1].to_string(),
+                block_number: BlockNumber(47),
+            })
+        );
     }
 }
