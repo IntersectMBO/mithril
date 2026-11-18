@@ -85,7 +85,7 @@ cp $SCRIPT_DIRECTORY/configuration/$GENESIS_CONWAY_FILE "${ARTIFACTS_DIR_TEMP}/g
 cp $SCRIPT_DIRECTORY/configuration/configuration.yaml "${ARTIFACTS_DIR_TEMP}/"
 $SED -i "${ARTIFACTS_DIR_TEMP}/configuration.yaml" \
      -e 's/Protocol: RealPBFT/Protocol: Cardano/' \
-     -e '/Protocol/ aPBftSignatureThreshold: 0.6' \
+     -e '/^Protocol:/ aPBftSignatureThreshold: 0.6' \
      -e 's/minSeverity: Info/minSeverity: Info/' \
      -e 's/: True/: False/' \
      -e 's/TracingVerbosity: NormalVerbosity/TracingVerbosity: NormalVerbosity/' \
