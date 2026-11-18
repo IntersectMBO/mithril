@@ -263,6 +263,13 @@ fn select_node(
                     reason: "The node is using a KES agent, use KES keys instead".to_string(),
                 });
             }
+            if node.command_line.is_using_bulk_credentials() {
+                return Err(CardanoDiscoveryError::BlockProducerNotHandled {
+                    node: node.instance,
+                    reason: "The node is using a bulk credentials file, use KES keys instead"
+                        .to_string(),
+                });
+            }
             Ok((node, NodeRole::BlockProducer))
         }
         // Several block producers
@@ -621,6 +628,59 @@ pub(crate) mod tests {
                 }
                 _ => panic!("Expected BlockProducerNotHandled, got {result:?}"),
             }
+        }
+
+        #[tokio::test]
+        async fn fails_when_block_producer_is_using_a_bulk_credentials_file() {
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
+                    processes: vec![node_process(
+                        42,
+                        &["run", "--bulk-credentials-file", "/opt/cardano/bulk.creds"],
+                    )],
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+            .discoverer();
+
+            let result = discoverer.discover().await;
+
+            match result {
+                Err(CardanoDiscoveryError::BlockProducerNotHandled { node, reason }) => {
+                    assert_eq!(42, node.pid);
+                    assert_eq!(
+                        "The node is using a bulk credentials file, use KES keys instead",
+                        reason
+                    );
+                }
+                _ => panic!("Expected BlockProducerNotHandled, got {result:?}"),
+            }
+        }
+
+        #[tokio::test]
+        async fn selects_a_block_producer_given_kes_keys_besides_a_bulk_credentials_file() {
+            let args: Vec<&str> = BLOCK_PRODUCER_ARGS
+                .iter()
+                .copied()
+                .chain(["--bulk-credentials-file", "/opt/cardano/bulk.creds"])
+                .collect();
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
+                    processes: vec![node_process(42, &args)],
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+            .discoverer();
+
+            let discovery = discoverer.discover().await.unwrap();
+
+            assert_eq!(NodeRole::BlockProducer, discovery.role);
+            assert_eq!(
+                Some(PathBuf::from("/opt/cardano/bulk.creds")),
+                discovery.bulk_credentials_file
+            );
         }
 
         #[tokio::test]
@@ -989,20 +1049,6 @@ pub(crate) mod tests {
                 Some(PathBuf::from("keys/node.cert")),
                 discovery.operational_certificate_path
             );
-        }
-
-        #[tokio::test]
-        async fn collects_the_bulk_credentials_file_of_a_block_producer_using_one() {
-            let process = node_process(42, &["run", "--bulk-credentials-file", "/opt/bulk.creds"]);
-
-            let discovery = discover(process, FakeProbes::default()).await;
-
-            assert_eq!(
-                Some(PathBuf::from("/opt/bulk.creds")),
-                discovery.bulk_credentials_file
-            );
-            assert_eq!(None, discovery.kes_key_path);
-            assert_eq!(None, discovery.operational_certificate_path);
         }
 
         #[tokio::test]

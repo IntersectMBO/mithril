@@ -68,7 +68,7 @@ impl NodeCommandLine {
     /// The credentials are either a KES key with an operational certificate, a KES agent socket
     /// (the agent provides both), or a bulk credentials file.
     pub fn is_block_producer(&self) -> bool {
-        let has_credentials = (self.kes_key.is_some() && self.operational_certificate.is_some())
+        let has_credentials = self.has_kes_key_and_operational_certificate()
             || self.kes_agent_socket.is_some()
             || self.bulk_credentials_file.is_some();
 
@@ -78,6 +78,17 @@ impl NodeCommandLine {
     /// Check if the node is using a KES agent
     pub fn is_using_kes_agent(&self) -> bool {
         self.kes_agent_socket.is_some()
+    }
+
+    /// Check if the node gets its credentials from a bulk credentials file only
+    ///
+    /// A node also given a KES key and an operational certificate uses them instead.
+    pub fn is_using_bulk_credentials(&self) -> bool {
+        self.bulk_credentials_file.is_some() && !self.has_kes_key_and_operational_certificate()
+    }
+
+    fn has_kes_key_and_operational_certificate(&self) -> bool {
+        self.kes_key.is_some() && self.operational_certificate.is_some()
     }
 }
 
@@ -278,5 +289,52 @@ mod tests {
         let command_line = parse(&["run", "--shelley-kes-key", "kes.skey"]);
 
         assert!(!command_line.is_using_kes_agent());
+    }
+
+    #[test]
+    fn a_node_using_only_a_bulk_credentials_file_is_detected_as_using_bulk_credentials() {
+        let command_line = parse(&["run", "--bulk-credentials-file", "bulk.creds"]);
+
+        assert!(command_line.is_using_bulk_credentials());
+    }
+
+    #[test]
+    fn a_node_with_a_kes_key_and_an_operational_certificate_is_not_using_bulk_credentials() {
+        assert!(
+            !parse(&[
+                "run",
+                "--shelley-kes-key",
+                "kes.skey",
+                "--shelley-operational-certificate",
+                "node.cert",
+            ])
+            .is_using_bulk_credentials()
+        );
+        assert!(
+            !parse(&[
+                "run",
+                "--bulk-credentials-file",
+                "bulk.creds",
+                "--shelley-kes-key",
+                "kes.skey",
+                "--shelley-operational-certificate",
+                "node.cert",
+            ])
+            .is_using_bulk_credentials()
+        );
+    }
+
+    #[test]
+    fn a_node_with_a_bulk_credentials_file_and_an_incomplete_kes_key_pair_is_using_bulk_credentials()
+     {
+        let command_line = parse(&[
+            "run",
+            "--bulk-credentials-file",
+            "bulk.creds",
+            "--shelley-kes-key",
+            "kes.skey",
+        ]);
+
+        assert!(command_line.is_using_bulk_credentials());
     }
 }
