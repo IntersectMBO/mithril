@@ -73,6 +73,8 @@ pub struct DevnetBootstrapArgs {
     pub cardano_hard_fork_latest_era_at_epoch: u16,
     pub skip_cardano_bin_download: bool,
     pub cardano_binary_url: Option<String>,
+    pub use_leios: bool,
+    pub leios_load_duration: Option<u32>,
 }
 
 impl Devnet {
@@ -159,6 +161,14 @@ impl Devnet {
 
         if let Some(cardano_binary_url) = &bootstrap_args.cardano_binary_url {
             bootstrap_command.env("CARDANO_BINARY_URL", cardano_binary_url);
+        }
+
+        if bootstrap_args.use_leios {
+            bootstrap_command.env("USE_LEIOS", "true");
+            bootstrap_command.env("ACTIVE_SLOTS_COEFF", "0.1");
+            if let Some(leios_load_duration) = bootstrap_args.leios_load_duration {
+                bootstrap_command.env("LOAD_DURATION", leios_load_duration.to_string());
+            }
         }
 
         bootstrap_command
@@ -442,6 +452,28 @@ impl Devnet {
             None => Err(anyhow!(
                 "Write protocol configuration markers on chain terminated by signal"
             )),
+        }
+    }
+
+    pub async fn generate_load(&self) -> StdResult<()> {
+        let run_script = "load-mithril.sh";
+        let run_script_path = self.artifacts_dir.join(run_script);
+        let mut run_command = self.build_command(&run_script_path)?;
+
+        info!("Starting the transaction load on the devnet"; "script" => &run_script_path.display());
+
+        let status = run_command
+            .spawn()
+            .with_context(|| "Failed to start the transaction load on the devnet")?
+            .wait_forwarding_output_to_slog_scope(run_script)
+            .await
+            .with_context(|| "Error while starting the transaction load on the devnet")?;
+        match status.code() {
+            Some(0) => Ok(()),
+            Some(code) => Err(anyhow!(RetryableDevnetError(format!(
+                "Transaction load exited with status code: {code}"
+            )))),
+            None => Err(anyhow!("Transaction load terminated by signal")),
         }
     }
 

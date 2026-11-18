@@ -121,6 +121,14 @@ impl ExecToolkit {
         Ok(())
     }
 
+    pub async fn generate_load(&self, devnet: &Devnet) -> StdResult<()> {
+        info!("Generate a transaction load on the devnet");
+
+        devnet.generate_load().await?;
+
+        Ok(())
+    }
+
     pub async fn transfer_funds(&self, devnet: &Devnet) -> StdResult<()> {
         info!("Transfer funds on the devnet");
 
