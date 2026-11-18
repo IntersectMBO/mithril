@@ -29,6 +29,7 @@ As a minor extension, we have adopted a slightly different versioning convention
     - New `ipfs_share` configuration parameter of the Mithril aggregator to set the share of the immutable files to download through IPFS, advertised in the `/` route.
     - New `credentials` field of the `ipfs_rpc_server_config` configuration parameter of the Mithril aggregator to authenticate to a Kubo RPC API protected by `API.Authorizations`, with a Basic or a Bearer authorization.
     - The Mithril client library and CLI no longer download all the immutable files through IPFS first when an IPFS RPC URL is configured: IPFS is now tried first only for the share advertised by the aggregator, the other files try IPFS last.
+    - New `--ipfs-managed-node` option of the `cardano-db download` command of the Mithril client CLI to download through a Kubo node run by the client for the duration of the download, with the Kubo release downloaded from GitHub and cached on first use.
   - The SNARK proof systems are enabled by default in the Mithril nodes, client and libraries. Only `mithril-stm` and `mithril-common` can still leave them out with `--no-default-features`.
   - Mithril setup:
     - The `signer` command of the Mithril setup runs a minimal setup orchestrator, which discovers, reviews in an interactive terminal table, validates and saves the signer configuration values.
