@@ -1,4 +1,4 @@
-//! Discoverer of the Cardano block producer node
+//! Discoverer of the Cardano node running on the machine
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -7,9 +7,12 @@ use crate::discovery::cardano::command_line::NodeCommandLine;
 use crate::discovery::cardano::host::{
     CgroupServiceProbe, HostFileProbe, HostToolProbe, ProcfsProcessProbe,
 };
+use crate::discovery::cardano::node_files::{
+    CardanoConfiguration, CardanoNetwork, Peer, ShelleyGenesisConfiguration, TopologyConfiguration,
+};
 use crate::discovery::cardano::{
-    CardanoDiscovery, FileProbe, ListeningAddress, NodeInstance, NodeProcess, ProcessProbe,
-    ServiceProbe, ToolProbe,
+    CardanoDiscovery, FileProbe, ListeningAddress, NodeInstance, NodeProcess, NodeRole,
+    ProcessProbe, ServiceProbe, ToolProbe,
 };
 
 /// Reasons why the Cardano block producer node could not be discovered
@@ -19,7 +22,7 @@ pub enum CardanoDiscoveryError {
     #[error("No running Cardano node found")]
     NoCardanoNode,
 
-    /// Cardano nodes are running, but none of them is a block producer
+    /// Several Cardano nodes are running, but none of them is a block producer
     #[error("No running Cardano block producer node found among the running nodes: {nodes:?}")]
     NoBlockProducer {
         /// The running nodes
@@ -89,21 +92,35 @@ impl CardanoDiscoverer {
         Ok(nodes.into_iter().map(|node| node.instance).collect())
     }
 
-    /// Discover the facts of the Cardano block producer node running on the machine
+    /// Discover the facts of the Cardano node running on the machine
+    ///
+    /// The block producer is selected, or the only node running when it is not a block producer.
     pub async fn discover(&self) -> Result<CardanoDiscovery, CardanoDiscoveryError> {
-        let DetectedNode {
-            instance,
-            process,
-            command_line,
-        } = select_block_producer(self.detect().await?)?;
+        let (
+            DetectedNode {
+                instance,
+                process,
+                command_line,
+            },
+            role,
+        ) = select_node(self.detect().await?)?;
         let resolve = |path: &str| resolve_path(process.working_dir.as_deref(), path);
+        let config_file = command_line.config.as_deref().map(resolve);
+        let topology_file = command_line.topology.as_deref().map(resolve);
+        let shelley_genesis_file = self.shelley_genesis_file(config_file.as_deref()).await;
+        let network = self.network(shelley_genesis_file.as_deref()).await;
+        let pool_peers = self.pool_peers(topology_file.as_deref()).await;
 
         Ok(CardanoDiscovery {
             node: instance,
+            role,
             socket_path: command_line.socket_path.as_deref().map(resolve),
             database_dir: command_line.database_path.as_deref().map(resolve),
-            config_file: command_line.config.as_deref().map(resolve),
-            topology_file: command_line.topology.as_deref().map(resolve),
+            config_file,
+            topology_file,
+            shelley_genesis_file,
+            network,
+            pool_peers,
             kes_key_path: command_line.kes_key.as_deref().map(resolve),
             operational_certificate_path: command_line
                 .operational_certificate
@@ -140,6 +157,37 @@ impl CardanoDiscoverer {
             .ok()?;
 
         parse_node_version(&output)
+    }
+
+    /// Path of the Shelley genesis file, read from the node configuration file
+    async fn shelley_genesis_file(&self, config_file: Option<&Path>) -> Option<PathBuf> {
+        let config_file = config_file?;
+        let content = self.files.read_to_string(config_file).await.ok()?;
+
+        CardanoConfiguration::parse(&content)
+            .ok()?
+            .shelley_genesis_path(config_file)
+    }
+
+    /// Network identified by the magic of the Shelley genesis
+    async fn network(&self, shelley_genesis_file: Option<&Path>) -> Option<CardanoNetwork> {
+        let content = self.files.read_to_string(shelley_genesis_file?).await.ok()?;
+
+        Some(ShelleyGenesisConfiguration::parse(&content).ok()?.network())
+    }
+
+    /// Peers of the pool read from the node topology file, none when it can't be read
+    async fn pool_peers(&self, topology_file: Option<&Path>) -> Vec<Peer> {
+        let Some(topology_file) = topology_file else {
+            return Vec::new();
+        };
+
+        match self.files.read_to_string(topology_file).await {
+            Ok(content) => TopologyConfiguration::parse(&content)
+                .map(|topology| topology.pool_peers())
+                .unwrap_or_default(),
+            Err(_) => Vec::new(),
+        }
     }
 
     async fn detect(&self) -> anyhow::Result<Vec<DetectedNode>> {
@@ -187,19 +235,26 @@ fn parse_node_version(output: &str) -> Option<String> {
     }
 }
 
-fn select_block_producer(nodes: Vec<DetectedNode>) -> Result<DetectedNode, CardanoDiscoveryError> {
+/// Select the block producer, or the only node running when it is not a block producer
+fn select_node(
+    nodes: Vec<DetectedNode>,
+) -> Result<(DetectedNode, NodeRole), CardanoDiscoveryError> {
     if nodes.is_empty() {
         return Err(CardanoDiscoveryError::NoCardanoNode);
     }
 
-    let (mut block_producers, relays): (Vec<_>, Vec<_>) = nodes
+    let (mut block_producers, mut relays): (Vec<_>, Vec<_>) = nodes
         .into_iter()
         .partition(|node| node.command_line.is_block_producer());
 
     match block_producers.len() {
+        // No block producer, One relay
+        0 if relays.len() == 1 => Ok((relays.remove(0), NodeRole::Relay)),
+        // No block producer
         0 => Err(CardanoDiscoveryError::NoBlockProducer {
             nodes: relays.into_iter().map(|node| node.instance).collect(),
         }),
+        // One block producer
         1 => {
             let node = block_producers.remove(0);
             if node.command_line.is_using_kes_agent() {
@@ -208,8 +263,9 @@ fn select_block_producer(nodes: Vec<DetectedNode>) -> Result<DetectedNode, Carda
                     reason: "The node is using a KES agent, use KES keys instead".to_string(),
                 });
             }
-            Ok(node)
+            Ok((node, NodeRole::BlockProducer))
         }
+        // Several block producers
         _ => Err(CardanoDiscoveryError::SeveralBlockProducers {
             nodes: block_producers.into_iter().map(|node| node.instance).collect(),
         }),
@@ -458,7 +514,7 @@ pub(crate) mod tests {
         "/opt/cardano/node.cert",
     ];
 
-    mod select_block_producer {
+    mod select_node {
         use super::*;
 
         #[tokio::test]
@@ -474,7 +530,7 @@ pub(crate) mod tests {
         }
 
         #[tokio::test]
-        async fn fails_when_only_relays_are_running() {
+        async fn fails_when_several_relays_are_running_without_block_producer() {
             let discoverer = FakeProbes {
                 processes: FakeProcessProbe {
                     processes: vec![
@@ -496,6 +552,23 @@ pub(crate) mod tests {
                 }
                 _ => panic!("Expected NoBlockProducer, got {result:?}"),
             }
+        }
+
+        #[tokio::test]
+        async fn selects_the_only_running_node_as_a_relay_when_it_is_not_a_block_producer() {
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
+                    processes: vec![node_process(42, &["run", "--port", "3001"])],
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+            .discoverer();
+
+            let discovery = discoverer.discover().await.unwrap();
+
+            assert_eq!(42, discovery.node.pid);
+            assert_eq!(NodeRole::Relay, discovery.role);
         }
 
         #[tokio::test]
@@ -576,6 +649,7 @@ pub(crate) mod tests {
                 },
                 discovery.node
             );
+            assert_eq!(NodeRole::BlockProducer, discovery.role);
             assert_eq!(
                 Some(PathBuf::from("/opt/cardano/kes.skey")),
                 discovery.kes_key_path
@@ -633,7 +707,7 @@ pub(crate) mod tests {
     mod collect_facts {
         use std::net::{Ipv4Addr, Ipv6Addr};
 
-        use crate::discovery::cardano::ListeningAddress;
+        use crate::discovery::cardano::{CardanoNetwork, ListeningAddress, Peer};
 
         use super::*;
 
@@ -642,7 +716,26 @@ pub(crate) mod tests {
             node_process(42, &args)
         }
 
-        async fn discover(process: NodeProcess, tools: FakeToolProbe) -> CardanoDiscovery {
+        const CONFIGURATION: &str = "ShelleyGenesisFile: shelley/genesis.json\n";
+
+        const PREVIEW_GENESIS: &str = r#"{ "networkId": "Testnet", "networkMagic": 2 }"#;
+
+        const TOPOLOGY: &str = r#"{
+            "localRoots": [{ "accessPoints": [{ "address": "relay1.example.com", "port": 3001 }] }],
+            "publicRoots": [{ "accessPoints": [{ "address": "backbone.cardano.iog.io", "port": 3001 }] }]
+        }"#;
+
+        fn node_files(files: &[(&str, &str)]) -> FakeFileProbe {
+            FakeFileProbe {
+                files: files
+                    .iter()
+                    .map(|(path, content)| (PathBuf::from(path), content.to_string()))
+                    .collect(),
+            }
+        }
+
+        /// Discover the given block producer process, observed through the other given probes
+        async fn discover(process: NodeProcess, probes: FakeProbes) -> CardanoDiscovery {
             FakeProbes {
                 processes: FakeProcessProbe {
                     processes: vec![process],
@@ -651,8 +744,7 @@ pub(crate) mod tests {
                 services: FakeServiceProbe {
                     units: HashMap::from([(42, "cardano-node.service".to_string())]),
                 },
-                tools,
-                ..Default::default()
+                ..probes
             }
             .discoverer()
             .discover()
@@ -690,7 +782,21 @@ pub(crate) mod tests {
                 ..Default::default()
             };
 
-            let discovery = discover(process, tools).await;
+            let files = node_files(&[
+                ("/opt/cardano/config.json", CONFIGURATION),
+                ("/opt/cardano/shelley/genesis.json", PREVIEW_GENESIS),
+                ("/opt/cardano/topology.json", TOPOLOGY),
+            ]);
+
+            let discovery = discover(
+                process,
+                FakeProbes {
+                    tools,
+                    files,
+                    ..Default::default()
+                },
+            )
+            .await;
 
             assert_eq!(
                 CardanoDiscovery {
@@ -698,10 +804,17 @@ pub(crate) mod tests {
                         pid: 42,
                         systemd_unit: Some("cardano-node.service".to_string())
                     },
+                    role: NodeRole::BlockProducer,
                     socket_path: Some(PathBuf::from("/opt/cardano/node.socket")),
                     database_dir: Some(PathBuf::from("/opt/cardano/db")),
                     config_file: Some(PathBuf::from("/opt/cardano/config.json")),
                     topology_file: Some(PathBuf::from("/opt/cardano/topology.json")),
+                    shelley_genesis_file: Some(PathBuf::from("/opt/cardano/shelley/genesis.json")),
+                    network: Some(CardanoNetwork::Preview),
+                    pool_peers: vec![Peer {
+                        address: "relay1.example.com".to_string(),
+                        port: 3001,
+                    }],
                     kes_key_path: Some(PathBuf::from("/opt/cardano/kes.skey")),
                     operational_certificate_path: Some(PathBuf::from("/opt/cardano/node.cert")),
                     kes_agent_socket: None,
@@ -727,7 +840,14 @@ pub(crate) mod tests {
             };
             let version_run_as = tools.version_run_as.clone();
 
-            discover(block_producer_process(&[]), tools).await;
+            discover(
+                block_producer_process(&[]),
+                FakeProbes {
+                    tools,
+                    ..Default::default()
+                },
+            )
+            .await;
 
             assert_eq!(vec![NODE_OWNER], *version_run_as.lock().unwrap());
         }
@@ -744,7 +864,14 @@ pub(crate) mod tests {
             };
             let version_run_as = tools.version_run_as.clone();
 
-            let discovery = discover(process, tools).await;
+            let discovery = discover(
+                process,
+                FakeProbes {
+                    tools,
+                    ..Default::default()
+                },
+            )
+            .await;
 
             assert_eq!(None, discovery.node_version);
             assert!(version_run_as.lock().unwrap().is_empty());
@@ -762,7 +889,14 @@ pub(crate) mod tests {
             };
             let version_run_as = tools.version_run_as.clone();
 
-            let discovery = discover(process, tools).await;
+            let discovery = discover(
+                process,
+                FakeProbes {
+                    tools,
+                    ..Default::default()
+                },
+            )
+            .await;
 
             assert_eq!(None, discovery.node_version);
             assert!(version_run_as.lock().unwrap().is_empty());
@@ -770,7 +904,7 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn leaves_the_facts_absent_from_the_command_line_undiscovered() {
-            let discovery = discover(block_producer_process(&[]), FakeToolProbe::default()).await;
+            let discovery = discover(block_producer_process(&[]), FakeProbes::default()).await;
 
             assert_eq!(None, discovery.socket_path);
             assert_eq!(None, discovery.database_dir);
@@ -778,6 +912,9 @@ pub(crate) mod tests {
             assert_eq!(None, discovery.topology_file);
             assert_eq!(ListeningAddress::default(), discovery.listening_address);
             assert_eq!(None, discovery.service_user);
+            assert_eq!(None, discovery.shelley_genesis_file);
+            assert_eq!(None, discovery.network);
+            assert_eq!(Vec::<Peer>::new(), discovery.pool_peers);
         }
 
         #[tokio::test]
@@ -804,7 +941,7 @@ pub(crate) mod tests {
                 )
             };
 
-            let discovery = discover(process, FakeToolProbe::default()).await;
+            let discovery = discover(process, FakeProbes::default()).await;
 
             assert_eq!(
                 Some(PathBuf::from("/home/cardano/keys/kes.skey")),
@@ -845,7 +982,7 @@ pub(crate) mod tests {
                 ],
             );
 
-            let discovery = discover(process, FakeToolProbe::default()).await;
+            let discovery = discover(process, FakeProbes::default()).await;
 
             assert_eq!(Some(PathBuf::from("keys/kes.skey")), discovery.kes_key_path);
             assert_eq!(
@@ -858,7 +995,7 @@ pub(crate) mod tests {
         async fn collects_the_bulk_credentials_file_of_a_block_producer_using_one() {
             let process = node_process(42, &["run", "--bulk-credentials-file", "/opt/bulk.creds"]);
 
-            let discovery = discover(process, FakeToolProbe::default()).await;
+            let discovery = discover(process, FakeProbes::default()).await;
 
             assert_eq!(
                 Some(PathBuf::from("/opt/bulk.creds")),
@@ -879,14 +1016,14 @@ pub(crate) mod tests {
                 "99999",
             ]);
 
-            let discovery = discover(process, FakeToolProbe::default()).await;
+            let discovery = discover(process, FakeProbes::default()).await;
 
             assert_eq!(ListeningAddress::default(), discovery.listening_address);
         }
 
         #[tokio::test]
         async fn leaves_the_node_version_undiscovered_when_the_version_command_fails() {
-            let discovery = discover(block_producer_process(&[]), FakeToolProbe::default()).await;
+            let discovery = discover(block_producer_process(&[]), FakeProbes::default()).await;
 
             assert_eq!(None, discovery.node_version);
         }
@@ -898,16 +1035,146 @@ pub(crate) mod tests {
                 ..Default::default()
             };
 
-            let discovery = discover(block_producer_process(&[]), tools).await;
+            let discovery = discover(
+                block_producer_process(&[]),
+                FakeProbes {
+                    tools,
+                    ..Default::default()
+                },
+            )
+            .await;
 
             assert_eq!(None, discovery.node_version);
         }
 
         #[tokio::test]
         async fn leaves_the_cardano_cli_path_undiscovered_when_not_found() {
-            let discovery = discover(block_producer_process(&[]), FakeToolProbe::default()).await;
+            let discovery = discover(block_producer_process(&[]), FakeProbes::default()).await;
 
             assert_eq!(None, discovery.cardano_cli_path);
+        }
+
+        fn process_with_node_files() -> NodeProcess {
+            block_producer_process(&[
+                "--config",
+                "/opt/cardano/config.json",
+                "--topology",
+                "/opt/cardano/topology.json",
+            ])
+        }
+
+        async fn discover_with_files(files: &[(&str, &str)]) -> CardanoDiscovery {
+            discover(
+                process_with_node_files(),
+                FakeProbes {
+                    files: node_files(files),
+                    ..Default::default()
+                },
+            )
+            .await
+        }
+
+        #[tokio::test]
+        async fn resolves_the_shelley_genesis_file_from_a_relative_configuration_path() {
+            let process = NodeProcess {
+                working_dir: Some(PathBuf::from("/home/cardano")),
+                ..block_producer_process(&["--config", "config/config.yml"])
+            };
+            let files = node_files(&[
+                ("/home/cardano/config/config.yml", CONFIGURATION),
+                ("/home/cardano/config/shelley/genesis.json", PREVIEW_GENESIS),
+            ]);
+
+            let discovery = discover(
+                process,
+                FakeProbes {
+                    files,
+                    ..Default::default()
+                },
+            )
+            .await;
+
+            assert_eq!(
+                Some(PathBuf::from("/home/cardano/config/shelley/genesis.json")),
+                discovery.shelley_genesis_file
+            );
+            assert_eq!(Some(CardanoNetwork::Preview), discovery.network);
+        }
+
+        #[tokio::test]
+        async fn leaves_the_network_undiscovered_when_the_configuration_can_not_be_read() {
+            let discovery =
+                discover_with_files(&[("/opt/cardano/shelley/genesis.json", PREVIEW_GENESIS)])
+                    .await;
+
+            assert_eq!(None, discovery.shelley_genesis_file);
+            assert_eq!(None, discovery.network);
+        }
+
+        #[tokio::test]
+        async fn leaves_the_network_undiscovered_when_the_configuration_is_invalid() {
+            let discovery = discover_with_files(&[
+                ("/opt/cardano/config.json", "{ not: [valid"),
+                ("/opt/cardano/shelley/genesis.json", PREVIEW_GENESIS),
+            ])
+            .await;
+
+            assert_eq!(None, discovery.shelley_genesis_file);
+            assert_eq!(None, discovery.network);
+        }
+
+        #[tokio::test]
+        async fn leaves_the_network_undiscovered_when_the_configuration_has_no_shelley_genesis() {
+            let discovery = discover_with_files(&[
+                ("/opt/cardano/config.json", "Protocol: Cardano"),
+                ("/opt/cardano/shelley/genesis.json", PREVIEW_GENESIS),
+            ])
+            .await;
+
+            assert_eq!(None, discovery.shelley_genesis_file);
+            assert_eq!(None, discovery.network);
+        }
+
+        #[tokio::test]
+        async fn keeps_the_shelley_genesis_file_when_the_genesis_can_not_be_read() {
+            let discovery =
+                discover_with_files(&[("/opt/cardano/config.json", CONFIGURATION)]).await;
+
+            assert_eq!(
+                Some(PathBuf::from("/opt/cardano/shelley/genesis.json")),
+                discovery.shelley_genesis_file
+            );
+            assert_eq!(None, discovery.network);
+        }
+
+        #[tokio::test]
+        async fn keeps_the_shelley_genesis_file_when_the_genesis_is_invalid() {
+            let discovery = discover_with_files(&[
+                ("/opt/cardano/config.json", CONFIGURATION),
+                ("/opt/cardano/shelley/genesis.json", "{ not json"),
+            ])
+            .await;
+
+            assert_eq!(
+                Some(PathBuf::from("/opt/cardano/shelley/genesis.json")),
+                discovery.shelley_genesis_file
+            );
+            assert_eq!(None, discovery.network);
+        }
+
+        #[tokio::test]
+        async fn has_no_pool_peers_when_the_topology_can_not_be_read() {
+            let discovery = discover_with_files(&[]).await;
+
+            assert_eq!(Vec::<Peer>::new(), discovery.pool_peers);
+        }
+
+        #[tokio::test]
+        async fn has_no_pool_peers_when_the_topology_is_invalid() {
+            let discovery =
+                discover_with_files(&[("/opt/cardano/topology.json", "{ not json")]).await;
+
+            assert_eq!(Vec::<Peer>::new(), discovery.pool_peers);
         }
     }
 }

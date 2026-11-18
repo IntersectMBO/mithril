@@ -3,11 +3,16 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::PathBuf;
 
-/// Facts discovered about the Cardano block producer node
+use crate::discovery::cardano::{CardanoNetwork, Peer};
+
+/// Facts discovered about the Cardano node selected on the machine
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CardanoDiscovery {
-    /// The block producer node instance
+    /// The selected node instance
     pub node: NodeInstance,
+
+    /// Role of the selected node
+    pub role: NodeRole,
 
     /// Path of the node socket
     pub socket_path: Option<PathBuf>,
@@ -20,6 +25,18 @@ pub struct CardanoDiscovery {
 
     /// Path of the node topology file
     pub topology_file: Option<PathBuf>,
+
+    /// Path of the Shelley genesis file, read from the node configuration file
+    pub shelley_genesis_file: Option<PathBuf>,
+
+    /// Cardano network the node runs on, identified by the magic of the Shelley genesis
+    pub network: Option<CardanoNetwork>,
+
+    /// Peers the node always stays connected to, read from its topology file
+    ///
+    /// When the role is [NodeRole::BlockProducer], these are the relays of the pool. When the
+    /// role is [NodeRole::Relay], these are the block producer and the sibling relays.
+    pub pool_peers: Vec<Peer>,
 
     /// Path of the KES secret key
     pub kes_key_path: Option<PathBuf>,
@@ -44,6 +61,19 @@ pub struct CardanoDiscovery {
 
     /// Path of the `cardano-cli` executable
     pub cardano_cli_path: Option<PathBuf>,
+}
+
+/// Role of the node selected on the machine
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeRole {
+    /// A node started with its block producing credentials
+    BlockProducer,
+
+    /// A node started without block producing credentials
+    ///
+    /// It is selected only when it is the only node running on the machine, ie: the relay of a
+    /// naive deployment where the signer runs beside a relay (test networks only).
+    Relay,
 }
 
 /// A running Cardano node instance
