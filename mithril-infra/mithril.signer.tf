@@ -77,7 +77,7 @@ for SIGNER_TYPE in $SIGNER_TYPES; do
       mv $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json.new $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json
 
       # Setup cardano node block producer topology
-      cat /home/curry/docker/cardano/config/$CARDANO_NODE_VERSION/${var.cardano_network}/cardano-node/topology.json | jq 'del(.peerSnapshotFile)' | jq 'del(.bootstrapPeers)' | jq '.localRoots[0].accessPoints[0] |= . + { "address": "${google_compute_address.mithril-external-address.address}", "port": ${local.mithril_signers_relay_cardano_port[each.key]}}' > /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool/topology-block-producer.json
+      cat /home/curry/docker/cardano/config/$CARDANO_NODE_VERSION/${var.cardano_network}/cardano-node/topology.json | jq 'del(.peerSnapshotFile)' | jq 'del(.bootstrapPeers)' | jq '.localRoots[0].accessPoints[0] |= . + { "address": "${google_compute_address.mithril-external-address.address}", "port": ${local.mithril_signers_relay_cardano_port[each.key]}}' | jq '.localRoots[0].trustable = true' > /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool/topology-block-producer.json
 
       # Setup cardano node relay topology
       cat /home/curry/docker/cardano/config/$CARDANO_NODE_VERSION/${var.cardano_network}/cardano-node/topology.json > /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool/topology-relay.json
