@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use reqwest::{Client, IntoUrl};
@@ -7,13 +5,9 @@ use serde::de::DeserializeOwned;
 
 use mithril_client::MithrilResult;
 
+use crate::utils::http_client_builder;
+
 use super::{GitHubRelease, GitHubReleaseRetriever};
-
-/// Maximum duration to connect to the server
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Maximum duration without receiving data from the server
-const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct ReqwestGitHubApiClient {
     client: Client,
@@ -22,17 +16,8 @@ pub struct ReqwestGitHubApiClient {
 
 impl ReqwestGitHubApiClient {
     pub fn new(github_token: Option<String>) -> MithrilResult<Self> {
-        Self::with_read_timeout(github_token, READ_TIMEOUT)
-    }
-
-    fn with_read_timeout(
-        github_token: Option<String>,
-        read_timeout: Duration,
-    ) -> MithrilResult<Self> {
-        let client = Client::builder()
+        let client = http_client_builder()
             .user_agent("mithril-client")
-            .connect_timeout(CONNECT_TIMEOUT)
-            .read_timeout(read_timeout)
             .build()
             .context("Failed to build Reqwest GitHub API client")?;
 
@@ -206,25 +191,6 @@ mod tests {
             error
                 .to_string()
                 .contains(&StatusCode::INTERNAL_SERVER_ERROR.to_string())
-        );
-    }
-
-    #[tokio::test]
-    async fn download_fails_when_the_server_does_not_send_data_within_the_read_timeout() {
-        let server = MockServer::start();
-        let _mock = server.mock(|_, then| {
-            then.delay(Duration::from_secs(2));
-        });
-        let client =
-            ReqwestGitHubApiClient::with_read_timeout(None, Duration::from_millis(200)).unwrap();
-
-        let result: MithrilResult<FakeApiResponse> =
-            client.download(format!("{}/endpoint", server.base_url())).await;
-        let error = result.expect_err("Expected an error when the server stalls");
-
-        assert!(
-            format!("{error:?}").contains("timed out"),
-            "Unexpected error: {error:?}"
         );
     }
 }
