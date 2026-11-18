@@ -12,6 +12,7 @@ members = [
     "examples/client-mithril-stake-distribution",
     "internal/cardano-node/mithril-cardano-node-chain",
     "internal/cardano-node/mithril-cardano-node-internal-database",
+    "internal/cardano-node/mithril-cardano-node-leios",
     "internal/mithril-aggregator-client",
     "internal/mithril-aggregator-discovery",
     "internal/mithril-build-script",
