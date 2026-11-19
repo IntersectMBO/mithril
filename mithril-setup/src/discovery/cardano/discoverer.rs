@@ -399,6 +399,8 @@ pub(crate) mod tests {
         }
     }
 
+    // The host discoverer reads the `/proc` filesystem, only available on Linux
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn host_discoverer_detects_the_nodes_running_on_the_machine() {
         let result = CardanoDiscoverer::host().detect_nodes().await;

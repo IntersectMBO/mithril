@@ -158,7 +158,8 @@ fn parse_passwd(content: &str) -> HashMap<u32, String> {
         .collect()
 }
 
-#[cfg(test)]
+// The fake `/proc` trees rely on symbolic links and on Unix absolute paths
+#[cfg(all(test, unix))]
 mod tests {
     use std::os::unix::fs::symlink;
     use std::path::Path;
