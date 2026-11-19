@@ -36,6 +36,9 @@ const KILL_TIMEOUT: Duration = Duration::from_secs(5);
 /// File of the repository where Kubo writes the multiaddr of its RPC API once listening
 const API_FILE: &str = "api";
 
+/// JSON configuration file of the repository
+const CONFIG_FILE: &str = "config";
+
 /// File of the repository where the output of the daemon is written
 const DAEMON_LOG_FILE: &str = "daemon.log";
 
@@ -100,9 +103,7 @@ impl ManagedKuboNode {
         let repository_dir = RepositoryDir::create(parent_dir)?;
         let binary = &archive.unpack_binary(repository_dir.path())?;
         run_ipfs(binary, repository_dir.path(), &KuboNodeConfig::init_args()).await?;
-        for setting in KuboNodeConfig::settings() {
-            run_ipfs(binary, repository_dir.path(), &setting.config_args()).await?;
-        }
+        KuboNodeConfig::apply_settings_to_file(&repository_dir.path().join(CONFIG_FILE))?;
 
         let daemon_log_path = repository_dir.path().join(DAEMON_LOG_FILE);
         let daemon_log = File::create(&daemon_log_path)
@@ -536,7 +537,8 @@ mod tests {
             let archive = fake_kubo_archive(
                 dir,
                 &format!(
-                    "if [ \"$1\" = \"{hanging_command}\" ]; then echo $$ > \"{}\"; exec sleep 30; fi",
+                    "if [ \"$1\" = \"{hanging_command}\" ]; then echo $$ > \"{}\"; exec sleep 30; fi\n\
+                     if [ \"$1\" = \"init\" ]; then echo '{{}}' > \"$IPFS_PATH/config\"; fi",
                     pid_file.display()
                 ),
             );
