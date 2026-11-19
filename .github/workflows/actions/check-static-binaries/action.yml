@@ -126,6 +126,8 @@ runs:
           "bcrypt.dll"
           "api-ms-win-core-synch-l1-2-0.dll"
           "userenv.dll"
+          "shell32.dll"
+          "combase.dll"
           "VCRUNTIME140.dll"
           "api-ms-win-crt-math-l1-1-0.dll"
           "api-ms-win-crt-string-l1-1-0.dll"
