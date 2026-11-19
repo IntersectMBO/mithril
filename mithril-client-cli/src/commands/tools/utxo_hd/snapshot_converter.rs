@@ -375,8 +375,11 @@ pub struct SnapshotConverterCommand {
     #[clap(long)]
     commit: bool,
 
+    /// Deprecated: set the GitHub token in the `GITHUB_TOKEN` environment variable instead, as a
+    /// token given with this option appears in the process list.
+    ///
     /// GitHub token for authenticated API calls.
-    #[clap(long, env = "GITHUB_TOKEN", hide_env_values = true)]
+    #[clap(long)]
     github_token: Option<String>,
 }
 
@@ -388,6 +391,13 @@ impl SnapshotConverterCommand {
         } else {
             ProgressOutputType::Tty
         };
+
+        if self.github_token.is_some() {
+            print_simple_warning(
+                "`--github-token` is deprecated and will be removed in a future version, as the token appears in the process list: set the token in the `GITHUB_TOKEN` environment variable instead.",
+                context.is_json_output_enabled(),
+            );
+        }
 
         if is_version_at_least_10_6_2_or_latest(&self.cardano_node_version)
             && self.utxo_hd_flavor == UTxOHDFlavor::Legacy
@@ -459,7 +469,11 @@ impl SnapshotConverterCommand {
                 let archive_path = Self::download_cardano_node_distribution(
                     current_step,
                     &progress_printer,
-                    ReqwestGitHubApiClient::new(self.github_token.clone())?,
+                    ReqwestGitHubApiClient::new(
+                        self.github_token
+                            .clone()
+                            .or_else(ReqwestGitHubApiClient::token_from_env),
+                    )?,
                     ReqwestHttpDownloader::new()?,
                     &self.cardano_node_version,
                     &distribution_dir,

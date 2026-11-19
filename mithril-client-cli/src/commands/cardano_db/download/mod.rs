@@ -59,13 +59,12 @@ pub struct CardanoDbDownloadCommand {
     /// The Kubo release archive is downloaded from its GitHub releases and cached in the user cache
     /// directory. At each start, the Kubo binary is unpacked in the node repository, created in the
     /// system temporary directory and removed once the download is done.
+    ///
+    /// The Kubo release is retrieved through the GitHub API, which limits the number of
+    /// unauthenticated requests. If this limit is reached, set a GitHub token in the
+    /// `GITHUB_TOKEN` environment variable.
     #[clap(long, env = "IPFS_MANAGED_NODE", conflicts_with = "ipfs_rpc_url")]
     ipfs_managed_node: bool,
-
-    /// GitHub token for authenticated API calls, used to download the Kubo release of the managed
-    /// IPFS node.
-    #[clap(long, env = "GITHUB_TOKEN", hide_env_values = true)]
-    github_token: Option<String>,
 
     /// `unstable` Share of the immutable files for which IPFS is tried first.
     ///
@@ -138,7 +137,6 @@ impl CardanoDbDownloadCommand {
             ancillary_verification_key,
             ipfs_rpc_url: self.ipfs_rpc_url.clone(),
             ipfs_managed_node: self.ipfs_managed_node,
-            github_token: self.github_token.clone(),
             ipfs_share: self.ipfs_share,
             allow_override: self.allow_override,
         })
@@ -238,7 +236,6 @@ mod tests {
             genesis_verification_key: "whatever".to_string().into(),
             ipfs_rpc_url: None,
             ipfs_managed_node: false,
-            github_token: None,
             ipfs_share: None,
             include_ancillary: true,
             ancillary_verification_key: "whatever".to_string().into(),
