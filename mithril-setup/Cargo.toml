@@ -19,9 +19,7 @@ mithril-doc = { path = "../internal/mithril-doc" }
 ratatui = "0.30.2"
 serde = { workspace = true }
 serde_json = { workspace = true }
-slog = { workspace = true, features = ["max_level_trace", "release_max_level_debug"] }
-slog-async = { workspace = true }
-slog-bunyan = { workspace = true }
-slog-term = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "macros", "process", "rt-multi-thread"] }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3.23", features = ["fmt", "json"] }

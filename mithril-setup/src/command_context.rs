@@ -1,20 +1,17 @@
 use anyhow::anyhow;
-use slog::Logger;
 
 /// Context for the command execution
 pub struct CommandContext {
     unstable_enabled: bool,
     json: bool,
-    logger: Logger,
 }
 
 impl CommandContext {
     /// Create a new command context
-    pub fn new(unstable_enabled: bool, json: bool, logger: Logger) -> Self {
+    pub fn new(unstable_enabled: bool, json: bool) -> Self {
         Self {
             unstable_enabled,
             json,
-            logger,
         }
     }
 
@@ -44,24 +41,16 @@ impl CommandContext {
             ))
         }
     }
-
-    /// Get the shared logger
-    pub fn logger(&self) -> &Logger {
-        &self.logger
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use slog::o;
-
     use super::*;
 
     #[test]
     fn require_unstable_return_ok_if_unstable_enabled() {
         let unstable_enabled = true;
-        let context =
-            CommandContext::new(unstable_enabled, true, Logger::root(slog::Discard, o!()));
+        let context = CommandContext::new(unstable_enabled, true);
 
         let result = context.require_unstable("test", None);
         assert!(result.is_ok(), "Expected Ok, got {result:?}");
@@ -70,8 +59,7 @@ mod tests {
     #[test]
     fn require_unstable_return_err_if_unstable_disabled() {
         let unstable_enabled = false;
-        let context =
-            CommandContext::new(unstable_enabled, true, Logger::root(slog::Discard, o!()));
+        let context = CommandContext::new(unstable_enabled, true);
 
         let result = context.require_unstable("test", None);
         assert!(result.is_err(), "Expected Err, got {result:?}");
