@@ -1,6 +1,12 @@
-use serde_json::{Value, json};
+use std::fs;
+use std::path::Path;
 
-/// A setting of the Kubo configuration, applied with `ipfs config --json <key> <value>`
+use anyhow::Context;
+use serde_json::{Map, Value, json};
+
+use mithril_client::MithrilResult;
+
+/// A setting of the Kubo configuration
 #[derive(Debug, Clone, PartialEq)]
 pub struct KuboConfigSetting {
     /// Dotted key of the setting, e.g. `Provide.Enabled`
@@ -10,14 +16,28 @@ pub struct KuboConfigSetting {
 }
 
 impl KuboConfigSetting {
-    /// Arguments of the `ipfs` command that applies this setting
-    pub fn config_args(&self) -> Vec<String> {
-        vec![
-            "config".to_string(),
-            "--json".to_string(),
-            self.key.to_string(),
-            self.value.to_string(),
-        ]
+    /// Set this setting in the JSON `config` of a Kubo repository, creating the missing (or null)
+    /// objects of its key, as `ipfs config --json <key> <value>` does
+    pub fn apply_to(&self, config: &mut Value) -> MithrilResult<()> {
+        let mut current = config;
+        for part in self.key.split('.') {
+            if current.is_null() {
+                *current = Value::Object(Map::new());
+            }
+            current = current
+                .as_object_mut()
+                .with_context(|| {
+                    format!(
+                        "Can not set the Kubo setting '{}': the parent of '{part}' is not an object",
+                        self.key
+                    )
+                })?
+                .entry(part)
+                .or_insert(Value::Null);
+        }
+        *current = self.value.clone();
+
+        Ok(())
     }
 }
 
@@ -77,6 +97,23 @@ impl KuboNodeConfig {
         .collect()
     }
 
+    /// Apply the [settings][Self::settings] to the JSON configuration file of an initialized
+    /// repository, keeping its other values
+    pub fn apply_settings_to_file(config_path: &Path) -> MithrilResult<()> {
+        let mut config: Value = serde_json::from_str(
+            &fs::read_to_string(config_path)
+                .with_context(|| format!("Failed to read '{}'", config_path.display()))?,
+        )
+        .with_context(|| format!("Failed to parse '{}'", config_path.display()))?;
+        for setting in Self::settings() {
+            setting.apply_to(&mut config)?;
+        }
+        fs::write(config_path, serde_json::to_string_pretty(&config)?)
+            .with_context(|| format!("Failed to write '{}'", config_path.display()))?;
+
+        Ok(())
+    }
+
     /// Arguments of the `ipfs` command that starts the daemon
     pub fn daemon_args() -> Vec<&'static str> {
         vec!["daemon", "--enable-gc"]
@@ -85,6 +122,8 @@ impl KuboNodeConfig {
 
 #[cfg(test)]
 mod tests {
+    use mithril_common::temp_dir_create;
+
     use super::*;
 
     fn setting_value(key: &str) -> Value {
@@ -95,103 +134,170 @@ mod tests {
             .value
     }
 
-    #[test]
-    fn config_args_set_the_json_encoded_value() {
-        let setting = KuboConfigSetting {
-            key: "Addresses.Swarm",
-            value: json!(["/ip4/0.0.0.0/tcp/0"]),
-        };
+    mod settings {
+        use super::*;
 
-        assert_eq!(
-            vec!["config", "--json", "Addresses.Swarm", r#"["/ip4/0.0.0.0/tcp/0"]"#],
-            setting.config_args()
-        );
-    }
-
-    #[test]
-    fn repository_is_initialized_with_the_server_profile_to_not_scan_the_local_network() {
-        assert_eq!(
-            vec!["init", "--profile", "server"],
-            KuboNodeConfig::init_args()
-        );
-    }
-
-    #[test]
-    fn rpc_api_listens_on_a_random_port_of_the_loopback_interface() {
-        assert_eq!(
-            json!("/ip4/127.0.0.1/tcp/0"),
-            setting_value("Addresses.API")
-        );
-    }
-
-    #[test]
-    fn gateway_is_disabled() {
-        assert_eq!(json!([]), setting_value("Addresses.Gateway"));
-    }
-
-    #[test]
-    fn swarm_does_not_listen_and_uses_tcp_only() {
-        assert_eq!(json!([]), setting_value("Addresses.Swarm"));
-        // QUIC throughput is capped by the default UDP receive buffer size of the OS
-        for transport in ["QUIC", "WebTransport", "WebRTCDirect"] {
+        #[test]
+        fn repository_is_initialized_with_the_server_profile_to_not_scan_the_local_network() {
             assert_eq!(
-                json!(false),
-                setting_value(&format!("Swarm.Transports.Network.{transport}")),
-                "{transport} transport should be disabled"
+                vec!["init", "--profile", "server"],
+                KuboNodeConfig::init_args()
             );
+        }
+
+        #[test]
+        fn rpc_api_listens_on_a_random_port_of_the_loopback_interface() {
+            assert_eq!(
+                json!("/ip4/127.0.0.1/tcp/0"),
+                setting_value("Addresses.API")
+            );
+        }
+
+        #[test]
+        fn gateway_is_disabled() {
+            assert_eq!(json!([]), setting_value("Addresses.Gateway"));
+        }
+
+        #[test]
+        fn swarm_does_not_listen_and_uses_tcp_only() {
+            assert_eq!(json!([]), setting_value("Addresses.Swarm"));
+            // QUIC throughput is capped by the default UDP receive buffer size of the OS
+            for transport in ["QUIC", "WebTransport", "WebRTCDirect"] {
+                assert_eq!(
+                    json!(false),
+                    setting_value(&format!("Swarm.Transports.Network.{transport}")),
+                    "{transport} transport should be disabled"
+                );
+            }
+        }
+
+        #[test]
+        fn downloaded_blocks_are_not_provided_to_the_dht() {
+            assert_eq!(json!(false), setting_value("Provide.Enabled"));
+        }
+
+        #[test]
+        fn auto_tls_is_disabled() {
+            assert_eq!(json!(false), setting_value("AutoTLS.Enabled"));
+        }
+
+        #[test]
+        fn node_does_not_relay_and_is_not_relayed() {
+            assert_eq!(json!(false), setting_value("Swarm.RelayClient.Enabled"));
+            assert_eq!(json!(false), setting_value("Swarm.RelayService.Enabled"));
+        }
+
+        #[test]
+        fn node_is_a_dht_client_only() {
+            assert_eq!(json!("autoclient"), setting_value("Routing.Type"));
+        }
+
+        #[test]
+        fn downloaded_blocks_are_not_served_to_other_peers() {
+            assert_eq!(json!(false), setting_value("Bitswap.ServerEnabled"));
+        }
+
+        #[test]
+        fn telemetry_is_disabled() {
+            assert_eq!(
+                json!("off"),
+                setting_value("Plugins.Plugins.telemetry.Config.Mode")
+            );
+        }
+
+        #[test]
+        fn datastore_is_bounded_by_a_frequent_automatic_gc() {
+            assert_eq!(json!("2GB"), setting_value("Datastore.StorageMax"));
+            assert_eq!(json!(90), setting_value("Datastore.StorageGCWatermark"));
+            assert_eq!(json!("15s"), setting_value("Datastore.GCPeriod"));
+            assert_eq!(vec!["daemon", "--enable-gc"], KuboNodeConfig::daemon_args());
+        }
+
+        #[test]
+        fn each_setting_key_is_set_once() {
+            let mut keys: Vec<&str> =
+                KuboNodeConfig::settings().iter().map(|setting| setting.key).collect();
+            let settings_count = keys.len();
+            keys.sort();
+            keys.dedup();
+
+            assert_eq!(settings_count, keys.len());
         }
     }
 
-    #[test]
-    fn downloaded_blocks_are_not_provided_to_the_dht() {
-        assert_eq!(json!(false), setting_value("Provide.Enabled"));
+    mod apply_settings_to_file {
+        use super::*;
+
+        #[test]
+        fn applies_the_settings_and_keeps_the_other_values() {
+            let config_path = temp_dir_create!().join("config");
+            fs::write(&config_path, r#"{"Identity": {"PeerID": "peer"}}"#).unwrap();
+
+            KuboNodeConfig::apply_settings_to_file(&config_path).unwrap();
+
+            let config: Value =
+                serde_json::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+            assert_eq!("peer", config["Identity"]["PeerID"]);
+            for setting in KuboNodeConfig::settings() {
+                let pointer = format!("/{}", setting.key.replace('.', "/"));
+                assert_eq!(
+                    Some(&setting.value),
+                    config.pointer(&pointer),
+                    "{}",
+                    setting.key
+                );
+            }
+        }
+
+        #[test]
+        fn fails_when_the_config_file_does_not_exist() {
+            KuboNodeConfig::apply_settings_to_file(&temp_dir_create!().join("config"))
+                .expect_err("Should fail when the config file does not exist");
+        }
     }
 
-    #[test]
-    fn auto_tls_is_disabled() {
-        assert_eq!(json!(false), setting_value("AutoTLS.Enabled"));
-    }
+    mod apply_to {
+        use super::*;
 
-    #[test]
-    fn node_does_not_relay_and_is_not_relayed() {
-        assert_eq!(json!(false), setting_value("Swarm.RelayClient.Enabled"));
-        assert_eq!(json!(false), setting_value("Swarm.RelayService.Enabled"));
-    }
+        fn setting(key: &'static str, value: Value) -> KuboConfigSetting {
+            KuboConfigSetting { key, value }
+        }
 
-    #[test]
-    fn node_is_a_dht_client_only() {
-        assert_eq!(json!("autoclient"), setting_value("Routing.Type"));
-    }
+        #[test]
+        fn replaces_the_value_of_an_existing_key_and_keeps_the_others() {
+            let mut config = json!({"Addresses": {"API": "/ip4/127.0.0.1/tcp/5001", "Gateway": "x"}, "Other": 1});
 
-    #[test]
-    fn downloaded_blocks_are_not_served_to_other_peers() {
-        assert_eq!(json!(false), setting_value("Bitswap.ServerEnabled"));
-    }
+            setting("Addresses.API", json!("/ip4/127.0.0.1/tcp/0"))
+                .apply_to(&mut config)
+                .unwrap();
 
-    #[test]
-    fn telemetry_is_disabled() {
-        assert_eq!(
-            json!("off"),
-            setting_value("Plugins.Plugins.telemetry.Config.Mode")
-        );
-    }
+            assert_eq!(
+                json!({"Addresses": {"API": "/ip4/127.0.0.1/tcp/0", "Gateway": "x"}, "Other": 1}),
+                config
+            );
+        }
 
-    #[test]
-    fn datastore_is_bounded_by_a_frequent_automatic_gc() {
-        assert_eq!(json!("2GB"), setting_value("Datastore.StorageMax"));
-        assert_eq!(json!(90), setting_value("Datastore.StorageGCWatermark"));
-        assert_eq!(json!("15s"), setting_value("Datastore.GCPeriod"));
-        assert_eq!(vec!["daemon", "--enable-gc"], KuboNodeConfig::daemon_args());
-    }
+        #[test]
+        fn creates_the_missing_or_null_objects_of_the_key() {
+            let mut config = json!({"Plugins": {"Plugins": null}});
 
-    #[test]
-    fn each_setting_key_is_set_once() {
-        let mut keys: Vec<&str> =
-            KuboNodeConfig::settings().iter().map(|setting| setting.key).collect();
-        let settings_count = keys.len();
-        keys.sort();
-        keys.dedup();
+            setting("Plugins.Plugins.telemetry.Config.Mode", json!("off"))
+                .apply_to(&mut config)
+                .unwrap();
 
-        assert_eq!(settings_count, keys.len());
+            assert_eq!(
+                json!({"Plugins": {"Plugins": {"telemetry": {"Config": {"Mode": "off"}}}}}),
+                config
+            );
+        }
+
+        #[test]
+        fn fails_when_a_parent_of_the_key_is_not_an_object() {
+            let mut config = json!({"Addresses": "not an object"});
+
+            setting("Addresses.API", json!("/ip4/127.0.0.1/tcp/0"))
+                .apply_to(&mut config)
+                .expect_err("Should fail when a parent of the key is not an object");
+        }
     }
 }
