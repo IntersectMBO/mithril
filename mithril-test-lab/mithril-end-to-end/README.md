@@ -86,10 +86,10 @@ By default, a fresh IPFS devnet is spawned in the working directory and stopped 
 already-running IPFS devnet instead (started and left running independently of the test run), use `--ipfs-devnet-to-attach <path>`.
 The target swarm must have at least one node per aggregator, plus one for the client.
 
-The RPC API of the IPFS nodes of the aggregators is protected by HTTP Basic authentication (see [Enable the RPC API authentication](../ipfs-devnet/README.md#enable-the-rpc-api-authentication)).
-The aggregators read their credentials from the `rpc-auth-secret` file of their node, when it exists.
-A spawned devnet only protects the nodes of the aggregators, since the client does not support the RPC authentication yet.
-An attached devnet must leave the last node, used by the client, unprotected (e.g. initialized with `--rpc-auth-nodes <number of aggregators>`).
+The RPC API of all the IPFS nodes is protected (see [Enable the RPC API authentication](../ipfs-devnet/README.md#enable-the-rpc-api-authentication)).
+The aggregators authenticate with the HTTP Basic credentials of the `rpc-auth-secret` file of their node, when it exists.
+The client authenticates with the Bearer token of the `rpc-auth-token` file of the last node, when it exists.
+An attached devnet initialized before version `0.1.5` of the IPFS devnet scripts has no `rpc-auth-token` file, so its last node, used by the client, must be left unprotected (e.g. initialized with `--rpc-auth-nodes <number of aggregators>`).
 
 ### Note for MacOS users
 

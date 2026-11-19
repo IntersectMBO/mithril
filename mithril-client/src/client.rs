@@ -265,6 +265,8 @@ pub struct ClientBuilder {
     ipfs_file_downloader: Option<Arc<dyn FileDownloader>>,
     #[cfg(all(feature = "unstable", feature = "fs"))]
     ipfs_rpc_base_url: Option<String>,
+    #[cfg(all(feature = "unstable", feature = "fs"))]
+    ipfs_rpc_auth_token: Option<String>,
     certificate_verifier_cache: Option<Arc<dyn CertificateVerifierCache>>,
     certificate_verifier_cache_mode: Option<CertificateVerifierCacheMode>,
     #[cfg(feature = "snark")]
@@ -308,6 +310,8 @@ impl ClientBuilder {
             ipfs_file_downloader: None,
             #[cfg(all(feature = "unstable", feature = "fs"))]
             ipfs_rpc_base_url: None,
+            #[cfg(all(feature = "unstable", feature = "fs"))]
+            ipfs_rpc_auth_token: None,
             certificate_verifier_cache: None,
             certificate_verifier_cache_mode: None,
             #[cfg(feature = "snark")]
@@ -439,6 +443,7 @@ impl ClientBuilder {
                             .with_context(|| "Parsing IPFS rpc base url failed")?,
                         feedback_sender.clone(),
                         logger.clone(),
+                        self.ipfs_rpc_auth_token,
                     )
                     .with_context(|| "Building IPFS file downloader failed")?,
                     &logger,
@@ -698,6 +703,22 @@ impl ClientBuilder {
             self.ipfs_rpc_base_url = ipfs_rpc_base_url.into();
             self
         }
+
+        /// Set the token to authenticate to a Kubo node's RPC API protected by `API.Authorizations`.
+        ///
+        /// The token is sent as a Bearer token with every request to the Kubo RPC API, so the Kubo
+        /// node must have a matching `bearer:<token>` auth secret.
+        ///
+        /// It is only used with the URL set by [with_ipfs_rpc_url][Self::with_ipfs_rpc_url]. If that
+        /// URL also contains credentials, they take precedence and the token is ignored with a
+        /// warning.
+        pub fn with_ipfs_rpc_auth_token<T: Into<Option<String>>>(
+            mut self,
+            ipfs_rpc_auth_token: T,
+        ) -> ClientBuilder {
+            self.ipfs_rpc_auth_token = ipfs_rpc_auth_token.into();
+            self
+        }
     }
 
     /// Set the [Logger] to use.
@@ -953,6 +974,7 @@ mod tests {
                 Url::parse(&server.base_url()).unwrap(),
                 FeedbackSender::new(&[]),
                 TestLogger::stdout(),
+                None,
             )
             .unwrap()
         }

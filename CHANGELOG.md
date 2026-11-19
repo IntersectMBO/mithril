@@ -28,6 +28,7 @@ As a minor extension, we have adopted a slightly different versioning convention
     - The infrastructure publishes the IPNS name of the immutable files directory as a DNSLink record (`immutables.<network>.api.mithril.network`) in the DNS zone of the Mithril network.
     - New `ipfs_share` configuration parameter of the Mithril aggregator to set the share of the immutable files to download through IPFS, advertised in the `/` route.
     - New `credentials` field of the `ipfs_rpc_server_config` configuration parameter of the Mithril aggregator to authenticate to a Kubo RPC API protected by `API.Authorizations`, with a Basic or a Bearer authorization.
+    - The Mithril client library and CLI can authenticate to a Kubo RPC API protected by `API.Authorizations` with a Bearer token, set with the new `ClientBuilder::with_ipfs_rpc_auth_token` function of the library or the new `--ipfs-rpc-auth-token` option (`IPFS_RPC_AUTH_TOKEN` environment variable) of the `cardano-db download` command of the CLI. Credentials in the IPFS RPC URL still work and take precedence over the token.
     - The Mithril client library and CLI no longer download all the immutable files through IPFS first when an IPFS RPC URL is configured: IPFS is now tried first only for the share advertised by the aggregator, the other files try IPFS last.
   - The SNARK proof systems are enabled by default in the Mithril nodes, client and libraries. Only `mithril-stm` and `mithril-common` can still leave them out with `--no-default-features`.
   - Mithril setup:

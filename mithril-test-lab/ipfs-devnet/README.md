@@ -176,7 +176,7 @@ OVERWRITE=1 ./ipfs-devnet.sh init --swarm-dir ./swarm --number 5
 
 #### Enable the RPC API authentication
 
-With `--rpc-auth-nodes N`, the RPC API of the first `N` nodes requires HTTP Basic authentication, configured with the Kubo [`API.Authorizations`](https://github.com/ipfs/kubo/blob/master/docs/config.md#apiauthorizations) setting.
+With `--rpc-auth-nodes N`, the RPC API of the first `N` nodes requires authentication, configured with the Kubo [`API.Authorizations`](https://github.com/ipfs/kubo/blob/master/docs/config.md#apiauthorizations) setting.
 The RPC API of the other nodes stays open to any local client.
 
 For example, to protect the first two nodes of a swarm of three nodes:
@@ -185,15 +185,18 @@ For example, to protect the first two nodes of a swarm of three nodes:
 ./ipfs-devnet.sh init --swarm-dir ./swarm --number 3 --rpc-auth-nodes 2
 ```
 
-Each protected node gets a random secret, stored in `kubo-node-N/rpc-auth-secret` and only readable by the current user.
-The secret uses the Kubo `AuthSecret` format: `basic:mithril:<password>`.
+Each protected node accepts two random secrets, stored in files only readable by the current user:
 
-The generated `start.sh` and `query.sh` scripts read this file and authenticate automatically.
-Other clients must send the credentials themselves, otherwise the node answers `403 Forbidden`.
+- `kubo-node-N/rpc-auth-secret`: HTTP Basic credentials, in the Kubo `AuthSecret` format `basic:mithril:<password>`
+- `kubo-node-N/rpc-auth-token`: a Bearer token, configured in Kubo as `bearer:<token>`
+
+The generated `start.sh` and `query.sh` scripts read the `rpc-auth-secret` file and authenticate automatically.
+Other clients must send either of them, otherwise the node answers `403 Forbidden`.
 For example, with `curl`:
 
 ```shell
 curl -X POST -u "mithril:$(cut -d: -f3 ./swarm/kubo-node-1/rpc-auth-secret)" http://127.0.0.1:5001/api/v0/id
+curl -X POST -H "Authorization: Bearer $(cat ./swarm/kubo-node-1/rpc-auth-token)" http://127.0.0.1:5001/api/v0/id
 ```
 
 ### `start`

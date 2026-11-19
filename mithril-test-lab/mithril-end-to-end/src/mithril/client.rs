@@ -71,6 +71,7 @@ pub enum CardanoDbV2Command {
     Download {
         hash: String,
         ipfs_rpc_url: Option<Url>,
+        ipfs_rpc_auth_token: Option<String>,
     },
 }
 
@@ -82,7 +83,9 @@ impl CardanoDbV2Command {
                 format!("list-epoch-{epoch_specifier}")
             }
             CardanoDbV2Command::Show { hash } => format!("show-{hash}"),
-            CardanoDbV2Command::Download { hash, ipfs_rpc_url } => {
+            CardanoDbV2Command::Download {
+                hash, ipfs_rpc_url, ..
+            } => {
                 if ipfs_rpc_url.is_some() {
                     format!("download-ipfs-{hash}")
                 } else {
@@ -108,7 +111,11 @@ impl CardanoDbV2Command {
             CardanoDbV2Command::Show { hash } => {
                 vec!["snapshot".to_string(), "show".to_string(), hash.clone()]
             }
-            CardanoDbV2Command::Download { hash, ipfs_rpc_url } => {
+            CardanoDbV2Command::Download {
+                hash,
+                ipfs_rpc_url,
+                ipfs_rpc_auth_token,
+            } => {
                 let mut args = vec![
                     "download".to_string(),
                     "--include-ancillary".to_string(),
@@ -120,6 +127,10 @@ impl CardanoDbV2Command {
                 if let Some(ipfs_rpc_url) = ipfs_rpc_url {
                     args.push("--ipfs-rpc-url".to_string());
                     args.push(ipfs_rpc_url.to_string());
+                }
+                if let Some(ipfs_rpc_auth_token) = ipfs_rpc_auth_token {
+                    args.push("--ipfs-rpc-auth-token".to_string());
+                    args.push(ipfs_rpc_auth_token.clone());
                 }
                 args
             }
