@@ -33,7 +33,7 @@ runs:
       uses: Swatinem/rust-cache@v2
       with:
         # Default to only save the cache on the main branch to limit GitHub Actions total cache size
-        save-if: ${{ github.ref == 'refs/heads/main' && inputs.disable-cache-save != 'true' }}
+        save-if: ${{ github.ref == 'refs/heads/main' && inputs.never-save-cache != 'true' }}
         prefix-key: v${{ inputs.cache-version }}-rust-${{ runner.os }}
 
     - name: Install cargo tools installer
