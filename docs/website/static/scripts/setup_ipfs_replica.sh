@@ -16,11 +16,16 @@ CONTAINER_NAME=mithril-ipfs
 INSTALL_DIR=/opt/mithril-ipfs
 REPOSITORY_DIR=/var/lib/mithril-ipfs
 REPLICATION_SCRIPT=$INSTALL_DIR/replicate-immutable-archives.sh
-BITSWAP_SETTINGS=(
+NODE_SETTINGS=(
     "Internal.Bitswap.TaskWorkerCount 32"
     "Internal.Bitswap.EngineTaskWorkerCount 32"
     "Internal.Bitswap.EngineBlockstoreWorkerCount 256"
     "Internal.Bitswap.MaxOutstandingBytesPerPeer 8388608"
+    "Swarm.ConnMgr.LowWater 200"
+    "Swarm.ConnMgr.HighWater 800"
+    "Provide.DHT.MaxWorkers 24"
+    "Provide.DHT.DedicatedPeriodicWorkers 4"
+    "Provide.DHT.MaxProvideConnsPerWorker 30"
 )
 
 print_help() {
@@ -197,7 +202,7 @@ setup_binary() {
         "${ipfs_node[@]}" config --json Addresses.AppendAnnounce "$(announced_addresses)"
     fi
     local setting key value
-    for setting in "${BITSWAP_SETTINGS[@]}"; do
+    for setting in "${NODE_SETTINGS[@]}"; do
         read -r key value <<< "$setting"
         "${ipfs_node[@]}" config --json "$key" "$value"
     done
@@ -260,7 +265,7 @@ setup_docker() {
         if [ -n "$PUBLIC_IP_ADDRESS" ]; then
             echo "ipfs config --json Addresses.AppendAnnounce '$(announced_addresses)'"
         fi
-        for setting in "${BITSWAP_SETTINGS[@]}"; do
+        for setting in "${NODE_SETTINGS[@]}"; do
             echo "ipfs config --json $setting"
         done
     } | sudo tee "$INSTALL_DIR/container-init.d/configure-node.sh" > /dev/null

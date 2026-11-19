@@ -26,10 +26,14 @@ ipfs config --json Addresses.AppendAnnounce "[\"/ip4/${IPFS_PUBLIC_ADDRESS}/tcp/
 # the whole public network from a VM shared with the other Mithril services
 ipfs config Routing.Type dhtclient
 
-ipfs config --json Swarm.ConnMgr.LowWater 50
-ipfs config --json Swarm.ConnMgr.HighWater 200
-ipfs config --json Swarm.ResourceMgr.MaxMemory '"1GB"'
-ipfs config --json Swarm.ResourceMgr.MaxFileDescriptors 1024
+ipfs config --json Swarm.ConnMgr.LowWater 200
+ipfs config --json Swarm.ConnMgr.HighWater 800
+ipfs config --json Swarm.ResourceMgr.MaxMemory '"2GB"'
+ipfs config --json Swarm.ResourceMgr.MaxFileDescriptors 8192
+
+ipfs config --json Provide.DHT.MaxWorkers 24
+ipfs config --json Provide.DHT.DedicatedPeriodicWorkers 4
+ipfs config --json Provide.DHT.MaxProvideConnsPerWorker 30
 
 # The default Bitswap server keeps at most 1 MB in flight per peer, which throttles the download of
 # large archives by a client
