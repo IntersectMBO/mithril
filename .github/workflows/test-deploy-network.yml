@@ -17,6 +17,7 @@ on:
           - dev-preview
           - dev-follower-preview
           - dev-mainnet
+          - dev-dijkstranet
       dry_run:
         description: Dry run will not deploy the distribution to the Mithril network
         required: true
@@ -28,7 +29,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        environment: [dev-preview, dev-follower-preview, dev-mainnet]
+        environment:
+          [dev-preview, dev-follower-preview, dev-mainnet, dev-dijkstranet]
         include:
           - environment: dev-preview
             environment_prefix: dev
@@ -116,6 +118,40 @@ jobs:
             google_compute_instance_boot_disk_type: pd-standard
             google_compute_instance_data_disk_size: 1000
             google_compute_instance_data_disk_type: pd-balanced
+          - environment: dev-dijkstranet
+            environment_prefix: dev
+            cardano_network: dijkstranet
+            mithril_use_p2p_network: true
+            mithril_p2p_use_dmq_protocol: true
+            mithril_p2p_signer_relay_signer_registration_mode: passthrough
+            mithril_p2p_signer_relay_signature_registration_mode: p2p
+            mithril_ipfs_enabled: true
+            mithril_api_domain: api.mithril.network
+            mithril_era_reader_adapter_type: bootstrap
+            mithril_protocol_configuration_reader_adapter_type: fake
+            # echo -n '{"protocol_parameters":{"k":1054,"m":8400,"phi_f":0.15},"enabled_signed_entity_types":["MithrilStakeDistribution","CardanoStakeDistribution","CardanoDatabase","CardanoTransactions","CardanoBlocksTransactions"],"cardano_transactions":{"security_parameter":0,"step":15},"cardano_blocks_transactions":{"security_parameter":0,"step":15}}' | xxd -p | tr -d '\n'
+            mithril_protocol_configuration_reader_fake_configuration: 7b2270726f746f636f6c5f706172616d6574657273223a7b226b223a313035342c226d223a383430302c227068695f66223a302e31357d2c22656e61626c65645f7369676e65645f656e746974795f7479706573223a5b224d69746872696c5374616b65446973747269627574696f6e222c2243617264616e6f5374616b65446973747269627574696f6e222c2243617264616e6f4461746162617365222c2243617264616e6f5472616e73616374696f6e73222c2243617264616e6f426c6f636b735472616e73616374696f6e73225d2c2263617264616e6f5f7472616e73616374696f6e73223a7b2273656375726974795f706172616d65746572223a302c2273746570223a31357d2c2263617264616e6f5f626c6f636b735f7472616e73616374696f6e73223a7b2273656375726974795f706172616d65746572223a302c2273746570223a31357d7d
+            mithril_signers: |
+              {
+                "1" = {
+                  type    = "verified",
+                  pool_id = "",
+                },
+                "2" = {
+                  type    = "verified",
+                  pool_id = "",
+                },
+              }
+            mithril_leader_aggregator_endpoint: ""
+            mithril_certificate_chain_aggregator_endpoint: ""
+            terraform_backend_bucket: hydra-terraform-admin
+            google_region: europe-west1
+            google_zone: europe-west1-b
+            google_machine_type: e2-highmem-8
+            google_compute_instance_boot_disk_size: 200
+            google_compute_instance_boot_disk_type: pd-standard
+            google_compute_instance_data_disk_size: 250
+            google_compute_instance_data_disk_type: pd-standard
 
     environment: ${{ matrix.environment }}
     runs-on: ubuntu-24.04

@@ -11,16 +11,17 @@ variable "environment_suffix" {
 
 variable "cardano_network" {
   type        = string
-  description = "The Cardano network name to attach: preview, preprod or mainnet"
+  description = "The Cardano network name to attach: preview, preprod, mainnet or dijkstranet"
 }
 
 variable "cardano_network_magic_map" {
   type        = map(number)
   description = "The Cardano network magic number mapping from Cardano network name"
   default = {
-    "mainnet" = 764824073,
-    "preprod" = 1,
-    "preview" = 2,
+    "mainnet"     = 764824073,
+    "preprod"     = 1,
+    "preview"     = 2,
+    "dijkstranet" = 6,
   }
 }
 
@@ -28,9 +29,10 @@ variable "dmq_network_magic_map" {
   type        = map(number)
   description = "The DMQ network magic number mapping from Cardano network name"
   default = {
-    "mainnet" = 2912307721,
-    "preprod" = 2147483649,
-    "preview" = 2147483650,
+    "mainnet"     = 2912307721,
+    "preprod"     = 2147483649,
+    "preview"     = 2147483650,
+    "dijkstranet" = 2147483654,
   }
 }
 

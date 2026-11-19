@@ -73,7 +73,7 @@ for CARDANO_NODE_VERSION in $CARDANO_NODE_VERSIONS; do
     mkdir -p $AGGREGATOR_CONFIG_DIRECTORY
     cp -R /home/curry/docker/cardano/config/$CARDANO_NODE_VERSION/${var.cardano_network} $AGGREGATOR_CONFIG_DIRECTORY
     echo $CARDANO_NODE_VERSION > $AGGREGATOR_CONFIG_DIRECTORY/config.version
-    cat $AGGREGATOR_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json | jq '.TraceOptions[""].backends |= map(if startswith("PrometheusSimple ") then sub("127.0.0.1"; "0.0.0.0") else . end)' > $AGGREGATOR_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json.new
+    cat $AGGREGATOR_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json | jq '(if has("Configuration") then .Configuration.HermodTracing.TraceOptions else .TraceOptions end)[""].backends |= map(if startswith("PrometheusSimple ") then sub("127.0.0.1"; "0.0.0.0") else . end)' > $AGGREGATOR_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json.new
     rm -f $AGGREGATOR_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json
     mv $AGGREGATOR_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json.new $AGGREGATOR_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json
     FOUND_CONFIGURATION=true
@@ -203,7 +203,7 @@ if [ "${var.mithril_ipfs_enabled}" = "true" ]; then
 fi
 EOT
       ,
-      "export BLOCKFROST_PARAMETERS='${var.mithril_aggregator_blockfrost_parameters}'",
+      "if [ -n '${var.mithril_aggregator_blockfrost_parameters}' ]; then export BLOCKFROST_PARAMETERS='${var.mithril_aggregator_blockfrost_parameters}'; fi",
       "export ALLOW_UNPARSABLE_BLOCK=${var.mithril_aggregator_allow_unparsable_block}",
       "export CARDANO_BLOCKS_TRANSACTIONS_PROVER_CACHE_POOL_SIZE=${var.mithril_aggregator_cardano_blocks_transactions_prover_cache_pool_size}",
       "export CARDANO_BLOCKS_TRANSACTIONS_DATABASE_CONNECTION_POOL_SIZE=${var.mithril_aggregator_cardano_blocks_transactions_database_connection_pool_size}",

@@ -1,14 +1,14 @@
-ARG DOCKER_IMAGE_FROM=debian:11-slim
+ARG DOCKER_IMAGE_FROM=debian:13-slim
 FROM $DOCKER_IMAGE_FROM
+
+# Upgrade
+RUN apt-get update -y && apt-get install -y libssl-dev ca-certificates wget adduser && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create appuser
 RUN adduser --no-create-home --disabled-password appuser
 
 # Precreate workdir
 RUN mkdir -p /app/bin
-
-# Upgrade
-RUN apt-get update -y && apt-get install -y libssl-dev ca-certificates wget && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 #Workdir
 WORKDIR /app/
