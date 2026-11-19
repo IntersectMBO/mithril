@@ -30,6 +30,8 @@ impl KuboConfigSetting {
 /// - does not scan the local network nor open ports through UPnP, and does not dial nor announce
 ///   private and loopback addresses (`server` profile), so peers only reachable on a private
 ///   network can not be used
+/// - does not listen for inbound connections, which it does not need as it only downloads (and
+///   would otherwise trigger a firewall prompt on each run on Windows and macOS)
 /// - connects to its peers through TCP only, as the QUIC throughput is capped by the default UDP
 ///   receive buffer size of the OS, which can only be raised with admin privileges
 /// - leaves no trace on the network once removed: it does not announce the downloaded blocks in
@@ -55,10 +57,7 @@ impl KuboNodeConfig {
         [
             ("Addresses.API", json!("/ip4/127.0.0.1/tcp/0")),
             ("Addresses.Gateway", json!([])),
-            (
-                "Addresses.Swarm",
-                json!(["/ip4/0.0.0.0/tcp/0", "/ip6/::/tcp/0"]),
-            ),
+            ("Addresses.Swarm", json!([])),
             ("Swarm.Transports.Network.QUIC", json!(false)),
             ("Swarm.Transports.Network.WebTransport", json!(false)),
             ("Swarm.Transports.Network.WebRTCDirect", json!(false)),
@@ -131,11 +130,8 @@ mod tests {
     }
 
     #[test]
-    fn swarm_uses_tcp_only_on_random_ports() {
-        assert_eq!(
-            json!(["/ip4/0.0.0.0/tcp/0", "/ip6/::/tcp/0"]),
-            setting_value("Addresses.Swarm")
-        );
+    fn swarm_does_not_listen_and_uses_tcp_only() {
+        assert_eq!(json!([]), setting_value("Addresses.Swarm"));
         // QUIC throughput is capped by the default UDP receive buffer size of the OS
         for transport in ["QUIC", "WebTransport", "WebRTCDirect"] {
             assert_eq!(

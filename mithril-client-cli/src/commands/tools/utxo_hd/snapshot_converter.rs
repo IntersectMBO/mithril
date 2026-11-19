@@ -376,7 +376,7 @@ pub struct SnapshotConverterCommand {
     commit: bool,
 
     /// GitHub token for authenticated API calls.
-    #[clap(long, env = "GITHUB_TOKEN")]
+    #[clap(long, env = "GITHUB_TOKEN", hide_env_values = true)]
     github_token: Option<String>,
 }
 

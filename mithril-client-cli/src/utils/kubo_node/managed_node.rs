@@ -58,19 +58,25 @@ pub struct ManagedKuboNode {
 }
 
 impl ManagedKuboNode {
-    /// Default parent directory of the repositories of the managed nodes, in the system temporary
+    /// Default parent directory of the repositories of the managed nodes: the system temporary
     /// directory
     pub fn default_parent_dir() -> PathBuf {
-        std::env::temp_dir().join("mithril-client")
+        std::env::temp_dir()
     }
 
     /// Get the Kubo release archive of the current platform, downloaded on first use and cached in the user
     /// cache directory, then [start][Self::start] a node with its repository in `parent_dir`,
-    /// created if missing.
+    /// which must exist.
     pub async fn download_and_start(
         parent_dir: &Path,
         github_token: Option<String>,
     ) -> MithrilResult<Self> {
+        if !parent_dir.is_dir() {
+            bail!(
+                "The Kubo repositories directory '{}' does not exist",
+                parent_dir.display()
+            );
+        }
         let archive = KuboArchiveProvider::new(
             KuboArchiveProvider::default_install_dir()?,
             KuboDistribution::for_platform(std::env::consts::OS, std::env::consts::ARCH)?,
@@ -80,12 +86,6 @@ impl ManagedKuboNode {
         .provide()
         .await
         .with_context(|| "Failed to get the Kubo release archive")?;
-        fs::create_dir_all(parent_dir).with_context(|| {
-            format!(
-                "Failed to create the Kubo repositories directory '{}'",
-                parent_dir.display()
-            )
-        })?;
 
         Self::start(&archive, parent_dir).await
     }
@@ -175,14 +175,22 @@ impl RepositoryDir {
     /// Create a new directory for a Kubo repository in `parent_dir`.
     ///
     /// Its name is made unique by the process id (concurrent clients) and the time (a reused
-    /// process id). Creating it fails if it already exists, so that a repository is never shared.
+    /// process id). Creating it fails if it already exists, so that a repository is never shared,
+    /// and on Unix it is only accessible to the current user, so that another user of a shared
+    /// parent directory (e.g. `/tmp`) can not tamper with the Kubo binary run from it.
     fn create(parent_dir: &Path) -> MithrilResult<Self> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        let path = parent_dir.join(format!("kubo-{}-{timestamp}", std::process::id()));
-        fs::create_dir(&path).with_context(|| {
+        let path = parent_dir.join(format!(
+            "mithril-client-kubo-{}-{timestamp}",
+            std::process::id()
+        ));
+        let mut dir_builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut dir_builder, 0o700);
+        dir_builder.create(&path).with_context(|| {
             format!(
                 "Failed to create the Kubo repository directory '{}'",
                 path.display()
@@ -240,9 +248,8 @@ fn kubo_env_vars_to_remove(env_vars: impl IntoIterator<Item = OsString>) -> Vec<
     env_vars
         .into_iter()
         .filter(|env_var| {
-            env_var.to_str().is_some_and(|env_var| {
-                KUBO_ENV_VAR_PREFIXES.iter().any(|prefix| env_var.starts_with(prefix))
-            })
+            let name = env_var.to_string_lossy().to_ascii_uppercase();
+            KUBO_ENV_VAR_PREFIXES.iter().any(|prefix| name.starts_with(prefix))
         })
         .collect()
 }
@@ -400,9 +407,20 @@ mod tests {
             assert_eq!(Some(parent_dir.as_path()), repository_dir.path().parent());
             let dir_name = repository_dir.path().file_name().unwrap().to_string_lossy();
             assert!(
-                dir_name.starts_with(&format!("kubo-{}-", std::process::id())),
+                dir_name.starts_with(&format!("mithril-client-kubo-{}-", std::process::id())),
                 "Unexpected repository directory name: {dir_name}"
             );
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn is_only_accessible_to_the_current_user() {
+            use std::os::unix::fs::PermissionsExt;
+
+            let repository_dir = RepositoryDir::create(&temp_dir_create!()).unwrap();
+
+            let mode = fs::metadata(repository_dir.path()).unwrap().permissions().mode();
+            assert_eq!(0o700, mode & 0o777, "Unexpected mode: {mode:o}");
         }
 
         #[test]
@@ -443,6 +461,17 @@ mod tests {
 
             assert_eq!(
                 vec!["IPFS_PATH", "IPFS_TELEMETRY", "GOLOG_LOG_LEVEL", "LIBP2P_FORCE_PNET"],
+                kubo_env_vars_to_remove(env_vars)
+            );
+        }
+
+        #[test]
+        fn removes_the_variables_read_by_kubo_whatever_their_case() {
+            let env_vars =
+                ["ipfs_path", "Golog_Log_Level", "libp2p_force_pnet"].map(OsString::from);
+
+            assert_eq!(
+                vec!["ipfs_path", "Golog_Log_Level", "libp2p_force_pnet"],
                 kubo_env_vars_to_remove(env_vars)
             );
         }
@@ -577,10 +606,23 @@ mod tests {
     }
 
     #[test]
-    fn default_parent_dir_is_a_subdirectory_of_the_system_temp_dir() {
-        assert_eq!(
-            std::env::temp_dir().join("mithril-client"),
-            ManagedKuboNode::default_parent_dir()
+    fn default_parent_dir_is_the_system_temp_dir() {
+        assert_eq!(std::env::temp_dir(), ManagedKuboNode::default_parent_dir());
+    }
+
+    #[tokio::test]
+    async fn download_and_start_fails_when_the_parent_dir_does_not_exist() {
+        let parent_dir = temp_dir_create!().join("missing");
+        assert!(!parent_dir.exists());
+
+        let error = ManagedKuboNode::download_and_start(&parent_dir, None)
+            .await
+            .err()
+            .expect("Should fail when the parent directory does not exist");
+
+        assert!(
+            format!("{error:?}").contains("does not exist"),
+            "Unexpected error: {error:?}"
         );
     }
 
@@ -604,7 +646,7 @@ mod tests {
         #[tokio::test]
         #[ignore = "downloads and runs the real Kubo binary"]
         async fn starts_a_reachable_node_then_shuts_it_down_and_removes_its_repository() {
-            let parent_dir = temp_dir_create!().join("missing_parent_dir");
+            let parent_dir = temp_dir_create!();
 
             let node = ManagedKuboNode::download_and_start(&parent_dir, None).await.unwrap();
             let rpc_url = node.rpc_url().clone();
