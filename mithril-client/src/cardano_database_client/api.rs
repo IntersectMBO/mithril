@@ -154,6 +154,9 @@ impl CardanoDatabaseClient {
     }
 
     /// Download and unpack the given Cardano database parts data by hash.
+    ///
+    /// Only one download at a time is supported for a target directory: a download removes the
+    /// staging directories that an earlier download left in it.
     #[cfg(feature = "fs")]
     pub async fn download_unpack(
         &self,

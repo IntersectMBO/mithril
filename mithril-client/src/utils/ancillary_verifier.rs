@@ -9,6 +9,7 @@ use mithril_cardano_node_internal_database::entities::{
 };
 use mithril_common::crypto_helper::{ManifestVerifier, ManifestVerifierVerificationKey};
 
+use crate::utils::move_file;
 use crate::{MithrilError, MithrilResult};
 
 /// Verifies the ancillary files contained in an unpacked ancillary archive
@@ -46,6 +47,8 @@ impl AncillaryVerifier {
 
     /// Verifies that the unpacked ancillary archive contains a signed manifest and that the
     /// files contained in the manifest are present and match the expected hashes
+    ///
+    /// The signature is verified first, so that only the files named by a signed manifest are read.
     pub async fn verify(
         &self,
         temp_ancillary_dir: &Path,
@@ -62,14 +65,14 @@ impl AncillaryVerifier {
                 AncillaryVerificationError::ManifestParse(ancillary_manifest_path, e.into())
             })?;
 
-        manifest.verify_data(temp_ancillary_dir).await?;
-
         let signature = manifest
             .signature()
             .ok_or(AncillaryVerificationError::SignatureMissing)?;
         self.verifier
             .verify(&manifest.compute_hash(), &signature)
             .map_err(AncillaryVerificationError::SignatureInvalid)?;
+
+        manifest.verify_data(temp_ancillary_dir).await?;
 
         Ok(ValidatedAncillaryManifest {
             base_directory: temp_ancillary_dir.to_path_buf(),
@@ -89,7 +92,7 @@ impl ValidatedAncillaryManifest {
 
         for file in &self.ancillary_files {
             let target_path = final_location.join(file);
-            tokio::fs::rename(&self.base_directory.join(file), &target_path)
+            move_file(&self.base_directory.join(file), &target_path)
                 .await
                 .with_context(|| format!("Failed to move file: `{file:?}`"))?;
         }
@@ -208,15 +211,11 @@ mod tests {
         async fn fail_if_manifest_is_invalid() {
             let temp_dir = temp_dir_create!();
             let signer = ManifestSigner::create_deterministic_signer();
-            let manifest = AncillaryFilesManifest {
-                signable_manifest: SignableManifest {
-                    data: BTreeMap::from([(
-                        PathBuf::from("invalid path"),
-                        "invalid sha".to_string(),
-                    )]),
-                    ..valid_manifest(&temp_dir, &signer).signable_manifest
-                },
-            };
+            let mut manifest = AncillaryFilesManifest::new_without_signature(BTreeMap::from([(
+                PathBuf::from("invalid path"),
+                "invalid sha".to_string(),
+            )]));
+            manifest.set_signature(signer.sign(&manifest.compute_hash()));
             write_manifest(&temp_dir, &manifest);
 
             let ancillary_verifier = AncillaryVerifier::new(signer.verification_key());
@@ -225,6 +224,30 @@ mod tests {
             assert!(
                 matches!(err, AncillaryVerificationError::ManifestInvalid(_)),
                 "Expected AncillaryVerificationError::ManifestInvalid, got: {err:?}",
+            );
+        }
+
+        #[tokio::test]
+        async fn fail_if_a_signed_manifest_names_a_file_outside_its_directory() {
+            let temp_dir = temp_dir_create!();
+            let ancillary_dir = temp_dir.join("ancillary");
+            std::fs::create_dir(&ancillary_dir).unwrap();
+            let signer = ManifestSigner::create_deterministic_signer();
+            let (_, outside_file_hash) =
+                generate_manifest_item(&temp_dir, "outside.txt", "content");
+            let mut manifest = AncillaryFilesManifest::new_without_signature(BTreeMap::from([(
+                PathBuf::from("../outside.txt"),
+                outside_file_hash,
+            )]));
+            manifest.set_signature(signer.sign(&manifest.compute_hash()));
+            write_manifest(&ancillary_dir, &manifest);
+
+            let ancillary_verifier = AncillaryVerifier::new(signer.verification_key());
+
+            let err = ancillary_verifier.verify(&ancillary_dir).await.unwrap_err();
+            assert!(
+                matches!(err, AncillaryVerificationError::ManifestParse(..)),
+                "Expected AncillaryVerificationError::ManifestParse, got: {err:?}",
             );
         }
 
@@ -260,6 +283,32 @@ mod tests {
                         fake_keys::signable_manifest_signature()[0].try_into().unwrap(),
                     ),
                     ..valid_manifest(&temp_dir, &signer).signable_manifest
+                },
+            };
+            write_manifest(&temp_dir, &manifest);
+
+            let ancillary_verifier = AncillaryVerifier::new(signer.verification_key());
+
+            let err = ancillary_verifier.verify(&temp_dir).await.unwrap_err();
+            assert!(
+                matches!(err, AncillaryVerificationError::SignatureInvalid(_)),
+                "Expected AncillaryVerificationError::SignatureInvalid, got: {err:?}",
+            );
+        }
+
+        #[tokio::test]
+        async fn fail_with_an_invalid_signature_before_reading_the_files_of_the_manifest() {
+            let temp_dir = temp_dir_create!();
+            let signer = ManifestSigner::create_deterministic_signer();
+            let manifest = AncillaryFilesManifest {
+                signable_manifest: SignableManifest {
+                    data: BTreeMap::from([(
+                        PathBuf::from("missing_file.txt"),
+                        "whatever hash".to_string(),
+                    )]),
+                    signature: Some(
+                        fake_keys::signable_manifest_signature()[0].try_into().unwrap(),
+                    ),
                 },
             };
             write_manifest(&temp_dir, &manifest);
