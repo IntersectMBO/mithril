@@ -19,6 +19,9 @@ As a minor extension, we have adopted a slightly different versioning convention
 
 - Support for stable certificate chain cache in the client library, CLI and WASM, which no longer requires the `unstable` feature of the library, the `--unstable` flag of the CLI or the `unstable` option of the WASM client.
 
+- **DEPRECATED** in Mithril client CLI:
+  - The `--github-token` option of the `tools utxo-hd snapshot-converter` command, as the token appears in the process list (set the token in the `GITHUB_TOKEN` environment variable instead).
+
 - **BREAKING** changes in Mithril client library:
   - The `MithrilCertificateVerifier::new` function takes the certificate chain cache and its verification mode as parameters, which only users building the certificate verifier without the `ClientBuilder` must provide (`None` and `CertificateVerifierCacheMode::default()` to keep the previous behavior).
 

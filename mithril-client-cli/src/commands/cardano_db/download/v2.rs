@@ -22,7 +22,8 @@ use crate::{
     },
     utils::{
         CardanoDbDownloadChecker, CardanoDbUtils, ExpanderUtils, IndicatifFeedbackReceiver,
-        ManagedKuboNode, ProgressOutputType, ProgressPrinter, print_simple_warning,
+        ManagedKuboNode, ProgressOutputType, ProgressPrinter, ReqwestGitHubApiClient,
+        print_simple_warning,
     },
 };
 
@@ -47,7 +48,6 @@ pub(super) struct PreparedCardanoDbV2Download {
     pub(super) ipfs_rpc_auth_token: Option<String>,
     pub(super) ipfs_managed_node: bool,
     pub(super) ipfs_share: Option<Percentage>,
-    pub(super) github_token: Option<String>,
     pub(super) allow_override: bool,
 }
 
@@ -318,7 +318,7 @@ impl PreparedCardanoDbV2Download {
             progress_printer.print_message("Starting the managed IPFS node…")?;
             let node = ManagedKuboNode::download_and_start(
                 &ManagedKuboNode::default_parent_dir(),
-                self.github_token.clone(),
+                ReqwestGitHubApiClient::token_from_env(),
             )
             .await
             .with_context(|| "Can not start the managed IPFS node")?;
@@ -465,7 +465,6 @@ mod tests {
             ipfs_rpc_auth_token: None,
             ipfs_managed_node: false,
             ipfs_share: None,
-            github_token: None,
             allow_override: false,
         }
     }
