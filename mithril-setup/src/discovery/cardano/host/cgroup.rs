@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use async_trait::async_trait;
 use tokio::fs;
+use tracing::debug;
 
 use crate::discovery::cardano::ServiceProbe;
 
@@ -37,7 +38,10 @@ impl ServiceProbe for CgroupServiceProbe {
         match fs::read_to_string(&cgroup_file).await {
             Ok(content) => Ok(parse_systemd_unit(&content)),
             // The process exited since it was listed
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                debug!(pid, "The node process exited while being inspected");
+                Ok(None)
+            }
             Err(error) => {
                 Err(error).with_context(|| format!("Could not read '{}'", cgroup_file.display()))
             }
