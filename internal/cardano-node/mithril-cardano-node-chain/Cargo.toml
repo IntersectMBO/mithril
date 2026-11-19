@@ -13,6 +13,8 @@ include = [
     "README.md",
     ".gitignore",
     "tests/assets/shelley1.block",
+    "tests/assets/dijkstra1.block",
+    "tests/assets/dijkstra2.block",
 ]
 
 [dependencies]
@@ -21,11 +23,11 @@ async-trait = { workspace = true }
 hex = { workspace = true }
 mithril-common = { path = "../../../mithril-common" }
 nom = "8.0.0"
-pallas-addresses = { version = "1.4.0" }
-pallas-codec = { version = "1.4.0" }
-pallas-network = { version = "1.4.0" }
-pallas-primitives = { version = "1.4.0" }
-pallas-traverse = { version = "1.4.0" }
+pallas-addresses = { git = "https://github.com/jpraynaud/pallas.git", rev = "c6c584163e9f3f67c56d9496fd19f6b90ef74daf" }
+pallas-codec = { git = "https://github.com/jpraynaud/pallas.git", rev = "c6c584163e9f3f67c56d9496fd19f6b90ef74daf" }
+pallas-network = { git = "https://github.com/jpraynaud/pallas.git", rev = "c6c584163e9f3f67c56d9496fd19f6b90ef74daf" }
+pallas-primitives = { git = "https://github.com/jpraynaud/pallas.git", rev = "c6c584163e9f3f67c56d9496fd19f6b90ef74daf" }
+pallas-traverse = { git = "https://github.com/jpraynaud/pallas.git", rev = "c6c584163e9f3f67c56d9496fd19f6b90ef74daf", features = ["unstable"] }
 rand_core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -37,7 +39,7 @@ tokio = { workspace = true, features = ["process"] }
 [dev-dependencies]
 kes-summed-ed25519 = { version = "0.2.1", features = ["serde_enabled", "sk_clone_enabled"] }
 mockall = { workspace = true }
-pallas-crypto = "1.4.0"
+pallas-crypto = { git = "https://github.com/jpraynaud/pallas.git", rev = "c6c584163e9f3f67c56d9496fd19f6b90ef74daf" }
 slog-async = { workspace = true }
 slog-term = { workspace = true }
 tokio = { workspace = true, features = ["macros", "test-util"] }

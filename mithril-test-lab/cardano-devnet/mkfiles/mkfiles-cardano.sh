@@ -106,8 +106,13 @@ echo "TestShelleyHardForkAtEpoch: 0" >> "${ARTIFACTS_DIR_TEMP}/configuration.yam
 echo "TestAllegraHardForkAtEpoch: 0" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
 echo "TestMaryHardForkAtEpoch: 0" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
 echo "TestAlonzoHardForkAtEpoch: 0" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
-echo "TestBabbageHardForkAtEpoch: ${HARD_FORK_BABBAGE_AT_EPOCH}" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
-echo "TestConwayHardForkAtEpoch: ${HARD_FORK_CONWAY_AT_EPOCH}" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
+echo "TestBabbageHardForkAtEpoch: 0" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
+echo "TestConwayHardForkAtEpoch: 0" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
+if [ "${CARDANO_LATEST_ERA}" = "dijkstra" ]; then
+  echo "TestDijkstraHardForkAtEpoch: ${CARDANO_HARD_FORK_LATEST_ERA_AT_EPOCH}" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
+  echo "ExperimentalHardForksEnabled: True" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
+  echo "DijkstraGenesisFile: shelley/genesis.dijkstra.json" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
+fi
 echo "ExperimentalProtocolsEnabled: True" >> "${ARTIFACTS_DIR_TEMP}/configuration.yaml"
 
 # Tune the UTxO-HD ledger state snapshot policy for cardano-node 11.1.0+ so the aggregator can build the Cardano database artifact
@@ -134,9 +139,19 @@ $CARDANO_CLI $CARDANO_CLI_ERA genesis create-staked --genesis-dir "${ARTIFACTS_D
   --gen-utxo-keys ${NUM_SPO_NODES}
 
 ## Customize the Shelley genesis file
+if [ "${CARDANO_LATEST_ERA}" = "dijkstra" ]; then
+  PROTOCOL_VERSION_MAJOR=12
+else
+  PROTOCOL_VERSION_MAJOR=10
+fi
 cat ${ARTIFACTS_DIR_TEMP}/genesis.json | jq --argjson slot_length ${SLOT_LENGTH} --argjson epoch_length ${EPOCH_LENGTH} --argjson active_slots_coeff ${ACTIVE_SLOTS_COEFF} --argjson security_param ${SECURITY_PARAM} '. + {slotLength: $slot_length, activeSlotsCoeff: $active_slots_coeff, securityParam: $security_param, epochLength: $epoch_length, maxLovelaceSupply: 10000000000000, updateQuorum: 2}' > ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp
-cat ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp | jq --raw-output '.protocolParams.protocolVersion.major = 10 | .protocolParams.minFeeA = 44 | .protocolParams.minFeeB = 155381 | .protocolParams.minUTxOValue = 1000000 | .protocolParams.decentralisationParam = 0.7 | .protocolParams.rho = 0.1 | .protocolParams.tau = 0.1'  > ${ARTIFACTS_DIR_TEMP}/genesis.json
+cat ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp | jq --raw-output --argjson protocol_version_major ${PROTOCOL_VERSION_MAJOR} '.protocolParams.protocolVersion.major = $protocol_version_major | .protocolParams.minFeeA = 44 | .protocolParams.minFeeB = 155381 | .protocolParams.minUTxOValue = 1000000 | .protocolParams.decentralisationParam = 0.7 | .protocolParams.rho = 0.1 | .protocolParams.tau = 0.1'  > ${ARTIFACTS_DIR_TEMP}/genesis.json
 rm ${ARTIFACTS_DIR_TEMP}/genesis.json.tmp
+
+## Add the Dijkstra genesis file, the latest era from cardano-node 11.2.0
+if [ "${CARDANO_LATEST_ERA}" = "dijkstra" ]; then
+  cp $SCRIPT_DIRECTORY/configuration/11.2/dijkstra-test-genesis.json "${ARTIFACTS_DIR_TEMP}/genesis.dijkstra.json"
+fi
 
 # cardano-cli 11.1.0+ moves the initial funds, stake pools and stake delegations into an 'extraConfig' block the node fails to parse; migrate them back into the top-level fields the node expects, then remove the block
 if [ "$(version_lt ${CARDANO_NODE_VERSION_RELEASE} 11.1.0)" = "false" ]; then
@@ -173,6 +188,10 @@ cat > "${ARTIFACTS_DIR_TEMP}/snapshot-converter-config.json" <<EOF
     "RequiresNetworkMagic": "RequiresMagic"
 }
 EOF
+if [ "${CARDANO_LATEST_ERA}" = "dijkstra" ]; then
+  cat ${ARTIFACTS_DIR_TEMP}/snapshot-converter-config.json | jq --arg dijkstra_genesis_hash "$($CARDANO_CLI hash genesis-file --genesis ${ARTIFACTS_DIR_TEMP}/genesis.dijkstra.json)" '. + {DijkstraGenesisFile: "shelley/genesis.dijkstra.json", DijkstraGenesisHash: $dijkstra_genesis_hash, ExperimentalHardForksEnabled: true}' > ${ARTIFACTS_DIR_TEMP}/snapshot-converter-config.json.tmp
+  mv ${ARTIFACTS_DIR_TEMP}/snapshot-converter-config.json.tmp ${ARTIFACTS_DIR_TEMP}/snapshot-converter-config.json
+fi
 
 # Step 2: Dispatch artifacts in the correct directories
 

@@ -22,8 +22,8 @@ blake2 = "0.11.0"
 hex = { workspace = true }
 mithril-cardano-node-chain = { path = "../cardano-node/mithril-cardano-node-chain" }
 mithril-common = { path = "../../mithril-common" }
-pallas-codec = { version = "1.4.0" }
-pallas-network = { version = "1.4.0" }
+pallas-codec = { git = "https://github.com/jpraynaud/pallas.git", rev = "c6c584163e9f3f67c56d9496fd19f6b90ef74daf" }
+pallas-network = { git = "https://github.com/jpraynaud/pallas.git", rev = "c6c584163e9f3f67c56d9496fd19f6b90ef74daf" }
 serde = { workspace = true }
 serde_bytes = "0.11.19"
 slog = { workspace = true }
