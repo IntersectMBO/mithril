@@ -1,0 +1,4 @@
+services:
+  cardano-node-signer-block-producer:
+    environment:
+      - CARDANO_SHELLEY_BLS_KEY=/pool/bls.skey
