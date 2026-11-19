@@ -1,5 +1,6 @@
 //! Inspects the Cardano binaries installed on the host
 
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -38,12 +39,16 @@ impl ToolProbe for HostToolProbe {
         node_executable: &Path,
         run_as: ProcessOwner,
     ) -> anyhow::Result<String> {
+        let mut command = Command::new(node_executable);
+        command.arg("--version");
         // Dropping to the node identity also clears the supplementary groups when the setup
         // runs as root, so that the node binary can't do more than the node itself
-        let output = Command::new(node_executable)
-            .arg("--version")
-            .uid(run_as.uid)
-            .gid(run_as.gid)
+        #[cfg(unix)]
+        command.uid(run_as.uid).gid(run_as.gid);
+        #[cfg(not(unix))]
+        let _ = run_as;
+
+        let output = command
             .output()
             .await
             .with_context(|| format!("Could not run '{} --version'", node_executable.display()))?;
@@ -83,19 +88,27 @@ impl ToolProbe for HostToolProbe {
 const CARDANO_CLI: &str = "cardano-cli";
 
 async fn is_executable_file(path: &Path) -> bool {
-    fs::metadata(path)
-        .await
-        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+    fs::metadata(path).await.is_ok_and(|metadata| {
+        #[cfg(unix)]
+        let is_executable = metadata.permissions().mode() & 0o111 != 0;
+        // Outside Unix, there is no execute permission to check
+        #[cfg(not(unix))]
+        let is_executable = true;
+
+        metadata.is_file() && is_executable
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::discovery::cardano::host::test_tools::{test_dir, write_executable, write_file};
+    use crate::discovery::cardano::host::test_tools::{test_dir, write_executable};
 
     use super::*;
 
     // System binaries stand for the node: running a script written by the test could fail with
     // `ETXTBSY` when a process forked concurrently by another test inherits its write descriptor
+    // The identity of the test process is read from `/proc`, only available on Linux
+    #[cfg(target_os = "linux")]
     mod node_version_output {
         use std::os::unix::fs::MetadataExt;
 
@@ -201,8 +214,12 @@ mod tests {
             assert_eq!(Some(dir.join("path/cardano-cli")), cli);
         }
 
+        // Outside Unix, there is no execute permission to check
+        #[cfg(unix)]
         #[tokio::test]
         async fn ignores_a_cli_that_is_not_executable() {
+            use crate::discovery::cardano::host::test_tools::write_file;
+
             let dir = test_dir("tools_ignores_a_non_executable_cli");
             write_file(&dir.join("node/cardano-cli"), "");
 

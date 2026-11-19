@@ -36,9 +36,13 @@ pub(crate) mod test_tools {
     /// The file is not meant to be run: running a file written by the test process could fail
     /// with `ETXTBSY` when a process forked concurrently by another test inherits its descriptor.
     pub fn write_executable(path: &Path) {
-        use std::os::unix::fs::PermissionsExt;
-
         write_file(path, "");
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        // Outside Unix, there is no execute permission to set
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
     }
 }
