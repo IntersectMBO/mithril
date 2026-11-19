@@ -185,4 +185,22 @@ mod tests {
         assert_eq!("old content", fs::read_to_string(&destination).unwrap());
         assert_eq!(1, read_files_in_directory(&temp_dir).unwrap().len());
     }
+
+    #[tokio::test]
+    async fn copy_then_remove_file_removes_the_partial_copy_when_it_can_not_replace_the_destination()
+     {
+        let temp_dir = temp_dir_create!();
+        let source = temp_dir.join("source");
+        let destination = temp_dir.join("destination");
+        fs::write(&source, "content").unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("occupant"), "occupant").unwrap();
+
+        copy_then_remove_file(&source, &destination)
+            .await
+            .expect_err("a file can not replace a directory that is not empty");
+
+        assert_eq!("content", fs::read_to_string(&source).unwrap());
+        assert_eq!(vec![source], read_files_in_directory(&temp_dir).unwrap());
+    }
 }

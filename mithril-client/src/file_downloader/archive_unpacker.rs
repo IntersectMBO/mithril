@@ -44,7 +44,8 @@ pub enum ArchiveEntryRejection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum UnpackedFilePermissions {
-    /// Every file gets this exact mode whatever its archived mode (Unix only).
+    /// Every file gets the permission bits of this mode whatever its archived mode, the setuid,
+    /// setgid and sticky bits are never set (Unix only).
     Fixed(u32),
 
     /// Every file keeps its archived mode without the bits of this mask (Unix only).
@@ -132,7 +133,7 @@ impl TarArchiveUnpacker {
             #[cfg(unix)]
             if let UnpackedFilePermissions::Fixed(mode) = self.file_permissions {
                 let file_path = unpack_dir.join(&path);
-                fs::set_permissions(&file_path, fs::Permissions::from_mode(mode))
+                fs::set_permissions(&file_path, fs::Permissions::from_mode(mode & 0o777))
                     .with_context(|| format!("Could not set the permissions of {file_path:?}"))?;
             }
         }
@@ -585,6 +586,21 @@ mod tests {
         unpack_database_files(&[file_entry(b"00001.chunk", 0o7777)], &unpack_dir).unwrap();
 
         assert_eq!(0o644, unpacked_mode(&unpack_dir.join("00001.chunk")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fixed_permissions_never_set_the_setuid_setgid_and_sticky_bits() {
+        let unpack_dir = temp_dir_create!();
+
+        unpack(
+            UnpackedFilePermissions::Fixed(0o7755),
+            &[file_entry(b"tool", 0o644)],
+            &unpack_dir,
+        )
+        .unwrap();
+
+        assert_eq!(0o755, unpacked_mode(&unpack_dir.join("tool")));
     }
 
     #[cfg(unix)]

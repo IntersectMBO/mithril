@@ -184,10 +184,15 @@ mod tests {
 
     /// Bytes that a compressor can not shrink, so that the compressed stream keeps its size.
     fn incompressible_payload(size_in_bytes: u32) -> Vec<u8> {
-        const MULTIPLICATIVE_HASH_MULTIPLIER: u32 = 2_654_435_761;
+        let mut xorshift_state: u32 = 2_463_534_242;
 
         (0..size_in_bytes)
-            .map(|index| (index.wrapping_mul(MULTIPLICATIVE_HASH_MULTIPLIER) >> 24) as u8)
+            .map(|_| {
+                xorshift_state ^= xorshift_state << 13;
+                xorshift_state ^= xorshift_state >> 17;
+                xorshift_state ^= xorshift_state << 5;
+                (xorshift_state >> 24) as u8
+            })
             .collect()
     }
 
@@ -392,6 +397,10 @@ mod tests {
             )),
             error.downcast_ref::<ArchiveEntryRejection>(),
             "unexpected error: {error:?}"
+        );
+        assert!(
+            error.to_string().contains("the download failed too"),
+            "the stream must have failed too: {error:?}"
         );
     }
 }
