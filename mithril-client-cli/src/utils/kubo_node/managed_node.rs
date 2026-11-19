@@ -227,9 +227,14 @@ impl RepositoryDir {
 }
 
 impl Drop for RepositoryDir {
+    /// Remove the directory, printing an error if it can not be removed, as it is then left behind
     fn drop(&mut self) {
         // Already removed if the node was stopped
-        let _ = self.remove();
+        if self.0.exists()
+            && let Err(error) = self.remove()
+        {
+            eprintln!("{error:?}");
+        }
     }
 }
 
@@ -246,10 +251,19 @@ impl Drop for KuboProcess {
     /// Kill the process, and wait (blocking, bounded by [KILL_TIMEOUT]) for its exit, so that
     /// its files can be removed (on Windows, the files of a process can not be removed until it has
     /// exited)
+    ///
+    /// An error is printed if the process has not exited in time, as it may then be left running.
     fn drop(&mut self) {
         let _ = self.0.start_kill();
         let deadline = std::time::Instant::now() + KILL_TIMEOUT;
-        while matches!(self.0.try_wait(), Ok(None)) && std::time::Instant::now() < deadline {
+        while matches!(self.0.try_wait(), Ok(None)) {
+            if std::time::Instant::now() >= deadline {
+                eprintln!(
+                    "Kubo process '{}' did not exit within {KILL_TIMEOUT:?} after being killed",
+                    self.0.id().map(|pid| format!(" {pid}")).unwrap_or_default()
+                );
+                return;
+            }
             std::thread::sleep(Duration::from_millis(50));
         }
     }
