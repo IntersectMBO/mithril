@@ -1,7 +1,10 @@
 //! Discoverer of the Cardano node running on the machine
 
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
+
+use tracing::{debug, info, warn};
 
 use crate::discovery::cardano::command_line::NodeCommandLine;
 use crate::discovery::cardano::host::{
@@ -104,12 +107,32 @@ impl CardanoDiscoverer {
             },
             role,
         ) = select_node(self.detect().await?)?;
+        info!(
+            pid = instance.pid,
+            systemd_unit = ?instance.systemd_unit,
+            role = ?role,
+            "Cardano node selected"
+        );
+
         let resolve = |path: &str| resolve_path(process.working_dir.as_deref(), path);
         let config_file = command_line.config.as_deref().map(resolve);
         let topology_file = command_line.topology.as_deref().map(resolve);
         let shelley_genesis_file = self.shelley_genesis_file(config_file.as_deref()).await;
         let network = self.network(shelley_genesis_file.as_deref()).await;
         let pool_peers = self.pool_peers(topology_file.as_deref()).await;
+        let listening_address = ListeningAddress {
+            ipv4: parse_listening_arg("--host-addr", command_line.host_addr.as_deref()),
+            ipv6: parse_listening_arg("--host-ipv6-addr", command_line.host_ipv6_addr.as_deref()),
+            port: parse_listening_arg("--port", command_line.port.as_deref()),
+        };
+        let node_version = self.node_version(&process).await;
+        let cardano_cli_path = self.cardano_cli_path(process.executable.as_deref()).await;
+        info!(
+            network = ?network,
+            node_version = ?node_version,
+            pool_peers = pool_peers.len(),
+            "Cardano node discovered"
+        );
 
         Ok(CardanoDiscovery {
             node: instance,
@@ -128,21 +151,9 @@ impl CardanoDiscoverer {
                 .map(resolve),
             kes_agent_socket: command_line.kes_agent_socket.as_deref().map(resolve),
             bulk_credentials_file: command_line.bulk_credentials_file.as_deref().map(resolve),
-            listening_address: ListeningAddress {
-                ipv4: command_line.host_addr.as_deref().and_then(|addr| addr.parse().ok()),
-                ipv6: command_line
-                    .host_ipv6_addr
-                    .as_deref()
-                    .and_then(|addr| addr.parse().ok()),
-                port: command_line.port.as_deref().and_then(|port| port.parse().ok()),
-            },
-            node_version: self.node_version(&process).await,
-            cardano_cli_path: self
-                .tools
-                .find_cardano_cli(process.executable.as_deref())
-                .await
-                .ok()
-                .flatten(),
+            listening_address,
+            node_version,
+            cardano_cli_path,
             service_user: process.user,
         })
     }
@@ -150,63 +161,206 @@ impl CardanoDiscoverer {
     /// The node binary is only run with the identity of the node process, it is not run at all
     /// when that identity is unknown
     async fn node_version(&self, process: &NodeProcess) -> Option<String> {
+        let (Some(executable), Some(owner)) = (process.executable.as_deref(), process.owner) else {
+            debug!(
+                pid = process.pid,
+                "The node executable or its identity is unknown, the node version is not checked"
+            );
+            return None;
+        };
+
         let output = self
             .tools
-            .node_version_output(process.executable.as_deref()?, process.owner?)
+            .node_version_output(executable, owner)
             .await
+            .inspect_err(|error| {
+                warn!(
+                    path = %executable.display(),
+                    error = %format_args!("{error:#}"),
+                    "Could not get the node version"
+                )
+            })
             .ok()?;
 
-        parse_node_version(&output)
+        let version = parse_node_version(&output);
+        if version.is_none() {
+            warn!(output = %output.trim(), "Unexpected output of the node version command");
+        }
+        version
+    }
+
+    /// Path of the `cardano-cli` executable, beside the node executable or in the search path
+    async fn cardano_cli_path(&self, node_executable: Option<&Path>) -> Option<PathBuf> {
+        match self.tools.find_cardano_cli(node_executable).await {
+            Ok(Some(path)) => {
+                debug!(path = %path.display(), "cardano-cli found");
+                Some(path)
+            }
+            Ok(None) => {
+                debug!("cardano-cli not found");
+                None
+            }
+            Err(error) => {
+                warn!(error = %format_args!("{error:#}"), "Could not look for cardano-cli");
+                None
+            }
+        }
     }
 
     /// Path of the Shelley genesis file, read from the node configuration file
     async fn shelley_genesis_file(&self, config_file: Option<&Path>) -> Option<PathBuf> {
-        let config_file = config_file?;
-        let content = self.files.read_to_string(config_file).await.ok()?;
+        let Some(config_file) = config_file else {
+            debug!(
+                "No configuration file on the node command line, the Shelley genesis file is unknown"
+            );
+            return None;
+        };
 
-        CardanoConfiguration::parse(&content)
-            .ok()?
-            .shelley_genesis_path(config_file)
+        let content = self
+            .files
+            .read_to_string(config_file)
+            .await
+            .inspect_err(|error| {
+                warn!(
+                    path = %config_file.display(),
+                    error = %format_args!("{error:#}"),
+                    "Could not read the node configuration file, the Shelley genesis file is unknown"
+                )
+            })
+            .ok()?;
+        let configuration = CardanoConfiguration::parse(&content)
+            .inspect_err(|error| {
+                warn!(
+                    path = %config_file.display(),
+                    error = %format_args!("{error:#}"),
+                    "Invalid node configuration file, the Shelley genesis file is unknown"
+                )
+            })
+            .ok()?;
+
+        let shelley_genesis_file = configuration.shelley_genesis_path(config_file);
+        if shelley_genesis_file.is_none() {
+            debug!(
+                path = %config_file.display(),
+                "No Shelley genesis file in the node configuration"
+            );
+        }
+        shelley_genesis_file
     }
 
     /// Network identified by the magic of the Shelley genesis
     async fn network(&self, shelley_genesis_file: Option<&Path>) -> Option<CardanoNetwork> {
-        let content = self.files.read_to_string(shelley_genesis_file?).await.ok()?;
+        // An unknown genesis file was already logged while looking for it
+        let shelley_genesis_file = shelley_genesis_file?;
 
-        Some(ShelleyGenesisConfiguration::parse(&content).ok()?.network())
+        let content = self
+            .files
+            .read_to_string(shelley_genesis_file)
+            .await
+            .inspect_err(|error| {
+                warn!(
+                    path = %shelley_genesis_file.display(),
+                    error = %format_args!("{error:#}"),
+                    "Could not read the Shelley genesis file, the network is unknown"
+                )
+            })
+            .ok()?;
+        let network = ShelleyGenesisConfiguration::parse(&content)
+            .inspect_err(|error| {
+                warn!(
+                    path = %shelley_genesis_file.display(),
+                    error = %format_args!("{error:#}"),
+                    "Invalid Shelley genesis file, the network is unknown"
+                )
+            })
+            .ok()?
+            .network();
+
+        debug!(network = ?network, "Cardano network identified");
+        Some(network)
     }
 
     /// Peers of the pool read from the node topology file, none when it can't be read
     async fn pool_peers(&self, topology_file: Option<&Path>) -> Vec<Peer> {
         let Some(topology_file) = topology_file else {
+            debug!("No topology file on the node command line, the pool peers are unknown");
             return Vec::new();
         };
 
-        match self.files.read_to_string(topology_file).await {
-            Ok(content) => TopologyConfiguration::parse(&content)
-                .map(|topology| topology.pool_peers())
-                .unwrap_or_default(),
-            Err(_) => Vec::new(),
+        let content = match self.files.read_to_string(topology_file).await {
+            Ok(content) => content,
+            Err(error) => {
+                warn!(
+                    path = %topology_file.display(),
+                    error = %format_args!("{error:#}"),
+                    "Could not read the topology file, the pool peers are unknown"
+                );
+                return Vec::new();
+            }
+        };
+
+        match TopologyConfiguration::parse(&content) {
+            Ok(topology) => {
+                let pool_peers = topology.pool_peers();
+                debug!(
+                    count = pool_peers.len(),
+                    "Pool peers read from the topology"
+                );
+                pool_peers
+            }
+            Err(error) => {
+                warn!(
+                    path = %topology_file.display(),
+                    error = %format_args!("{error:#}"),
+                    "Invalid topology file, the pool peers are unknown"
+                );
+                Vec::new()
+            }
         }
     }
 
     async fn detect(&self) -> anyhow::Result<Vec<DetectedNode>> {
         let processes = self.processes.cardano_node_processes().await?;
+        debug!(count = processes.len(), "Cardano node processes detected");
 
         let mut nodes = Vec::with_capacity(processes.len());
         for process in processes {
+            let instance = NodeInstance {
+                pid: process.pid,
+                systemd_unit: self.services.systemd_unit_of(process.pid).await?,
+            };
+            let command_line = NodeCommandLine::parse(&process.args);
+            debug!(
+                pid = instance.pid,
+                systemd_unit = ?instance.systemd_unit,
+                block_producer = command_line.is_block_producer(),
+                "Cardano node detected"
+            );
+
             nodes.push(DetectedNode {
-                instance: NodeInstance {
-                    pid: process.pid,
-                    systemd_unit: self.services.systemd_unit_of(process.pid).await?,
-                },
-                command_line: NodeCommandLine::parse(&process.args),
+                instance,
+                command_line,
                 process,
             });
         }
 
         Ok(nodes)
     }
+}
+
+/// Parse a listening address argument of the node command line, an invalid value is ignored
+fn parse_listening_arg<T: FromStr>(arg: &str, value: Option<&str>) -> Option<T> {
+    let value = value?;
+
+    value
+        .parse()
+        .inspect_err(|_| {
+            warn!(
+                arg,
+                value, "Invalid listening address on the node command line"
+            )
+        })
+        .ok()
 }
 
 /// A running node with what is known about it
@@ -288,6 +442,7 @@ pub(crate) mod tests {
     use async_trait::async_trait;
 
     use crate::discovery::cardano::{NodeProcess, ProcessOwner};
+    use crate::test_tools::logs::capture_logs;
 
     use super::*;
 
@@ -1063,10 +1218,18 @@ pub(crate) mod tests {
                 "--port",
                 "99999",
             ]);
+            let logs = capture_logs();
 
             let discovery = discover(process, FakeProbes::default()).await;
 
             assert_eq!(ListeningAddress::default(), discovery.listening_address);
+            assert_eq!(
+                3,
+                logs.search_logs("Invalid listening address on the node command line")
+                    .len(),
+                "{:?}",
+                logs.search_logs("")
+            );
         }
 
         #[tokio::test]
@@ -1151,12 +1314,18 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn leaves_the_network_undiscovered_when_the_configuration_can_not_be_read() {
+            let logs = capture_logs();
             let discovery =
                 discover_with_files(&[("/opt/cardano/shelley/genesis.json", PREVIEW_GENESIS)])
                     .await;
 
             assert_eq!(None, discovery.shelley_genesis_file);
             assert_eq!(None, discovery.network);
+            assert!(
+                logs.contains_log("Could not read the node configuration file"),
+                "{:?}",
+                logs.search_logs("")
+            );
         }
 
         #[tokio::test]
@@ -1219,10 +1388,16 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn has_no_pool_peers_when_the_topology_is_invalid() {
+            let logs = capture_logs();
             let discovery =
                 discover_with_files(&[("/opt/cardano/topology.json", "{ not json")]).await;
 
             assert_eq!(Vec::<Peer>::new(), discovery.pool_peers);
+            assert!(
+                logs.contains_log("Invalid topology file"),
+                "{:?}",
+                logs.search_logs("")
+            );
         }
     }
 }

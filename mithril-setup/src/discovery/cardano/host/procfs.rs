@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use async_trait::async_trait;
 use tokio::fs;
+use tracing::{debug, warn};
 
 use crate::discovery::cardano::{NodeProcess, ProcessOwner, ProcessProbe};
 
@@ -61,10 +62,17 @@ impl ProcessProbe for ProcfsProcessProbe {
 impl ProcfsProcessProbe {
     /// Read the user names by uid, an unreadable passwd file leaves all the users unknown
     async fn read_users(&self) -> HashMap<u32, String> {
-        fs::read_to_string(&self.passwd_file)
-            .await
-            .map(|content| parse_passwd(&content))
-            .unwrap_or_default()
+        match fs::read_to_string(&self.passwd_file).await {
+            Ok(content) => parse_passwd(&content),
+            Err(error) => {
+                warn!(
+                    path = %self.passwd_file.display(),
+                    %error,
+                    "Could not read the users file, the node users are unknown"
+                );
+                HashMap::new()
+            }
+        }
     }
 }
 
@@ -87,6 +95,12 @@ async fn read_node_process(
     if !is_cardano_node(&program) && !executable.as_deref().is_some_and(is_cardano_node) {
         return None;
     }
+    if executable.is_none() {
+        debug!(
+            pid,
+            "Could not read the executable link of the node process, running without privileges?"
+        );
+    }
     // A relative program name can't be resolved: the working directory of the process is
     // not readable either when its executable link is not
     let executable = executable.or_else(|| program.is_absolute().then_some(program));
@@ -95,6 +109,9 @@ async fn read_node_process(
         .await
         .ok()
         .and_then(|status| parse_owner(&status));
+    if owner.is_none() {
+        debug!(pid, "Could not read the identity of the node process");
+    }
 
     Some(NodeProcess {
         pid,
