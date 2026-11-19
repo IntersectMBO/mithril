@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use clap::Parser;
-use slog::info;
+use tracing::info;
 
 use crate::CommandContext;
 use crate::runner::{RunOutcome, run};
@@ -16,7 +16,7 @@ impl SignerCommand {
     /// Main command execution
     pub async fn execute(&self, context: CommandContext) -> anyhow::Result<()> {
         context.require_unstable("signer", None)?;
-        info!(context.logger(), "signer command");
+        info!("signer command");
 
         match run(&SignerEffectHandler).await.map_err(|reason| anyhow!(reason))? {
             RunOutcome::Completed => Ok(()),
@@ -29,13 +29,9 @@ impl SignerCommand {
 mod tests {
     use super::*;
 
-    fn test_logger() -> slog::Logger {
-        slog::Logger::root(slog::Discard, slog::o!())
-    }
-
     #[tokio::test]
     async fn signer_command_returns_error_when_unstable_is_not_enabled() {
-        let context = CommandContext::new(false, false, test_logger());
+        let context = CommandContext::new(false, false);
         let cmd = SignerCommand {};
         assert!(cmd.execute(context).await.is_err());
     }

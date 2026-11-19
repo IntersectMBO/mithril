@@ -3,11 +3,11 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use config::{Map, Value};
-use slog::{Drain, Fuse, Level, Logger, debug};
-use slog_term::Decorator;
 use std::fs::File;
 use std::io::Write;
-use std::sync::Arc;
+use std::sync::Mutex;
+use tracing::debug;
+use tracing::level_filters::LevelFilter;
 
 use mithril_doc::{Documenter, StructDoc};
 
@@ -73,15 +73,15 @@ pub struct Args {
 }
 
 impl Args {
-    pub async fn execute(&self, root_logger: Logger) -> anyhow::Result<()> {
-        self.print_and_log_version(&root_logger);
-        debug!(root_logger, "Run Mode: {}", self.run_mode);
+    pub async fn execute(&self) -> anyhow::Result<()> {
+        self.print_and_log_version();
+        debug!(run_mode = %self.run_mode, "Run mode");
 
-        let context = CommandContext::new(self.unstable, self.json, root_logger);
+        let context = CommandContext::new(self.unstable, self.json);
         self.command.execute(context).await
     }
 
-    fn print_and_log_version(&self, root_logger: &Logger) {
+    fn print_and_log_version(&self) {
         let version = env!("CARGO_PKG_VERSION");
         let version_message = format!("Mithril Setup version: {version}");
         if self.json {
@@ -91,16 +91,16 @@ impl Args {
         } else {
             eprintln!("{version_message}");
         }
-        debug!(root_logger, "{version_message}");
+        debug!("{version_message}");
     }
 
-    fn log_level(&self) -> Level {
+    fn log_level(&self) -> LevelFilter {
         match self.verbose {
-            0 => Level::Error,
-            1 => Level::Warning,
-            2 => Level::Info,
-            3 => Level::Debug,
-            _ => Level::Trace,
+            0 => LevelFilter::ERROR,
+            1 => LevelFilter::WARN,
+            2 => LevelFilter::INFO,
+            3 => LevelFilter::DEBUG,
+            _ => LevelFilter::TRACE,
         }
     }
 
@@ -112,33 +112,28 @@ impl Args {
         }
     }
 
-    fn wrap_drain<D: Decorator + Send + 'static>(&self, decorator: D) -> Fuse<slog_async::Async> {
-        let drain = slog_term::CompactFormat::new(decorator).build().fuse();
-        let drain = slog::LevelFilter::new(drain, self.log_level()).fuse();
-
-        slog_async::Async::new(drain).build().fuse()
-    }
-
-    fn build_logger(&self) -> anyhow::Result<Logger> {
+    /// Install the global subscriber writing the logs to stderr or to the log output file
+    fn init_logging(&self) -> anyhow::Result<()> {
         let log_output_type = self.get_log_output_type();
-        let writer = log_output_type.get_writer()?;
+        let writer = Mutex::new(log_output_type.get_writer()?);
+        // Colors are only meant for a terminal
+        let with_ansi = matches!(log_output_type, LogOutputType::StdErr);
 
-        let drain = if self.log_format_json {
-            let drain = slog_bunyan::with_name("mithril-setup", writer)
-                .set_pretty(false)
-                .build()
-                .fuse();
-            let drain = slog::LevelFilter::new(drain, self.log_level()).fuse();
+        let builder = tracing_subscriber::fmt()
+            .with_max_level(self.log_level())
+            .with_target(false)
+            .with_ansi(with_ansi)
+            .with_writer(writer);
 
-            slog_async::Async::new(drain).build().fuse()
+        let result = if self.log_format_json {
+            builder.json().try_init()
         } else {
-            match log_output_type {
-                LogOutputType::StdErr => self.wrap_drain(slog_term::TermDecorator::new().build()),
-                LogOutputType::File(_) => self.wrap_drain(slog_term::PlainDecorator::new(writer)),
-            }
+            builder.compact().try_init()
         };
 
-        Ok(Logger::root(Arc::new(drain), slog::o!()))
+        result
+            .map_err(|error| anyhow::anyhow!(error))
+            .context("Could not initialize the logs")
     }
 }
 
@@ -160,9 +155,9 @@ impl SetupCommands {
 async fn main() -> anyhow::Result<()> {
     // Load args
     let args = Args::parse();
-    let logger = args.build_logger()?;
+    args.init_logging()?;
 
-    args.execute(logger).await
+    args.execute().await
 }
 
 #[cfg(test)]
