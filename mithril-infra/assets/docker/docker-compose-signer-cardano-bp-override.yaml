@@ -52,6 +52,7 @@ services:
       dockerfile: Dockerfile.cardano
       args:
         CARDANO_IMAGE_ID: ${CARDANO_IMAGE_ID}
+        CARDANO_IMAGE_REGISTRY: ${CARDANO_IMAGE_REGISTRY}
     user: ${CURRENT_UID}
     profiles:
       - cardano
