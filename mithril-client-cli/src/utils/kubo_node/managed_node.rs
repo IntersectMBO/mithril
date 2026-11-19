@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, anyhow, bail};
-use reqwest::{Client, Url};
+use reqwest::{Client, Response, Url};
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::time::Instant;
@@ -15,7 +15,7 @@ use mithril_client::MithrilResult;
 
 use crate::utils::{ReqwestGitHubApiClient, ReqwestHttpDownloader};
 
-use super::{KuboArchive, KuboArchiveProvider, KuboDistribution, KuboNodeConfig};
+use super::{KuboArchive, KuboArchiveProvider, KuboDistribution, KuboNodeConfig, RPC_API_USERNAME};
 
 /// Maximum duration to wait for the RPC API of the daemon to answer after its start
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -103,7 +103,11 @@ impl ManagedKuboNode {
         let repository_dir = RepositoryDir::create(parent_dir)?;
         let binary = &archive.unpack_binary(repository_dir.path())?;
         run_ipfs(binary, repository_dir.path(), &KuboNodeConfig::init_args()).await?;
-        KuboNodeConfig::apply_settings_to_file(&repository_dir.path().join(CONFIG_FILE))?;
+        let rpc_api_secret = generate_rpc_api_secret();
+        KuboNodeConfig::apply_settings_to_file(
+            &repository_dir.path().join(CONFIG_FILE),
+            &rpc_api_secret,
+        )?;
 
         let daemon_log_path = repository_dir.path().join(DAEMON_LOG_FILE);
         let daemon_log = File::create(&daemon_log_path)
@@ -122,7 +126,14 @@ impl ManagedKuboNode {
             .timeout(RPC_CALL_TIMEOUT)
             .build()
             .with_context(|| "Failed to build the Kubo RPC HTTP client")?;
-        match wait_until_ready(&mut daemon.0, &http_client, repository_dir.path()).await {
+        match wait_until_ready(
+            &mut daemon.0,
+            &http_client,
+            repository_dir.path(),
+            &rpc_api_secret,
+        )
+        .await
+        {
             Ok(rpc_url) => Ok(Self {
                 daemon,
                 rpc_url,
@@ -142,7 +153,7 @@ impl ManagedKuboNode {
         }
     }
 
-    /// URL of the RPC API of the node
+    /// URL of the RPC API of the node, holding the credentials required by its RPC API
     pub fn rpc_url(&self) -> &Url {
         &self.rpc_url
     }
@@ -300,11 +311,18 @@ async fn run_ipfs<S: AsRef<str>>(
     Ok(())
 }
 
+/// Generate a random secret for the RPC API of a node: 32 bytes from a cryptographically secure
+/// generator, hex encoded
+fn generate_rpc_api_secret() -> String {
+    hex::encode(rand::random::<[u8; 32]>())
+}
+
 /// Wait until the daemon has written its RPC address in the `api` file and its RPC API answers
 async fn wait_until_ready(
     daemon: &mut Child,
     http_client: &Client,
     repository_dir: &Path,
+    rpc_api_secret: &str,
 ) -> MithrilResult<Url> {
     let deadline = Instant::now() + STARTUP_TIMEOUT;
     loop {
@@ -312,7 +330,7 @@ async fn wait_until_ready(
             bail!("Kubo daemon exited during its start with {status}");
         }
 
-        let last_error = match probe_rpc(http_client, repository_dir).await {
+        let last_error = match probe_rpc(http_client, repository_dir, rpc_api_secret).await {
             Ok(rpc_url) => return Ok(rpc_url),
             Err(error) => error,
         };
@@ -327,11 +345,15 @@ async fn wait_until_ready(
 }
 
 /// Read the RPC address of the daemon from its `api` file, and check that its RPC API answers
-async fn probe_rpc(http_client: &Client, repository_dir: &Path) -> MithrilResult<Url> {
+async fn probe_rpc(
+    http_client: &Client,
+    repository_dir: &Path,
+    rpc_api_secret: &str,
+) -> MithrilResult<Url> {
     let api_file = repository_dir.join(API_FILE);
     let api_address = fs::read_to_string(&api_file)
         .with_context(|| format!("Failed to read the Kubo API file '{}'", api_file.display()))?;
-    let rpc_url = rpc_url_from_api_address(&api_address)?;
+    let rpc_url = rpc_url_from_api_address(&api_address, rpc_api_secret)?;
     call_rpc(http_client, &rpc_url, "version").await?;
 
     Ok(rpc_url)
@@ -342,21 +364,30 @@ async fn call_rpc(http_client: &Client, rpc_url: &Url, command: &str) -> Mithril
     http_client
         .post(rpc_url.join(&format!("api/v0/{command}"))?)
         .send()
-        .await?
-        .error_for_status()?;
+        .await
+        .and_then(Response::error_for_status)
+        // The URL of the error holds the secret of the RPC API
+        .map_err(reqwest::Error::without_url)
+        .with_context(|| format!("Kubo RPC API call '{command}' failed"))?;
 
     Ok(())
 }
 
-/// Build the RPC URL from the multiaddr written by Kubo in the `api` file of its repository,
-/// e.g. `/ip4/127.0.0.1/tcp/5001`
-fn rpc_url_from_api_address(api_address: &str) -> MithrilResult<Url> {
-    match api_address.trim().split('/').collect::<Vec<_>>().as_slice() {
-        ["", "ip4", host, "tcp", port] => Ok(Url::parse(&format!("http://{host}:{port}"))?),
-        _ => Err(anyhow!(
+/// Build the RPC URL, with the credentials of the RPC API, from the multiaddr written by Kubo in
+/// the `api` file of its repository, e.g. `/ip4/127.0.0.1/tcp/5001`
+fn rpc_url_from_api_address(api_address: &str, rpc_api_secret: &str) -> MithrilResult<Url> {
+    let mut rpc_url = match api_address.trim().split('/').collect::<Vec<_>>().as_slice() {
+        ["", "ip4", host, "tcp", port] => Url::parse(&format!("http://{host}:{port}"))?,
+        _ => bail!(
             "Unsupported Kubo RPC API address '{api_address}', expected '/ip4/<host>/tcp/<port>'"
-        )),
-    }
+        ),
+    };
+    rpc_url
+        .set_username(RPC_API_USERNAME)
+        .and_then(|_| rpc_url.set_password(Some(rpc_api_secret)))
+        .map_err(|_| anyhow!("Can not set the credentials of the Kubo RPC URL"))?;
+
+    Ok(rpc_url)
 }
 
 #[cfg(test)]
@@ -380,16 +411,20 @@ mod tests {
         use super::*;
 
         #[test]
-        fn is_built_from_the_ip4_tcp_address_of_the_api_file() {
-            let rpc_url = rpc_url_from_api_address("/ip4/127.0.0.1/tcp/36803\n").unwrap();
+        fn is_built_from_the_ip4_tcp_address_of_the_api_file_with_the_rpc_api_credentials() {
+            let rpc_url =
+                rpc_url_from_api_address("/ip4/127.0.0.1/tcp/36803\n", "my-secret").unwrap();
 
-            assert_eq!("http://127.0.0.1:36803/", rpc_url.as_str());
+            assert_eq!(
+                "http://mithril-client:my-secret@127.0.0.1:36803/",
+                rpc_url.as_str()
+            );
         }
 
         #[test]
         fn fails_on_an_address_that_is_not_ip4_tcp() {
             for api_address in ["/ip6/::1/tcp/5001", "/ip4/127.0.0.1/udp/5001", "", "garbage"] {
-                rpc_url_from_api_address(api_address)
+                rpc_url_from_api_address(api_address, "secret")
                     .expect_err(&format!("Should fail for api address '{api_address}'"));
             }
         }
@@ -440,6 +475,88 @@ mod tests {
             drop(repository_dir);
 
             assert_eq!(0, dir_entries_count(&parent_dir));
+        }
+    }
+
+    #[test]
+    fn generated_rpc_api_secrets_are_random_32_bytes_hex_encoded() {
+        let secret = generate_rpc_api_secret();
+
+        assert_eq!(64, secret.len());
+        assert!(secret.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(secret, generate_rpc_api_secret());
+    }
+
+    mod call_rpc {
+        use httpmock::MockServer;
+
+        use super::*;
+
+        const SECRET: &str = "my-secret";
+
+        fn rpc_url_with_secret(base_url: &str) -> Url {
+            let mut rpc_url = Url::parse(base_url).unwrap();
+            rpc_url.set_username(RPC_API_USERNAME).unwrap();
+            rpc_url.set_password(Some(SECRET)).unwrap();
+            rpc_url
+        }
+
+        #[tokio::test]
+        async fn sends_the_credentials_of_the_rpc_url_as_a_basic_authentication() {
+            let server = MockServer::start();
+            let mock = server.mock(|when, then| {
+                when.method("POST")
+                    .path("/api/v0/version")
+                    .header("authorization", "Basic bWl0aHJpbC1jbGllbnQ6bXktc2VjcmV0");
+                then.status(200);
+            });
+
+            call_rpc(
+                &Client::new(),
+                &rpc_url_with_secret(&server.base_url()),
+                "version",
+            )
+            .await
+            .unwrap();
+
+            mock.assert();
+        }
+
+        #[tokio::test]
+        async fn error_on_an_error_status_does_not_hold_the_secret() {
+            let server = MockServer::start();
+            server.mock(|_, then| {
+                then.status(403);
+            });
+
+            let error = call_rpc(
+                &Client::new(),
+                &rpc_url_with_secret(&server.base_url()),
+                "version",
+            )
+            .await
+            .expect_err("Should fail on an error status");
+
+            assert!(!format!("{error:?}").contains(SECRET), "{error:?}");
+        }
+
+        #[tokio::test]
+        async fn error_on_an_unreachable_api_does_not_hold_the_secret() {
+            let closed_port = std::net::TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap()
+                .port();
+
+            let error = call_rpc(
+                &Client::new(),
+                &rpc_url_with_secret(&format!("http://127.0.0.1:{closed_port}")),
+                "version",
+            )
+            .await
+            .expect_err("Should fail when the RPC API is unreachable");
+
+            assert!(!format!("{error:?}").contains(SECRET), "{error:?}");
         }
     }
 
@@ -654,6 +771,13 @@ mod tests {
             let rpc_url = node.rpc_url().clone();
 
             assert!(rpc_version_is_reachable(&rpc_url).await);
+            let mut rpc_url_without_credentials = rpc_url.clone();
+            rpc_url_without_credentials.set_username("").unwrap();
+            rpc_url_without_credentials.set_password(None).unwrap();
+            assert!(
+                !rpc_version_is_reachable(&rpc_url_without_credentials).await,
+                "The RPC API should require the credentials"
+            );
             assert_eq!(1, dir_entries_count(&parent_dir));
 
             let stop_start = Instant::now();
