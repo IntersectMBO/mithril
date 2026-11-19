@@ -87,7 +87,7 @@ pub struct CardanoDbDownloadCommand {
 
     /// GitHub token for authenticated API calls, used to download the Kubo release of the managed
     /// IPFS node.
-    #[clap(long, env = "GITHUB_TOKEN")]
+    #[clap(long, env = "GITHUB_TOKEN", hide_env_values = true)]
     github_token: Option<String>,
 
     /// Include ancillary files in the download, if set the `ancillary_verification_key` is required
