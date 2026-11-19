@@ -5,8 +5,8 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, anyhow, bail};
-use reqwest::{Client, Url};
+use anyhow::{Context, bail};
+use reqwest::{Client, Response, Url};
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::time::Instant;
@@ -56,6 +56,7 @@ pub struct ManagedKuboNode {
     // Dropped before the repository directory, as fields are dropped in declaration order
     daemon: KuboProcess,
     rpc_url: Url,
+    rpc_api_secret: String,
     http_client: Client,
     repository_dir: RepositoryDir,
 }
@@ -103,7 +104,11 @@ impl ManagedKuboNode {
         let repository_dir = RepositoryDir::create(parent_dir)?;
         let binary = &archive.unpack_binary(repository_dir.path())?;
         run_ipfs(binary, repository_dir.path(), &KuboNodeConfig::init_args()).await?;
-        KuboNodeConfig::apply_settings_to_file(&repository_dir.path().join(CONFIG_FILE))?;
+        let rpc_api_secret = generate_rpc_api_secret();
+        KuboNodeConfig::apply_settings_to_file(
+            &repository_dir.path().join(CONFIG_FILE),
+            &rpc_api_secret,
+        )?;
 
         let daemon_log_path = repository_dir.path().join(DAEMON_LOG_FILE);
         let daemon_log = File::create(&daemon_log_path)
@@ -122,10 +127,18 @@ impl ManagedKuboNode {
             .timeout(RPC_CALL_TIMEOUT)
             .build()
             .with_context(|| "Failed to build the Kubo RPC HTTP client")?;
-        match wait_until_ready(&mut daemon.0, &http_client, repository_dir.path()).await {
+        match wait_until_ready(
+            &mut daemon.0,
+            &http_client,
+            repository_dir.path(),
+            &rpc_api_secret,
+        )
+        .await
+        {
             Ok(rpc_url) => Ok(Self {
                 daemon,
                 rpc_url,
+                rpc_api_secret,
                 http_client,
                 repository_dir,
             }),
@@ -147,12 +160,23 @@ impl ManagedKuboNode {
         &self.rpc_url
     }
 
+    /// Bearer token required by the RPC API of the node
+    pub fn rpc_auth_token(&self) -> &str {
+        &self.rpc_api_secret
+    }
+
     /// Stop the daemon of the node, then remove its repository.
     ///
     /// The daemon is asked to shut down through its RPC API, and killed if it does not exit in time.
     pub async fn stop(mut self) -> MithrilResult<()> {
         // The daemon may close the connection before answering, the result is checked through its exit
-        let _ = call_rpc(&self.http_client, &self.rpc_url, "shutdown").await;
+        let _ = call_rpc(
+            &self.http_client,
+            &self.rpc_url,
+            &self.rpc_api_secret,
+            "shutdown",
+        )
+        .await;
         if tokio::time::timeout(SHUTDOWN_TIMEOUT, self.daemon.0.wait())
             .await
             .is_err()
@@ -300,11 +324,18 @@ async fn run_ipfs<S: AsRef<str>>(
     Ok(())
 }
 
+/// Generate a random secret for the RPC API of a node: 32 bytes from a cryptographically secure
+/// generator, hex encoded
+fn generate_rpc_api_secret() -> String {
+    hex::encode(rand::random::<[u8; 32]>())
+}
+
 /// Wait until the daemon has written its RPC address in the `api` file and its RPC API answers
 async fn wait_until_ready(
     daemon: &mut Child,
     http_client: &Client,
     repository_dir: &Path,
+    rpc_api_secret: &str,
 ) -> MithrilResult<Url> {
     let deadline = Instant::now() + STARTUP_TIMEOUT;
     loop {
@@ -312,7 +343,7 @@ async fn wait_until_ready(
             bail!("Kubo daemon exited during its start with {status}");
         }
 
-        let last_error = match probe_rpc(http_client, repository_dir).await {
+        let last_error = match probe_rpc(http_client, repository_dir, rpc_api_secret).await {
             Ok(rpc_url) => return Ok(rpc_url),
             Err(error) => error,
         };
@@ -327,23 +358,35 @@ async fn wait_until_ready(
 }
 
 /// Read the RPC address of the daemon from its `api` file, and check that its RPC API answers
-async fn probe_rpc(http_client: &Client, repository_dir: &Path) -> MithrilResult<Url> {
+async fn probe_rpc(
+    http_client: &Client,
+    repository_dir: &Path,
+    rpc_api_secret: &str,
+) -> MithrilResult<Url> {
     let api_file = repository_dir.join(API_FILE);
     let api_address = fs::read_to_string(&api_file)
         .with_context(|| format!("Failed to read the Kubo API file '{}'", api_file.display()))?;
     let rpc_url = rpc_url_from_api_address(&api_address)?;
-    call_rpc(http_client, &rpc_url, "version").await?;
+    call_rpc(http_client, &rpc_url, rpc_api_secret, "version").await?;
 
     Ok(rpc_url)
 }
 
-/// Call a command of the Kubo RPC API, failing on an error response status
-async fn call_rpc(http_client: &Client, rpc_url: &Url, command: &str) -> MithrilResult<()> {
+/// Call a command of the Kubo RPC API, authenticated with the `rpc_api_secret` as a Bearer token,
+/// failing on an error response status
+async fn call_rpc(
+    http_client: &Client,
+    rpc_url: &Url,
+    rpc_api_secret: &str,
+    command: &str,
+) -> MithrilResult<()> {
     http_client
         .post(rpc_url.join(&format!("api/v0/{command}"))?)
+        .bearer_auth(rpc_api_secret)
         .send()
-        .await?
-        .error_for_status()?;
+        .await
+        .and_then(Response::error_for_status)
+        .with_context(|| format!("Kubo RPC API call '{command}' failed"))?;
 
     Ok(())
 }
@@ -351,12 +394,13 @@ async fn call_rpc(http_client: &Client, rpc_url: &Url, command: &str) -> Mithril
 /// Build the RPC URL from the multiaddr written by Kubo in the `api` file of its repository,
 /// e.g. `/ip4/127.0.0.1/tcp/5001`
 fn rpc_url_from_api_address(api_address: &str) -> MithrilResult<Url> {
-    match api_address.trim().split('/').collect::<Vec<_>>().as_slice() {
-        ["", "ip4", host, "tcp", port] => Ok(Url::parse(&format!("http://{host}:{port}"))?),
-        _ => Err(anyhow!(
+    let rpc_url = match api_address.trim().split('/').collect::<Vec<_>>().as_slice() {
+        ["", "ip4", host, "tcp", port] => Url::parse(&format!("http://{host}:{port}"))?,
+        _ => bail!(
             "Unsupported Kubo RPC API address '{api_address}', expected '/ip4/<host>/tcp/<port>'"
-        )),
-    }
+        ),
+    };
+    Ok(rpc_url)
 }
 
 #[cfg(test)]
@@ -440,6 +484,84 @@ mod tests {
             drop(repository_dir);
 
             assert_eq!(0, dir_entries_count(&parent_dir));
+        }
+    }
+
+    #[test]
+    fn generated_rpc_api_secrets_are_random_32_bytes_hex_encoded() {
+        let secret = generate_rpc_api_secret();
+
+        assert_eq!(64, secret.len());
+        assert!(secret.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(secret, generate_rpc_api_secret());
+    }
+
+    mod call_rpc {
+        use httpmock::MockServer;
+
+        use super::*;
+
+        const SECRET: &str = "my-secret";
+
+        #[tokio::test]
+        async fn sends_the_secret_as_a_bearer_token() {
+            let server = MockServer::start();
+            let mock = server.mock(|when, then| {
+                when.method("POST")
+                    .path("/api/v0/version")
+                    .header("authorization", "Bearer my-secret");
+                then.status(200);
+            });
+
+            call_rpc(
+                &Client::new(),
+                &Url::parse(&server.base_url()).unwrap(),
+                SECRET,
+                "version",
+            )
+            .await
+            .unwrap();
+
+            mock.assert();
+        }
+
+        #[tokio::test]
+        async fn error_on_an_error_status_does_not_hold_the_secret() {
+            let server = MockServer::start();
+            server.mock(|_, then| {
+                then.status(403);
+            });
+
+            let error = call_rpc(
+                &Client::new(),
+                &Url::parse(&server.base_url()).unwrap(),
+                SECRET,
+                "version",
+            )
+            .await
+            .expect_err("Should fail on an error status");
+
+            assert!(!format!("{error:?}").contains(SECRET), "{error:?}");
+        }
+
+        #[tokio::test]
+        async fn error_on_an_unreachable_api_does_not_hold_the_secret() {
+            let closed_port = std::net::TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap()
+                .port();
+
+            let error = call_rpc(
+                &Client::new(),
+                &Url::parse(&format!("http://127.0.0.1:{closed_port}")).unwrap(),
+                SECRET,
+                "version",
+            )
+            .await
+            .expect_err("Should fail when the RPC API is unreachable");
+
+            assert!(!format!("{error:?}").contains(SECRET), "{error:?}");
         }
     }
 
@@ -634,12 +756,16 @@ mod tests {
     mod with_the_real_kubo_binary {
         use super::*;
 
-        async fn rpc_version_is_reachable(rpc_url: &Url) -> bool {
-            Client::builder()
+        async fn rpc_version_is_reachable(rpc_url: &Url, rpc_auth_token: Option<&str>) -> bool {
+            let mut request = Client::builder()
                 .no_proxy()
                 .build()
                 .unwrap()
-                .post(rpc_url.join("api/v0/version").unwrap())
+                .post(rpc_url.join("api/v0/version").unwrap());
+            if let Some(rpc_auth_token) = rpc_auth_token {
+                request = request.bearer_auth(rpc_auth_token);
+            }
+            request
                 .send()
                 .await
                 .is_ok_and(|response| response.status().is_success())
@@ -652,8 +778,13 @@ mod tests {
 
             let node = ManagedKuboNode::download_and_start(&parent_dir, None).await.unwrap();
             let rpc_url = node.rpc_url().clone();
+            let rpc_auth_token = node.rpc_auth_token().to_string();
 
-            assert!(rpc_version_is_reachable(&rpc_url).await);
+            assert!(rpc_version_is_reachable(&rpc_url, Some(&rpc_auth_token)).await);
+            assert!(
+                !rpc_version_is_reachable(&rpc_url, None).await,
+                "The RPC API should require the auth token"
+            );
             assert_eq!(1, dir_entries_count(&parent_dir));
 
             let stop_start = Instant::now();
@@ -663,7 +794,7 @@ mod tests {
                 stop_start.elapsed() < SHUTDOWN_TIMEOUT,
                 "The daemon should shut down on request instead of being killed after the timeout"
             );
-            assert!(!rpc_version_is_reachable(&rpc_url).await);
+            assert!(!rpc_version_is_reachable(&rpc_url, Some(&rpc_auth_token)).await);
             assert_eq!(0, dir_entries_count(&parent_dir));
         }
 
@@ -674,9 +805,10 @@ mod tests {
 
             let node = ManagedKuboNode::download_and_start(&parent_dir, None).await.unwrap();
             let rpc_url = node.rpc_url().clone();
+            let rpc_auth_token = node.rpc_auth_token().to_string();
             drop(node);
 
-            assert!(!rpc_version_is_reachable(&rpc_url).await);
+            assert!(!rpc_version_is_reachable(&rpc_url, Some(&rpc_auth_token)).await);
             assert_eq!(0, dir_entries_count(&parent_dir));
         }
     }

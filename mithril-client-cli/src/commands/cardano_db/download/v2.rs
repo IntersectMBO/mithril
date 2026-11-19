@@ -110,13 +110,12 @@ impl PreparedCardanoDbV2Download {
         let progress_printer = ProgressPrinter::new(progress_output_type, 7);
 
         let managed_ipfs_node = self.start_managed_ipfs_node(&progress_printer).await?;
-        let ipfs_rpc_url = match &managed_ipfs_node {
-            Some(node) => Some(node.rpc_url().to_string()),
-            None => self.ipfs_rpc_url.clone(),
-        };
-        let ipfs_rpc_auth_token = match &managed_ipfs_node {
-            Some(_) => None,
-            None => self.ipfs_rpc_auth_token.clone(),
+        let (ipfs_rpc_url, ipfs_rpc_auth_token) = match &managed_ipfs_node {
+            Some(node) => (
+                Some(node.rpc_url().to_string()),
+                Some(node.rpc_auth_token().to_string()),
+            ),
+            None => (self.ipfs_rpc_url.clone(), self.ipfs_rpc_auth_token.clone()),
         };
 
         let download_result = self

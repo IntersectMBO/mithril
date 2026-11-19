@@ -6,6 +6,9 @@ use serde_json::{Map, Value, json};
 
 use mithril_client::MithrilResult;
 
+/// Name of the authorization required by the RPC API of the managed node
+const RPC_API_AUTHORIZATION_NAME: &str = "mithril-client";
+
 /// A setting of the Kubo configuration
 #[derive(Debug, Clone, PartialEq)]
 pub struct KuboConfigSetting {
@@ -47,6 +50,9 @@ impl KuboConfigSetting {
 /// The node:
 /// - exposes its RPC API on a random port of the loopback interface only (the actual address is
 ///   written by Kubo in the `api` file of its repository), and no gateway
+/// - requires a Bearer token with a secret generated at each run on its RPC API, so that
+///   another user of the host can not control the node (see
+///   [rpc_api_authorization][Self::rpc_api_authorization])
 /// - does not scan the local network nor open ports through UPnP, and does not dial nor announce
 ///   private and loopback addresses (`server` profile), so peers only reachable on a private
 ///   network can not be used
@@ -97,15 +103,37 @@ impl KuboNodeConfig {
         .collect()
     }
 
-    /// Apply the [settings][Self::settings] to the JSON configuration file of an initialized
-    /// repository, keeping its other values
-    pub fn apply_settings_to_file(config_path: &Path) -> MithrilResult<()> {
+    /// Setting that restricts the RPC API to the clients sending the `rpc_api_secret` as a Bearer
+    /// token.
+    pub fn rpc_api_authorization(rpc_api_secret: &str) -> KuboConfigSetting {
+        let mut authorizations = Map::new();
+        authorizations.insert(
+            RPC_API_AUTHORIZATION_NAME.to_string(),
+            json!({
+                "AuthSecret": format!("bearer:{rpc_api_secret}"),
+                "AllowedPaths": ["/api/v0"],
+            }),
+        );
+
+        KuboConfigSetting {
+            key: "API.Authorizations",
+            value: Value::Object(authorizations),
+        }
+    }
+
+    /// Apply the [settings][Self::settings] and the [RPC API authorization][Self::rpc_api_authorization]
+    /// with `rpc_api_secret` to the JSON configuration file of an initialized repository, keeping
+    /// its other values.
+    pub fn apply_settings_to_file(config_path: &Path, rpc_api_secret: &str) -> MithrilResult<()> {
         let mut config: Value = serde_json::from_str(
             &fs::read_to_string(config_path)
                 .with_context(|| format!("Failed to read '{}'", config_path.display()))?,
         )
         .with_context(|| format!("Failed to parse '{}'", config_path.display()))?;
-        for setting in Self::settings() {
+        for setting in Self::settings()
+            .into_iter()
+            .chain([Self::rpc_api_authorization(rpc_api_secret)])
+        {
             setting.apply_to(&mut config)?;
         }
         fs::write(config_path, serde_json::to_string_pretty(&config)?)
@@ -225,6 +253,22 @@ mod tests {
         }
     }
 
+    #[test]
+    fn rpc_api_requires_the_secret_as_a_bearer_token() {
+        let setting = KuboNodeConfig::rpc_api_authorization("my-secret");
+
+        assert_eq!("API.Authorizations", setting.key);
+        assert_eq!(
+            json!({
+                "mithril-client": {
+                    "AuthSecret": "bearer:my-secret",
+                    "AllowedPaths": ["/api/v0"],
+                }
+            }),
+            setting.value
+        );
+    }
+
     mod apply_settings_to_file {
         use super::*;
 
@@ -233,12 +277,15 @@ mod tests {
             let config_path = temp_dir_create!().join("config");
             fs::write(&config_path, r#"{"Identity": {"PeerID": "peer"}}"#).unwrap();
 
-            KuboNodeConfig::apply_settings_to_file(&config_path).unwrap();
+            KuboNodeConfig::apply_settings_to_file(&config_path, "secret").unwrap();
 
             let config: Value =
                 serde_json::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
             assert_eq!("peer", config["Identity"]["PeerID"]);
-            for setting in KuboNodeConfig::settings() {
+            for setting in KuboNodeConfig::settings()
+                .into_iter()
+                .chain([KuboNodeConfig::rpc_api_authorization("secret")])
+            {
                 let pointer = format!("/{}", setting.key.replace('.', "/"));
                 assert_eq!(
                     Some(&setting.value),
@@ -251,7 +298,7 @@ mod tests {
 
         #[test]
         fn fails_when_the_config_file_does_not_exist() {
-            KuboNodeConfig::apply_settings_to_file(&temp_dir_create!().join("config"))
+            KuboNodeConfig::apply_settings_to_file(&temp_dir_create!().join("config"), "secret")
                 .expect_err("Should fail when the config file does not exist");
         }
     }
