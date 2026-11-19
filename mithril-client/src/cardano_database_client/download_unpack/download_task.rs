@@ -1555,6 +1555,12 @@ mod tests {
             let target_dir = temp_dir_create!();
             let file_downloader = MockFileDownloaderBuilder::default()
                 .with_file_uri(FIRST_LOCATION)
+                .with_success_and_create_fake_ancillary_files(signed_ancillary_files(
+                    "ledger",
+                    &ManifestSigner::create_non_deterministic_signer(),
+                ))
+                .next_call()
+                .with_file_uri(SECOND_LOCATION)
                 .with_success_and_create_fake_ancillary_files(unsigned_ancillary_files("ledger"))
                 .build();
 
@@ -1562,10 +1568,10 @@ mod tests {
                 file_downloader,
                 &target_dir,
                 fake_ancillary_verifier(),
-                [FIRST_LOCATION],
+                [FIRST_LOCATION, SECOND_LOCATION],
             )
             .await
-            .expect_err("an unsigned manifest must fail the verification");
+            .expect_err("no manifest passes the verification");
 
             assert!(
                 error.to_string().contains("All locations failed"),

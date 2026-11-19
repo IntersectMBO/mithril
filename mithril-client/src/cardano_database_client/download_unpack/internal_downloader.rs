@@ -518,6 +518,7 @@ mod tests {
         use anyhow::anyhow;
         use async_trait::async_trait;
         use slog::Logger;
+        use tokio::task::JoinError;
 
         use mithril_cardano_node_internal_database::{IMMUTABLE_DIR, immutable_trio_names};
         use mithril_common::StdResult;
@@ -526,6 +527,7 @@ mod tests {
         use mithril_common::entities::CompressionAlgorithm;
         use mithril_common::messages::DigestsMessagePart;
 
+        use crate::MithrilError;
         use crate::cardano_database_client::CardanoDatabaseClient;
         use crate::file_downloader::{FakeAncillaryFileBuilder, MockFileDownloader};
 
@@ -567,6 +569,18 @@ mod tests {
                 immutables: ImmutablesMessagePart {
                     average_size_uncompressed: 512,
                     locations,
+                },
+                ..CardanoDatabaseSnapshot::dummy()
+            }
+        }
+
+        fn snapshot_with_last_immutable_file_number(
+            last_immutable_file_number: ImmutableFileNumber,
+        ) -> CardanoDatabaseSnapshot {
+            CardanoDatabaseSnapshot {
+                beacon: CardanoDbBeacon {
+                    immutable_file_number: last_immutable_file_number,
+                    epoch: Epoch(123),
                 },
                 ..CardanoDatabaseSnapshot::dummy()
             }
@@ -630,7 +644,7 @@ mod tests {
         }
 
         fn artifact_downloader(
-            http_file_downloader: MockFileDownloader,
+            http_file_downloader: impl FileDownloader + 'static,
             logger: Logger,
         ) -> InternalArtifactDownloader {
             InternalArtifactDownloader::new(
@@ -651,6 +665,53 @@ mod tests {
                 leftover.is_empty(),
                 "orphan staging directories: {leftover:?}"
             );
+        }
+
+        fn assert_first_immutable_panicked(error: MithrilError) {
+            let join_error = error
+                .downcast::<JoinError>()
+                .expect("the error must come from the join of the panicking task");
+
+            assert_eq!(
+                Some(&"first immutable panics"),
+                join_error.into_panic().downcast_ref::<&str>()
+            );
+        }
+
+        fn assert_first_immutable_failed(error: MithrilError) {
+            assert!(
+                error
+                    .to_string()
+                    .contains("All locations failed for immutable_file_00000"),
+                "the first immutable must be the failing task, got: {error:?}"
+            );
+        }
+
+        async fn batch_download_unpack_two_immutables(
+            first_immutable_outcome: FirstImmutableOutcome,
+            target_dir: &Path,
+        ) -> MithrilResult<()> {
+            let artifact_downloader = artifact_downloader(
+                EndFirstWhenSiblingIsStagedFileDownloader {
+                    first_immutable_outcome,
+                    staged_downloads: 2,
+                },
+                TestLogger::stdout(),
+            );
+            let tasks = artifact_downloader
+                .build_download_tasks_for_immutables(
+                    &CardanoDatabaseSnapshot::dummy().immutables,
+                    0..=1,
+                    target_dir,
+                    "download_id",
+                    #[cfg(feature = "unstable")]
+                    WeightedCoin::new(Percentage::ZERO, [0; 32]),
+                )
+                .unwrap();
+
+            artifact_downloader
+                .batch_download_unpack(VecDeque::from(tasks), 2)
+                .await
         }
 
         fn staging_directories(target_dir: &Path) -> Vec<PathBuf> {
@@ -801,7 +862,7 @@ mod tests {
                 staged_downloads: 2,
             });
 
-            client
+            let error = client
                 .download_unpack(
                     &CardanoDatabaseSnapshot::dummy(),
                     &ImmutableFileRange::UpTo(1),
@@ -815,6 +876,7 @@ mod tests {
                 .await
                 .expect_err("a panicking task fails the batch");
 
+            assert_first_immutable_panicked(error);
             assert_no_staging_directory_is_left(&target_dir);
         }
 
@@ -826,9 +888,9 @@ mod tests {
                 FirstImmutableOutcome::Panics,
             );
 
-            client
+            let error = client
                 .download_unpack(
-                    &CardanoDatabaseSnapshot::dummy(),
+                    &snapshot_with_last_immutable_file_number(1),
                     &ImmutableFileRange::UpTo(1),
                     &target_dir,
                     all_downloads_in_parallel_options(),
@@ -836,6 +898,7 @@ mod tests {
                 .await
                 .expect_err("a panicking task fails the batch");
 
+            assert_first_immutable_panicked(error);
             assert_no_staging_directory_is_left(&target_dir);
         }
 
@@ -847,9 +910,9 @@ mod tests {
                 FirstImmutableOutcome::Fails,
             );
 
-            client
+            let error = client
                 .download_unpack(
-                    &CardanoDatabaseSnapshot::dummy(),
+                    &snapshot_with_last_immutable_file_number(1),
                     &ImmutableFileRange::UpTo(1),
                     &target_dir,
                     all_downloads_in_parallel_options(),
@@ -857,6 +920,7 @@ mod tests {
                 .await
                 .expect_err("a failing task fails the batch");
 
+            assert_first_immutable_failed(error);
             assert_no_staging_directory_is_left(&target_dir);
         }
 
@@ -910,13 +974,34 @@ mod tests {
                 )
                 .await
                 .expect_err("the batch must fail");
-            assert!(
-                error
-                    .to_string()
-                    .contains("All locations failed for immutable_file_00000"),
-                "the first immutable must be the failing task, got: {error:?}"
-            );
 
+            assert_first_immutable_failed(error);
+            assert_no_staging_directory_is_left(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn batch_download_unpack_leaves_no_staging_directory_when_a_task_fails() {
+            let target_dir = temp_dir_create!();
+
+            let error =
+                batch_download_unpack_two_immutables(FirstImmutableOutcome::Fails, &target_dir)
+                    .await
+                    .expect_err("a failing task fails the batch");
+
+            assert_first_immutable_failed(error);
+            assert_no_staging_directory_is_left(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn batch_download_unpack_leaves_no_staging_directory_when_a_task_panics() {
+            let target_dir = temp_dir_create!();
+
+            let error =
+                batch_download_unpack_two_immutables(FirstImmutableOutcome::Panics, &target_dir)
+                    .await
+                    .expect_err("a panicking task fails the batch");
+
+            assert_first_immutable_panicked(error);
             assert_no_staging_directory_is_left(&target_dir);
         }
 
