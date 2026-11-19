@@ -1,0 +1,22 @@
+services:
+  cardano-node-signer-block-producer:
+    command:
+      [
+        "run",
+        "--config",
+        "/config/cardano-node/config.json",
+        "--topology",
+        "/pool/topology-block-producer.json",
+        "--database-path",
+        "/db",
+        "--port",
+        "${SIGNER_CARDANO_BLOCK_PRODUCER_PORT}",
+        "--shelley-kes-key",
+        "/pool/kes.skey",
+        "--shelley-vrf-key",
+        "/pool/vrf.skey",
+        "--shelley-bls-key",
+        "/pool/bls.skey",
+        "--shelley-operational-certificate",
+        "/pool/opcert.cert"
+      ]

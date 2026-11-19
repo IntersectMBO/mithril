@@ -265,6 +265,13 @@ if [ "${each.value.type}" = "verified-norelay" ]; then
   DOCKER_COMPOSE_FILES="$DOCKER_COMPOSE_FILES -f $DOCKER_DIRECTORY/docker-compose-signer-verified-override.yaml"
   DOCKER_COMPOSE_FILES="$DOCKER_COMPOSE_FILES -f $DOCKER_DIRECTORY/docker-compose-signer-cardano-bp-override.yaml"
 fi
+# Support for the BLS key of the block producer when its Cardano node configuration enables Leios
+BLOCK_PRODUCER_CARDANO_CONFIGURATION=/home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/config/block-producer/${var.cardano_network}/cardano-node/config.json
+if [ "${each.value.type}" = "verified" ] || [ "${each.value.type}" = "verified-norelay" ]; then
+  if jq -e '[paths | .[-1] | strings | select(startswith("Leios"))] | length > 0' $BLOCK_PRODUCER_CARDANO_CONFIGURATION > /dev/null; then
+    DOCKER_COMPOSE_FILES="$DOCKER_COMPOSE_FILES -f $DOCKER_DIRECTORY/docker-compose-signer-cardano-bp-leios-override.yaml"
+  fi
+fi
 # Support for unverified signer with passive Cardano node
 if [ "${each.value.type}" = "unverified-cardano-passive" ]; then
   DOCKER_COMPOSE_FILES="$DOCKER_COMPOSE_FILES -f $DOCKER_DIRECTORY/docker-compose-signer-unverified-override.yaml"
