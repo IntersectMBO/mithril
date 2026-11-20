@@ -32,7 +32,7 @@ use crate::utils::{WeightedCoin, timestamp_seed};
 use super::DownloadUnpackOptions;
 #[cfg(feature = "unstable")]
 use super::download_task::CircuitBreaker;
-use super::download_task::{DownloadKind, DownloadTask, LocationToDownload};
+use super::download_task::{DownloadKind, DownloadTask, LocationToDownload, StagingDirectory};
 
 /// Percentage of immutable files to download through IPFS if IPFS is enabled, but the query to
 /// fetch the aggregator share fails.
@@ -382,7 +382,7 @@ impl InternalArtifactDownloader {
     /// Remove the staging directories of this download that a cancelled task may have left behind.
     async fn remove_staging_directories(&self, target_dir: &Path, download_id: &str) {
         self.remove_directories(target_dir, |name| {
-            DownloadTask::is_staging_directory_name(name, download_id)
+            StagingDirectory::is_staging_directory_name(name, download_id)
         })
         .await;
     }
@@ -395,7 +395,7 @@ impl InternalArtifactDownloader {
     async fn remove_stale_staging_directories(&self, target_dir: &Path) {
         self.remove_directories(
             target_dir,
-            DownloadTask::is_staging_directory_name_of_any_download,
+            StagingDirectory::is_staging_directory_name_of_any_download,
         )
         .await;
     }
