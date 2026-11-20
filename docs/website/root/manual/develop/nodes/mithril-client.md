@@ -221,6 +221,7 @@ Commands:
   cardano-db                  Cardano db management (alias: cdb)
   mithril-stake-distribution  Mithril stake distribution management (alias: msd)
   cardano-transaction         Cardano transactions management (alias: ctx)
+  cardano-block               Cardano blocks management (alias: cb)
   cardano-stake-distribution  Cardano stake distribution management (alias: csd)
   tools                       Tools commands
   help                        Print this message or the help of the given subcommand(s)
@@ -261,6 +262,11 @@ Options:
 
       --origin-tag <ORIGIN_TAG>
           Request origin tag
+
+      --circuit-verification-key-registry-path <CIRCUIT_VERIFICATION_KEY_REGISTRY_PATH>
+          Read the circuit verification key registry from a local signed registry file instead of resolving it through the published networks configuration (unstable, for local deployments)
+
+          [env: CIRCUIT_VERIFICATION_KEY_REGISTRY_PATH=]
 
       --era <ERA>
           Override the Mithril era
@@ -494,7 +500,7 @@ Here are the subcommands available:
 | Subcommand        | Performed action                                            |
 | ----------------- | ----------------------------------------------------------- |
 | **download**      | Downloads and restores a cardano-db snapshot                |
-| **verify**        | Verifies an existing Cardano database (`v2` backend only)   |
+| **verify**        | Verifies an existing Cardano database                       |
 | **help**          | Prints this message or the help for the given subcommand(s) |
 | **snapshot list** | Lists available cardano-db snapshots                        |
 | **snapshot show** | Shows information about a cardano-db snapshot               |
@@ -515,6 +521,21 @@ Here are the subcommands available:
 | **snapshot list** | Lists available Cardano transactions snapshots                                                |
 | **snapshot show** | Shows information about a Cardano transactions snapshot                                       |
 | **help**          | Prints this message or the help for the given subcommand(s)                                   |
+
+### Cardano blocks
+
+:::danger
+
+The Cardano blocks commands are currently **unstable**: they are not enabled on the mainnet aggregator, require the `--unstable` option and are not suitable for production use yet.
+
+:::
+
+| Subcommand        | Performed action                                                                |
+| ----------------- | ------------------------------------------------------------------------------- |
+| **snapshot list** | List Cardano block sets                                                         |
+| **snapshot show** | Show Cardano block sets                                                         |
+| **certify**       | Certify that a given list of block hashes are included in the Cardano block set |
+| **help**          | Print this message or the help of the given subcommand(s)                       |
 
 ### Cardano stake distribution
 
@@ -603,6 +624,74 @@ The client refuses to use or reset a directory that holds other data without thi
 
 :::
 
+## IPFS download
+
+:::danger
+
+The download through IPFS is currently **unstable**: it requires the `--unstable` option and is not suitable for production use yet.
+
+:::
+
+The `cardano-db download` command can download the immutable files of a Cardano database snapshot through [IPFS](https://ipfs.tech), when the aggregator advertises IPFS locations for them.
+The client fetches the files through the RPC API of a [Kubo](https://github.com/ipfs/kubo) node, and falls back to the other locations of the snapshot if an IPFS download fails.
+
+The Kubo node can either be managed by the client, or be your own node.
+
+### With a node managed by the client
+
+With the `--ipfs-managed-node` option, the client runs a Kubo node for the duration of the download:
+
+- On first use, the Kubo release archive (around 55 MB) is downloaded from the [Kubo GitHub releases](https://github.com/ipfs/kubo/releases) and cached in the `mithril/kubo` directory of the user cache directory (`~/.cache` on Linux, `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows). Its checksum is verified each time it is used, and the archive is downloaded again if it does not match
+- The node is created in the `mithril-client` directory of the system temporary directory, and removed once the download is done, including when the client is interrupted (`Ctrl-C`)
+- The node only downloads files: its RPC API is only reachable from the local machine, and it does not serve nor announce the downloaded files to the IPFS network
+- The node keeps around 2 GB of downloaded data, which is removed as the download progresses.
+
+The supported platforms are Linux (`x86_64` and `arm64`), macOS (`arm64`) and Windows (`x86_64`).
+
+Download a Cardano database through a node managed by the client:
+
+<Tabs groupId="system" queryString>
+  <TabItem value="linux-mac" label="Linux / Mac">
+  ```bash
+  ./mithril-client --unstable cardano-db download --ipfs-managed-node $CARDANO_DB_DIGEST
+  ```
+  </TabItem>
+  <TabItem value="windows" label="Windows">
+  ```powershell
+  .\mithril-client --unstable cardano-db download --ipfs-managed-node $CARDANO_DB_DIGEST
+  ```
+  </TabItem>
+</Tabs>
+
+:::tip
+
+The Kubo release is retrieved through the GitHub API, which limits the number of unauthenticated requests. If this limit is reached, set a GitHub token in the `GITHUB_TOKEN` environment variable.
+
+:::
+
+### With your own node
+
+With the `--ipfs-rpc-url` option, the client uses the RPC API of a running Kubo node, for example `http://127.0.0.1:5001/`:
+
+<Tabs groupId="system" queryString>
+  <TabItem value="linux-mac" label="Linux / Mac">
+  ```bash
+  ./mithril-client --unstable cardano-db download --ipfs-rpc-url http://127.0.0.1:5001/ $CARDANO_DB_DIGEST
+  ```
+  </TabItem>
+  <TabItem value="windows" label="Windows">
+  ```powershell
+  .\mithril-client --unstable cardano-db download --ipfs-rpc-url http://127.0.0.1:5001/ $CARDANO_DB_DIGEST
+  ```
+  </TabItem>
+</Tabs>
+
+:::danger
+
+The Kubo RPC API provides admin-level access to the node: it must never be exposed to the public internet.
+
+:::
+
 ## Configuration parameters
 
 The configuration parameters can be set in either of the following ways:
@@ -635,7 +724,7 @@ Here is a list of the available parameters:
 
 | Parameter                                | Command line (long)                        | Command line (short) | Environment variable                     | Description                                                                                                                                                                         | Default value               | Example |     Mandatory      |
 | ---------------------------------------- | ------------------------------------------ | :------------------: | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------- | :----------------: |
-| `backend`                                | `--backend`                                |         `-b`         | -                                        | Backend to use, either: `v1` (deprecated, full database restoration only) or `v2` (default, full or partial database restoration)                                                   | `v2`                        | -       |         -          |
+| `backend`                                | `--backend`                                |         `-b`         | -                                        | Backend to use: `v2` (default, full or partial database restoration)                                                                                                                | `v2`                        | -       |         -          |
 | `digest`                                 | -                                          |          -           | -                                        | Digest of the Cardano db snapshot to show or `latest` for the latest artifact                                                                                                       | -                           | -       | :heavy_check_mark: |
 | `run_mode`                               | `--run-mode`                               |          -           | `RUN_MODE`                               | Run Mode                                                                                                                                                                            | `dev`                       | -       |         -          |
 | `verbose`                                | `--verbose`                                |         `-v`         | -                                        | Verbosity level (-v=warning, -vv=info, -vvv=debug, -vvvv=trace)                                                                                                                     | `0`                         | -       |         -          |
@@ -657,8 +746,8 @@ Here is a list of the available parameters:
 
 | Parameter                                | Command line (long)                        | Command line (short) | Environment variable                     | Description                                                                                                                                                                         | Default value               | Example | Mandatory |
 | ---------------------------------------- | ------------------------------------------ | :------------------: | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------- | :-------: |
-| `backend`                                | `--backend`                                |         `-b`         | -                                        | Backend to use, either: `v1` (deprecated, full database restoration only) or `v2` (default, full or partial database restoration)                                                   | `v2`                        | -       |     -     |
-| `epoch`                                  | `--epoch`                                  |          -           | -                                        | [backend `v2` only] Epoch of the Cardano db snapshots to list, or `latest` for the latest artifact, or `latest-X` for the artifact of the latest epoch minus X                      | -                           | -       |     -     |
+| `backend`                                | `--backend`                                |         `-b`         | -                                        | Backend to use: `v2` (default, full or partial database restoration)                                                                                                                | `v2`                        | -       |     -     |
+| `epoch`                                  | `--epoch`                                  |          -           | -                                        | Epoch of the Cardano db snapshots to list, or `latest` for the latest artifact, or `latest-X` for the artifact of the latest epoch minus X                                          | -                           | -       |     -     |
 | `run_mode`                               | `--run-mode`                               |          -           | `RUN_MODE`                               | Run Mode                                                                                                                                                                            | `dev`                       | -       |     -     |
 | `verbose`                                | `--verbose`                                |         `-v`         | -                                        | Verbosity level (-v=warning, -vv=info, -vvv=debug, -vvvv=trace)                                                                                                                     | `0`                         | -       |     -     |
 | `config_directory`                       | `--config-directory`                       |          -           | -                                        | Directory where configuration file is located                                                                                                                                       | `./config`                  | -       |     -     |
@@ -677,38 +766,40 @@ Here is a list of the available parameters:
 
 `cardano-db download` command:
 
+| Parameter                                | Command line (long)                        | Command line (short) | Environment variable                     | Description                                                                                                                                                                         | Default value               | Example                  |     Mandatory      |
+| ---------------------------------------- | ------------------------------------------ | :------------------: | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------ | :----------------: |
+| `backend`                                | `--backend`                                |         `-b`         | -                                        | Backend to use: `v2` (default, full or partial database restoration)                                                                                                                | `v2`                        | -                        |         -          |
+| `digest`                                 | -                                          |          -           | -                                        | Digest of the Cardano db snapshot to download or `latest` for the latest artifact                                                                                                   | -                           | -                        | :heavy_check_mark: |
+| `download_dir`                           | `--download-dir`                           |          -           | -                                        | Directory where the immutable and ancillary files will be downloaded                                                                                                                | -                           | -                        |         -          |
+| `genesis_verification_key`               | `--genesis-verification-key`               |          -           | `GENESIS_VERIFICATION_KEY`               | Genesis verification key to check the certificate chain                                                                                                                             | -                           | -                        | :heavy_check_mark: |
+| `ipfs_rpc_url`                           | `--ipfs-rpc-url`                           |          -           | `IPFS_RPC_URL`                           | `unstable` Set the base URL of a Kubo node's RPC API, see [IPFS download](#ipfs-download)                                                                                           | -                           | `http://127.0.0.1:5001/` |         -          |
+| `ipfs_managed_node`                      | `--ipfs-managed-node`                      |          -           | `IPFS_MANAGED_NODE`                      | `unstable` Download through a Kubo node run by the client for the duration of the download, see [IPFS download](#ipfs-download)                                                     | `false`                     | -                        |         -          |
+| `include_ancillary`                      | `--include-ancillary`                      |          -           | -                                        | Include ancillary files in the download, if set the `ancillary_verification_key` is required in order to verify the ancillary files                                                 | `false`                     | -                        |         -          |
+| `ancillary_verification_key`             | `--ancillary-verification-key`             |          -           | `ANCILLARY_VERIFICATION_KEY`             | Ancillary verification key to verify the ancillary files                                                                                                                            | -                           | -                        |         -          |
+| `start`                                  | `--start`                                  |          -           | -                                        | The first immutable file number to download                                                                                                                                         | -                           | -                        |         -          |
+| `end`                                    | `--end`                                    |          -           | -                                        | The last immutable file number to download                                                                                                                                          | -                           | -                        |         -          |
+| `allow_override`                         | `--allow-override`                         |          -           | -                                        | Allow existing files in the download directory to be overridden                                                                                                                     | `false`                     | -                        |         -          |
+| `run_mode`                               | `--run-mode`                               |          -           | `RUN_MODE`                               | Run Mode                                                                                                                                                                            | `dev`                       | -                        |         -          |
+| `verbose`                                | `--verbose`                                |         `-v`         | -                                        | Verbosity level (-v=warning, -vv=info, -vvv=debug, -vvvv=trace)                                                                                                                     | `0`                         | -                        |         -          |
+| `config_directory`                       | `--config-directory`                       |          -           | -                                        | Directory where configuration file is located                                                                                                                                       | `./config`                  | -                        |         -          |
+| `aggregator_endpoint`                    | `--aggregator-endpoint`                    |          -           | `AGGREGATOR_ENDPOINT`                    | Override configuration Aggregator endpoint URL                                                                                                                                      | -                           | -                        |         -          |
+| `json`                                   | `--json`                                   |          -           | -                                        | Enable JSON output for command results                                                                                                                                              | `false`                     | -                        |         -          |
+| `log_format_json`                        | `--log-format-json`                        |          -           | -                                        | Enable JSON output for logs displayed according to verbosity level                                                                                                                  | `false`                     | -                        |         -          |
+| `log_output`                             | `--log-output`                             |          -           | -                                        | Redirect the logs to a file                                                                                                                                                         | -                           | -                        |         -          |
+| `unstable`                               | `--unstable`                               |          -           | -                                        | Enable unstable commands                                                                                                                                                            | `false`                     | -                        |         -          |
+| `origin_tag`                             | `--origin-tag`                             |          -           | -                                        | Request origin tag                                                                                                                                                                  | -                           | -                        |         -          |
+| `circuit_verification_key_registry_path` | `--circuit-verification-key-registry-path` |          -           | `CIRCUIT_VERIFICATION_KEY_REGISTRY_PATH` | Read the circuit verification key registry from a local signed registry file instead of resolving it through the published networks configuration (unstable, for local deployments) | -                           | -                        |         -          |
+| `era`                                    | `--era`                                    |          -           | -                                        | Override the Mithril era                                                                                                                                                            | -                           | -                        |         -          |
+| `use_certificate_chain_cache`            | `--use-certificate-chain-cache`            |          -           | -                                        | Use the certificate chain cache to verify the certificate chain                                                                                                                     | `false`                     | -                        |         -          |
+| `certificate_chain_cache_mode`           | `--certificate-chain-cache-mode`           |          -           | -                                        | Verification mode of the certificate chain when the cache is used                                                                                                                   | `FullVerification`          | -                        |         -          |
+| `certificate_chain_cache_path`           | `--certificate-chain-cache-path`           |          -           | -                                        | Directory of the certificate chain cache, requires --use-certificate-chain-cache                                                                                                    | `./certificate-chain-cache` | -                        |         -          |
+| `help`                                   | `--help`                                   |         `-h`         | -                                        | Print help (see more with '--help')                                                                                                                                                 | -                           | -                        |         -          |
+
+`cardano-db verify` command:
+
 | Parameter                                | Command line (long)                        | Command line (short) | Environment variable                     | Description                                                                                                                                                                         | Default value               | Example |     Mandatory      |
 | ---------------------------------------- | ------------------------------------------ | :------------------: | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------- | :----------------: |
-| `backend`                                | `--backend`                                |         `-b`         | -                                        | Backend to use, either: `v1` (deprecated, full database restoration only) or `v2` (default, full or partial database restoration)                                                   | `v2`                        | -       |         -          |
-| `digest`                                 | -                                          |          -           | -                                        | Digest of the Cardano db snapshot to download or `latest` for the latest artifact                                                                                                   | -                           | -       | :heavy_check_mark: |
-| `download_dir`                           | `--download-dir`                           |          -           | -                                        | Directory where the immutable and ancillary files will be downloaded                                                                                                                | -                           | -       |         -          |
-| `genesis_verification_key`               | `--genesis-verification-key`               |          -           | `GENESIS_VERIFICATION_KEY`               | Genesis verification key to check the certificate chain                                                                                                                             | -                           | -       | :heavy_check_mark: |
-| `include_ancillary`                      | `--include-ancillary`                      |          -           | -                                        | Include ancillary files in the download, if set the `ancillary_verification_key` is required in order to verify the ancillary files                                                 | `false`                     | -       |         -          |
-| `ancillary_verification_key`             | `--ancillary-verification-key`             |          -           | `ANCILLARY_VERIFICATION_KEY`             | Ancillary verification key to verify the ancillary files                                                                                                                            | -                           | -       |         -          |
-| `start`                                  | `--start`                                  |          -           | -                                        | [backend `v2` only] The first immutable file number to download                                                                                                                     | -                           | -       |         -          |
-| `end`                                    | `--end`                                    |          -           | -                                        | [backend `v2` only] The last immutable file number to download                                                                                                                      | -                           | -       |         -          |
-| `allow_override`                         | `--allow-override`                         |          -           | -                                        | [backend `v2` only] Allow existing files in the download directory to be overridden                                                                                                 | `false`                     | -       |         -          |
-| `run_mode`                               | `--run-mode`                               |          -           | `RUN_MODE`                               | Run Mode                                                                                                                                                                            | `dev`                       | -       |         -          |
-| `verbose`                                | `--verbose`                                |         `-v`         | -                                        | Verbosity level (-v=warning, -vv=info, -vvv=debug, -vvvv=trace)                                                                                                                     | `0`                         | -       |         -          |
-| `config_directory`                       | `--config-directory`                       |          -           | -                                        | Directory where configuration file is located                                                                                                                                       | `./config`                  | -       |         -          |
-| `aggregator_endpoint`                    | `--aggregator-endpoint`                    |          -           | `AGGREGATOR_ENDPOINT`                    | Override configuration Aggregator endpoint URL                                                                                                                                      | -                           | -       |         -          |
-| `json`                                   | `--json`                                   |          -           | -                                        | Enable JSON output for command results                                                                                                                                              | `false`                     | -       |         -          |
-| `log_format_json`                        | `--log-format-json`                        |          -           | -                                        | Enable JSON output for logs displayed according to verbosity level                                                                                                                  | `false`                     | -       |         -          |
-| `log_output`                             | `--log-output`                             |          -           | -                                        | Redirect the logs to a file                                                                                                                                                         | -                           | -       |         -          |
-| `unstable`                               | `--unstable`                               |          -           | -                                        | Enable unstable commands                                                                                                                                                            | `false`                     | -       |         -          |
-| `origin_tag`                             | `--origin-tag`                             |          -           | -                                        | Request origin tag                                                                                                                                                                  | -                           | -       |         -          |
-| `circuit_verification_key_registry_path` | `--circuit-verification-key-registry-path` |          -           | `CIRCUIT_VERIFICATION_KEY_REGISTRY_PATH` | Read the circuit verification key registry from a local signed registry file instead of resolving it through the published networks configuration (unstable, for local deployments) | -                           | -       |         -          |
-| `era`                                    | `--era`                                    |          -           | -                                        | Override the Mithril era                                                                                                                                                            | -                           | -       |         -          |
-| `use_certificate_chain_cache`            | `--use-certificate-chain-cache`            |          -           | -                                        | Use the certificate chain cache to verify the certificate chain                                                                                                                     | `false`                     | -       |         -          |
-| `certificate_chain_cache_mode`           | `--certificate-chain-cache-mode`           |          -           | -                                        | Verification mode of the certificate chain when the cache is used                                                                                                                   | `FullVerification`          | -       |         -          |
-| `certificate_chain_cache_path`           | `--certificate-chain-cache-path`           |          -           | -                                        | Directory of the certificate chain cache, requires --use-certificate-chain-cache                                                                                                    | `./certificate-chain-cache` | -       |         -          |
-| `help`                                   | `--help`                                   |         `-h`         | -                                        | Print help (see more with '--help')                                                                                                                                                 | -                           | -       |         -          |
-
-`cardano-db verify` command (`v2` backend only):
-
-| Parameter                                | Command line (long)                        | Command line (short) | Environment variable                     | Description                                                                                                                                                                         | Default value               | Example |     Mandatory      |
-| ---------------------------------------- | ------------------------------------------ | :------------------: | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------- | :----------------: |
-| `backend`                                | `--backend`                                |         `-b`         | -                                        | Backend to use, either: `v1` (not supported for verify command) or `v2` (default, full or partial database restoration)                                                             | `v2`                        | -       |         -          |
+| `backend`                                | `--backend`                                |         `-b`         | -                                        | Backend to use: `v2` (default, full or partial database restoration)                                                                                                                | `v2`                        | -       |         -          |
 | `digest`                                 | -                                          |          -           | -                                        | Digest of the Cardano db snapshot to verify or `latest` for the latest artifact                                                                                                     | -                           | -       | :heavy_check_mark: |
 | `db_dir`                                 | `--db-dir`                                 |          -           | -                                        | Directory from where the immutable will be verified                                                                                                                                 | -                           | -       |         -          |
 | `genesis_verification_key`               | `--genesis-verification-key`               |          -           | `GENESIS_VERIFICATION_KEY`               | Genesis verification key to check the certificate chain                                                                                                                             | -                           | -       |         -          |
@@ -980,7 +1071,7 @@ This command is not compatible with **Linux ARM environments**.
 | `config-path`                            | `--config-path`                            |          -           | -                                        | Path to JSON configuration file for the Cardano snapshot converter                                                                                                                  | -                           | -       |         -          |
 | `utxo_hd_flavor`                         | `--utxo-hd-flavor`                         |          -           | -                                        | UTxO-HD flavor to convert the ledger snapshot to (`Legacy`, `LMDB` or `LSM`)                                                                                                        | -                           | -       | :heavy_check_mark: |
 | `commit`                                 | `--commit`                                 |          -           | -                                        | Replaces the current ledger state in the `db_directory`.                                                                                                                            | `false`                     | -       |         -          |
-| `github_token`                           | `--github-token`                           |          -           | `GITHUB_TOKEN`                           | GitHub token for authenticated API calls                                                                                                                                            | -                           | -       |         -          |
+| `github_token`                           | `--github-token`                           |          -           | -                                        | Deprecated: set the token in the `GITHUB_TOKEN` environment variable instead. GitHub token for authenticated API calls                                                              | -                           | -       |         -          |
 | `run_mode`                               | `--run-mode`                               |          -           | `RUN_MODE`                               | Run Mode                                                                                                                                                                            | `dev`                       | -       |         -          |
 | `verbose`                                | `--verbose`                                |         `-v`         | -                                        | Verbosity level (-v=warning, -vv=info, -vvv=debug, -vvvv=trace)                                                                                                                     | `0`                         | -       |         -          |
 | `config_directory`                       | `--config-directory`                       |          -           | -                                        | Directory where configuration file is located                                                                                                                                       | `./config`                  | -       |         -          |
