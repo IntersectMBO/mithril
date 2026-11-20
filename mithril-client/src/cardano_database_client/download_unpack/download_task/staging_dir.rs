@@ -27,9 +27,25 @@ impl StagingDirectory {
     /// Prefix of the name of the staging directory of the ancillary archive
     const ANCILLARY_STAGING_DIRECTORY_PREFIX: &str = "ancillary-";
 
+    /// Run an operation in a new staging directory.
+    ///
+    /// The directory is removed once the operation completes, whatever its result, and when the
+    /// operation panics or is cancelled.
+    pub async fn run_in<T>(
+        path: PathBuf,
+        logger: &Logger,
+        operation: impl AsyncFnOnce(&StagingDirectory) -> MithrilResult<T>,
+    ) -> MithrilResult<T> {
+        let staging_directory = Self::create(path, logger)?;
+        let result = operation(&staging_directory).await;
+        staging_directory.remove().await;
+
+        result
+    }
+
     /// Create the directory synchronously so that no cancellation point exists between its
     /// creation and the guard that removes it.
-    pub fn create(path: PathBuf, logger: &Logger) -> MithrilResult<Self> {
+    fn create(path: PathBuf, logger: &Logger) -> MithrilResult<Self> {
         std::fs::create_dir(&path).with_context(|| {
             format!(
                 "can not create download staging directory '{}'",
@@ -51,7 +67,7 @@ impl StagingDirectory {
 
     /// Remove the directory without blocking the runtime, in one attempt: the sweep of the download
     /// is the backstop. The synchronous removal of the drop is kept for a cancellation.
-    pub async fn remove(mut self) {
+    async fn remove(mut self) {
         if let Err(error) = tokio::fs::remove_dir_all(&self.path).await
             && error.kind() != io::ErrorKind::NotFound
         {
@@ -195,6 +211,144 @@ mod tests {
                 .len(),
             "one asynchronous removal attempt must warn once"
         );
+    }
+
+    mod run_in {
+        use std::future::pending;
+
+        use anyhow::anyhow;
+
+        use super::*;
+
+        const MAX_YIELDS_WAITING_FOR_A_PATH: usize = 1_000_000;
+
+        async fn wait_until_exists(path: &Path) {
+            for _ in 0..MAX_YIELDS_WAITING_FOR_A_PATH {
+                if path.exists() {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+            panic!("'{}' was never created", path.display());
+        }
+
+        #[tokio::test]
+        async fn runs_the_operation_in_the_created_staging_directory() {
+            let staging_path = temp_dir_create!().join("staging");
+
+            let operation_path = StagingDirectory::run_in(
+                staging_path.clone(),
+                &TestLogger::stdout(),
+                async |staging_directory| {
+                    assert!(staging_directory.path().is_dir());
+                    Ok(staging_directory.path().to_path_buf())
+                },
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(staging_path, operation_path);
+        }
+
+        #[tokio::test]
+        async fn returns_the_error_of_the_operation() {
+            let staging_path = temp_dir_create!().join("staging");
+
+            let error = StagingDirectory::run_in(
+                staging_path,
+                &TestLogger::stdout(),
+                async |_| -> MithrilResult<()> { Err(anyhow!("operation failure")) },
+            )
+            .await
+            .expect_err("the error of the operation must be returned");
+
+            assert_eq!("operation failure", error.to_string());
+        }
+
+        #[tokio::test]
+        async fn removes_the_staging_directory_once_the_operation_succeeds() {
+            let staging_path = temp_dir_create!().join("staging");
+
+            StagingDirectory::run_in(
+                staging_path.clone(),
+                &TestLogger::stdout(),
+                async |_| Ok(()),
+            )
+            .await
+            .unwrap();
+
+            assert!(!staging_path.exists());
+        }
+
+        #[tokio::test]
+        async fn removes_the_staging_directory_once_the_operation_fails() {
+            let staging_path = temp_dir_create!().join("staging");
+
+            StagingDirectory::run_in(
+                staging_path.clone(),
+                &TestLogger::stdout(),
+                async |_| -> MithrilResult<()> { Err(anyhow!("operation failure")) },
+            )
+            .await
+            .expect_err("the operation fails");
+
+            assert!(!staging_path.exists());
+        }
+
+        #[tokio::test]
+        async fn removes_the_staging_directory_when_the_operation_is_cancelled() {
+            let staging_path = temp_dir_create!().join("staging");
+            let operation_staging_path = staging_path.clone();
+            let handle = tokio::spawn(async move {
+                StagingDirectory::run_in(
+                    operation_staging_path,
+                    &TestLogger::stdout(),
+                    async |_| pending::<MithrilResult<()>>().await,
+                )
+                .await
+            });
+            wait_until_exists(&staging_path).await;
+
+            handle.abort();
+            handle.await.expect_err("the operation is cancelled");
+
+            assert!(!staging_path.exists());
+        }
+
+        #[tokio::test]
+        async fn removes_the_staging_directory_when_the_operation_panics() {
+            let staging_path = temp_dir_create!().join("staging");
+            let operation_staging_path = staging_path.clone();
+
+            let join_error = tokio::spawn(async move {
+                StagingDirectory::run_in(
+                    operation_staging_path,
+                    &TestLogger::stdout(),
+                    async |_| -> MithrilResult<()> { panic!("the operation panics") },
+                )
+                .await
+            })
+            .await
+            .expect_err("the operation panics");
+
+            assert!(join_error.is_panic());
+            assert!(!staging_path.exists());
+        }
+
+        #[tokio::test]
+        async fn fails_without_running_the_operation_when_the_staging_directory_can_not_be_created()
+        {
+            let staging_path = temp_dir_create!().join("staging");
+            std::fs::create_dir(&staging_path).unwrap();
+
+            StagingDirectory::run_in(
+                staging_path,
+                &TestLogger::stdout(),
+                async |_| -> MithrilResult<()> { panic!("the operation must not run") },
+            )
+            .await
+            .expect_err("an existing directory can not be created again");
+        }
     }
 
     mod staging_directory_name {

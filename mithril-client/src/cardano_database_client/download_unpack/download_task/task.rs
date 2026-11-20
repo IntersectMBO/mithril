@@ -310,12 +310,14 @@ impl DownloadTask {
     /// If all locations fail, an error is returned.
     pub fn build_download_future(self, logger: Logger) -> Pin<Box<DownloadFuture>> {
         let download_future = async move {
-            let staging_directory =
-                StagingDirectory::create(self.staging_directory_path(), &logger)?;
-            let download_result = self.download_unpack_file(&staging_directory, &logger).await;
-            staging_directory.remove().await;
-
-            download_result
+            StagingDirectory::run_in(
+                self.staging_directory_path(),
+                &logger,
+                async |staging_directory| {
+                    self.download_unpack_file(staging_directory, &logger).await
+                },
+            )
+            .await
         };
 
         Box::pin(download_future)
@@ -352,13 +354,10 @@ impl LocationToDownload {
 
 #[cfg(test)]
 mod tests {
-    use std::future::pending;
     #[cfg(target_os = "linux")]
     use std::os::unix::fs::MetadataExt;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
-
-    use async_trait::async_trait;
 
     use mithril_common::StdResult;
     use mithril_common::entities::FileUri;
@@ -408,59 +407,6 @@ mod tests {
                 circuit_breaker: None,
             })
             .collect()
-    }
-
-    struct PendingFileDownloader;
-
-    #[async_trait]
-    impl FileDownloader for PendingFileDownloader {
-        async fn download_unpack(
-            &self,
-            _location: &FileDownloaderUri,
-            _file_size: u64,
-            _target_dir: &Path,
-            _compression_algorithm: Option<CompressionAlgorithm>,
-            _download_event_type: DownloadEvent,
-        ) -> StdResult<()> {
-            pending().await
-        }
-    }
-
-    struct PanickingFileDownloader;
-
-    #[async_trait]
-    impl FileDownloader for PanickingFileDownloader {
-        async fn download_unpack(
-            &self,
-            _location: &FileDownloaderUri,
-            _file_size: u64,
-            _target_dir: &Path,
-            _compression_algorithm: Option<CompressionAlgorithm>,
-            _download_event_type: DownloadEvent,
-        ) -> StdResult<()> {
-            panic!("the download panics")
-        }
-    }
-
-    const MAX_YIELDS_WAITING_FOR_A_PATH: usize = 1_000_000;
-
-    async fn wait_until_exists(path: &Path) {
-        for _ in 0..MAX_YIELDS_WAITING_FOR_A_PATH {
-            if path.exists() {
-                return;
-            }
-            tokio::task::yield_now().await;
-        }
-        panic!("'{}' was never created", path.display());
-    }
-
-    /// Abort the download of the task once its staging directory is created.
-    async fn abort_download_once_staging_dir_exists(download_task: DownloadTask, staging_dir: &Path) {
-        let handle = tokio::spawn(download_task.build_download_future(TestLogger::stdout()));
-        wait_until_exists(staging_dir).await;
-
-        handle.abort();
-        handle.await.expect_err("the download future is cancelled");
     }
 
     mod download_unpack_immutable_files {
@@ -842,21 +788,6 @@ mod tests {
             assert_dir_eq!(&target_dir, PROMOTED_TRIO);
         }
 
-        #[tokio::test]
-        async fn aborting_the_download_future_removes_the_staging_directory() {
-            let target_dir = temp_dir_create!();
-            let download_task = immutable_download_task(
-                Arc::new(PendingFileDownloader),
-                &target_dir,
-                [FIRST_LOCATION],
-            );
-
-            abort_download_once_staging_dir_exists(download_task, &immutable_staging_dir(&target_dir))
-                .await;
-
-            assert_target_dir_is_empty(&target_dir);
-        }
-
         #[cfg(target_os = "linux")]
         #[tokio::test]
         async fn promotes_the_immutable_trio_to_an_immutable_directory_on_another_filesystem() {
@@ -1187,41 +1118,6 @@ mod tests {
             .expect("the second location must succeed");
 
             assert_dir_eq!(&target_dir, "* dummy_ledger");
-        }
-
-        #[tokio::test]
-        async fn aborting_the_download_future_removes_the_ancillary_staging_directory() {
-            let target_dir = temp_dir_create!();
-            let download_task = ancillary_download_task(
-                Arc::new(PendingFileDownloader),
-                &target_dir,
-                fake_ancillary_verifier(),
-                [FIRST_LOCATION],
-            );
-
-            abort_download_once_staging_dir_exists(download_task, &ancillary_staging_dir(&target_dir))
-                .await;
-
-            assert_no_staging_directory_left(&target_dir);
-        }
-
-        #[tokio::test]
-        async fn a_panicking_download_removes_the_ancillary_staging_directory() {
-            let target_dir = temp_dir_create!();
-            let download_task = ancillary_download_task(
-                Arc::new(PanickingFileDownloader),
-                &target_dir,
-                fake_ancillary_verifier(),
-                [FIRST_LOCATION],
-            );
-
-            let join_error =
-                tokio::spawn(download_task.build_download_future(TestLogger::stdout()))
-                    .await
-                    .expect_err("the download future panics");
-
-            assert!(join_error.is_panic());
-            assert_no_staging_directory_left(&target_dir);
         }
 
         #[cfg(unix)]
