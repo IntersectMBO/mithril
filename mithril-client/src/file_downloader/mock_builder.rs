@@ -51,6 +51,41 @@ pub struct FakeAncillaryFileBuilder {
     sign_manifest: Option<ManifestSigner>,
 }
 
+impl FakeAncillaryFileBuilder {
+    /// Create the ancillary files and their manifest in the given directory (the directory must
+    /// exist otherwise the function will panic).
+    pub fn create_files_in(&self, target_dir: &Path) {
+        for filename in [
+            self.files_in_manifest_to_create.as_slice(),
+            self.files_not_in_manifest_to_create
+                .as_ref()
+                .unwrap_or(&vec![])
+                .as_slice(),
+        ]
+        .concat()
+        {
+            File::create(target_dir.join(filename)).unwrap();
+        }
+
+        let empty_file_sha256 = hex::encode(Sha256::digest(""));
+        let mut ancillary_manifest =
+            AncillaryFilesManifest::new_without_signature(BTreeMap::from_iter(
+                self.files_in_manifest_to_create
+                    .iter()
+                    .map(|filename| (PathBuf::from(filename), empty_file_sha256.clone())),
+            ));
+
+        if let Some(manifest_signer) = &self.sign_manifest {
+            ancillary_manifest.set_signature(manifest_signer.sign(&ancillary_manifest.compute_hash()));
+        }
+
+        let ancillary_file =
+            File::create(target_dir.join(AncillaryFilesManifest::ANCILLARY_MANIFEST_FILE_NAME))
+                .unwrap();
+        serde_json::to_writer(ancillary_file, &ancillary_manifest).unwrap();
+    }
+}
+
 impl Default for MockFileDownloaderBuilder {
     fn default() -> Self {
         Self {
@@ -102,37 +137,7 @@ impl MockFileDownloaderBuilder {
         fake_ancillary_file_builder: FakeAncillaryFileBuilder,
     ) -> Self {
         self.with_returning(Box::new(move |_, _, target_dir: &Path, _, _| {
-            for filename in [
-                fake_ancillary_file_builder.files_in_manifest_to_create.as_slice(),
-                fake_ancillary_file_builder
-                    .files_not_in_manifest_to_create
-                    .as_ref()
-                    .unwrap_or(&vec![])
-                    .as_slice(),
-            ]
-            .concat()
-            {
-                File::create(target_dir.join(filename)).unwrap();
-            }
-
-            let empty_file_sha256 = hex::encode(Sha256::digest(""));
-            let mut ancillary_manifest =
-                AncillaryFilesManifest::new_without_signature(BTreeMap::from_iter(
-                    fake_ancillary_file_builder
-                        .files_in_manifest_to_create
-                        .iter()
-                        .map(|filename| (PathBuf::from(filename), empty_file_sha256.clone())),
-                ));
-
-            if let Some(manifest_signer) = &fake_ancillary_file_builder.sign_manifest {
-                ancillary_manifest
-                    .set_signature(manifest_signer.sign(&ancillary_manifest.compute_hash()));
-            }
-
-            let ancillary_file =
-                File::create(target_dir.join(AncillaryFilesManifest::ANCILLARY_MANIFEST_FILE_NAME))
-                    .unwrap();
-            serde_json::to_writer(ancillary_file, &ancillary_manifest).unwrap();
+            fake_ancillary_file_builder.create_files_in(target_dir);
             Ok(())
         }))
     }

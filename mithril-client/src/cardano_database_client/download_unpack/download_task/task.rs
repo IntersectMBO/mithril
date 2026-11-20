@@ -391,6 +391,16 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    fn make_read_only(dir: &Path) {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn make_writable(dir: &Path) {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
     fn create_locations_to_download<U>(
         file_downloader: Arc<dyn FileDownloader>,
         uris: U,
@@ -493,14 +503,8 @@ mod tests {
         fn create_read_only_immutable_dir(target_dir: &Path) -> PathBuf {
             let immutable_dir = target_dir.join(IMMUTABLE_DIR);
             std::fs::create_dir_all(&immutable_dir).unwrap();
-            std::fs::set_permissions(&immutable_dir, std::fs::Permissions::from_mode(0o555))
-                .unwrap();
+            make_read_only(&immutable_dir);
             immutable_dir
-        }
-
-        #[cfg(unix)]
-        fn make_writable(dir: &Path) {
-            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
         fn create_file(parent_dir: &Path, name: &str) {
@@ -924,10 +928,6 @@ mod tests {
     }
 
     mod download_unpack_ancillary_file {
-        use std::collections::BTreeMap;
-
-        use sha2::{Digest, Sha256};
-
         use mithril_cardano_node_internal_database::entities::AncillaryFilesManifest;
         use mithril_common::crypto_helper::ManifestSigner;
 
@@ -1007,30 +1007,12 @@ mod tests {
         {
             let target_dir = temp_dir_create!();
             let ancillary_signer = ManifestSigner::create_deterministic_signer();
-            let manifest_signer = ancillary_signer.clone();
+            let ancillary_files = signed_ancillary_files("dummy_ledger", &ancillary_signer);
             let file_downloader = MockFileDownloaderBuilder::default()
                 .with_file_uri(FIRST_LOCATION)
                 .with_returning(Box::new(move |_, _, unpack_dir: &Path, _, _| {
-                    std::fs::File::create(unpack_dir.join("dummy_ledger")).unwrap();
-                    let mut manifest =
-                        AncillaryFilesManifest::new_without_signature(BTreeMap::from([(
-                            PathBuf::from("dummy_ledger"),
-                            hex::encode(Sha256::digest(b"")),
-                        )]));
-                    manifest.set_signature(manifest_signer.sign(&manifest.compute_hash()));
-                    serde_json::to_writer(
-                        std::fs::File::create(
-                            unpack_dir.join(AncillaryFilesManifest::ANCILLARY_MANIFEST_FILE_NAME),
-                        )
-                        .unwrap(),
-                        &manifest,
-                    )
-                    .unwrap();
-                    std::fs::set_permissions(
-                        unpack_dir.parent().unwrap(),
-                        std::fs::Permissions::from_mode(0o555),
-                    )
-                    .unwrap();
+                    ancillary_files.create_files_in(unpack_dir);
+                    make_read_only(unpack_dir.parent().unwrap());
                     Ok(())
                 }))
                 .build();
@@ -1043,7 +1025,7 @@ mod tests {
             )
             .await;
 
-            std::fs::set_permissions(&target_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+            make_writable(&target_dir);
             let error = result.expect_err("a local promotion failure must stop the task");
             assert!(
                 format!("{error:?}").contains("Could not promote ancillary"),
