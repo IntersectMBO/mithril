@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -8,7 +7,6 @@ use std::sync::Arc;
 use anyhow::{Context, anyhow};
 use slog::Logger;
 
-use mithril_cardano_node_internal_database::{IMMUTABLE_DIR, immutable_trio_names};
 use mithril_common::entities::{CompressionAlgorithm, ImmutableFileNumber};
 
 use crate::{
@@ -16,9 +14,10 @@ use crate::{
     file_downloader::{
         DownloadEvent, FileDownloader, FileDownloaderUnreachable, FileDownloaderUri,
     },
-    utils::{AncillaryVerifier, ValidatedAncillaryManifest, move_file},
+    utils::{AncillaryVerifier, ValidatedAncillaryManifest},
 };
 
+use super::immutable_trio::{promote_immutable_files, verify_immutable_archive_members};
 use super::{CircuitBreaker, StagingDirectory};
 
 /// The future type for downloading a file
@@ -173,7 +172,7 @@ impl DownloadTask {
     async fn verify_download(&self, staging_dir: &Path) -> MithrilResult<VerifiedDownload> {
         match &self.kind {
             DownloadKind::Immutable(immutable_file_number) => {
-                Self::verify_immutable_archive_members(staging_dir, *immutable_file_number).await?;
+                verify_immutable_archive_members(staging_dir, *immutable_file_number).await?;
                 Ok(VerifiedDownload::ImmutableTrio(*immutable_file_number))
             }
             DownloadKind::Ancillary { verifier } => {
@@ -191,8 +190,7 @@ impl DownloadTask {
     ) -> MithrilResult<()> {
         match verified_download {
             VerifiedDownload::ImmutableTrio(immutable_file_number) => {
-                Self::promote_immutable_files(staging_dir, &self.target_dir, immutable_file_number)
-                    .await
+                promote_immutable_files(staging_dir, &self.target_dir, immutable_file_number).await
             }
             VerifiedDownload::AncillaryFiles(validated_manifest) => {
                 validated_manifest.move_to_final_location(&self.target_dir).await
@@ -215,93 +213,6 @@ impl DownloadTask {
                 StagingDirectory::ancillary_staging_directory_path(&self.target_dir, download_id)
             }
         }
-    }
-
-    /// Check that the unpacked immutable archive holds exactly the immutable directory and the
-    /// regular files of the immutable trio, nothing else.
-    async fn verify_immutable_archive_members(
-        staging_dir: &Path,
-        immutable_file_number: ImmutableFileNumber,
-    ) -> MithrilResult<()> {
-        let staging_entries = Self::list_entry_names(staging_dir).await?;
-        let expected_staging_entries = BTreeSet::from([IMMUTABLE_DIR.to_string()]);
-        if staging_entries != expected_staging_entries {
-            anyhow::bail!(
-                "Unexpected entries in the archive of immutable file {immutable_file_number}: expected {expected_staging_entries:?}, found {staging_entries:?}"
-            );
-        }
-
-        let staged_immutable_dir = staging_dir.join(IMMUTABLE_DIR);
-        let expected_names: BTreeSet<String> =
-            immutable_trio_names(immutable_file_number).into_iter().collect();
-        let found_names = Self::list_entry_names(&staged_immutable_dir).await?;
-        if found_names != expected_names {
-            anyhow::bail!(
-                "Unexpected content in the archive of immutable file {immutable_file_number}: expected {expected_names:?}, found {found_names:?}"
-            );
-        }
-
-        for name in &expected_names {
-            let path = staged_immutable_dir.join(name);
-            let metadata = tokio::fs::symlink_metadata(&path)
-                .await
-                .with_context(|| format!("Could not read metadata of '{}'", path.display()))?;
-            if !metadata.is_file() {
-                anyhow::bail!(
-                    "Entry '{name}' of the archive of immutable file {immutable_file_number} is not a regular file"
-                );
-            }
-        }
-
-        Ok(())
-    }
-
-    /// List the names of the entries of a directory.
-    async fn list_entry_names(dir: &Path) -> MithrilResult<BTreeSet<String>> {
-        let mut entries = tokio::fs::read_dir(dir)
-            .await
-            .with_context(|| format!("Could not read directory '{}'", dir.display()))?;
-        let mut names = BTreeSet::new();
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .with_context(|| format!("Could not read an entry of directory '{}'", dir.display()))?
-        {
-            names.insert(entry.file_name().to_string_lossy().to_string());
-        }
-
-        Ok(names)
-    }
-
-    /// Move the immutable trio from the staging directory to the immutable directory of the
-    /// target directory, creating the latter when it does not exist.
-    async fn promote_immutable_files(
-        staging_dir: &Path,
-        target_dir: &Path,
-        immutable_file_number: ImmutableFileNumber,
-    ) -> MithrilResult<()> {
-        let target_immutable_dir = target_dir.join(IMMUTABLE_DIR);
-        tokio::fs::create_dir_all(&target_immutable_dir)
-            .await
-            .with_context(|| {
-                format!(
-                    "Could not create directory '{}'",
-                    target_immutable_dir.display()
-                )
-            })?;
-        for name in immutable_trio_names(immutable_file_number) {
-            let source = staging_dir.join(IMMUTABLE_DIR).join(&name);
-            let destination = target_immutable_dir.join(&name);
-            move_file(&source, &destination).await.with_context(|| {
-                format!(
-                    "Could not move '{}' to '{}'",
-                    source.display(),
-                    destination.display()
-                )
-            })?;
-        }
-
-        Ok(())
     }
 
     /// Build a future that will download and unpack the file when awaited.
@@ -354,11 +265,10 @@ impl LocationToDownload {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(target_os = "linux")]
-    use std::os::unix::fs::MetadataExt;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
+    use mithril_cardano_node_internal_database::IMMUTABLE_DIR;
     use mithril_common::StdResult;
     use mithril_common::entities::FileUri;
     use mithril_common::test::{assert_dir_eq, double::fake_keys, temp_dir_create};
@@ -366,6 +276,7 @@ mod tests {
     use crate::file_downloader::{MockFileDownloader, MockFileDownloaderBuilder};
     use crate::test_utils::TestLogger;
 
+    use super::super::test_utils::{FULL_TRIO, create_file, create_immutable_trio};
     use super::*;
 
     const DOWNLOAD_ID: &str = "download_id";
@@ -426,7 +337,6 @@ mod tests {
 
         const FIRST_LOCATION: &str = "http://whatever-1/00001.tar.zst";
         const SECOND_LOCATION: &str = "http://whatever-2/00001.tar.zst";
-        const FULL_TRIO: [&str; 3] = ["00001.chunk", "00001.primary", "00001.secondary"];
         const PROMOTED_TRIO: &str = "* immutable/
             ** 00001.chunk
             ** 00001.primary
@@ -481,14 +391,6 @@ mod tests {
                 .with_success_and_create_fake_immutable_files()
         }
 
-        fn create_immutable_trio(unpack_dir: &Path, names: &[&str]) {
-            let immutable_dir = unpack_dir.join(IMMUTABLE_DIR);
-            std::fs::create_dir_all(&immutable_dir).unwrap();
-            for name in names {
-                std::fs::File::create(immutable_dir.join(name)).unwrap();
-            }
-        }
-
         fn then_second_location_staging_a_valid_trio(
             first_location: MockFileDownloaderBuilder,
         ) -> MockFileDownloader {
@@ -505,11 +407,6 @@ mod tests {
             std::fs::create_dir_all(&immutable_dir).unwrap();
             make_read_only(&immutable_dir);
             immutable_dir
-        }
-
-        fn create_file(parent_dir: &Path, name: &str) {
-            std::fs::create_dir_all(parent_dir).unwrap();
-            std::fs::File::create(parent_dir.join(name)).unwrap();
         }
 
         #[track_caller]
@@ -577,24 +474,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn rejects_an_archive_with_an_entry_outside_the_immutable_trio_and_leaves_nothing() {
-            let target_dir = temp_dir_create!();
-            let file_downloader = first_location_staging(|unpack_dir| {
-                create_immutable_trio(unpack_dir, &FULL_TRIO);
-                create_file(&unpack_dir.join("ledger"), "state");
-                Ok(())
-            })
-            .build();
-
-            download(file_downloader, &target_dir, [FIRST_LOCATION])
-                .await
-                .expect_err("an archive with an entry outside the immutable trio must be rejected");
-
-            assert_target_dir_is_empty(&target_dir);
-        }
-
-        #[tokio::test]
-        async fn rejects_an_archive_missing_a_file_of_the_immutable_trio_and_leaves_nothing() {
+        async fn rejects_an_archive_that_fails_verification_and_leaves_nothing() {
             let target_dir = temp_dir_create!();
             let file_downloader = first_location_staging(|unpack_dir| {
                 create_immutable_trio(unpack_dir, &["00001.chunk", "00001.primary"]);
@@ -604,82 +484,7 @@ mod tests {
 
             download(file_downloader, &target_dir, [FIRST_LOCATION])
                 .await
-                .expect_err("an archive missing a file of the immutable trio must be rejected");
-
-            assert_target_dir_is_empty(&target_dir);
-        }
-
-        #[tokio::test]
-        async fn rejects_an_archive_whose_trio_entry_is_not_a_regular_file_and_leaves_nothing() {
-            let target_dir = temp_dir_create!();
-            let file_downloader = first_location_staging(|unpack_dir| {
-                create_immutable_trio(unpack_dir, &["00001.primary", "00001.secondary"]);
-                std::fs::create_dir_all(unpack_dir.join(IMMUTABLE_DIR).join("00001.chunk"))
-                    .unwrap();
-                Ok(())
-            })
-            .build();
-
-            download(file_downloader, &target_dir, [FIRST_LOCATION])
-                .await
-                .expect_err("a trio entry that is a directory must be rejected");
-
-            assert_target_dir_is_empty(&target_dir);
-        }
-
-        #[cfg(unix)]
-        #[tokio::test]
-        async fn rejects_an_archive_whose_trio_entry_is_a_symlink_and_leaves_nothing() {
-            let target_dir = temp_dir_create!();
-            let file_downloader = first_location_staging(|unpack_dir| {
-                create_immutable_trio(unpack_dir, &["00001.primary", "00001.secondary"]);
-                create_file(unpack_dir.parent().unwrap(), "outside_file");
-                std::os::unix::fs::symlink(
-                    unpack_dir.parent().unwrap().join("outside_file"),
-                    unpack_dir.join(IMMUTABLE_DIR).join("00001.chunk"),
-                )
-                .unwrap();
-                Ok(())
-            })
-            .build();
-
-            download(file_downloader, &target_dir, [FIRST_LOCATION])
-                .await
-                .expect_err("a trio entry that is a symlink must be rejected");
-
-            assert_dir_eq!(&target_dir, "* outside_file");
-        }
-
-        #[tokio::test]
-        async fn rejects_an_archive_carrying_a_file_of_another_immutable_and_leaves_nothing() {
-            let target_dir = temp_dir_create!();
-            let file_downloader = first_location_staging(|unpack_dir| {
-                create_immutable_trio(unpack_dir, &FULL_TRIO);
-                create_immutable_trio(unpack_dir, &["00002.chunk"]);
-                Ok(())
-            })
-            .build();
-
-            download(file_downloader, &target_dir, [FIRST_LOCATION])
-                .await
-                .expect_err("a file of another immutable must be rejected");
-
-            assert_target_dir_is_empty(&target_dir);
-        }
-
-        #[tokio::test]
-        async fn rejects_a_download_that_leaves_a_raw_file_instead_of_an_archive_and_leaves_nothing()
-         {
-            let target_dir = temp_dir_create!();
-            let file_downloader = first_location_staging(|unpack_dir| {
-                create_file(unpack_dir, "download_id");
-                Ok(())
-            })
-            .build();
-
-            download(file_downloader, &target_dir, [FIRST_LOCATION])
-                .await
-                .expect_err("a raw file in place of the immutable archive must be rejected");
+                .expect_err("an archive failing the verification must be rejected");
 
             assert_target_dir_is_empty(&target_dir);
         }
@@ -790,40 +595,6 @@ mod tests {
             .expect("an unpack failure of the first location must not stop the task");
 
             assert_dir_eq!(&target_dir, PROMOTED_TRIO);
-        }
-
-        #[cfg(target_os = "linux")]
-        #[tokio::test]
-        async fn promotes_the_immutable_trio_to_an_immutable_directory_on_another_filesystem() {
-            let target_dir = temp_dir_create!();
-            let other_filesystem_dir = Path::new("/dev/shm").join(format!(
-                "mithril_client_promotes_the_immutable_trio_{}",
-                std::process::id()
-            ));
-            assert_ne!(
-                std::fs::metadata(&target_dir).unwrap().dev(),
-                std::fs::metadata("/dev/shm").unwrap().dev(),
-                "this test needs '/dev/shm' and the temporary directory on two filesystems"
-            );
-            let _ = std::fs::remove_dir_all(&other_filesystem_dir);
-            std::fs::create_dir(&other_filesystem_dir).unwrap();
-            std::os::unix::fs::symlink(&other_filesystem_dir, target_dir.join(IMMUTABLE_DIR))
-                .unwrap();
-
-            let result = download(
-                first_location_staging_a_valid_trio().build(),
-                &target_dir,
-                [FIRST_LOCATION],
-            )
-            .await;
-
-            let promoted_trio: Vec<bool> = FULL_TRIO
-                .iter()
-                .map(|name| other_filesystem_dir.join(name).is_file())
-                .collect();
-            std::fs::remove_dir_all(&other_filesystem_dir).unwrap();
-            result.expect("the trio must be promoted across filesystems");
-            assert_eq!(vec![true, true, true], promoted_trio);
         }
 
         #[cfg(unix)]
