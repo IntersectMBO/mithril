@@ -369,6 +369,29 @@ mod tests {
 
     use super::*;
 
+    const DOWNLOAD_ID: &str = "download_id";
+
+    fn immutable_staging_dir(target_dir: &Path) -> PathBuf {
+        StagingDirectory::immutable_staging_directory_path(target_dir, 1, DOWNLOAD_ID)
+    }
+
+    fn ancillary_staging_dir(target_dir: &Path) -> PathBuf {
+        StagingDirectory::ancillary_staging_directory_path(target_dir, DOWNLOAD_ID)
+    }
+
+    #[track_caller]
+    fn assert_no_staging_directory_left(target_dir: &Path) {
+        let staging_dirs: Vec<_> = std::fs::read_dir(target_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+            .filter(|name| StagingDirectory::is_staging_directory_name(name, DOWNLOAD_ID))
+            .collect();
+        assert!(
+            staging_dirs.is_empty(),
+            "no staging directory must be left, found: {staging_dirs:?}"
+        );
+    }
+
     fn create_locations_to_download<U>(
         file_downloader: Arc<dyn FileDownloader>,
         uris: U,
@@ -459,7 +482,7 @@ mod tests {
                 size_uncompressed: 0,
                 target_dir: target_dir.to_path_buf(),
                 download_event: DownloadEvent::Immutable {
-                    download_id: "download_id".to_string(),
+                    download_id: DOWNLOAD_ID.to_string(),
                     immutable_file_number: 1,
                 },
             }
@@ -530,14 +553,7 @@ mod tests {
             std::fs::File::create(parent_dir.join(name)).unwrap();
         }
 
-        fn assert_staging_directory_is_removed(target_dir: &Path) {
-            assert!(
-                !StagingDirectory::immutable_staging_directory_path(target_dir, 1, "download_id")
-                    .exists(),
-                "the staging directory must be removed"
-            );
-        }
-
+        #[track_caller]
         fn assert_target_dir_is_empty(target_dir: &Path) {
             assert!(
                 std::fs::read_dir(target_dir).unwrap().next().is_none(),
@@ -561,18 +577,13 @@ mod tests {
             .await
             .expect_err("downloading should fail when all locations fail");
 
-            assert!(
-                !StagingDirectory::immutable_staging_directory_path(&target_dir, 1, "download_id")
-                    .exists()
-            );
             assert_target_dir_is_empty(&target_dir);
         }
 
         #[tokio::test]
         async fn succeeds_if_at_least_one_location_is_retrieved() {
             let target_dir = temp_dir_create!();
-            let staging_dir =
-                StagingDirectory::immutable_staging_directory_path(&target_dir, 1, "download_id");
+            let staging_dir = immutable_staging_dir(&target_dir);
             let file_downloader = MockFileDownloaderBuilder::default()
                 .with_file_uri(FIRST_LOCATION)
                 .with_target_dir(staging_dir.clone())
@@ -596,11 +607,7 @@ mod tests {
         async fn unpacks_in_a_staging_directory_then_promotes_only_the_immutable_trio() {
             let target_dir = temp_dir_create!();
             let file_downloader = first_location_staging_a_valid_trio()
-                .with_target_dir(StagingDirectory::immutable_staging_directory_path(
-                    &target_dir,
-                    1,
-                    "download_id",
-                ))
+                .with_target_dir(immutable_staging_dir(&target_dir))
                 .build();
 
             download(file_downloader, &target_dir, [FIRST_LOCATION])
@@ -829,8 +836,7 @@ mod tests {
         #[tokio::test]
         async fn aborting_the_download_future_removes_the_staging_directory() {
             let target_dir = temp_dir_create!();
-            let staging_dir =
-                StagingDirectory::immutable_staging_directory_path(&target_dir, 1, "download_id");
+            let staging_dir = immutable_staging_dir(&target_dir);
             let download_future = immutable_download_task(
                 Arc::new(PendingFileDownloader),
                 &target_dir,
@@ -843,10 +849,6 @@ mod tests {
             handle.abort();
             handle.await.expect_err("the download future is cancelled");
 
-            assert!(
-                !staging_dir.exists(),
-                "a cancelled download must not leave its staging directory"
-            );
             assert_target_dir_is_empty(&target_dir);
         }
 
@@ -903,7 +905,7 @@ mod tests {
                 format!("{error:?}").contains("Could not move"),
                 "unexpected error: {error:?}"
             );
-            assert_staging_directory_is_removed(&target_dir);
+            assert_no_staging_directory_left(&target_dir);
         }
 
         #[cfg(unix)]
@@ -933,7 +935,7 @@ mod tests {
                 log_inspector.contains_log(FIRST_LOCATION),
                 "the failure must be logged with its location"
             );
-            assert_staging_directory_is_removed(&target_dir);
+            assert_no_staging_directory_left(&target_dir);
         }
 
         #[cfg(unix)]
@@ -960,7 +962,7 @@ mod tests {
                 error.to_string().contains("All locations failed"),
                 "every location must have been tried: {error:?}"
             );
-            assert_staging_directory_is_removed(&target_dir);
+            assert_no_staging_directory_left(&target_dir);
         }
 
         #[tokio::test]
@@ -1025,7 +1027,7 @@ mod tests {
                 size_uncompressed: 0,
                 target_dir: target_dir.to_path_buf(),
                 download_event: DownloadEvent::Ancillary {
-                    download_id: "download_id".to_string(),
+                    download_id: DOWNLOAD_ID.to_string(),
                 },
             }
         }
@@ -1183,8 +1185,7 @@ mod tests {
         #[tokio::test]
         async fn aborting_the_download_future_removes_the_ancillary_staging_directory() {
             let target_dir = temp_dir_create!();
-            let staging_dir =
-                StagingDirectory::ancillary_staging_directory_path(&target_dir, "download_id");
+            let staging_dir = ancillary_staging_dir(&target_dir);
             let download_task = ancillary_download_task(
                 Arc::new(PendingFileDownloader),
                 &target_dir,
@@ -1197,10 +1198,7 @@ mod tests {
             handle.abort();
             handle.await.expect_err("the download future is cancelled");
 
-            assert!(
-                !staging_dir.exists(),
-                "a cancelled download must not leave its staging directory"
-            );
+            assert_no_staging_directory_left(&target_dir);
         }
 
         #[tokio::test]
@@ -1219,11 +1217,7 @@ mod tests {
                     .expect_err("the download future panics");
 
             assert!(join_error.is_panic());
-            assert!(
-                !StagingDirectory::ancillary_staging_directory_path(&target_dir, "download_id")
-                    .exists(),
-                "a panicking download must not leave its staging directory"
-            );
+            assert_no_staging_directory_left(&target_dir);
         }
 
         #[cfg(unix)]
@@ -1262,10 +1256,7 @@ mod tests {
                 error.to_string().contains("All locations failed"),
                 "every location must have been tried: {error:?}"
             );
-            assert!(
-                !StagingDirectory::ancillary_staging_directory_path(&target_dir, "download_id")
-                    .exists()
-            );
+            assert_no_staging_directory_left(&target_dir);
         }
 
         #[tokio::test]
@@ -1282,17 +1273,13 @@ mod tests {
             .await
             .expect_err("batch_download_unpack of ancillary file should fail");
 
-            assert!(
-                !StagingDirectory::ancillary_staging_directory_path(&target_dir, "download_id")
-                    .exists()
-            );
+            assert_no_staging_directory_left(&target_dir);
         }
 
         #[tokio::test]
         async fn succeeds_if_at_least_one_location_is_retrieved() {
             let target_dir = temp_dir_create!();
-            let staging_dir =
-                StagingDirectory::ancillary_staging_directory_path(&target_dir, "download_id");
+            let staging_dir = ancillary_staging_dir(&target_dir);
             let ancillary_signer = ManifestSigner::create_deterministic_signer();
             let file_downloader = MockFileDownloaderBuilder::default()
                 .with_file_uri(FIRST_LOCATION)
@@ -1323,10 +1310,7 @@ mod tests {
             let ancillary_signer = ManifestSigner::create_deterministic_signer();
             let file_downloader = MockFileDownloaderBuilder::default()
                 .with_file_uri(FIRST_LOCATION)
-                .with_target_dir(StagingDirectory::ancillary_staging_directory_path(
-                    &target_dir,
-                    "download_id",
-                ))
+                .with_target_dir(ancillary_staging_dir(&target_dir))
                 .with_success_and_create_fake_ancillary_files(signed_ancillary_files(
                     "ledger",
                     &ancillary_signer,
@@ -1360,10 +1344,7 @@ mod tests {
             .await
             .expect_err("an unsigned manifest must fail the verification");
 
-            assert!(
-                !StagingDirectory::ancillary_staging_directory_path(&target_dir, "download_id")
-                    .exists()
-            );
+            assert_no_staging_directory_left(&target_dir);
         }
 
         #[tokio::test]
@@ -1408,10 +1389,7 @@ mod tests {
             let ancillary_signer = ManifestSigner::create_deterministic_signer();
             let file_downloader = MockFileDownloaderBuilder::default()
                 .with_file_uri(FIRST_LOCATION)
-                .with_target_dir(StagingDirectory::ancillary_staging_directory_path(
-                    &target_dir,
-                    "download_id",
-                ))
+                .with_target_dir(ancillary_staging_dir(&target_dir))
                 .with_success_and_create_fake_ancillary_files(
                     FakeAncillaryFileBuilder::builder()
                         .files_in_manifest_to_create(vec!["dummy_ledger".to_string()])
@@ -1511,7 +1489,7 @@ mod tests {
                 size_uncompressed: 0,
                 target_dir: target_dir.clone(),
                 download_event: DownloadEvent::Immutable {
-                    download_id: "download_id".to_string(),
+                    download_id: DOWNLOAD_ID.to_string(),
                     immutable_file_number: 1,
                 },
             };
@@ -1546,7 +1524,7 @@ mod tests {
                 size_uncompressed: 0,
                 target_dir: target_dir.clone(),
                 download_event: DownloadEvent::Immutable {
-                    download_id: "download_id".to_string(),
+                    download_id: DOWNLOAD_ID.to_string(),
                     immutable_file_number: 1,
                 },
             };
@@ -1583,7 +1561,7 @@ mod tests {
                 size_uncompressed: 0,
                 target_dir: target_dir.clone(),
                 download_event: DownloadEvent::Immutable {
-                    download_id: "download_id".to_string(),
+                    download_id: DOWNLOAD_ID.to_string(),
                     immutable_file_number: 1,
                 },
             };
