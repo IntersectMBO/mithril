@@ -1,0 +1,21 @@
+[package]
+name = "mithril-cardano-node-leios"
+version = "0.1.0"
+description = "Mechanisms that allow Mithril nodes to snapshot the Leios database of a Cardano node"
+authors.workspace = true
+documentation.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+include = ["**/*.rs", "Cargo.toml", "README.md", ".gitignore"]
+
+[dependencies]
+anyhow = { workspace = true }
+hex = { workspace = true }
+mithril-common = { path = "../../../mithril-common" }
+pallas-hardano = { git = "https://github.com/jpraynaud/pallas.git", rev = "c6c584163e9f3f67c56d9496fd19f6b90ef74daf" }
+pallas-traverse = { git = "https://github.com/jpraynaud/pallas.git", rev = "c6c584163e9f3f67c56d9496fd19f6b90ef74daf", features = ["unstable"] }
+semver = { workspace = true }
+sqlite = { version = "0.37.4", features = ["bundled"] }
+thiserror = { workspace = true }

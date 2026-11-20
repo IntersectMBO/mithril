@@ -4668,6 +4668,7 @@ dependencies = [
  "mithril-api-spec",
  "mithril-cardano-node-chain",
  "mithril-cardano-node-internal-database",
+ "mithril-cardano-node-leios",
  "mithril-circuit-key-registry",
  "mithril-cli-helper",
  "mithril-common",
@@ -4839,6 +4840,20 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "walkdir",
+]
+
+[[package]]
+name = "mithril-cardano-node-leios"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "mithril-common",
+ "pallas-hardano",
+ "pallas-traverse",
+ "semver",
+ "sqlite",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -5068,6 +5083,7 @@ dependencies = [
  "indicatif",
  "mithril-cardano-node-chain",
  "mithril-cardano-node-internal-database",
+ "mithril-cardano-node-leios",
  "mithril-common",
  "mithril-doc",
  "pallas-hardano",

@@ -19,6 +19,9 @@ SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 # Generate Cardano devnet artifacts
 . ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-cardano.sh
 
+# Generate the Leios artifacts (Leios mode only)
+. ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-leios.sh
+
 # Generate the DMQ nodes topology
 . ${SCRIPT_DIRECTORY}/mkfiles/mkfiles-topology-dmq.sh
 

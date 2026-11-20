@@ -544,4 +544,9 @@ impl Client {
     pub fn version(&self) -> &NodeVersion {
         &self.version
     }
+
+    /// Directory where the Cardano database v2 download command restores the database.
+    pub fn cardano_database_v2_download_dir(&self) -> PathBuf {
+        self.command.work_dir().join("v2").join("db")
+    }
 }

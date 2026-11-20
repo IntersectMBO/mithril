@@ -87,6 +87,9 @@ impl FullScenario {
         // for signing in the penultimate immutable chunk before the end of the test.
         // As we get closer to the tip of the chain when signing, we'll be able to relax this constraint.
         spec.toolkit.exec.transfer_funds(spec.infrastructure.devnet()).await?;
+        if spec.infrastructure.use_leios() {
+            spec.toolkit.exec.generate_load(spec.infrastructure.devnet()).await?;
+        }
 
         info!("Bootstrapping leader aggregator");
         spec.bootstrap_leader_aggregator(&spec.infrastructure).await?;
@@ -447,6 +450,12 @@ impl FullScenario {
                     infrastructure.signers().len(),
                 )
                 .await?;
+            if infrastructure.use_leios() && aggregator.is_leader() {
+                self.toolkit
+                    .check
+                    .cardano_database
+                    .leios_closures_are_restored(&client, infrastructure.cardano_node_version())?;
+            }
         }
 
         // Verify that Cardano transactions artifacts are produced and signed correctly
