@@ -454,6 +454,15 @@ mod tests {
         panic!("'{}' was never created", path.display());
     }
 
+    /// Abort the download of the task once its staging directory is created.
+    async fn abort_download_once_staging_dir_exists(download_task: DownloadTask, staging_dir: &Path) {
+        let handle = tokio::spawn(download_task.build_download_future(TestLogger::stdout()));
+        wait_until_exists(staging_dir).await;
+
+        handle.abort();
+        handle.await.expect_err("the download future is cancelled");
+    }
+
     mod download_unpack_immutable_files {
         use super::*;
 
@@ -836,18 +845,14 @@ mod tests {
         #[tokio::test]
         async fn aborting_the_download_future_removes_the_staging_directory() {
             let target_dir = temp_dir_create!();
-            let staging_dir = immutable_staging_dir(&target_dir);
-            let download_future = immutable_download_task(
+            let download_task = immutable_download_task(
                 Arc::new(PendingFileDownloader),
                 &target_dir,
                 [FIRST_LOCATION],
-            )
-            .build_download_future(TestLogger::stdout());
-            let handle = tokio::spawn(download_future);
-            wait_until_exists(&staging_dir).await;
+            );
 
-            handle.abort();
-            handle.await.expect_err("the download future is cancelled");
+            abort_download_once_staging_dir_exists(download_task, &immutable_staging_dir(&target_dir))
+                .await;
 
             assert_target_dir_is_empty(&target_dir);
         }
@@ -927,13 +932,15 @@ mod tests {
             let error = result.expect_err("a local promotion failure must stop the task");
             let error_message = format!("{error:?}");
             assert!(
-                error_message.contains("immutable_file_00001")
-                    && error_message.contains(&format!("{FIRST_LOCATION:?}")),
+                error_message.contains(&format!(
+                    "Could not promote immutable_file_00001 downloaded from location {FIRST_LOCATION:?}"
+                )),
                 "the error must name the task and the location: {error_message}"
             );
             assert!(
-                log_inspector.contains_log(FIRST_LOCATION),
-                "the failure must be logged with its location"
+                log_inspector.contains_log("no other location can repair it")
+                    && log_inspector.contains_log(FIRST_LOCATION),
+                "the fatal failure must be logged with its location"
             );
             assert_no_staging_directory_left(&target_dir);
         }
@@ -1185,18 +1192,15 @@ mod tests {
         #[tokio::test]
         async fn aborting_the_download_future_removes_the_ancillary_staging_directory() {
             let target_dir = temp_dir_create!();
-            let staging_dir = ancillary_staging_dir(&target_dir);
             let download_task = ancillary_download_task(
                 Arc::new(PendingFileDownloader),
                 &target_dir,
                 fake_ancillary_verifier(),
                 [FIRST_LOCATION],
             );
-            let handle = tokio::spawn(download_task.build_download_future(TestLogger::stdout()));
-            wait_until_exists(&staging_dir).await;
 
-            handle.abort();
-            handle.await.expect_err("the download future is cancelled");
+            abort_download_once_staging_dir_exists(download_task, &ancillary_staging_dir(&target_dir))
+                .await;
 
             assert_no_staging_directory_left(&target_dir);
         }
