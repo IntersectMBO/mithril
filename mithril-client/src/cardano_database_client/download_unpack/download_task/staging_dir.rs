@@ -335,6 +335,34 @@ mod tests {
             assert!(!staging_path.exists());
         }
 
+        #[cfg(unix)]
+        #[tokio::test]
+        async fn removing_the_staging_directory_does_not_follow_its_symlinks() {
+            let temp_dir = temp_dir_create!();
+            let outside_file = temp_dir.join("outside_file");
+            std::fs::File::create(&outside_file).unwrap();
+
+            StagingDirectory::run_in(
+                temp_dir.join("staging"),
+                &TestLogger::stdout(),
+                async |staging_directory| {
+                    std::os::unix::fs::symlink(
+                        &outside_file,
+                        staging_directory.path().join("link"),
+                    )
+                    .unwrap();
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+
+            assert!(
+                outside_file.exists(),
+                "the target of a symlink of the staging directory must be kept"
+            );
+        }
+
         #[tokio::test]
         async fn fails_without_running_the_operation_when_the_staging_directory_can_not_be_created()
         {
