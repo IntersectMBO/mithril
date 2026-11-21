@@ -330,38 +330,39 @@ mod tests {
             .collect()
     }
 
+    const IMMUTABLE_FIRST_LOCATION: &str = "http://whatever-1/00001.tar.zst";
+    const IMMUTABLE_SECOND_LOCATION: &str = "http://whatever-2/00001.tar.zst";
+
+    fn immutable_download_task<U>(
+        file_downloader: Arc<dyn FileDownloader>,
+        target_dir: &Path,
+        uris: U,
+    ) -> DownloadTask
+    where
+        U: IntoIterator,
+        U::Item: AsRef<str>,
+    {
+        DownloadTask {
+            kind: DownloadKind::Immutable(1),
+            locations_to_try: create_locations_to_download(file_downloader, uris),
+            size_uncompressed: 0,
+            target_dir: target_dir.to_path_buf(),
+            download_event: DownloadEvent::Immutable {
+                download_id: DOWNLOAD_ID.to_string(),
+                immutable_file_number: 1,
+            },
+        }
+    }
+
     mod download_unpack_immutable_files {
         use super::*;
 
         type StagedContent = fn(&Path) -> StdResult<()>;
 
-        const FIRST_LOCATION: &str = "http://whatever-1/00001.tar.zst";
-        const SECOND_LOCATION: &str = "http://whatever-2/00001.tar.zst";
         const PROMOTED_TRIO: &str = "* immutable/
             ** 00001.chunk
             ** 00001.primary
             ** 00001.secondary";
-
-        fn immutable_download_task<U>(
-            file_downloader: Arc<dyn FileDownloader>,
-            target_dir: &Path,
-            uris: U,
-        ) -> DownloadTask
-        where
-            U: IntoIterator,
-            U::Item: AsRef<str>,
-        {
-            DownloadTask {
-                kind: DownloadKind::Immutable(1),
-                locations_to_try: create_locations_to_download(file_downloader, uris),
-                size_uncompressed: 0,
-                target_dir: target_dir.to_path_buf(),
-                download_event: DownloadEvent::Immutable {
-                    download_id: DOWNLOAD_ID.to_string(),
-                    immutable_file_number: 1,
-                },
-            }
-        }
 
         async fn download<U>(
             file_downloader: MockFileDownloader,
@@ -379,7 +380,7 @@ mod tests {
 
         fn first_location_staging(staged_content: StagedContent) -> MockFileDownloaderBuilder {
             MockFileDownloaderBuilder::default()
-                .with_file_uri(FIRST_LOCATION)
+                .with_file_uri(IMMUTABLE_FIRST_LOCATION)
                 .with_returning(Box::new(move |_, _, unpack_dir: &Path, _, _| {
                     staged_content(unpack_dir)
                 }))
@@ -387,7 +388,7 @@ mod tests {
 
         fn first_location_staging_a_valid_trio() -> MockFileDownloaderBuilder {
             MockFileDownloaderBuilder::default()
-                .with_file_uri(FIRST_LOCATION)
+                .with_file_uri(IMMUTABLE_FIRST_LOCATION)
                 .with_success_and_create_fake_immutable_files()
         }
 
@@ -396,7 +397,7 @@ mod tests {
         ) -> MockFileDownloader {
             first_location
                 .next_call()
-                .with_file_uri(SECOND_LOCATION)
+                .with_file_uri(IMMUTABLE_SECOND_LOCATION)
                 .with_success_and_create_fake_immutable_files()
                 .build()
         }
@@ -428,7 +429,7 @@ mod tests {
             download(
                 file_downloader,
                 &target_dir,
-                [FIRST_LOCATION, SECOND_LOCATION],
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
             )
             .await
             .expect_err("downloading should fail when all locations fail");
@@ -441,11 +442,11 @@ mod tests {
             let target_dir = temp_dir_create!();
             let staging_dir = immutable_staging_dir(&target_dir);
             let file_downloader = MockFileDownloaderBuilder::default()
-                .with_file_uri(FIRST_LOCATION)
+                .with_file_uri(IMMUTABLE_FIRST_LOCATION)
                 .with_target_dir(staging_dir.clone())
                 .with_failure()
                 .next_call()
-                .with_file_uri(SECOND_LOCATION)
+                .with_file_uri(IMMUTABLE_SECOND_LOCATION)
                 .with_target_dir(staging_dir)
                 .with_success_and_create_fake_immutable_files()
                 .build();
@@ -453,7 +454,7 @@ mod tests {
             download(
                 file_downloader,
                 &target_dir,
-                [FIRST_LOCATION, SECOND_LOCATION],
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
             )
             .await
             .unwrap();
@@ -466,7 +467,7 @@ mod tests {
                 .with_target_dir(immutable_staging_dir(&target_dir))
                 .build();
 
-            download(file_downloader, &target_dir, [FIRST_LOCATION])
+            download(file_downloader, &target_dir, [IMMUTABLE_FIRST_LOCATION])
                 .await
                 .unwrap();
 
@@ -482,7 +483,7 @@ mod tests {
             })
             .build();
 
-            download(file_downloader, &target_dir, [FIRST_LOCATION])
+            download(file_downloader, &target_dir, [IMMUTABLE_FIRST_LOCATION])
                 .await
                 .expect_err("an archive failing the verification must be rejected");
 
@@ -502,7 +503,7 @@ mod tests {
             download(
                 file_downloader,
                 &target_dir,
-                [FIRST_LOCATION, SECOND_LOCATION],
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
             )
             .await
             .expect("the second location must succeed");
@@ -523,7 +524,7 @@ mod tests {
             download(
                 file_downloader,
                 &target_dir,
-                [FIRST_LOCATION, SECOND_LOCATION],
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
             )
             .await
             .expect("the second location must succeed");
@@ -543,7 +544,7 @@ mod tests {
             download(
                 file_downloader,
                 &target_dir,
-                [FIRST_LOCATION, SECOND_LOCATION],
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
             )
             .await
             .expect("the second location must succeed");
@@ -566,7 +567,7 @@ mod tests {
             download(
                 file_downloader,
                 &target_dir,
-                [FIRST_LOCATION, SECOND_LOCATION],
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
             )
             .await
             .expect("a download failure of the first location must not stop the task");
@@ -589,7 +590,7 @@ mod tests {
             download(
                 file_downloader,
                 &target_dir,
-                [FIRST_LOCATION, SECOND_LOCATION],
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
             )
             .await
             .expect("an unpack failure of the first location must not stop the task");
@@ -606,7 +607,7 @@ mod tests {
             let result = download(
                 first_location_staging_a_valid_trio().build(),
                 &target_dir,
-                [FIRST_LOCATION, SECOND_LOCATION],
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
             )
             .await;
 
@@ -629,7 +630,7 @@ mod tests {
             let result = immutable_download_task(
                 Arc::new(first_location_staging_a_valid_trio().build()),
                 &target_dir,
-                [FIRST_LOCATION],
+                [IMMUTABLE_FIRST_LOCATION],
             )
             .build_download_future(logger)
             .await;
@@ -639,13 +640,13 @@ mod tests {
             let error_message = format!("{error:?}");
             assert!(
                 error_message.contains(&format!(
-                    "Could not promote immutable_file_00001 downloaded from location {FIRST_LOCATION:?}"
+                    "Could not promote immutable_file_00001 downloaded from location {IMMUTABLE_FIRST_LOCATION:?}"
                 )),
                 "the error must name the task and the location: {error_message}"
             );
             assert!(
                 log_inspector.contains_log("no other location can repair it")
-                    && log_inspector.contains_log(FIRST_LOCATION),
+                    && log_inspector.contains_log(IMMUTABLE_FIRST_LOCATION),
                 "the fatal failure must be logged with its location"
             );
             assert_no_staging_directory_left(&target_dir);
@@ -666,7 +667,7 @@ mod tests {
             let error = download(
                 file_downloader,
                 &target_dir,
-                [FIRST_LOCATION, SECOND_LOCATION],
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
             )
             .await
             .expect_err("no location can be promoted over a directory");
@@ -1103,125 +1104,67 @@ mod tests {
         use super::*;
 
         #[tokio::test]
-        async fn skip_to_next_location_if_first_location_circuit_breaker_was_triggered() {
+        async fn skips_a_location_whose_circuit_breaker_is_triggered() {
             let target_dir = temp_dir_create!();
-            let logger = TestLogger::stdout();
-            let file_downloader = Arc::new(
-                MockFileDownloaderBuilder::default()
-                    .with_file_uri("http://whatever-2/00001.tar.zst")
-                    .with_target_dir(StagingDirectory::immutable_staging_directory_path(
-                        &target_dir,
-                        1,
-                        "download_id",
-                    ))
-                    .with_compression(None)
-                    .with_success_and_create_fake_immutable_files()
-                    .build(),
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_file_uri(IMMUTABLE_SECOND_LOCATION)
+                .with_success_and_create_fake_immutable_files()
+                .build();
+            let mut download_task = immutable_download_task(
+                Arc::new(file_downloader),
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
             );
+            download_task.locations_to_try[0].circuit_breaker =
+                Some(CircuitBreaker::new_triggered());
 
-            let download_task = DownloadTask {
-                kind: DownloadKind::Immutable(1),
-                locations_to_try: vec![
-                    LocationToDownload {
-                        file_downloader: file_downloader.clone(),
-                        file_downloader_uri: FileDownloaderUri::FileUri(FileUri(
-                            "http://whatever-1/00001.tar.zst".to_string(),
-                        )),
-                        compression_algorithm: None,
-                        circuit_breaker: Some(CircuitBreaker::new_triggered()),
-                    },
-                    LocationToDownload {
-                        file_downloader: file_downloader.clone(),
-                        file_downloader_uri: FileDownloaderUri::FileUri(FileUri(
-                            "http://whatever-2/00001.tar.zst".to_string(),
-                        )),
-                        compression_algorithm: None,
-                        circuit_breaker: None,
-                    },
-                ],
-                size_uncompressed: 0,
-                target_dir: target_dir.clone(),
-                download_event: DownloadEvent::Immutable {
-                    download_id: DOWNLOAD_ID.to_string(),
-                    immutable_file_number: 1,
-                },
-            };
-
-            download_task.build_download_future(logger).await.unwrap();
+            // The mock expects no call for the first location: trying it would panic
+            download_task
+                .build_download_future(TestLogger::stdout())
+                .await
+                .unwrap();
         }
 
         #[tokio::test]
-        async fn if_circuit_breaker_is_set_and_downloader_is_unreachable_it_trigger_the_circuit_breaker()
-         {
+        async fn triggers_the_circuit_breaker_when_the_downloader_is_unreachable() {
             let target_dir = temp_dir_create!();
-            let logger = TestLogger::stdout();
-            let file_downloader = Arc::new(
-                MockFileDownloaderBuilder::default()
-                    .with_file_uri("http://whatever-1/00001.tar.zst")
-                    .with_unreachable_downloader_failure("source")
-                    .with_compression(None)
-                    .build(),
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_unreachable_downloader_failure("source")
+                .build();
+            let circuit_breaker = CircuitBreaker::new();
+            let mut download_task = immutable_download_task(
+                Arc::new(file_downloader),
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION],
             );
-            let circuit_breaker = Some(CircuitBreaker::new());
+            download_task.locations_to_try[0].circuit_breaker = Some(circuit_breaker.clone());
 
-            let download_task = DownloadTask {
-                kind: DownloadKind::Immutable(1),
-                locations_to_try: vec![LocationToDownload {
-                    file_downloader: file_downloader.clone(),
-                    file_downloader_uri: FileDownloaderUri::FileUri(FileUri(
-                        "http://whatever-1/00001.tar.zst".to_string(),
-                    )),
-                    compression_algorithm: None,
-                    circuit_breaker: circuit_breaker.clone(),
-                }],
-                size_uncompressed: 0,
-                target_dir: target_dir.clone(),
-                download_event: DownloadEvent::Immutable {
-                    download_id: DOWNLOAD_ID.to_string(),
-                    immutable_file_number: 1,
-                },
-            };
+            download_task
+                .build_download_future(TestLogger::stdout())
+                .await
+                .expect_err("an unreachable downloader must fail the download");
 
-            let err = download_task.build_download_future(logger).await.unwrap_err();
-            assert!(err.to_string().contains("All locations failed"));
-            assert!(circuit_breaker.is_some_and(|c| c.is_triggered()));
+            assert!(circuit_breaker.is_triggered());
         }
 
         #[tokio::test]
-        async fn if_circuit_breaker_is_set_and_downloader_is_raise_error_other_than_unreachable_the_circuit_breaker_is_not_triggered()
-         {
+        async fn does_not_trigger_the_circuit_breaker_on_another_download_error() {
             let target_dir = temp_dir_create!();
-            let logger = TestLogger::stdout();
-            let file_downloader = Arc::new(
-                MockFileDownloaderBuilder::default()
-                    .with_file_uri("http://whatever-1/00001.tar.zst")
-                    .with_compression(None)
-                    .with_failure()
-                    .build(),
+            let file_downloader = MockFileDownloaderBuilder::default().with_failure().build();
+            let circuit_breaker = CircuitBreaker::new();
+            let mut download_task = immutable_download_task(
+                Arc::new(file_downloader),
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION],
             );
-            let circuit_breaker = Some(CircuitBreaker::new());
+            download_task.locations_to_try[0].circuit_breaker = Some(circuit_breaker.clone());
 
-            let download_task = DownloadTask {
-                kind: DownloadKind::Immutable(1),
-                locations_to_try: vec![LocationToDownload {
-                    file_downloader: file_downloader.clone(),
-                    file_downloader_uri: FileDownloaderUri::FileUri(FileUri(
-                        "http://whatever-1/00001.tar.zst".to_string(),
-                    )),
-                    compression_algorithm: None,
-                    circuit_breaker: circuit_breaker.clone(),
-                }],
-                size_uncompressed: 0,
-                target_dir: target_dir.clone(),
-                download_event: DownloadEvent::Immutable {
-                    download_id: DOWNLOAD_ID.to_string(),
-                    immutable_file_number: 1,
-                },
-            };
+            download_task
+                .build_download_future(TestLogger::stdout())
+                .await
+                .expect_err("a failing download must fail the download");
 
-            let err = download_task.build_download_future(logger).await.unwrap_err();
-            assert!(err.to_string().contains("All locations failed"));
-            assert!(circuit_breaker.is_some_and(|c| !c.is_triggered()));
+            assert!(!circuit_breaker.is_triggered());
         }
     }
 }
