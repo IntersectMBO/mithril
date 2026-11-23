@@ -35,6 +35,7 @@ pub struct KuboNode {
     pub rpc_url: Url,
     pub working_dir: PathBuf,
     pub rpc_basic_auth: Option<KuboRpcBasicAuth>,
+    pub rpc_auth_token: Option<String>,
     swarm_index: u8,
     command_builder: IpfsCommandBuilder,
 }
@@ -175,6 +176,7 @@ impl IpfsDevnet {
                     rpc_url: Url::parse(&format!("http://127.0.0.1:{}", 5000_u16 + n as u16))
                         .unwrap(),
                     rpc_basic_auth: KuboRpcBasicAuth::read_from_node_dir(&working_dir)?,
+                    rpc_auth_token: KuboNode::read_rpc_auth_token_from_node_dir(&working_dir)?,
                     working_dir,
                     swarm_index: n,
                     command_builder: command_builder.clone(),
@@ -410,6 +412,18 @@ impl KuboNode {
             .await?;
 
         Ok(ipfs_dir_path)
+    }
+
+    /// Read the Bearer token written by the devnet in a node directory, if any
+    fn read_rpc_auth_token_from_node_dir(node_dir: &Path) -> StdResult<Option<String>> {
+        let token_path = node_dir.join("rpc-auth-token");
+        if !token_path.exists() {
+            return Ok(None);
+        }
+        let token = std::fs::read_to_string(&token_path)
+            .with_context(|| format!("Failed to read '{}'", token_path.display()))?;
+
+        Ok(Some(token.trim().to_string()))
     }
 }
 

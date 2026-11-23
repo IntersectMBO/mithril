@@ -85,11 +85,11 @@ configure_node() {
   swarm_port=$((SWARM_PORT_BASE + node_id))
 
   #---------- Write swarm key
-  {
+  (umask 077 && {
     printf '%s\n' "/key/swarm/psk/1.0.0/"
     printf '%s\n' "/base16/"
     printf '%s\n' "$swarm_key"
-  } > "$node_dir/swarm.key"
+  } > "$node_dir/swarm.key")
 
   #---------- Additional config
   IPFS_PATH="$node_dir" "$ipfs_bin_path" config Addresses.API "/ip4/127.0.0.1/tcp/${api_port}"
@@ -116,14 +116,17 @@ configure_node_rpc_auth() {
   local -r swarm_dir="${3%/}"
 
   local -r node_dir="$swarm_dir/kubo-node-$node_id"
-  local auth_secret
+  local auth_secret auth_token
   auth_secret="basic:mithril:$(generate_random_hex_string)"
+  auth_token="$(generate_random_hex_string)"
 
   # Only readable by the current user
   (umask 077 && printf '%s\n' "$auth_secret" > "$node_dir/rpc-auth-secret")
+  (umask 077 && printf '%s\n' "$auth_token" > "$node_dir/rpc-auth-token")
 
+  # The node accepts both the Basic credentials and the Bearer token
   IPFS_PATH="$node_dir" "$ipfs_bin_path" config --json API.Authorizations \
-    "{\"mithril\": {\"AuthSecret\": \"${auth_secret}\", \"AllowedPaths\": [\"/api/v0\"]}}"
+    "{\"mithril\": {\"AuthSecret\": \"${auth_secret}\", \"AllowedPaths\": [\"/api/v0\"]}, \"mithril-bearer\": {\"AuthSecret\": \"bearer:${auth_token}\", \"AllowedPaths\": [\"/api/v0\"]}}"
 }
 
 configure_node_peers() {

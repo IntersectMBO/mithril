@@ -4,9 +4,12 @@ use std::time::Duration;
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use futures::stream::StreamExt;
-use reqwest::{Response, Url};
+use reqwest::{
+    Response, StatusCode, Url,
+    header::{AUTHORIZATION, HeaderMap, HeaderValue},
+};
 use serde::Deserialize;
-use slog::{Logger, debug};
+use slog::{Logger, debug, warn};
 
 use mithril_common::{StdError, StdResult, logging::LoggerExtensions};
 
@@ -20,6 +23,8 @@ use super::{FileDownloader, FileDownloaderUri, interface::DownloadEvent};
 
 const EXISTENCE_CHECK_DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 const KUBO_RPC_API_CHECK_DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Maximum time to wait for the next chunk of a Kubo RPC response
+const KUBO_RPC_API_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A file downloader that downloads content from IPFS through a Kubo node's RPC API.
 ///
@@ -59,12 +64,39 @@ struct VersionResponse {
 
 impl IpfsFileDownloader {
     /// Constructs a new `IpfsFileDownloader`.
+    ///
+    /// If `auth_token` is set, it is sent as a Bearer token with every request, to authenticate to
+    /// a Kubo RPC API protected by `API.Authorizations`. If the `rpc_base_url` also contains
+    /// credentials, they take precedence and the token is ignored with a warning.
     pub fn new(
         rpc_base_url: Url,
         feedback_sender: FeedbackSender,
         logger: Logger,
+        auth_token: Option<String>,
     ) -> StdResult<Self> {
+        let logger = logger.new_with_component_name::<Self>();
+        let mut headers = HeaderMap::new();
+        if let Some(auth_token) = auth_token {
+            if !rpc_base_url.username().is_empty() || rpc_base_url.password().is_some() {
+                warn!(
+                    logger,
+                    "The IPFS RPC URL contains credentials, they take precedence over the IPFS RPC authentication token which is ignored"
+                );
+            } else {
+                if auth_token.is_empty() {
+                    return Err(anyhow!(
+                        "The IPFS RPC authentication token must not be empty"
+                    ));
+                }
+                let mut value = HeaderValue::from_str(&format!("Bearer {auth_token}"))
+                    .with_context(|| "Invalid Kubo RPC token")?;
+                value.set_sensitive(true);
+                headers.insert(AUTHORIZATION, value);
+            }
+        }
         let http_client = reqwest::ClientBuilder::new()
+            .default_headers(headers)
+            .read_timeout(KUBO_RPC_API_READ_TIMEOUT)
             .build()
             .with_context(|| "Building http client for IpfsFileDownloader failed")?;
 
@@ -74,7 +106,7 @@ impl IpfsFileDownloader {
             feedback_sender,
             existence_check_timeout: EXISTENCE_CHECK_DEFAULT_TIMEOUT,
             kubo_rpc_api_check_timeout: KUBO_RPC_API_CHECK_DEFAULT_TIMEOUT,
-            logger: logger.new_with_component_name::<Self>(),
+            logger,
         })
     }
 
@@ -166,6 +198,9 @@ impl IpfsFileDownloader {
                 Some(error) if error.is_timeout() => Err(anyhow!(
                     "Kubo RPC API at '{rpc_base_url}' did not answer within {:?}",
                     self.kubo_rpc_api_check_timeout
+                )),
+                Some(error) if error.status() == Some(StatusCode::FORBIDDEN) => Err(anyhow!(
+                    "Kubo RPC API at '{rpc_base_url}' refused the authentication, check the IPFS RPC authentication token or the credentials of the IPFS RPC URL"
                 )),
                 _ => Err(anyhow!(
                     "IPFS RPC URL '{rpc_base_url}' does not answer as a Kubo RPC API: {error:#}"
@@ -277,6 +312,7 @@ mod tests {
             Url::parse(&server.base_url()).unwrap(),
             feedback_sender,
             TestLogger::stdout(),
+            None,
         )
         .unwrap()
     }
@@ -449,9 +485,13 @@ mod tests {
         let mut rpc_base_url = Url::parse(&server.base_url()).unwrap();
         rpc_base_url.set_username("user").unwrap();
         rpc_base_url.set_password(Some("secret-password")).unwrap();
-        let ipfs_file_downloader =
-            IpfsFileDownloader::new(rpc_base_url, FeedbackSender::new(&[]), TestLogger::stdout())
-                .unwrap();
+        let ipfs_file_downloader = IpfsFileDownloader::new(
+            rpc_base_url,
+            FeedbackSender::new(&[]),
+            TestLogger::stdout(),
+            None,
+        )
+        .unwrap();
 
         let error = ipfs_file_downloader.check_kubo_rpc_api().await.unwrap_err();
 
@@ -476,6 +516,7 @@ mod tests {
             Url::parse(&format!("http://user:secret-password@127.0.0.1:{closed_port}/")).unwrap(),
             FeedbackSender::new(&[]),
             TestLogger::stdout(),
+            None,
         )
         .unwrap();
 
@@ -507,6 +548,23 @@ mod tests {
 
         assert!(
             error.to_string().contains("did not answer within"),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn kubo_rpc_api_check_fails_when_kubo_rpc_api_refuses_the_authentication() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/v0/version");
+            then.status(403).body("Kubo RPC Access Denied");
+        });
+        let ipfs_file_downloader = downloader(&server, FeedbackSender::new(&[]));
+
+        let error = ipfs_file_downloader.check_kubo_rpc_api().await.unwrap_err();
+
+        assert!(
+            error.to_string().contains("refused the authentication"),
             "unexpected error: {error:?}"
         );
     }
@@ -579,5 +637,198 @@ mod tests {
             error.to_string().contains("Unhandled error"),
             "unexpected error: {error:?}"
         );
+    }
+
+    mod auth_token {
+        use super::*;
+
+        fn downloader_with_auth_token(server: &MockServer, token: &str) -> IpfsFileDownloader {
+            IpfsFileDownloader::new(
+                Url::parse(&server.base_url()).unwrap(),
+                FeedbackSender::new(&[]),
+                TestLogger::stdout(),
+                Some(token.to_string()),
+            )
+            .unwrap()
+        }
+
+        #[tokio::test]
+        async fn send_bearer_authorization_header_with_every_kubo_rpc_request() {
+            let target_dir = temp_dir_create!();
+            let content = "Hello, world!";
+            let ipfs_path = "ipfs://QmDummyDirCid/00006.tar.zst";
+            let server = MockServer::start();
+            let version_mock = server.mock(|when, then| {
+                when.method(POST)
+                    .path("/api/v0/version")
+                    .header("authorization", "Bearer my-token");
+                then.status(200).json_body(serde_json::json!({"Version": "0.43.1"}));
+            });
+            let files_stat_mock = server.mock(|when, then| {
+                when.method(POST)
+                    .path("/api/v0/files/stat")
+                    .header("authorization", "Bearer my-token");
+                then.status(200)
+                    .json_body(serde_json::json!({"Key": "bafkreidummy", "Size": content.len()}));
+            });
+            let cat_mock = server.mock(|when, then| {
+                when.method(POST)
+                    .path("/api/v0/cat")
+                    .header("authorization", "Bearer my-token");
+                then.status(200).body(content);
+            });
+            let ipfs_file_downloader = downloader_with_auth_token(&server, "my-token");
+
+            ipfs_file_downloader.check_kubo_rpc_api().await.unwrap();
+            ipfs_file_downloader
+                .download_unpack(
+                    &FileDownloaderUri::FileUri(FileUri(ipfs_path.to_string())),
+                    0,
+                    &target_dir,
+                    None,
+                    DownloadEvent::Digest {
+                        download_id: "id".to_string(),
+                    },
+                )
+                .await
+                .unwrap();
+
+            version_mock.assert();
+            files_stat_mock.assert();
+            cat_mock.assert();
+        }
+
+        #[tokio::test]
+        async fn send_no_authorization_header_without_auth_token() {
+            let server = MockServer::start();
+            let version_mock = server.mock(|when, then| {
+                when.method(POST)
+                    .path("/api/v0/version")
+                    .header_missing("authorization");
+                then.status(200).json_body(serde_json::json!({"Version": "0.43.1"}));
+            });
+            let ipfs_file_downloader = downloader(&server, FeedbackSender::new(&[]));
+
+            ipfs_file_downloader.check_kubo_rpc_api().await.unwrap();
+
+            version_mock.assert();
+        }
+
+        #[tokio::test]
+        async fn send_rpc_url_credentials_as_basic_authorization_header_without_auth_token() {
+            let server = MockServer::start();
+            let version_mock = server.mock(|when, then| {
+                // Example from RFC 7617
+                when.method(POST)
+                    .path("/api/v0/version")
+                    .header("authorization", "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==");
+                then.status(200).json_body(serde_json::json!({"Version": "0.43.1"}));
+            });
+            let mut rpc_base_url = Url::parse(&server.base_url()).unwrap();
+            rpc_base_url.set_username("Aladdin").unwrap();
+            rpc_base_url.set_password(Some("open sesame")).unwrap();
+            let ipfs_file_downloader = IpfsFileDownloader::new(
+                rpc_base_url,
+                FeedbackSender::new(&[]),
+                TestLogger::stdout(),
+                None,
+            )
+            .unwrap();
+
+            ipfs_file_downloader.check_kubo_rpc_api().await.unwrap();
+
+            version_mock.assert();
+        }
+
+        #[tokio::test]
+        async fn rpc_url_credentials_take_precedence_over_auth_token() {
+            let server = MockServer::start();
+            let version_mock = server.mock(|when, then| {
+                // Example from RFC 7617
+                when.method(POST)
+                    .path("/api/v0/version")
+                    .header("authorization", "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==");
+                then.status(200).json_body(serde_json::json!({"Version": "0.43.1"}));
+            });
+            let mut rpc_base_url = Url::parse(&server.base_url()).unwrap();
+            rpc_base_url.set_username("Aladdin").unwrap();
+            rpc_base_url.set_password(Some("open sesame")).unwrap();
+            let ipfs_file_downloader = IpfsFileDownloader::new(
+                rpc_base_url,
+                FeedbackSender::new(&[]),
+                TestLogger::stdout(),
+                Some("my-token".to_string()),
+            )
+            .unwrap();
+
+            ipfs_file_downloader.check_kubo_rpc_api().await.unwrap();
+
+            version_mock.assert();
+        }
+
+        #[test]
+        fn warn_that_auth_token_is_ignored_when_rpc_url_contains_credentials() {
+            for rpc_base_url in [
+                "http://user:secret-password@127.0.0.1:5001/",
+                "http://user@127.0.0.1:5001/",
+                "http://:secret-password@127.0.0.1:5001/",
+            ] {
+                let (logger, log_inspector) = TestLogger::memory();
+
+                IpfsFileDownloader::new(
+                    Url::parse(rpc_base_url).unwrap(),
+                    FeedbackSender::new(&[]),
+                    logger,
+                    Some("my-token".to_string()),
+                )
+                .unwrap();
+
+                assert!(
+                    log_inspector.contains_log(
+                        "WARN The IPFS RPC URL contains credentials, they take precedence"
+                    ),
+                    "missing warning for the RPC URL '{rpc_base_url}': {log_inspector}"
+                );
+                assert!(
+                    !log_inspector.contains_log("secret-password")
+                        && !log_inspector.contains_log("my-token"),
+                    "secrets leaked: {log_inspector}"
+                );
+            }
+        }
+
+        #[test]
+        fn creating_downloader_with_invalid_auth_token_fails_without_exposing_it() {
+            let Err(error) = IpfsFileDownloader::new(
+                Url::parse("http://127.0.0.1:5001/").unwrap(),
+                FeedbackSender::new(&[]),
+                TestLogger::stdout(),
+                Some("invalid-token\n".to_string()),
+            ) else {
+                panic!("Creating the downloader should fail with a token containing a newline");
+            };
+
+            assert!(
+                !format!("{error:?}").contains("invalid-token"),
+                "auth token leaked: {error:?}"
+            );
+        }
+
+        #[test]
+        fn creating_downloader_fails_with_an_empty_auth_token() {
+            let Err(error) = IpfsFileDownloader::new(
+                Url::parse("http://127.0.0.1:5001/").unwrap(),
+                FeedbackSender::new(&[]),
+                TestLogger::stdout(),
+                Some(String::new()),
+            ) else {
+                panic!("Creating the downloader should fail with an empty token");
+            };
+
+            assert!(
+                error.to_string().contains("must not be empty"),
+                "unexpected error: {error:?}"
+            );
+        }
     }
 }
