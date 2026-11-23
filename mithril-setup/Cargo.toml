@@ -1,6 +1,6 @@
 [package]
 name = "mithril-setup"
-version = "0.1.1"
+version = "0.1.2"
 
 description = "A Mithril setup binary with commands to help install environment"
 authors = { workspace = true }
@@ -22,4 +22,5 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "macros", "process", "rt-multi-thread"] }
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3.23", features = ["fmt", "json"] }
+tracing-bunyan-formatter = "0.3"
+tracing-subscriber = { version = "0.3.23", features = ["fmt", "registry"] }

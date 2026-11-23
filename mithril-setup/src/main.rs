@@ -8,6 +8,9 @@ use std::io::Write;
 use std::sync::Mutex;
 use tracing::debug;
 use tracing::level_filters::LevelFilter;
+use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use mithril_doc::{Documenter, StructDoc};
 
@@ -119,21 +122,28 @@ impl Args {
         // Colors are only meant for a terminal
         let with_ansi = matches!(log_output_type, LogOutputType::StdErr);
 
-        let builder = tracing_subscriber::fmt()
-            .with_max_level(self.log_level())
-            .with_target(false)
-            .with_ansi(with_ansi)
-            .with_writer(writer);
-
         let result = if self.log_format_json {
-            builder.json().try_init()
+            tracing_subscriber::registry()
+                .with(self.log_level())
+                .with(JsonStorageLayer)
+                .with(BunyanFormattingLayer::new(
+                    "mithril-setup".to_string(),
+                    writer,
+                ))
+                .try_init()
+                .map_err(|error| anyhow::anyhow!(error))
         } else {
-            builder.compact().try_init()
+            tracing_subscriber::fmt()
+                .with_max_level(self.log_level())
+                .with_target(false)
+                .with_ansi(with_ansi)
+                .with_writer(writer)
+                .compact()
+                .try_init()
+                .map_err(|error| anyhow::anyhow!(error))
         };
 
-        result
-            .map_err(|error| anyhow::anyhow!(error))
-            .context("Could not initialize the logs")
+        result.context("Could not initialize the logs")
     }
 }
 
