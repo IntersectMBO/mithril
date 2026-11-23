@@ -2,11 +2,53 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use anyhow::Context;
+use thiserror::Error;
 
 use mithril_cardano_node_internal_database::{IMMUTABLE_DIR, immutable_trio_names};
 use mithril_common::entities::ImmutableFileNumber;
 
 use crate::{MithrilResult, utils::move_file};
+
+/// Reason why the content unpacked from an immutable archive is rejected.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ImmutableArchiveVerificationError {
+    /// The archive holds other entries than the immutable directory.
+    #[error(
+        "Unexpected entries in the archive of immutable file {immutable_file_number}: expected {expected:?}, found {found:?}"
+    )]
+    UnexpectedArchiveEntries {
+        /// Number of the immutable file of the archive
+        immutable_file_number: ImmutableFileNumber,
+        /// Names of the entries the archive must hold
+        expected: BTreeSet<String>,
+        /// Names of the entries the archive holds
+        found: BTreeSet<String>,
+    },
+
+    /// The immutable directory of the archive does not hold exactly the immutable trio.
+    #[error(
+        "Unexpected content in the archive of immutable file {immutable_file_number}: expected {expected:?}, found {found:?}"
+    )]
+    UnexpectedImmutableFiles {
+        /// Number of the immutable file of the archive
+        immutable_file_number: ImmutableFileNumber,
+        /// Names of the files of the immutable trio
+        expected: BTreeSet<String>,
+        /// Names of the entries the immutable directory of the archive holds
+        found: BTreeSet<String>,
+    },
+
+    /// An entry of the immutable trio is not a regular file.
+    #[error(
+        "Entry '{file_name}' of the archive of immutable file {immutable_file_number} is not a regular file"
+    )]
+    NotARegularFile {
+        /// Number of the immutable file of the archive
+        immutable_file_number: ImmutableFileNumber,
+        /// Name of the entry of the immutable trio
+        file_name: String,
+    },
+}
 
 /// Check that the unpacked immutable archive holds exactly the immutable directory and the
 /// regular files of the immutable trio, nothing else.
@@ -17,8 +59,13 @@ pub async fn verify_immutable_archive_members(
     let staging_entries = list_entry_names(staging_dir).await?;
     let expected_staging_entries = BTreeSet::from([IMMUTABLE_DIR.to_string()]);
     if staging_entries != expected_staging_entries {
-        anyhow::bail!(
-            "Unexpected entries in the archive of immutable file {immutable_file_number}: expected {expected_staging_entries:?}, found {staging_entries:?}"
+        return Err(
+            ImmutableArchiveVerificationError::UnexpectedArchiveEntries {
+                immutable_file_number,
+                expected: expected_staging_entries,
+                found: staging_entries,
+            }
+            .into(),
         );
     }
 
@@ -27,8 +74,13 @@ pub async fn verify_immutable_archive_members(
         immutable_trio_names(immutable_file_number).into_iter().collect();
     let found_names = list_entry_names(&staged_immutable_dir).await?;
     if found_names != expected_names {
-        anyhow::bail!(
-            "Unexpected content in the archive of immutable file {immutable_file_number}: expected {expected_names:?}, found {found_names:?}"
+        return Err(
+            ImmutableArchiveVerificationError::UnexpectedImmutableFiles {
+                immutable_file_number,
+                expected: expected_names,
+                found: found_names,
+            }
+            .into(),
         );
     }
 
@@ -38,9 +90,11 @@ pub async fn verify_immutable_archive_members(
             .await
             .with_context(|| format!("Could not read metadata of '{}'", path.display()))?;
         if !metadata.is_file() {
-            anyhow::bail!(
-                "Entry '{name}' of the archive of immutable file {immutable_file_number} is not a regular file"
-            );
+            return Err(ImmutableArchiveVerificationError::NotARegularFile {
+                immutable_file_number,
+                file_name: name.clone(),
+            }
+            .into());
         }
     }
 
@@ -105,6 +159,18 @@ mod tests {
     mod verify_immutable_archive_members {
         use super::*;
 
+        fn names(names: &[&str]) -> BTreeSet<String> {
+            names.iter().map(|name| name.to_string()).collect()
+        }
+
+        async fn verification_error(staging_dir: &Path) -> ImmutableArchiveVerificationError {
+            verify_immutable_archive_members(staging_dir, 1)
+                .await
+                .expect_err("the archive content must be rejected")
+                .downcast::<ImmutableArchiveVerificationError>()
+                .expect("the rejection must be an ImmutableArchiveVerificationError")
+        }
+
         #[tokio::test]
         async fn accepts_an_archive_holding_exactly_the_immutable_trio() {
             let staging_dir = temp_dir_create!();
@@ -121,9 +187,14 @@ mod tests {
             create_immutable_trio(&staging_dir, &FULL_TRIO);
             create_file(&staging_dir.join("ledger"), "state");
 
-            verify_immutable_archive_members(&staging_dir, 1)
-                .await
-                .expect_err("an archive with an entry outside the immutable trio must be rejected");
+            assert_eq!(
+                ImmutableArchiveVerificationError::UnexpectedArchiveEntries {
+                    immutable_file_number: 1,
+                    expected: names(&[IMMUTABLE_DIR]),
+                    found: names(&[IMMUTABLE_DIR, "ledger"]),
+                },
+                verification_error(&staging_dir).await
+            );
         }
 
         #[tokio::test]
@@ -131,9 +202,14 @@ mod tests {
             let staging_dir = temp_dir_create!();
             create_immutable_trio(&staging_dir, &["00001.chunk", "00001.primary"]);
 
-            verify_immutable_archive_members(&staging_dir, 1)
-                .await
-                .expect_err("an archive missing a file of the immutable trio must be rejected");
+            assert_eq!(
+                ImmutableArchiveVerificationError::UnexpectedImmutableFiles {
+                    immutable_file_number: 1,
+                    expected: names(&FULL_TRIO),
+                    found: names(&["00001.chunk", "00001.primary"]),
+                },
+                verification_error(&staging_dir).await
+            );
         }
 
         #[tokio::test]
@@ -142,9 +218,13 @@ mod tests {
             create_immutable_trio(&staging_dir, &["00001.primary", "00001.secondary"]);
             std::fs::create_dir_all(staging_dir.join(IMMUTABLE_DIR).join("00001.chunk")).unwrap();
 
-            verify_immutable_archive_members(&staging_dir, 1)
-                .await
-                .expect_err("a trio entry that is a directory must be rejected");
+            assert_eq!(
+                ImmutableArchiveVerificationError::NotARegularFile {
+                    immutable_file_number: 1,
+                    file_name: "00001.chunk".to_string(),
+                },
+                verification_error(&staging_dir).await
+            );
         }
 
         #[cfg(unix)]
@@ -160,9 +240,13 @@ mod tests {
             )
             .unwrap();
 
-            verify_immutable_archive_members(&staging_dir, 1)
-                .await
-                .expect_err("a trio entry that is a symlink must be rejected");
+            assert_eq!(
+                ImmutableArchiveVerificationError::NotARegularFile {
+                    immutable_file_number: 1,
+                    file_name: "00001.chunk".to_string(),
+                },
+                verification_error(&staging_dir).await
+            );
         }
 
         #[tokio::test]
@@ -171,9 +255,19 @@ mod tests {
             create_immutable_trio(&staging_dir, &FULL_TRIO);
             create_immutable_trio(&staging_dir, &["00002.chunk"]);
 
-            verify_immutable_archive_members(&staging_dir, 1)
-                .await
-                .expect_err("a file of another immutable must be rejected");
+            assert_eq!(
+                ImmutableArchiveVerificationError::UnexpectedImmutableFiles {
+                    immutable_file_number: 1,
+                    expected: names(&FULL_TRIO),
+                    found: names(&[
+                        "00001.chunk",
+                        "00001.primary",
+                        "00001.secondary",
+                        "00002.chunk"
+                    ]),
+                },
+                verification_error(&staging_dir).await
+            );
         }
 
         #[tokio::test]
@@ -181,9 +275,14 @@ mod tests {
             let staging_dir = temp_dir_create!();
             create_file(&staging_dir, "00001.tar.zst");
 
-            verify_immutable_archive_members(&staging_dir, 1)
-                .await
-                .expect_err("a raw file in place of the immutable archive must be rejected");
+            assert_eq!(
+                ImmutableArchiveVerificationError::UnexpectedArchiveEntries {
+                    immutable_file_number: 1,
+                    expected: names(&[IMMUTABLE_DIR]),
+                    found: names(&["00001.tar.zst"]),
+                },
+                verification_error(&staging_dir).await
+            );
         }
     }
 
