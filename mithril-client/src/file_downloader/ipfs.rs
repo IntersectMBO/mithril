@@ -63,30 +63,30 @@ struct VersionResponse {
 impl IpfsFileDownloader {
     /// Constructs a new `IpfsFileDownloader`.
     ///
-    /// If `token` is set, it is sent as a Bearer token with every request, to authenticate to a
-    /// Kubo RPC API protected by `API.Authorizations`. If the `rpc_base_url` also contains
+    /// If `auth_token` is set, it is sent as a Bearer token with every request, to authenticate to
+    /// a Kubo RPC API protected by `API.Authorizations`. If the `rpc_base_url` also contains
     /// credentials, they take precedence and the token is ignored with a warning.
     pub fn new(
         rpc_base_url: Url,
         feedback_sender: FeedbackSender,
         logger: Logger,
-        token: Option<String>,
+        auth_token: Option<String>,
     ) -> StdResult<Self> {
         let logger = logger.new_with_component_name::<Self>();
         let mut headers = HeaderMap::new();
-        if let Some(token) = token {
+        if let Some(auth_token) = auth_token {
             if !rpc_base_url.username().is_empty() || rpc_base_url.password().is_some() {
                 warn!(
                     logger,
                     "The IPFS RPC URL contains credentials, they take precedence over the IPFS RPC authentication token which is ignored"
                 );
             } else {
-                if token.is_empty() {
+                if auth_token.is_empty() {
                     return Err(anyhow!(
                         "The IPFS RPC authentication token must not be empty"
                     ));
                 }
-                let mut value = HeaderValue::from_str(&format!("Bearer {token}"))
+                let mut value = HeaderValue::from_str(&format!("Bearer {auth_token}"))
                     .with_context(|| "Invalid Kubo RPC token")?;
                 value.set_sensitive(true);
                 headers.insert(AUTHORIZATION, value);

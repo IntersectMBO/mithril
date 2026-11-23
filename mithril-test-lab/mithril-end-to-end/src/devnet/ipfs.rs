@@ -317,18 +317,6 @@ impl IpfsDevnet {
 }
 
 impl KuboNode {
-    /// Read the Bearer token written by the devnet in a node directory, if any
-    fn read_rpc_auth_token_from_node_dir(node_dir: &Path) -> StdResult<Option<String>> {
-        let token_path = node_dir.join("rpc-auth-token");
-        if !token_path.exists() {
-            return Ok(None);
-        }
-        let token = std::fs::read_to_string(&token_path)
-            .with_context(|| format!("Failed to read '{}'", token_path.display()))?;
-
-        Ok(Some(token.trim().to_string()))
-    }
-
     /// List IPNS keys of the Kubo node keystore
     pub async fn list_ipns_keys(&self) -> StdResult<Vec<IpnsKey>> {
         // Output lines example:
@@ -424,6 +412,18 @@ impl KuboNode {
             .await?;
 
         Ok(ipfs_dir_path)
+    }
+
+    /// Read the Bearer token written by the devnet in a node directory, if any
+    fn read_rpc_auth_token_from_node_dir(node_dir: &Path) -> StdResult<Option<String>> {
+        let token_path = node_dir.join("rpc-auth-token");
+        if !token_path.exists() {
+            return Ok(None);
+        }
+        let token = std::fs::read_to_string(&token_path)
+            .with_context(|| format!("Failed to read '{}'", token_path.display()))?;
+
+        Ok(Some(token.trim().to_string()))
     }
 }
 

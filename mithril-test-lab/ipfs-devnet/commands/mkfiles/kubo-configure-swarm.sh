@@ -85,11 +85,11 @@ configure_node() {
   swarm_port=$((SWARM_PORT_BASE + node_id))
 
   #---------- Write swarm key
-  {
+  (umask 077 && {
     printf '%s\n' "/key/swarm/psk/1.0.0/"
     printf '%s\n' "/base16/"
     printf '%s\n' "$swarm_key"
-  } > "$node_dir/swarm.key"
+  } > "$node_dir/swarm.key")
 
   #---------- Additional config
   IPFS_PATH="$node_dir" "$ipfs_bin_path" config Addresses.API "/ip4/127.0.0.1/tcp/${api_port}"
