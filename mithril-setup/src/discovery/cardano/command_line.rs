@@ -10,9 +10,6 @@ pub(crate) struct NodeCommandLine {
     pub kes_key: Option<String>,
     pub kes_agent_socket: Option<String>,
     pub operational_certificate: Option<String>,
-    pub host_addr: Option<String>,
-    pub host_ipv6_addr: Option<String>,
-    pub port: Option<String>,
     pub bulk_credentials_file: Option<String>,
     pub start_as_non_producing_node: bool,
 }
@@ -48,9 +45,6 @@ impl NodeCommandLine {
                 "topology" => &mut command_line.topology,
                 "shelley-kes-key" => &mut command_line.kes_key,
                 "shelley-operational-certificate" => &mut command_line.operational_certificate,
-                "host-addr" => &mut command_line.host_addr,
-                "host-ipv6-addr" => &mut command_line.host_ipv6_addr,
-                "port" => &mut command_line.port,
                 "shelley-kes-agent-socket" => &mut command_line.kes_agent_socket,
                 "bulk-credentials-file" => &mut command_line.bulk_credentials_file,
                 _ => continue,
@@ -119,12 +113,6 @@ mod tests {
             "/opt/cardano/db",
             "--socket-path",
             "/opt/cardano/node.socket",
-            "--host-addr",
-            "0.0.0.0",
-            "--host-ipv6-addr",
-            "::",
-            "--port",
-            "3001",
             "--config",
             "/opt/cardano/config.json",
             "--shelley-kes-key",
@@ -143,9 +131,6 @@ mod tests {
                 topology: Some("/opt/cardano/topology.json".to_string()),
                 kes_key: Some("/opt/cardano/kes.skey".to_string()),
                 operational_certificate: Some("/opt/cardano/node.cert".to_string()),
-                host_addr: Some("0.0.0.0".to_string()),
-                host_ipv6_addr: Some("::".to_string()),
-                port: Some("3001".to_string()),
                 ..NodeCommandLine::default()
             },
             command_line
@@ -181,20 +166,32 @@ mod tests {
 
     #[test]
     fn a_value_less_flag_does_not_take_the_next_argument_as_its_value() {
-        let command_line = parse(&["--start-as-non-producing-node", "run", "--port", "3001"]);
+        let command_line = parse(&[
+            "--start-as-non-producing-node",
+            "run",
+            "--topology",
+            "/opt/cardano/topology.json",
+        ]);
 
         assert!(command_line.start_as_non_producing_node);
-        assert_eq!(Some("3001".to_string()), command_line.port);
+        assert_eq!(
+            Some("/opt/cardano/topology.json".to_string()),
+            command_line.topology
+        );
     }
 
     #[test]
     fn parses_options_given_with_an_equal_sign() {
-        let command_line = parse(&["run", "--socket-path=/ipc/node.socket", "--port=6000"]);
+        let command_line = parse(&[
+            "run",
+            "--socket-path=/ipc/node.socket",
+            "--topology=/opt/cardano/topology.json",
+        ]);
 
         assert_eq!(
             NodeCommandLine {
                 socket_path: Some("/ipc/node.socket".to_string()),
-                port: Some("6000".to_string()),
+                topology: Some("/opt/cardano/topology.json".to_string()),
                 ..NodeCommandLine::default()
             },
             command_line
@@ -208,13 +205,13 @@ mod tests {
             "--validate-db",
             "--mempool-capacity-override",
             "1000",
-            "--port",
-            "3001",
+            "--topology",
+            "/opt/cardano/topology.json",
         ]);
 
         assert_eq!(
             NodeCommandLine {
-                port: Some("3001".to_string()),
+                topology: Some("/opt/cardano/topology.json".to_string()),
                 ..NodeCommandLine::default()
             },
             command_line
@@ -223,7 +220,7 @@ mod tests {
 
     #[test]
     fn ignores_an_option_missing_its_value() {
-        assert_eq!(NodeCommandLine::default(), parse(&["run", "--port"]));
+        assert_eq!(NodeCommandLine::default(), parse(&["run", "--topology"]));
     }
 
     #[test]
@@ -241,7 +238,7 @@ mod tests {
 
     #[test]
     fn a_node_without_kes_key_or_operational_certificate_is_not_a_block_producer() {
-        assert!(!parse(&["run", "--port", "3001"]).is_block_producer());
+        assert!(!parse(&["run", "--topology", "file.json"]).is_block_producer());
         assert!(!parse(&["run", "--shelley-kes-key", "kes.skey"]).is_block_producer());
         assert!(
             !parse(&["run", "--shelley-operational-certificate", "node.cert"]).is_block_producer()

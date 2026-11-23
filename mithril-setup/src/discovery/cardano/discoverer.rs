@@ -1,7 +1,6 @@
 //! Discoverer of the Cardano node running on the machine
 
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::Arc;
 
 use tracing::{debug, info, warn};
@@ -14,8 +13,8 @@ use crate::discovery::cardano::node_files::{
     CardanoConfiguration, CardanoNetwork, Peer, ShelleyGenesisConfiguration, TopologyConfiguration,
 };
 use crate::discovery::cardano::{
-    CardanoDiscovery, FileProbe, ListeningAddress, NodeInstance, NodeProcess, NodeRole,
-    ProcessProbe, ServiceProbe, ToolProbe,
+    CardanoDiscovery, FileProbe, NodeInstance, NodeProcess, NodeRole, ProcessProbe, ServiceProbe,
+    ToolProbe,
 };
 
 /// Reasons why the Cardano block producer node could not be discovered
@@ -120,11 +119,6 @@ impl CardanoDiscoverer {
         let shelley_genesis_file = self.shelley_genesis_file(config_file.as_deref()).await;
         let network = self.network(shelley_genesis_file.as_deref()).await;
         let pool_peers = self.pool_peers(topology_file.as_deref()).await;
-        let listening_address = ListeningAddress {
-            ipv4: parse_listening_arg("--host-addr", command_line.host_addr.as_deref()),
-            ipv6: parse_listening_arg("--host-ipv6-addr", command_line.host_ipv6_addr.as_deref()),
-            port: parse_listening_arg("--port", command_line.port.as_deref()),
-        };
         let node_version = self.node_version(&process).await;
         let cardano_cli_path = self.cardano_cli_path(process.executable.as_deref()).await;
         info!(
@@ -151,7 +145,6 @@ impl CardanoDiscoverer {
                 .map(resolve),
             kes_agent_socket: command_line.kes_agent_socket.as_deref().map(resolve),
             bulk_credentials_file: command_line.bulk_credentials_file.as_deref().map(resolve),
-            listening_address,
             node_version,
             cardano_cli_path,
             service_user: process.user,
@@ -346,21 +339,6 @@ impl CardanoDiscoverer {
 
         Ok(nodes)
     }
-}
-
-/// Parse a listening address argument of the node command line, an invalid value is ignored
-fn parse_listening_arg<T: FromStr>(arg: &str, value: Option<&str>) -> Option<T> {
-    let value = value?;
-
-    value
-        .parse()
-        .inspect_err(|_| {
-            warn!(
-                arg,
-                value, "Invalid listening address on the node command line"
-            )
-        })
-        .ok()
 }
 
 /// A running node with what is known about it
@@ -922,9 +900,7 @@ pub(crate) mod tests {
     }
 
     mod collect_facts {
-        use std::net::{Ipv4Addr, Ipv6Addr};
-
-        use crate::discovery::cardano::{CardanoNetwork, ListeningAddress, Peer};
+        use crate::discovery::cardano::{CardanoNetwork, Peer};
 
         use super::*;
 
@@ -982,12 +958,6 @@ pub(crate) mod tests {
                     "/opt/cardano/config.json",
                     "--topology",
                     "/opt/cardano/topology.json",
-                    "--host-addr",
-                    "0.0.0.0",
-                    "--host-ipv6-addr",
-                    "::",
-                    "--port",
-                    "3001",
                 ])
             };
             let tools = FakeToolProbe {
@@ -1036,11 +1006,6 @@ pub(crate) mod tests {
                     operational_certificate_path: Some(PathBuf::from("/opt/cardano/node.cert")),
                     kes_agent_socket: None,
                     bulk_credentials_file: None,
-                    listening_address: ListeningAddress {
-                        ipv4: Some(Ipv4Addr::UNSPECIFIED),
-                        ipv6: Some(Ipv6Addr::UNSPECIFIED),
-                        port: Some(3001),
-                    },
                     service_user: Some("cardano".to_string()),
                     node_version: Some("10.1.4".to_string()),
                     cardano_cli_path: Some(PathBuf::from("/usr/local/bin/cardano-cli")),
@@ -1127,7 +1092,6 @@ pub(crate) mod tests {
             assert_eq!(None, discovery.database_dir);
             assert_eq!(None, discovery.config_file);
             assert_eq!(None, discovery.topology_file);
-            assert_eq!(ListeningAddress::default(), discovery.listening_address);
             assert_eq!(None, discovery.service_user);
             assert_eq!(None, discovery.shelley_genesis_file);
             assert_eq!(None, discovery.network);
@@ -1205,30 +1169,6 @@ pub(crate) mod tests {
             assert_eq!(
                 Some(PathBuf::from("keys/node.cert")),
                 discovery.operational_certificate_path
-            );
-        }
-
-        #[tokio::test]
-        async fn ignores_invalid_listening_address_values() {
-            let process = block_producer_process(&[
-                "--host-addr",
-                "not-an-ip",
-                "--host-ipv6-addr",
-                "0.0.0.0",
-                "--port",
-                "99999",
-            ]);
-            let logs = capture_logs();
-
-            let discovery = discover(process, FakeProbes::default()).await;
-
-            assert_eq!(ListeningAddress::default(), discovery.listening_address);
-            assert_eq!(
-                3,
-                logs.search_logs("Invalid listening address on the node command line")
-                    .len(),
-                "{:?}",
-                logs.search_logs("")
             );
         }
 
