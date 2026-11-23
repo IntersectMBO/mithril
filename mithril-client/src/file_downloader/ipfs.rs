@@ -23,6 +23,8 @@ use super::{FileDownloader, FileDownloaderUri, interface::DownloadEvent};
 
 const EXISTENCE_CHECK_DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 const KUBO_RPC_API_CHECK_DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Maximum time to wait for the next chunk of a Kubo RPC response
+const KUBO_RPC_API_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A file downloader that downloads content from IPFS through a Kubo node's RPC API.
 ///
@@ -94,6 +96,7 @@ impl IpfsFileDownloader {
         }
         let http_client = reqwest::ClientBuilder::new()
             .default_headers(headers)
+            .read_timeout(KUBO_RPC_API_READ_TIMEOUT)
             .build()
             .with_context(|| "Building http client for IpfsFileDownloader failed")?;
 
