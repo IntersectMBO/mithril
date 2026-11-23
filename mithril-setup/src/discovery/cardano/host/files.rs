@@ -23,13 +23,14 @@ impl FileProbe for HostFileProbe {
 
 #[cfg(test)]
 mod tests {
-    use crate::discovery::cardano::host::test_tools::{test_dir, write_file};
+    use crate::test_dir;
+    use crate::test_tools::file::write_file;
 
     use super::*;
 
     #[tokio::test]
     async fn reads_the_content_of_an_existing_file() {
-        let path = test_dir("files_reads_an_existing_file").join("configuration.yml");
+        let path = test_dir!().join("configuration.yml");
         write_file(&path, "Protocol: Cardano");
 
         let content = HostFileProbe.read_to_string(&path).await.unwrap();
@@ -39,7 +40,7 @@ mod tests {
 
     #[tokio::test]
     async fn fails_on_a_missing_file_naming_its_path() {
-        let path = test_dir("files_fails_on_a_missing_file").join("configuration.yml");
+        let path = test_dir!().join("configuration.yml");
 
         let error = HostFileProbe.read_to_string(&path).await.unwrap_err();
 

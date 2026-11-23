@@ -181,7 +181,8 @@ mod tests {
     use std::os::unix::fs::symlink;
     use std::path::Path;
 
-    use crate::discovery::cardano::host::test_tools::{test_dir, write_file};
+    use crate::test_dir;
+    use crate::test_tools::file::write_file;
 
     use super::*;
 
@@ -190,8 +191,7 @@ mod tests {
     }
 
     impl FakeProc {
-        fn new(test_name: &str) -> Self {
-            let root = test_dir(test_name);
+        fn new(root: PathBuf) -> Self {
             write_file(
                 &root.join("passwd"),
                 "root:x:0:0:root:/root:/bin/bash\ncardano:x:1001:1001::/home/cardano:/bin/bash\n",
@@ -231,7 +231,7 @@ mod tests {
 
     #[tokio::test]
     async fn lists_the_cardano_node_processes_with_their_details() {
-        let proc = FakeProc::new("procfs_lists_the_cardano_node_processes");
+        let proc = FakeProc::new(test_dir!());
         let dir = proc.add_process(
             1234,
             &["/usr/local/bin/cardano-node", "run", "--port", "3001"],
@@ -260,7 +260,7 @@ mod tests {
 
     #[tokio::test]
     async fn ignores_the_processes_that_are_not_cardano_nodes() {
-        let proc = FakeProc::new("procfs_ignores_other_processes");
+        let proc = FakeProc::new(test_dir!());
         let dir = proc.add_process(10, &["/usr/bin/bash", "cardano-node.sh"], 0);
         link(&dir, "exe", "/usr/bin/bash");
         let dir = proc.add_process(11, &["/usr/bin/cardano-node-exporter"], 0);
@@ -277,7 +277,7 @@ mod tests {
 
     #[tokio::test]
     async fn lists_the_processes_ordered_by_pid() {
-        let proc = FakeProc::new("procfs_lists_ordered_by_pid");
+        let proc = FakeProc::new(test_dir!());
         for pid in [300, 20, 1000] {
             let dir = proc.add_process(pid, &["cardano-node", "run"], 0);
             link(&dir, "exe", "/usr/local/bin/cardano-node");
@@ -292,7 +292,7 @@ mod tests {
     #[tokio::test]
     async fn falls_back_to_the_program_name_when_the_executable_link_is_not_readable() {
         // Without privileges, the links of processes of other users can't be read
-        let proc = FakeProc::new("procfs_falls_back_to_the_program_name");
+        let proc = FakeProc::new(test_dir!());
         proc.add_process(1234, &["/opt/cardano/bin/cardano-node", "run"], 1001);
 
         let processes = proc.probe().cardano_node_processes().await.unwrap();
@@ -317,7 +317,7 @@ mod tests {
     async fn leaves_the_executable_unknown_when_only_a_relative_program_name_is_readable() {
         // The program name is relative to the working directory of the node, which can't be read
         // either, so it can't be resolved
-        let proc = FakeProc::new("procfs_leaves_the_executable_unknown");
+        let proc = FakeProc::new(test_dir!());
         proc.add_process(1234, &["cardano-node", "run"], 1001);
         proc.add_process(1235, &["./bin/cardano-node", "run"], 1001);
 
@@ -332,7 +332,7 @@ mod tests {
 
     #[tokio::test]
     async fn detects_a_node_whose_executable_was_replaced_on_disk() {
-        let proc = FakeProc::new("procfs_detects_a_replaced_executable");
+        let proc = FakeProc::new(test_dir!());
         let dir = proc.add_process(1234, &["./node", "run"], 0);
         link(&dir, "exe", "/usr/local/bin/cardano-node (deleted)");
 
@@ -350,7 +350,7 @@ mod tests {
 
     #[tokio::test]
     async fn leaves_the_user_unknown_when_absent_from_the_passwd_file() {
-        let proc = FakeProc::new("procfs_leaves_the_user_unknown");
+        let proc = FakeProc::new(test_dir!());
         proc.add_process(1234, &["cardano-node", "run"], 4242);
 
         let processes = proc.probe().cardano_node_processes().await.unwrap();
@@ -360,7 +360,7 @@ mod tests {
 
     #[tokio::test]
     async fn reads_the_real_user_and_group_of_the_process() {
-        let proc = FakeProc::new("procfs_reads_the_real_user_and_group");
+        let proc = FakeProc::new(test_dir!());
         let dir = proc.add_process(1234, &["cardano-node", "run"], 0);
         // Real, effective, saved set and filesystem identifiers: only the real ones are kept
         write_file(
@@ -381,7 +381,7 @@ mod tests {
 
     #[tokio::test]
     async fn leaves_the_owner_unknown_when_the_status_is_not_readable() {
-        let proc = FakeProc::new("procfs_leaves_the_owner_unknown");
+        let proc = FakeProc::new(test_dir!());
         let dir = proc.add_process(1234, &["cardano-node", "run"], 1001);
         std::fs::remove_file(dir.join("status")).unwrap();
 

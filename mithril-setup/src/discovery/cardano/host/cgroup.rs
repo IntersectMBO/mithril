@@ -64,12 +64,12 @@ fn parse_systemd_unit(content: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::discovery::cardano::host::test_tools::{test_dir, write_file};
+    use crate::test_dir;
+    use crate::test_tools::file::write_file;
 
     use super::*;
 
-    async fn unit_from_cgroup(test_name: &str, cgroup: &str) -> Option<String> {
-        let proc_root = test_dir(test_name);
+    async fn unit_from_cgroup(proc_root: PathBuf, cgroup: &str) -> Option<String> {
         write_file(&proc_root.join("42").join("cgroup"), cgroup);
 
         CgroupServiceProbe::new(proc_root).systemd_unit_of(42).await.unwrap()
@@ -77,11 +77,7 @@ mod tests {
 
     #[tokio::test]
     async fn finds_the_unit_of_a_system_service() {
-        let unit = unit_from_cgroup(
-            "cgroup_finds_a_system_service",
-            "0::/system.slice/cardano-node.service\n",
-        )
-        .await;
+        let unit = unit_from_cgroup(test_dir!(), "0::/system.slice/cardano-node.service\n").await;
 
         assert_eq!(Some("cardano-node.service".to_string()), unit);
     }
@@ -89,7 +85,7 @@ mod tests {
     #[tokio::test]
     async fn finds_the_unit_of_a_user_service() {
         let unit = unit_from_cgroup(
-            "cgroup_finds_a_user_service",
+            test_dir!(),
             "0::/user.slice/user-1001.slice/user@1001.service/app.slice/cnode.service\n",
         )
         .await;
@@ -100,7 +96,7 @@ mod tests {
     #[tokio::test]
     async fn finds_the_unit_with_cgroup_v1() {
         let unit = unit_from_cgroup(
-            "cgroup_finds_with_cgroup_v1",
+            test_dir!(),
             "12:cpuset:/\n11:memory:/system.slice/cnode.service\n1:name=systemd:/system.slice/cnode.service\n",
         )
         .await;
@@ -111,7 +107,7 @@ mod tests {
     #[tokio::test]
     async fn finds_no_unit_for_a_process_started_from_a_terminal() {
         let unit = unit_from_cgroup(
-            "cgroup_finds_no_unit_for_a_terminal_process",
+            test_dir!(),
             "0::/user.slice/user-1001.slice/session-3.scope\n",
         )
         .await;
@@ -121,14 +117,14 @@ mod tests {
 
     #[tokio::test]
     async fn finds_no_unit_for_a_process_in_a_container() {
-        let unit = unit_from_cgroup("cgroup_finds_no_unit_in_a_container", "0::/\n").await;
+        let unit = unit_from_cgroup(test_dir!(), "0::/\n").await;
 
         assert_eq!(None, unit);
     }
 
     #[tokio::test]
     async fn finds_no_unit_for_a_process_that_exited() {
-        let probe = CgroupServiceProbe::new(test_dir("cgroup_finds_no_unit_for_an_exited_process"));
+        let probe = CgroupServiceProbe::new(test_dir!());
 
         let unit = probe.systemd_unit_of(42).await.unwrap();
 

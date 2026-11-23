@@ -101,7 +101,8 @@ async fn is_executable_file(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::discovery::cardano::host::test_tools::{test_dir, write_executable};
+    use crate::test_dir;
+    use crate::test_tools::file::write_executable;
 
     use super::*;
 
@@ -176,7 +177,7 @@ mod tests {
 
         #[tokio::test]
         async fn finds_the_cli_beside_the_node_executable_first() {
-            let dir = test_dir("tools_finds_the_cli_beside_the_node");
+            let dir = test_dir!();
             write_executable(&dir.join("node/cardano-cli"));
             write_executable(&dir.join("path/cardano-cli"));
 
@@ -190,7 +191,7 @@ mod tests {
 
         #[tokio::test]
         async fn finds_the_cli_in_the_search_path() {
-            let dir = test_dir("tools_finds_the_cli_in_the_search_path");
+            let dir = test_dir!();
             write_executable(&dir.join("path2/cardano-cli"));
 
             let cli = HostToolProbe::new(vec![dir.join("path1"), dir.join("path2")])
@@ -203,7 +204,7 @@ mod tests {
 
         #[tokio::test]
         async fn finds_the_cli_in_the_search_path_when_the_node_executable_is_unknown() {
-            let dir = test_dir("tools_finds_the_cli_without_node_executable");
+            let dir = test_dir!();
             write_executable(&dir.join("path/cardano-cli"));
 
             let cli = HostToolProbe::new(vec![dir.join("path")])
@@ -218,9 +219,9 @@ mod tests {
         #[cfg(unix)]
         #[tokio::test]
         async fn ignores_a_cli_that_is_not_executable() {
-            use crate::discovery::cardano::host::test_tools::write_file;
+            use crate::test_tools::file::write_file;
 
-            let dir = test_dir("tools_ignores_a_non_executable_cli");
+            let dir = test_dir!();
             write_file(&dir.join("node/cardano-cli"), "");
 
             let cli = HostToolProbe::new(vec![])
@@ -233,7 +234,7 @@ mod tests {
 
         #[tokio::test]
         async fn finds_no_cli_when_not_installed() {
-            let dir = test_dir("tools_finds_no_cli");
+            let dir = test_dir!();
 
             let cli = HostToolProbe::new(vec![dir.join("path")])
                 .find_cardano_cli(Some(&dir.join("node/cardano-node")))
