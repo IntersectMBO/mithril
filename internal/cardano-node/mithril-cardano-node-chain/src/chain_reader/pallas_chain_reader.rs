@@ -356,7 +356,7 @@ impl ChainBlockReader for PallasChainReader {
 #[cfg(all(test, unix))]
 mod tests {
     use pallas_network::{
-        facades::NodeServer,
+        facades::{DEFAULT_HANDSHAKE_TIMEOUT, NodeServer},
         miniprotocols::{
             Point,
             chainsync::{BlockContent, ClientRequest, N2CServer, Tip},
@@ -447,7 +447,10 @@ mod tests {
     /// Accepts a client on the listener and intersects at the fake specific point, leaving the
     /// server ready to reply to the request that follows the intersection.
     async fn accept_and_intersect(unix_listener: &UnixListener) -> NodeServer {
-        let mut server = NodeServer::accept(unix_listener, 10).await.unwrap();
+        let mut server =
+            NodeServer::accept_with_timeout(unix_listener, 10, DEFAULT_HANDSHAKE_TIMEOUT)
+                .await
+                .unwrap();
         let chainsync_server = server.chainsync();
 
         chainsync_server.recv_while_idle().await.unwrap();
@@ -551,7 +554,10 @@ mod tests {
             }
 
             let unix_listener = UnixListener::bind(socket_path.as_path()).unwrap();
-            let mut server = NodeServer::accept(&unix_listener, 10).await.unwrap();
+            let mut server =
+                NodeServer::accept_with_timeout(&unix_listener, 10, DEFAULT_HANDSHAKE_TIMEOUT)
+                    .await
+                    .unwrap();
             let chainsync_server = server.chainsync();
 
             let Some(ClientRequest::Intersect(candidates)) =
@@ -631,7 +637,10 @@ mod tests {
                 }
 
                 let unix_listener = UnixListener::bind(socket_path.as_path()).unwrap();
-                let mut server = NodeServer::accept(&unix_listener, 10).await.unwrap();
+                let mut server =
+                    NodeServer::accept_with_timeout(&unix_listener, 10, DEFAULT_HANDSHAKE_TIMEOUT)
+                        .await
+                        .unwrap();
                 let chainsync_server = server.chainsync();
                 chainsync_server.recv_while_idle().await.unwrap();
                 chainsync_server
@@ -923,7 +932,10 @@ mod tests {
                 }
 
                 let unix_listener = UnixListener::bind(socket_path.as_path()).unwrap();
-                let mut server = NodeServer::accept(&unix_listener, 10).await.unwrap();
+                let mut server =
+                    NodeServer::accept_with_timeout(&unix_listener, 10, DEFAULT_HANDSHAKE_TIMEOUT)
+                        .await
+                        .unwrap();
                 let chainsync_server = server.chainsync();
 
                 chainsync_server.recv_while_idle().await.unwrap();
@@ -1002,7 +1014,10 @@ mod tests {
                 }
 
                 let unix_listener = UnixListener::bind(socket_path.as_path()).unwrap();
-                let mut server = NodeServer::accept(&unix_listener, 10).await.unwrap();
+                let mut server =
+                    NodeServer::accept_with_timeout(&unix_listener, 10, DEFAULT_HANDSHAKE_TIMEOUT)
+                        .await
+                        .unwrap();
                 let chainsync_server = server.chainsync();
 
                 // Receive the find_intersect request but never respond
@@ -1137,7 +1152,10 @@ mod tests {
             }
 
             let unix_listener = UnixListener::bind(socket_path.as_path()).unwrap();
-            let mut server = NodeServer::accept(&unix_listener, 10).await.unwrap();
+            let mut server =
+                NodeServer::accept_with_timeout(&unix_listener, 10, DEFAULT_HANDSHAKE_TIMEOUT)
+                    .await
+                    .unwrap();
             let chainsync_server = server.chainsync();
 
             chainsync_server.recv_while_idle().await.unwrap();
