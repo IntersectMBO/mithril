@@ -15,11 +15,11 @@ use mithril_common::messages::{
 };
 
 use crate::MithrilResult;
-use crate::cardano_database_client::ImmutableFileRange;
 #[cfg(feature = "unstable")]
 use crate::cardano_database_client::{
     CardanoDatabaseAggregatorRequest, download_unpack::IpfsShare,
 };
+use crate::cardano_database_client::{CardanoDatabaseDownloadError, ImmutableFileRange};
 use crate::feedback::{FeedbackSender, MithrilEvent, MithrilEventCardanoDatabase};
 use crate::file_downloader::{DownloadEvent, FileDownloader, FileDownloaderUri};
 use crate::utils::{
@@ -102,10 +102,10 @@ impl InternalArtifactDownloader {
             .verify_compatibility(&immutable_file_number_range, last_immutable_file_number)?;
         download_unpack_options.verify_can_write_to_target_directory(target_dir)?;
         if !target_dir.is_dir() {
-            anyhow::bail!(
-                "Target directory '{}' does not exist or is not a directory",
-                target_dir.display()
-            );
+            return Err(CardanoDatabaseDownloadError::TargetIsNotADirectory(
+                target_dir.to_path_buf(),
+            )
+            .into());
         }
         self.remove_stale_staging_directories(target_dir).await;
 
@@ -1020,9 +1020,11 @@ mod tests {
                 .await
                 .expect_err("download_unpack must fail when the target directory does not exist");
 
-            assert!(
-                error.to_string().contains("does not exist or is not a directory"),
-                "unexpected error: {error:?}"
+            assert_eq!(
+                Some(&CardanoDatabaseDownloadError::TargetIsNotADirectory(
+                    target_dir.clone()
+                )),
+                error.downcast_ref::<CardanoDatabaseDownloadError>()
             );
 
             assert!(
@@ -1047,9 +1049,11 @@ mod tests {
                 .await
                 .expect_err("a target that is not a directory must be rejected");
 
-            assert!(
-                error.to_string().contains("does not exist or is not a directory"),
-                "unexpected error: {error:?}"
+            assert_eq!(
+                Some(&CardanoDatabaseDownloadError::TargetIsNotADirectory(
+                    target_dir.clone()
+                )),
+                error.downcast_ref::<CardanoDatabaseDownloadError>()
             );
         }
 
