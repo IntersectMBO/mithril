@@ -86,9 +86,6 @@ impl FullScenario {
         // for signing in the penultimate immutable chunk before the end of the test.
         // As we get closer to the tip of the chain when signing, we'll be able to relax this constraint.
         spec.toolkit.exec.transfer_funds(spec.infrastructure.devnet()).await?;
-        if spec.infrastructure.use_leios() {
-            spec.toolkit.exec.generate_load(spec.infrastructure.devnet()).await?;
-        }
 
         info!("Bootstrapping leader aggregator");
         spec.bootstrap_leader_aggregator(&spec.infrastructure).await?;
@@ -247,6 +244,12 @@ impl FullScenario {
                 .exec
                 .update_protocol_parameters(aggregator, infrastructure, target_epoch + 3)
                 .await?;
+        }
+
+        // Start the transaction load of the Leios mode after the last transaction written on chain by the scenario:
+        // the load delays the other transactions, which would break the timing of the steps above
+        if infrastructure.use_leios() && aggregator.is_leader() {
+            self.toolkit.exec.generate_load(infrastructure.devnet()).await?;
         }
 
         // Wait 6 epochs after protocol parameters update, so that we make sure that we use new protocol parameters as well as new stake distribution a few times

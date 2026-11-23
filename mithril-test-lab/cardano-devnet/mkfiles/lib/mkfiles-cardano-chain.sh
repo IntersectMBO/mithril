@@ -81,19 +81,28 @@ function send_funds_to_address {
         --tx-body-file  node-pool\${N}/tx/tx\${N}-\${CONTEXT}-funds.txbody \\
         --out-file      node-pool\${N}/tx/tx\${N}-\${CONTEXT}-funds.tx
 
-    ## Submit the transaction
-    CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction submit \\
+    ## Submit the transaction: a rejected transaction means that a pending transaction already spends its inputs,
+    ## either the one submitted at the previous attempt or the one of another script, so the pending one is waited for
+    if CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction submit \\
         --tx-file node-pool\${N}/tx/tx\${N}-\${CONTEXT}-funds.tx \\
-        --testnet-magic ${NETWORK_MAGIC}
-
-    ## Compute the submitted transaction id
-    TX_ID_SUBMITTED=\$(CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction txid --tx-file node-pool\${N}/tx/tx\${N}-\${CONTEXT}-funds.tx)
-    if [[ "\${TX_ID_SUBMITTED}" =~ txhash ]]; then
-        TX_ID_SUBMITTED=\$(echo \$TX_ID_SUBMITTED | jq -r '.txhash')
+        --testnet-magic ${NETWORK_MAGIC}; then
+        ## Compute the submitted transaction id
+        TX_ID_SUBMITTED=\$(CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction txid --tx-file node-pool\${N}/tx/tx\${N}-\${CONTEXT}-funds.tx)
+        if [[ "\${TX_ID_SUBMITTED}" =~ txhash ]]; then
+            TX_ID_SUBMITTED=\$(echo \$TX_ID_SUBMITTED | jq -r '.txhash')
+        fi
+    else
+        echo ">>>> Transaction not accepted for \${CONTEXT} address, waiting for the pending transaction spending its inputs"
     fi
     
     ## Wait at least for 10 blocks so that the transaction is confirmed
     wait_for_elapsed_blocks "\${N}" 10
+
+    ## Without any submitted transaction, there is nothing to look for yet
+    if [ "\${TX_ID_SUBMITTED}" == "" ]; then
+        touch "\${ERROR_FILE}"
+        return
+    fi
 
     ## Wait for all pool nodes to see the new transaction
     for (( i=1; i<=${NUM_POOL_NODES}; i++ )); do
@@ -119,11 +128,12 @@ function try_send_funds_to_address {
     SEND_FUNDS_ADDRESS_WAIT_ROUNDS_MAX=10
     SEND_FUNDS_ADDRESS_WAIT_ROUNDS=1
     SEND_FUNDS_ADDRESS_WAIT_ROUND_DELAY=2
+    TX_ID_SUBMITTED=""
     while true
     do
         send_funds_to_address "\${ADDR}" "\${AMOUNT_TRANSFERRED}" "\${CONTEXT}" "\${N}"
         if [ -f \${ERROR_FILE} ]; then
-            echo ">>>> Funds not transferred successfully to \${CONTEXT} address, a rollback has happened [attempt \$SEND_FUNDS_ADDRESS_WAIT_ROUNDS]!"
+            echo ">>>> Funds not transferred successfully to \${CONTEXT} address, the transaction is pending or a rollback has happened [attempt \$SEND_FUNDS_ADDRESS_WAIT_ROUNDS]!"
             sleep \$SEND_FUNDS_ADDRESS_WAIT_ROUND_DELAY
         else
             echo ">>>> Funds transferred successfully to \${CONTEXT} address [attempt \$SEND_FUNDS_ADDRESS_WAIT_ROUNDS]!"
@@ -186,19 +196,28 @@ function write_datums_for_address {
         --tx-body-file  node-pool\${N}/tx/tx\${N}-\${CONTEXT}-datum.txbody \\
         --out-file      node-pool\${N}/tx/tx\${N}-\${CONTEXT}-datum.tx
 
-    ## Submit the transaction
-    CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction submit \\
+    ## Submit the transaction: a rejected transaction means that a pending transaction already spends its inputs,
+    ## either the one submitted at the previous attempt or the one of another script, so the pending one is waited for
+    if CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction submit \\
         --tx-file node-pool\${N}/tx/tx\${N}-\${CONTEXT}-datum.tx \\
-        --testnet-magic ${NETWORK_MAGIC}
-
-    ## Compute the submitted transaction id
-    TX_ID_SUBMITTED=\$(CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction txid --tx-file node-pool\${N}/tx/tx\${N}-\${CONTEXT}-datum.tx)
-    if [[ "\${TX_ID_SUBMITTED}" =~ txhash ]]; then
-        TX_ID_SUBMITTED=\$(echo \$TX_ID_SUBMITTED | jq -r '.txhash')
+        --testnet-magic ${NETWORK_MAGIC}; then
+        ## Compute the submitted transaction id
+        TX_ID_SUBMITTED=\$(CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction txid --tx-file node-pool\${N}/tx/tx\${N}-\${CONTEXT}-datum.tx)
+        if [[ "\${TX_ID_SUBMITTED}" =~ txhash ]]; then
+            TX_ID_SUBMITTED=\$(echo \$TX_ID_SUBMITTED | jq -r '.txhash')
+        fi
+    else
+        echo ">>>> Transaction not accepted for \${CONTEXT} address, waiting for the pending transaction spending its inputs"
     fi
 
     ## Wait at least for 10 blocks so that the transaction is confirmed
     wait_for_elapsed_blocks "\${N}" 10
+
+    ## Without any submitted transaction, there is nothing to look for yet
+    if [ "\${TX_ID_SUBMITTED}" == "" ]; then
+        touch "\${ERROR_FILE}"
+        return
+    fi
 
     ## Wait for all pool nodes to see the new datum, written by the submitted transaction
     for (( i=1; i<=${NUM_POOL_NODES}; i++ )); do
@@ -225,11 +244,12 @@ function try_write_datums_for_address {
     WRITE_DATUMS_ADDRESS_WAIT_ROUNDS_MAX=10
     WRITE_DATUMS_ADDRESS_WAIT_ROUNDS=1
     WRITE_DATUMS_ADDRESS_WAIT_ROUND_DELAY=2
+    TX_ID_SUBMITTED=""
     while true
     do
         write_datums_for_address "\${ADDR}" "\${SCRIPT_TX_VALUE}" \${CONTEXT} "\${N}" "\${DATUM_FILE}"
         if [ -f \${ERROR_FILE} ]; then
-            echo ">>>> Datums not written successfully for \${CONTEXT} address, a rollback has happened [attempt \$WRITE_DATUMS_ADDRESS_WAIT_ROUNDS]!"
+            echo ">>>> Datums not written successfully for \${CONTEXT} address, the transaction is pending or a rollback has happened [attempt \$WRITE_DATUMS_ADDRESS_WAIT_ROUNDS]!"
             sleep \$WRITE_DATUMS_ADDRESS_WAIT_ROUND_DELAY
         else
             echo ">>>> Datums successfully written for \${CONTEXT} address [attempt \$WRITE_DATUMS_ADDRESS_WAIT_ROUNDS]!"

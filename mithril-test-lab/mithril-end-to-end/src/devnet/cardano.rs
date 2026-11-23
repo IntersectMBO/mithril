@@ -75,6 +75,7 @@ pub struct DevnetBootstrapArgs {
     pub cardano_binary_url: Option<String>,
     pub use_leios: bool,
     pub leios_load_duration: Option<u32>,
+    pub leios_load_tps: u32,
 }
 
 impl Devnet {
@@ -169,6 +170,7 @@ impl Devnet {
             if let Some(leios_load_duration) = bootstrap_args.leios_load_duration {
                 bootstrap_command.env("LOAD_DURATION", leios_load_duration.to_string());
             }
+            bootstrap_command.env("LOAD_TPS", bootstrap_args.leios_load_tps.to_string());
         }
 
         bootstrap_command

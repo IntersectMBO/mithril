@@ -298,6 +298,10 @@ struct CardanoDevnetArgs {
     /// Duration of the transaction load of the Leios mode (in s, the default of the devnet scripts if not set)
     #[clap(long)]
     leios_load_duration: Option<u32>,
+
+    /// Rate of the transaction load of the Leios mode (in transactions per second)
+    #[clap(long, default_value_t = 30)]
+    leios_load_tps: u32,
 }
 
 impl CardanoDevnetArgs {
@@ -650,6 +654,7 @@ impl App {
             cardano_binary_url: args.cardano_devnet.cardano_binary_url.clone(),
             use_leios: args.cardano_devnet.use_leios,
             leios_load_duration: args.cardano_devnet.leios_load_duration,
+            leios_load_tps: args.cardano_devnet.leios_load_tps,
         })
         .await?;
         *self.devnet.lock().await = Some(devnet.clone());
@@ -933,6 +938,7 @@ mod tests {
         assert_eq!(plain.cardano_epoch_length(), 30.0);
         assert_eq!(leios.cardano_slot_length(), 0.10);
         assert_eq!(leios.cardano_epoch_length(), 300.0);
+        assert_eq!(leios.leios_load_tps, 30);
         assert_eq!(leios_overridden.cardano_slot_length(), 0.5);
         assert_eq!(leios_overridden.cardano_epoch_length(), 60.0);
     }
