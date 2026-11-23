@@ -16,6 +16,8 @@ resource "null_resource" "mithril_aggregator" {
     vm_instance                                                                  = google_compute_instance.vm_instance.id,
     cardano_image_id                                                             = var.cardano_image_id,
     cardano_image_registry                                                       = var.cardano_image_registry,
+    docker_assets_digest                                                         = local.docker_assets_digest,
+    provisioner_digest                                                           = filesha256("${path.module}/mithril.aggregator.tf"),
     image_id                                                                     = var.mithril_image_id,
     dmq_image_id                                                                 = var.dmq_image_id,
     dmq_image_registry                                                           = var.dmq_image_registry,
@@ -277,7 +279,7 @@ if [ "${var.mithril_use_p2p_network}" = "true" ] && [ "${var.mithril_p2p_use_dmq
 fi
 EOT
       ,
-      "docker compose $DOCKER_COMPOSE_FILES --profile all up -d",
+      "docker compose $DOCKER_COMPOSE_FILES --profile all up -d --build",
     ]
   }
 }

@@ -1,3 +1,8 @@
+locals {
+  docker_assets_digest    = sha256(join("\n", [for file in sort(fileset("${path.module}/assets/docker", "**")) : "${file}:${filesha256("${path.module}/assets/docker/${file}")}"]))
+  bootstrap_assets_digest = sha256(join("\n", [for file in sort(setunion(fileset(path.module, "assets/docker/**"), fileset(path.module, "assets/tools/**"), ["assets/infra.version"])) : "${file}:${filesha256("${path.module}/${file}")}"]))
+}
+
 resource "null_resource" "mithril_bootstrap" {
 
   connection {
@@ -12,6 +17,8 @@ resource "null_resource" "mithril_bootstrap" {
     image_id                         = var.mithril_image_id,
     cardano_image_id                 = var.cardano_image_id,
     cardano_image_registry           = var.cardano_image_registry,
+    bootstrap_assets_digest          = local.bootstrap_assets_digest,
+    provisioner_digest               = filesha256("${path.module}/mithril.bootstrap.tf"),
     dmq_image_id                     = var.dmq_image_id,
     dmq_image_registry               = var.dmq_image_registry,
     ipfs_image_id                    = var.ipfs_image_id,
