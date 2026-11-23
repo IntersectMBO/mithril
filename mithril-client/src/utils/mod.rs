@@ -12,7 +12,10 @@ cfg_fs! {
     mod unexpected_downloaded_file_verifier;
     mod vec_deque_extensions;
 
+    #[cfg(test)]
+    pub(crate) use ancillary_verifier::AncillaryVerificationError;
     pub use ancillary_verifier::AncillaryVerifier;
+    pub(crate) use ancillary_verifier::ValidatedAncillaryManifest;
     pub use bootstrap_files::*;
     pub use fs::*;
     pub use stream_reader::*;

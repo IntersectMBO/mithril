@@ -2,6 +2,7 @@
 //!
 //! This module provides the necessary abstractions to download files from different sources.
 
+mod archive_unpacker;
 mod http;
 mod interface;
 #[cfg(feature = "unstable")]
@@ -11,6 +12,9 @@ mod mock_builder;
 mod retry;
 mod streaming;
 
+pub use archive_unpacker::{
+    ArchiveEntryRejection, ArchiveUnpackError, TarArchiveUnpacker, UnpackedFilePermissions,
+};
 pub use http::HttpFileDownloader;
 #[cfg(test)]
 pub use interface::MockFileDownloader;

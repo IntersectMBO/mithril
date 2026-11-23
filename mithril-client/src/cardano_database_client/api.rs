@@ -154,6 +154,13 @@ impl CardanoDatabaseClient {
     }
 
     /// Download and unpack the given Cardano database parts data by hash.
+    ///
+    /// The target directory must exist, else a
+    /// [TargetIsNotADirectory](crate::cardano_database_client::CardanoDatabaseDownloadError::TargetIsNotADirectory)
+    /// error is returned.
+    ///
+    /// Only one download at a time is supported for a target directory: a download removes the
+    /// staging directories that an earlier download left in it.
     #[cfg(feature = "fs")]
     pub async fn download_unpack(
         &self,

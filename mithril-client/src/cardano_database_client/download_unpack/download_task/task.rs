@@ -1,0 +1,1170 @@
+use std::future::Future;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::sync::Arc;
+
+use anyhow::{Context, anyhow};
+use slog::Logger;
+
+use mithril_common::entities::{CompressionAlgorithm, ImmutableFileNumber};
+
+use crate::{
+    MithrilResult,
+    file_downloader::{
+        DownloadEvent, FileDownloader, FileDownloaderUnreachable, FileDownloaderUri,
+    },
+    utils::{AncillaryVerifier, ValidatedAncillaryManifest},
+};
+
+use super::immutable_trio::{promote_immutable_files, verify_immutable_archive_members};
+use super::{CircuitBreaker, StagingDirectory};
+
+/// The future type for downloading a file
+type DownloadFuture = dyn Future<Output = MithrilResult<()>> + Send;
+
+/// A task to download and unpack a file
+pub struct DownloadTask {
+    pub kind: DownloadKind,
+    pub locations_to_try: Vec<LocationToDownload>,
+    pub size_uncompressed: u64,
+    pub target_dir: PathBuf,
+    pub download_event: DownloadEvent,
+}
+
+impl DownloadTask {
+    fn tried_locations(&self) -> String {
+        self.locations_to_try
+            .iter()
+            .map(|l| format!("{:?}", l.file_downloader_uri.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    fn name(&self) -> String {
+        match &self.kind {
+            DownloadKind::Immutable(immutable_file_number) => {
+                format!("immutable_file_{immutable_file_number:05}")
+            }
+            DownloadKind::Ancillary { .. } => "ancillary".to_string(),
+        }
+    }
+
+    async fn download_unpack_file(
+        &self,
+        staging_directory: &StagingDirectory,
+        logger: &Logger,
+    ) -> MithrilResult<()> {
+        let mut last_location_error = None;
+
+        for location_to_try in &self.locations_to_try {
+            if location_to_try.is_circuit_breaker_triggered() {
+                continue;
+            }
+            staging_directory.reset().await.with_context(|| {
+                format!("Could not reset the staging directory of {}", self.name())
+            })?;
+
+            let downloaded = location_to_try
+                .file_downloader
+                .download_unpack(
+                    &location_to_try.file_downloader_uri,
+                    self.size_uncompressed,
+                    staging_directory.path(),
+                    location_to_try.compression_algorithm,
+                    self.download_event.clone(),
+                )
+                .await;
+
+            match downloaded {
+                Err(e) => {
+                    // Only confirmed unreachable downloads trigger the circuit breaker.
+                    // A location-specific miss (e.g., file not found) should not disable the downloader
+                    // for a whole batch.
+                    if let Some(circuit_breaker) = &location_to_try.circuit_breaker
+                        && e.is::<FileDownloaderUnreachable>()
+                    {
+                        circuit_breaker.trigger();
+                    }
+
+                    slog::error!(
+                        logger,
+                        "Failed downloading and unpacking {} for location {:?}",
+                        self.name(), location_to_try.file_downloader_uri;
+                        "error" => ?e
+                    );
+                    last_location_error = Some(e);
+                }
+                Ok(()) => match self.verify_download(staging_directory.path()).await {
+                    Err(e) => {
+                        slog::error!(
+                            logger,
+                            "Failed validating {} downloaded from location {:?}",
+                            self.name(), location_to_try.file_downloader_uri;
+                            "error" => ?e
+                        );
+                        last_location_error = Some(e);
+                    }
+                    Ok(verified_download) => {
+                        match self
+                            .promote_download(staging_directory.path(), verified_download)
+                            .await
+                        {
+                            Ok(()) => return Ok(()),
+                            Err(e) if Self::is_fatal_local_error(&e) => {
+                                slog::error!(
+                                    logger,
+                                    "Failed promoting {} downloaded from location {:?}, no other location can repair it",
+                                    self.name(), location_to_try.file_downloader_uri;
+                                    "error" => ?e
+                                );
+                                return Err(e.context(format!(
+                                    "Could not promote {} downloaded from location {:?}",
+                                    self.name(),
+                                    location_to_try.file_downloader_uri.as_str()
+                                )));
+                            }
+                            Err(e) => {
+                                slog::error!(
+                                    logger,
+                                    "Failed promoting {} downloaded from location {:?}",
+                                    self.name(), location_to_try.file_downloader_uri;
+                                    "error" => ?e
+                                );
+                                last_location_error = Some(e);
+                            }
+                        }
+                    }
+                },
+            }
+        }
+
+        let all_locations_failed = format!(
+            "All locations failed for {}, tried locations: {}",
+            self.name(),
+            self.tried_locations()
+        );
+
+        Err(match last_location_error {
+            Some(error) => error.context(all_locations_failed),
+            None => anyhow!(all_locations_failed),
+        })
+    }
+
+    /// A local failure of the promotion that no other location can repair, so the task stops
+    /// instead of downloading the same archive again from the next location.
+    ///
+    /// A download, unpack or verification failure is never fatal: its cause may come from the
+    /// network or from the remote archive, which the next location may not share.
+    fn is_fatal_local_error(error: &anyhow::Error) -> bool {
+        error.chain().any(|cause| {
+            cause.downcast_ref::<io::Error>().is_some_and(|io_error| {
+                matches!(
+                    io_error.kind(),
+                    io::ErrorKind::StorageFull | io::ErrorKind::PermissionDenied
+                )
+            })
+        })
+    }
+
+    /// Verify the content unpacked from one location: an immutable archive must hold exactly its
+    /// trio, the ancillary archive must carry a valid manifest.
+    async fn verify_download(&self, staging_dir: &Path) -> MithrilResult<VerifiedDownload> {
+        match &self.kind {
+            DownloadKind::Immutable(immutable_file_number) => {
+                verify_immutable_archive_members(staging_dir, *immutable_file_number).await?;
+                Ok(VerifiedDownload::ImmutableTrio(*immutable_file_number))
+            }
+            DownloadKind::Ancillary { verifier } => {
+                let validated_manifest = verifier.verify(staging_dir).await?;
+                Ok(VerifiedDownload::AncillaryFiles(validated_manifest))
+            }
+        }
+    }
+
+    /// Move the verified content of the staging directory to its final place.
+    async fn promote_download(
+        &self,
+        staging_dir: &Path,
+        verified_download: VerifiedDownload,
+    ) -> MithrilResult<()> {
+        match verified_download {
+            VerifiedDownload::ImmutableTrio(immutable_file_number) => {
+                promote_immutable_files(staging_dir, &self.target_dir, immutable_file_number).await
+            }
+            VerifiedDownload::AncillaryFiles(validated_manifest) => {
+                validated_manifest.move_to_final_location(&self.target_dir).await
+            }
+        }
+    }
+
+    /// The staging directory where this download is unpacked.
+    fn staging_directory_path(&self) -> PathBuf {
+        let download_id = self.download_event.download_id();
+        match &self.kind {
+            DownloadKind::Immutable(immutable_file_number) => {
+                StagingDirectory::immutable_staging_directory_path(
+                    &self.target_dir,
+                    *immutable_file_number,
+                    download_id,
+                )
+            }
+            DownloadKind::Ancillary { .. } => {
+                StagingDirectory::ancillary_staging_directory_path(&self.target_dir, download_id)
+            }
+        }
+    }
+
+    /// Build a future that will download and unpack the file when awaited.
+    ///
+    /// The download is attempted for each location until the file is downloaded.
+    /// If all locations fail, an error is returned.
+    pub fn build_download_future(self, logger: Logger) -> Pin<Box<DownloadFuture>> {
+        let download_future = async move {
+            StagingDirectory::run_in(
+                self.staging_directory_path(),
+                &logger,
+                async |staging_directory| {
+                    self.download_unpack_file(staging_directory, &logger).await
+                },
+            )
+            .await
+        };
+
+        Box::pin(download_future)
+    }
+}
+
+/// The content of a staging directory once verified, ready to be moved to its final place.
+enum VerifiedDownload {
+    /// The trio of an immutable file number
+    ImmutableTrio(ImmutableFileNumber),
+    /// The files listed by a valid ancillary manifest
+    AncillaryFiles(ValidatedAncillaryManifest),
+}
+
+pub enum DownloadKind {
+    Immutable(ImmutableFileNumber),
+    Ancillary { verifier: Arc<AncillaryVerifier> },
+}
+
+pub struct LocationToDownload {
+    pub file_downloader: Arc<dyn FileDownloader>,
+    pub file_downloader_uri: FileDownloaderUri,
+    pub compression_algorithm: Option<CompressionAlgorithm>,
+    pub circuit_breaker: Option<CircuitBreaker>,
+}
+
+impl LocationToDownload {
+    pub fn is_circuit_breaker_triggered(&self) -> bool {
+        self.circuit_breaker
+            .as_ref()
+            .is_some_and(|breaker| breaker.is_triggered())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    use mithril_cardano_node_internal_database::IMMUTABLE_DIR;
+    use mithril_common::StdResult;
+    use mithril_common::entities::FileUri;
+    use mithril_common::test::{assert_dir_eq, double::fake_keys, temp_dir_create};
+
+    use crate::file_downloader::{MockFileDownloader, MockFileDownloaderBuilder};
+    use crate::test_utils::TestLogger;
+
+    use super::super::test_utils::{FULL_TRIO, create_file, create_immutable_trio};
+    use super::*;
+
+    const DOWNLOAD_ID: &str = "download_id";
+
+    fn immutable_staging_dir(target_dir: &Path) -> PathBuf {
+        StagingDirectory::immutable_staging_directory_path(target_dir, 1, DOWNLOAD_ID)
+    }
+
+    fn ancillary_staging_dir(target_dir: &Path) -> PathBuf {
+        StagingDirectory::ancillary_staging_directory_path(target_dir, DOWNLOAD_ID)
+    }
+
+    #[track_caller]
+    fn assert_no_staging_directory_left(target_dir: &Path) {
+        let staging_dirs: Vec<_> = std::fs::read_dir(target_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+            .filter(|name| StagingDirectory::is_staging_directory_name(name, DOWNLOAD_ID))
+            .collect();
+        assert!(
+            staging_dirs.is_empty(),
+            "no staging directory must be left, found: {staging_dirs:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    fn make_read_only(dir: &Path) {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn make_writable(dir: &Path) {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fn create_locations_to_download<U>(
+        file_downloader: Arc<dyn FileDownloader>,
+        uris: U,
+    ) -> Vec<LocationToDownload>
+    where
+        U: IntoIterator,
+        U::Item: AsRef<str>,
+    {
+        uris.into_iter()
+            .map(|uri| LocationToDownload {
+                file_downloader: file_downloader.clone(),
+                file_downloader_uri: FileDownloaderUri::FileUri(FileUri(uri.as_ref().to_string())),
+                compression_algorithm: Some(CompressionAlgorithm::default()),
+                circuit_breaker: None,
+            })
+            .collect()
+    }
+
+    const IMMUTABLE_FIRST_LOCATION: &str = "http://whatever-1/00001.tar.zst";
+    const IMMUTABLE_SECOND_LOCATION: &str = "http://whatever-2/00001.tar.zst";
+
+    fn immutable_download_task<U>(
+        file_downloader: Arc<dyn FileDownloader>,
+        target_dir: &Path,
+        uris: U,
+    ) -> DownloadTask
+    where
+        U: IntoIterator,
+        U::Item: AsRef<str>,
+    {
+        DownloadTask {
+            kind: DownloadKind::Immutable(1),
+            locations_to_try: create_locations_to_download(file_downloader, uris),
+            size_uncompressed: 0,
+            target_dir: target_dir.to_path_buf(),
+            download_event: DownloadEvent::Immutable {
+                download_id: DOWNLOAD_ID.to_string(),
+                immutable_file_number: 1,
+            },
+        }
+    }
+
+    mod download_unpack_immutable_files {
+        use super::*;
+
+        type StagedContent = fn(&Path) -> StdResult<()>;
+
+        const PROMOTED_TRIO: &str = "* immutable/
+            ** 00001.chunk
+            ** 00001.primary
+            ** 00001.secondary";
+
+        async fn download<U>(
+            file_downloader: MockFileDownloader,
+            target_dir: &Path,
+            uris: U,
+        ) -> MithrilResult<()>
+        where
+            U: IntoIterator,
+            U::Item: AsRef<str>,
+        {
+            immutable_download_task(Arc::new(file_downloader), target_dir, uris)
+                .build_download_future(TestLogger::stdout())
+                .await
+        }
+
+        fn first_location_staging(staged_content: StagedContent) -> MockFileDownloaderBuilder {
+            MockFileDownloaderBuilder::default()
+                .with_file_uri(IMMUTABLE_FIRST_LOCATION)
+                .with_returning(Box::new(move |_, _, unpack_dir: &Path, _, _| {
+                    staged_content(unpack_dir)
+                }))
+        }
+
+        fn first_location_staging_a_valid_trio() -> MockFileDownloaderBuilder {
+            MockFileDownloaderBuilder::default()
+                .with_file_uri(IMMUTABLE_FIRST_LOCATION)
+                .with_success_and_create_fake_immutable_files()
+        }
+
+        fn then_second_location_staging_a_valid_trio(
+            first_location: MockFileDownloaderBuilder,
+        ) -> MockFileDownloader {
+            first_location
+                .next_call()
+                .with_file_uri(IMMUTABLE_SECOND_LOCATION)
+                .with_success_and_create_fake_immutable_files()
+                .build()
+        }
+
+        #[cfg(unix)]
+        fn create_read_only_immutable_dir(target_dir: &Path) -> PathBuf {
+            let immutable_dir = target_dir.join(IMMUTABLE_DIR);
+            std::fs::create_dir_all(&immutable_dir).unwrap();
+            make_read_only(&immutable_dir);
+            immutable_dir
+        }
+
+        #[track_caller]
+        fn assert_target_dir_is_empty(target_dir: &Path) {
+            assert!(
+                std::fs::read_dir(target_dir).unwrap().next().is_none(),
+                "target directory must be left empty"
+            );
+        }
+
+        #[tokio::test]
+        async fn fails_if_no_location_is_retrieved() {
+            let target_dir = temp_dir_create!();
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_times(2)
+                .with_failure()
+                .build();
+
+            download(
+                file_downloader,
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
+            )
+            .await
+            .expect_err("downloading should fail when all locations fail");
+
+            assert_target_dir_is_empty(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn succeeds_if_at_least_one_location_is_retrieved() {
+            let target_dir = temp_dir_create!();
+            let staging_dir = immutable_staging_dir(&target_dir);
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_file_uri(IMMUTABLE_FIRST_LOCATION)
+                .with_target_dir(staging_dir.clone())
+                .with_failure()
+                .next_call()
+                .with_file_uri(IMMUTABLE_SECOND_LOCATION)
+                .with_target_dir(staging_dir)
+                .with_success_and_create_fake_immutable_files()
+                .build();
+
+            download(
+                file_downloader,
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
+            )
+            .await
+            .unwrap();
+        }
+
+        #[tokio::test]
+        async fn unpacks_in_a_staging_directory_then_promotes_only_the_immutable_trio() {
+            let target_dir = temp_dir_create!();
+            let file_downloader = first_location_staging_a_valid_trio()
+                .with_target_dir(immutable_staging_dir(&target_dir))
+                .build();
+
+            download(file_downloader, &target_dir, [IMMUTABLE_FIRST_LOCATION])
+                .await
+                .unwrap();
+
+            assert_dir_eq!(&target_dir, PROMOTED_TRIO);
+        }
+
+        #[tokio::test]
+        async fn rejects_an_archive_that_fails_verification_and_leaves_nothing() {
+            let target_dir = temp_dir_create!();
+            let file_downloader = first_location_staging(|unpack_dir| {
+                create_immutable_trio(unpack_dir, &["00001.chunk", "00001.primary"]);
+                Ok(())
+            })
+            .build();
+
+            download(file_downloader, &target_dir, [IMMUTABLE_FIRST_LOCATION])
+                .await
+                .expect_err("an archive failing the verification must be rejected");
+
+            assert_target_dir_is_empty(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn falls_back_to_the_next_location_when_the_first_one_leaves_a_stray_entry() {
+            let target_dir = temp_dir_create!();
+            let file_downloader =
+                then_second_location_staging_a_valid_trio(first_location_staging(|unpack_dir| {
+                    create_immutable_trio(unpack_dir, &FULL_TRIO);
+                    create_file(unpack_dir, "extra");
+                    Err(anyhow!("truncated stream"))
+                }));
+
+            download(
+                file_downloader,
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
+            )
+            .await
+            .expect("the second location must succeed");
+
+            assert_dir_eq!(&target_dir, PROMOTED_TRIO);
+        }
+
+        #[tokio::test]
+        async fn falls_back_to_the_next_location_when_the_first_one_leaves_a_stray_directory() {
+            let target_dir = temp_dir_create!();
+            let file_downloader =
+                then_second_location_staging_a_valid_trio(first_location_staging(|unpack_dir| {
+                    create_immutable_trio(unpack_dir, &FULL_TRIO);
+                    create_file(&unpack_dir.join("ledger"), "state");
+                    Err(anyhow!("truncated stream"))
+                }));
+
+            download(
+                file_downloader,
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
+            )
+            .await
+            .expect("the second location must succeed");
+
+            assert_dir_eq!(&target_dir, PROMOTED_TRIO);
+        }
+
+        #[tokio::test]
+        async fn falls_back_to_the_next_location_when_the_first_archive_fails_verification() {
+            let target_dir = temp_dir_create!();
+            let file_downloader =
+                then_second_location_staging_a_valid_trio(first_location_staging(|unpack_dir| {
+                    create_immutable_trio(unpack_dir, &["00001.chunk", "00001.primary"]);
+                    Ok(())
+                }));
+
+            download(
+                file_downloader,
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
+            )
+            .await
+            .expect("the second location must succeed");
+
+            assert_dir_eq!(&target_dir, PROMOTED_TRIO);
+        }
+
+        #[tokio::test]
+        async fn falls_back_to_the_next_location_when_the_download_fails_with_a_permission_denied_cause()
+         {
+            let target_dir = temp_dir_create!();
+            let file_downloader =
+                then_second_location_staging_a_valid_trio(first_location_staging(|_| {
+                    Err(
+                        anyhow::Error::from(io::Error::from(io::ErrorKind::PermissionDenied))
+                            .context("connection rejected"),
+                    )
+                }));
+
+            download(
+                file_downloader,
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
+            )
+            .await
+            .expect("a download failure of the first location must not stop the task");
+
+            assert_dir_eq!(&target_dir, PROMOTED_TRIO);
+        }
+
+        #[tokio::test]
+        async fn falls_back_to_the_next_location_when_the_unpack_fails_with_a_storage_full_cause() {
+            let target_dir = temp_dir_create!();
+            let file_downloader =
+                then_second_location_staging_a_valid_trio(first_location_staging(|unpack_dir| {
+                    create_file(unpack_dir, "partial");
+                    Err(
+                        anyhow::Error::from(io::Error::from(io::ErrorKind::StorageFull))
+                            .context("could not write the archive entry"),
+                    )
+                }));
+
+            download(
+                file_downloader,
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
+            )
+            .await
+            .expect("an unpack failure of the first location must not stop the task");
+
+            assert_dir_eq!(&target_dir, PROMOTED_TRIO);
+        }
+
+        #[cfg(unix)]
+        #[tokio::test]
+        async fn stops_without_trying_the_next_location_when_the_promotion_fails_locally() {
+            let target_dir = temp_dir_create!();
+            let immutable_dir = create_read_only_immutable_dir(&target_dir);
+
+            let result = download(
+                first_location_staging_a_valid_trio().build(),
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
+            )
+            .await;
+
+            make_writable(&immutable_dir);
+            let error = result.expect_err("a local promotion failure must stop the task");
+            assert!(
+                format!("{error:?}").contains("Could not move"),
+                "unexpected error: {error:?}"
+            );
+            assert_no_staging_directory_left(&target_dir);
+        }
+
+        #[cfg(unix)]
+        #[tokio::test]
+        async fn reports_the_task_and_the_location_when_the_promotion_fails_locally() {
+            let target_dir = temp_dir_create!();
+            let immutable_dir = create_read_only_immutable_dir(&target_dir);
+            let (logger, log_inspector) = TestLogger::memory();
+
+            let result = immutable_download_task(
+                Arc::new(first_location_staging_a_valid_trio().build()),
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION],
+            )
+            .build_download_future(logger)
+            .await;
+
+            make_writable(&immutable_dir);
+            let error = result.expect_err("a local promotion failure must stop the task");
+            let error_message = format!("{error:?}");
+            assert!(
+                error_message.contains(&format!(
+                    "Could not promote immutable_file_00001 downloaded from location {IMMUTABLE_FIRST_LOCATION:?}"
+                )),
+                "the error must name the task and the location: {error_message}"
+            );
+            assert!(
+                log_inspector.contains_log("no other location can repair it")
+                    && log_inspector.contains_log(IMMUTABLE_FIRST_LOCATION),
+                "the fatal failure must be logged with its location"
+            );
+            assert_no_staging_directory_left(&target_dir);
+        }
+
+        #[cfg(unix)]
+        #[tokio::test]
+        async fn falls_back_to_the_next_location_when_the_promotion_fails_with_another_io_error_kind()
+         {
+            let target_dir = temp_dir_create!();
+            create_file(
+                &target_dir.join(IMMUTABLE_DIR).join("00001.chunk"),
+                "content",
+            );
+            let file_downloader =
+                then_second_location_staging_a_valid_trio(first_location_staging_a_valid_trio());
+
+            let error = download(
+                file_downloader,
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
+            )
+            .await
+            .expect_err("no location can be promoted over a directory");
+
+            assert!(
+                error.to_string().contains("All locations failed"),
+                "every location must have been tried: {error:?}"
+            );
+            assert_no_staging_directory_left(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn escapes_control_characters_of_the_location_uris_in_the_error() {
+            let target_dir = temp_dir_create!();
+            let file_downloader = MockFileDownloaderBuilder::default().with_failure().build();
+
+            let error = download(
+                file_downloader,
+                &target_dir,
+                ["http://whatever/00001.tar.zst\x1b[31m"],
+            )
+            .await
+            .expect_err("downloading should fail when all locations fail");
+
+            assert!(
+                !error.to_string().contains('\x1b'),
+                "the error must not carry raw control characters: {error:?}"
+            );
+        }
+    }
+
+    mod download_unpack_ancillary_file {
+        use mithril_cardano_node_internal_database::entities::AncillaryFilesManifest;
+        use mithril_common::crypto_helper::ManifestSigner;
+
+        use crate::file_downloader::FakeAncillaryFileBuilder;
+        use crate::utils::AncillaryVerificationError;
+
+        use super::*;
+
+        const FIRST_LOCATION: &str = "http://whatever-1/ancillary.tar.zst";
+        const SECOND_LOCATION: &str = "http://whatever-2/ancillary.tar.zst";
+
+        fn fake_ancillary_verifier() -> AncillaryVerifier {
+            AncillaryVerifier::new(fake_keys::manifest_verification_key()[0].try_into().unwrap())
+        }
+
+        fn verifier_of(signer: &ManifestSigner) -> AncillaryVerifier {
+            AncillaryVerifier::new(signer.verification_key())
+        }
+
+        fn ancillary_download_task<U>(
+            file_downloader: Arc<dyn FileDownloader>,
+            target_dir: &Path,
+            verifier: AncillaryVerifier,
+            uris: U,
+        ) -> DownloadTask
+        where
+            U: IntoIterator,
+            U::Item: AsRef<str>,
+        {
+            DownloadTask {
+                kind: DownloadKind::Ancillary {
+                    verifier: Arc::new(verifier),
+                },
+                locations_to_try: create_locations_to_download(file_downloader, uris),
+                size_uncompressed: 0,
+                target_dir: target_dir.to_path_buf(),
+                download_event: DownloadEvent::Ancillary {
+                    download_id: DOWNLOAD_ID.to_string(),
+                },
+            }
+        }
+
+        async fn download<U>(
+            file_downloader: MockFileDownloader,
+            target_dir: &Path,
+            verifier: AncillaryVerifier,
+            uris: U,
+        ) -> MithrilResult<()>
+        where
+            U: IntoIterator,
+            U::Item: AsRef<str>,
+        {
+            ancillary_download_task(Arc::new(file_downloader), target_dir, verifier, uris)
+                .build_download_future(TestLogger::stdout())
+                .await
+        }
+
+        fn unsigned_ancillary_files(file_name: &str) -> FakeAncillaryFileBuilder {
+            FakeAncillaryFileBuilder::builder()
+                .files_in_manifest_to_create(vec![file_name.to_string()])
+                .build()
+        }
+
+        fn signed_ancillary_files(
+            file_name: &str,
+            signer: &ManifestSigner,
+        ) -> FakeAncillaryFileBuilder {
+            FakeAncillaryFileBuilder::builder()
+                .files_in_manifest_to_create(vec![file_name.to_string()])
+                .sign_manifest(signer.clone())
+                .build()
+        }
+
+        #[cfg(unix)]
+        #[tokio::test]
+        async fn stops_without_trying_the_next_location_when_the_ancillary_promotion_fails_locally()
+        {
+            let target_dir = temp_dir_create!();
+            let ancillary_signer = ManifestSigner::create_deterministic_signer();
+            let ancillary_files = signed_ancillary_files("dummy_ledger", &ancillary_signer);
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_file_uri(FIRST_LOCATION)
+                .with_returning(Box::new(move |_, _, unpack_dir: &Path, _, _| {
+                    ancillary_files.create_files_in(unpack_dir);
+                    make_read_only(unpack_dir.parent().unwrap());
+                    Ok(())
+                }))
+                .build();
+
+            let result = download(
+                file_downloader,
+                &target_dir,
+                verifier_of(&ancillary_signer),
+                [FIRST_LOCATION, SECOND_LOCATION],
+            )
+            .await;
+
+            make_writable(&target_dir);
+            let error = result.expect_err("a local promotion failure must stop the task");
+            assert!(
+                format!("{error:?}").contains("Could not promote ancillary"),
+                "unexpected error: {error:?}"
+            );
+        }
+
+        #[cfg(unix)]
+        #[tokio::test]
+        async fn falls_back_to_the_next_location_when_the_first_ancillary_manifest_is_not_readable()
+        {
+            let target_dir = temp_dir_create!();
+            let ancillary_signer = ManifestSigner::create_deterministic_signer();
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_file_uri(FIRST_LOCATION)
+                .with_returning(Box::new(|_, _, unpack_dir: &Path, _, _| {
+                    let manifest_path =
+                        unpack_dir.join(AncillaryFilesManifest::ANCILLARY_MANIFEST_FILE_NAME);
+                    std::fs::File::create(&manifest_path).unwrap();
+                    std::fs::set_permissions(
+                        &manifest_path,
+                        std::fs::Permissions::from_mode(0o000),
+                    )
+                    .unwrap();
+                    Ok(())
+                }))
+                .next_call()
+                .with_file_uri(SECOND_LOCATION)
+                .with_success_and_create_fake_ancillary_files(signed_ancillary_files(
+                    "dummy_ledger",
+                    &ancillary_signer,
+                ))
+                .build();
+
+            download(
+                file_downloader,
+                &target_dir,
+                verifier_of(&ancillary_signer),
+                [FIRST_LOCATION, SECOND_LOCATION],
+            )
+            .await
+            .expect("a verification failure of the first location must not stop the task");
+
+            assert_dir_eq!(&target_dir, "* dummy_ledger");
+        }
+
+        #[tokio::test]
+        async fn falls_back_to_the_next_location_when_the_first_ancillary_archive_fails_verification()
+         {
+            let target_dir = temp_dir_create!();
+            let ancillary_signer = ManifestSigner::create_deterministic_signer();
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_file_uri(FIRST_LOCATION)
+                .with_success_and_create_fake_ancillary_files(unsigned_ancillary_files(
+                    "dummy_ledger",
+                ))
+                .next_call()
+                .with_file_uri(SECOND_LOCATION)
+                .with_success_and_create_fake_ancillary_files(signed_ancillary_files(
+                    "dummy_ledger",
+                    &ancillary_signer,
+                ))
+                .build();
+
+            download(
+                file_downloader,
+                &target_dir,
+                verifier_of(&ancillary_signer),
+                [FIRST_LOCATION, SECOND_LOCATION],
+            )
+            .await
+            .expect("the second location must succeed");
+
+            assert_dir_eq!(&target_dir, "* dummy_ledger");
+        }
+
+        #[cfg(unix)]
+        #[tokio::test]
+        async fn falls_back_to_the_next_location_when_the_ancillary_promotion_fails_with_another_io_error_kind()
+         {
+            let target_dir = temp_dir_create!();
+            let occupied_path = target_dir.join("dummy_ledger");
+            std::fs::create_dir(&occupied_path).unwrap();
+            std::fs::File::create(occupied_path.join("content")).unwrap();
+            let ancillary_signer = ManifestSigner::create_deterministic_signer();
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_file_uri(FIRST_LOCATION)
+                .with_success_and_create_fake_ancillary_files(signed_ancillary_files(
+                    "dummy_ledger",
+                    &ancillary_signer,
+                ))
+                .next_call()
+                .with_file_uri(SECOND_LOCATION)
+                .with_success_and_create_fake_ancillary_files(signed_ancillary_files(
+                    "dummy_ledger",
+                    &ancillary_signer,
+                ))
+                .build();
+
+            let error = download(
+                file_downloader,
+                &target_dir,
+                verifier_of(&ancillary_signer),
+                [FIRST_LOCATION, SECOND_LOCATION],
+            )
+            .await
+            .expect_err("no location can be promoted over a directory");
+
+            assert!(
+                error.to_string().contains("All locations failed"),
+                "every location must have been tried: {error:?}"
+            );
+            assert_no_staging_directory_left(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn fails_and_delete_temp_ancillary_download_dir_if_no_location_is_retrieved() {
+            let target_dir = temp_dir_create!();
+            let file_downloader = MockFileDownloaderBuilder::default().with_failure().build();
+
+            download(
+                file_downloader,
+                &target_dir,
+                fake_ancillary_verifier(),
+                [FIRST_LOCATION],
+            )
+            .await
+            .expect_err("batch_download_unpack of ancillary file should fail");
+
+            assert_no_staging_directory_left(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn succeeds_if_at_least_one_location_is_retrieved() {
+            let target_dir = temp_dir_create!();
+            let staging_dir = ancillary_staging_dir(&target_dir);
+            let ancillary_signer = ManifestSigner::create_deterministic_signer();
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_file_uri(FIRST_LOCATION)
+                .with_target_dir(staging_dir.clone())
+                .with_failure()
+                .next_call()
+                .with_file_uri(SECOND_LOCATION)
+                .with_target_dir(staging_dir)
+                .with_success_and_create_fake_ancillary_files(signed_ancillary_files(
+                    "ledger",
+                    &ancillary_signer,
+                ))
+                .build();
+
+            download(
+                file_downloader,
+                &target_dir,
+                verifier_of(&ancillary_signer),
+                [FIRST_LOCATION, SECOND_LOCATION],
+            )
+            .await
+            .unwrap();
+        }
+
+        #[tokio::test]
+        async fn succeeds_when_first_location_is_retrieved() {
+            let target_dir = temp_dir_create!();
+            let ancillary_signer = ManifestSigner::create_deterministic_signer();
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_file_uri(FIRST_LOCATION)
+                .with_target_dir(ancillary_staging_dir(&target_dir))
+                .with_success_and_create_fake_ancillary_files(signed_ancillary_files(
+                    "ledger",
+                    &ancillary_signer,
+                ))
+                .build();
+
+            download(
+                file_downloader,
+                &target_dir,
+                verifier_of(&ancillary_signer),
+                [FIRST_LOCATION, SECOND_LOCATION],
+            )
+            .await
+            .unwrap();
+        }
+
+        #[tokio::test]
+        async fn fail_and_delete_temp_ancillary_download_dir_if_verify_fail() {
+            let target_dir = temp_dir_create!();
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_file_uri(FIRST_LOCATION)
+                .with_success_and_create_fake_ancillary_files(unsigned_ancillary_files("ledger"))
+                .build();
+
+            download(
+                file_downloader,
+                &target_dir,
+                fake_ancillary_verifier(),
+                [FIRST_LOCATION],
+            )
+            .await
+            .expect_err("an unsigned manifest must fail the verification");
+
+            assert_no_staging_directory_left(&target_dir);
+        }
+
+        #[tokio::test]
+        async fn returns_the_verification_failure_of_the_last_location_as_the_cause_of_the_error() {
+            let target_dir = temp_dir_create!();
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_file_uri(FIRST_LOCATION)
+                .with_success_and_create_fake_ancillary_files(signed_ancillary_files(
+                    "ledger",
+                    &ManifestSigner::create_non_deterministic_signer(),
+                ))
+                .next_call()
+                .with_file_uri(SECOND_LOCATION)
+                .with_success_and_create_fake_ancillary_files(unsigned_ancillary_files("ledger"))
+                .build();
+
+            let error = download(
+                file_downloader,
+                &target_dir,
+                fake_ancillary_verifier(),
+                [FIRST_LOCATION, SECOND_LOCATION],
+            )
+            .await
+            .expect_err("no manifest passes the verification");
+
+            assert!(
+                error.to_string().contains("All locations failed"),
+                "unexpected error: {error:?}"
+            );
+            assert!(
+                matches!(
+                    error.downcast_ref::<AncillaryVerificationError>(),
+                    Some(AncillaryVerificationError::SignatureMissing)
+                ),
+                "the verification failure must be the cause of the error: {error:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn move_file_in_manifest_then_delete_temporary_unpack_subfolder_if_verify_succeed() {
+            let target_dir = temp_dir_create!();
+            let ancillary_signer = ManifestSigner::create_deterministic_signer();
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_file_uri(FIRST_LOCATION)
+                .with_target_dir(ancillary_staging_dir(&target_dir))
+                .with_success_and_create_fake_ancillary_files(
+                    FakeAncillaryFileBuilder::builder()
+                        .files_in_manifest_to_create(vec!["dummy_ledger".to_string()])
+                        .files_not_in_manifest_to_create(vec!["not_in_ancillary".to_string()])
+                        .sign_manifest(ancillary_signer.clone())
+                        .build(),
+                )
+                .build();
+
+            download(
+                file_downloader,
+                &target_dir,
+                verifier_of(&ancillary_signer),
+                [FIRST_LOCATION],
+            )
+            .await
+            .unwrap();
+
+            assert_dir_eq!(&target_dir, "* dummy_ledger");
+        }
+    }
+
+    mod fatal_local_error {
+        use super::*;
+
+        fn error_caused_by(kind: io::ErrorKind) -> anyhow::Error {
+            anyhow::Error::from(io::Error::from(kind)).context("could not move")
+        }
+
+        #[test]
+        fn a_storage_full_cause_is_fatal() {
+            assert!(DownloadTask::is_fatal_local_error(&error_caused_by(
+                io::ErrorKind::StorageFull
+            )));
+        }
+
+        #[test]
+        fn a_permission_denied_cause_is_fatal() {
+            assert!(DownloadTask::is_fatal_local_error(&error_caused_by(
+                io::ErrorKind::PermissionDenied
+            )));
+        }
+
+        #[test]
+        fn another_io_cause_is_not_fatal() {
+            assert!(!DownloadTask::is_fatal_local_error(&error_caused_by(
+                io::ErrorKind::NotFound
+            )));
+        }
+
+        #[test]
+        fn an_error_without_io_cause_is_not_fatal() {
+            assert!(!DownloadTask::is_fatal_local_error(&anyhow!("no io cause")));
+        }
+    }
+
+    mod circuit_breaker {
+        use super::*;
+
+        #[tokio::test]
+        async fn skips_a_location_whose_circuit_breaker_is_triggered() {
+            let target_dir = temp_dir_create!();
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_file_uri(IMMUTABLE_SECOND_LOCATION)
+                .with_success_and_create_fake_immutable_files()
+                .build();
+            let mut download_task = immutable_download_task(
+                Arc::new(file_downloader),
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION, IMMUTABLE_SECOND_LOCATION],
+            );
+            download_task.locations_to_try[0].circuit_breaker =
+                Some(CircuitBreaker::new_triggered());
+
+            // The mock expects no call for the first location: trying it would panic
+            download_task
+                .build_download_future(TestLogger::stdout())
+                .await
+                .unwrap();
+        }
+
+        #[tokio::test]
+        async fn triggers_the_circuit_breaker_when_the_downloader_is_unreachable() {
+            let target_dir = temp_dir_create!();
+            let file_downloader = MockFileDownloaderBuilder::default()
+                .with_unreachable_downloader_failure("source")
+                .build();
+            let circuit_breaker = CircuitBreaker::new();
+            let mut download_task = immutable_download_task(
+                Arc::new(file_downloader),
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION],
+            );
+            download_task.locations_to_try[0].circuit_breaker = Some(circuit_breaker.clone());
+
+            download_task
+                .build_download_future(TestLogger::stdout())
+                .await
+                .expect_err("an unreachable downloader must fail the download");
+
+            assert!(circuit_breaker.is_triggered());
+        }
+
+        #[tokio::test]
+        async fn does_not_trigger_the_circuit_breaker_on_another_download_error() {
+            let target_dir = temp_dir_create!();
+            let file_downloader = MockFileDownloaderBuilder::default().with_failure().build();
+            let circuit_breaker = CircuitBreaker::new();
+            let mut download_task = immutable_download_task(
+                Arc::new(file_downloader),
+                &target_dir,
+                [IMMUTABLE_FIRST_LOCATION],
+            );
+            download_task.locations_to_try[0].circuit_breaker = Some(circuit_breaker.clone());
+
+            download_task
+                .build_download_future(TestLogger::stdout())
+                .await
+                .expect_err("a failing download must fail the download");
+
+            assert!(!circuit_breaker.is_triggered());
+        }
+    }
+}
