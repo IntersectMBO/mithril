@@ -40,6 +40,15 @@ pub enum ArchiveEntryRejection {
     DirectoryPathThroughNonDirectory(PathBuf),
 }
 
+/// Error raised when an archive cannot be unpacked, before any of its entries is read.
+#[derive(Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ArchiveUnpackError {
+    /// The destination directory does not exist or is not a directory.
+    #[error("Destination directory {0:?} does not exist or is not a directory")]
+    DestinationIsNotADirectory(PathBuf),
+}
+
 /// Permissions given to the files unpacked from an archive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -66,7 +75,7 @@ impl TarArchiveUnpacker {
     }
 
     /// Unpack an uncompressed tar stream entry by entry into the destination directory, which
-    /// must exist.
+    /// must exist, else an [ArchiveUnpackError] error is returned.
     ///
     /// Only regular files and directories whose path stays inside the destination are accepted.
     /// Any other entry type (symbolic or hard link, FIFO, device node) and any entry with an
@@ -74,9 +83,8 @@ impl TarArchiveUnpacker {
     /// error, so an archive cannot place a link or climb out of the destination directory.
     pub fn unpack<R: io::Read>(&self, tar_stream: R, unpack_dir: &Path) -> StdResult<()> {
         if !unpack_dir.is_dir() {
-            anyhow::bail!(
-                "Destination directory '{}' does not exist or is not a directory",
-                unpack_dir.display()
+            return Err(
+                ArchiveUnpackError::DestinationIsNotADirectory(unpack_dir.to_path_buf()).into(),
             );
         }
 
@@ -431,9 +439,11 @@ mod tests {
         let error = unpack_database_files(&[file_entry(b"00001.chunk", 0o644)], &unpack_dir)
             .expect_err("a missing destination directory must be rejected");
 
-        assert!(
-            error.to_string().contains("does not exist or is not a directory"),
-            "unexpected error: {error:?}"
+        assert_eq!(
+            Some(&ArchiveUnpackError::DestinationIsNotADirectory(
+                unpack_dir.clone()
+            )),
+            error.downcast_ref::<ArchiveUnpackError>()
         );
         assert!(!unpack_dir.exists());
     }

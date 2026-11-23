@@ -12,7 +12,9 @@ mod mock_builder;
 mod retry;
 mod streaming;
 
-pub use archive_unpacker::{ArchiveEntryRejection, TarArchiveUnpacker, UnpackedFilePermissions};
+pub use archive_unpacker::{
+    ArchiveEntryRejection, ArchiveUnpackError, TarArchiveUnpacker, UnpackedFilePermissions,
+};
 pub use http::HttpFileDownloader;
 #[cfg(test)]
 pub use interface::MockFileDownloader;
