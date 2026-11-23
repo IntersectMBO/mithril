@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use anyhow::{Context, anyhow};
 use pallas_network::{
-    facades::DmqServer,
+    facades::{DEFAULT_HANDSHAKE_TIMEOUT, DmqServer},
     miniprotocols::{
         localmsgsubmission::{DmqMsgRejectReason, DmqMsgValidationError},
         localtxsubmission::{Request, Response},
@@ -67,7 +67,7 @@ impl DmqPublisherServerPallas {
             )
         })?;
 
-        DmqServer::accept(&listener, magic)
+        DmqServer::accept_with_timeout(&listener, magic, DEFAULT_HANDSHAKE_TIMEOUT)
             .await
             .with_context(|| "DmqPublisherServerPallas failed to create a new server")
     }

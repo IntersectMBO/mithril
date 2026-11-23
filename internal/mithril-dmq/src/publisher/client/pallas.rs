@@ -84,9 +84,12 @@ impl<M: TryToBytes + Debug + Sync + Send> DmqPublisherClient<M> for DmqPublisher
 mod tests {
     use std::{fs, sync::Arc, time::Duration};
 
-    use pallas_network::miniprotocols::{
-        localmsgsubmission::{DmqMsgRejectReason, DmqMsgValidationError},
-        localtxsubmission,
+    use pallas_network::{
+        facades::{DEFAULT_HANDSHAKE_TIMEOUT, DmqServer},
+        miniprotocols::{
+            localmsgsubmission::{DmqMsgRejectReason, DmqMsgValidationError},
+            localtxsubmission,
+        },
     };
     use tokio::{net::UnixListener, task::JoinHandle};
 
@@ -112,9 +115,10 @@ mod tests {
                     fs::remove_file(socket_path.clone())?;
                 }
                 let listener = UnixListener::bind(socket_path)?;
-                let mut server = pallas_network::facades::DmqServer::accept(&listener, 0)
-                    .await
-                    .unwrap();
+                let mut server =
+                    DmqServer::accept_with_timeout(&listener, 0, DEFAULT_HANDSHAKE_TIMEOUT)
+                        .await
+                        .unwrap();
 
                 // init local msg submission server
                 let server_msg = server.msg_submission();
