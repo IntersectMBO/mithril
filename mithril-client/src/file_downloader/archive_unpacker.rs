@@ -3,8 +3,10 @@
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::{
+    cell::Cell,
     fs, io,
     path::{Component, Path, PathBuf},
+    rc::Rc,
 };
 
 use anyhow::Context;
@@ -38,6 +40,10 @@ pub enum ArchiveEntryRejection {
         "Rejected archive directory entry {0:?}: an existing entry on its path is not a directory"
     )]
     DirectoryPathThroughNonDirectory(PathBuf),
+
+    /// The headers read before the entry, extension headers included, exceed this size in bytes.
+    #[error("Rejected archive entry: its headers exceed {0} bytes")]
+    OversizedHeaders(u64),
 }
 
 /// Error raised when an archive cannot be unpacked, before any of its entries is read.
@@ -69,6 +75,10 @@ pub struct TarArchiveUnpacker {
 }
 
 impl TarArchiveUnpacker {
+    /// Maximum size in bytes of the headers read before an archive entry, its GNU long name,
+    /// GNU long link and PAX extension headers included.
+    pub const MAX_ENTRY_HEADERS_SIZE: u64 = 1024 * 1024;
+
     /// Create an unpacker that gives the provided permissions to the unpacked files.
     pub const fn new(file_permissions: UnpackedFilePermissions) -> Self {
         Self { file_permissions }
@@ -81,6 +91,7 @@ impl TarArchiveUnpacker {
     /// Any other entry type (symbolic or hard link, FIFO, device node) and any entry with an
     /// absolute or parent-directory (`..`) path is rejected with an [ArchiveEntryRejection]
     /// error, so an archive cannot place a link or climb out of the destination directory.
+    /// The headers read before an entry are limited to [Self::MAX_ENTRY_HEADERS_SIZE] bytes.
     pub fn unpack<R: io::Read>(&self, tar_stream: R, unpack_dir: &Path) -> StdResult<()> {
         if !unpack_dir.is_dir() {
             return Err(
@@ -88,12 +99,28 @@ impl TarArchiveUnpacker {
             );
         }
 
-        let mut archive = Archive::new(tar_stream);
-        for entry in archive
+        let headers_budget = Rc::new(EntryHeadersBudget::default());
+        let mut archive = Archive::new(HeadersLimitedReader {
+            tar_stream,
+            headers_budget: headers_budget.clone(),
+        });
+        let mut entries = archive
             .entries()
-            .with_context(|| "Could not read the archive entries")?
-        {
-            let mut entry = entry.with_context(|| "Could not read an archive entry")?;
+            .with_context(|| "Could not read the archive entries")?;
+        loop {
+            headers_budget.start(Self::MAX_ENTRY_HEADERS_SIZE);
+            let next_entry = entries.next();
+            headers_budget.stop();
+            let Some(entry) = next_entry else {
+                break;
+            };
+            let mut entry = entry.map_err(|error| {
+                if headers_budget.is_exhausted() {
+                    ArchiveEntryRejection::OversizedHeaders(Self::MAX_ENTRY_HEADERS_SIZE).into()
+                } else {
+                    anyhow::Error::new(error).context("Could not read an archive entry")
+                }
+            })?;
             let entry_type = entry.header().entry_type();
             if entry_type.is_pax_global_extensions() {
                 continue;
@@ -186,6 +213,63 @@ impl TarArchiveUnpacker {
     }
 }
 
+/// Bytes left to read for the headers of the next archive entry.
+///
+/// The `tar` crate reads the extension headers of an entry in memory while it looks for that
+/// entry, so the bytes read between two entries are limited, the content of an entry is not.
+#[derive(Debug, Default)]
+struct EntryHeadersBudget {
+    remaining_bytes: Cell<Option<u64>>,
+    exhausted: Cell<bool>,
+}
+
+impl EntryHeadersBudget {
+    /// Limit the bytes read from now on to the given size, until [Self::stop] is called.
+    fn start(&self, max_bytes: u64) {
+        self.remaining_bytes.set(Some(max_bytes));
+    }
+
+    /// Stop limiting the bytes read.
+    fn stop(&self) {
+        self.remaining_bytes.set(None);
+    }
+
+    /// Account for bytes read, failing when they exceed the remaining budget.
+    fn consume(&self, read_bytes: u64) -> io::Result<()> {
+        if let Some(remaining_bytes) = self.remaining_bytes.get() {
+            if read_bytes > remaining_bytes {
+                self.exhausted.set(true);
+                return Err(io::Error::other(
+                    "the archive entry headers exceed their maximum size",
+                ));
+            }
+            self.remaining_bytes.set(Some(remaining_bytes - read_bytes));
+        }
+
+        Ok(())
+    }
+
+    /// Tell if bytes were read beyond the budget.
+    fn is_exhausted(&self) -> bool {
+        self.exhausted.get()
+    }
+}
+
+/// Reader of a tar stream that accounts every byte read in an [EntryHeadersBudget].
+struct HeadersLimitedReader<R> {
+    tar_stream: R,
+    headers_budget: Rc<EntryHeadersBudget>,
+}
+
+impl<R: io::Read> io::Read for HeadersLimitedReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let read_bytes = self.tar_stream.read(buffer)?;
+        self.headers_budget.consume(read_bytes as u64)?;
+
+        Ok(read_bytes)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(unix)]
@@ -266,6 +350,49 @@ mod tests {
             .collect();
         names.sort();
         names
+    }
+
+    const OVERSIZED_HEADER_PAYLOAD_SIZE: usize = 4 * 1024 * 1024;
+
+    struct CountingReader {
+        bytes: io::Cursor<Vec<u8>>,
+        read_bytes: usize,
+    }
+
+    impl CountingReader {
+        fn new(bytes: Vec<u8>) -> Self {
+            Self {
+                bytes: io::Cursor::new(bytes),
+                read_bytes: 0,
+            }
+        }
+    }
+
+    impl io::Read for CountingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let read_bytes = self.bytes.read(buffer)?;
+            self.read_bytes += read_bytes;
+            Ok(read_bytes)
+        }
+    }
+
+    fn archive_with_an_oversized_header(header_type: EntryType) -> Vec<u8> {
+        let mut builder = Builder::new(Vec::new());
+        let mut header = Header::new_gnu();
+        header.set_entry_type(header_type);
+        header.set_size(OVERSIZED_HEADER_PAYLOAD_SIZE as u64);
+        header.as_gnu_mut().unwrap().name[..13].copy_from_slice(b"././@LongLink");
+        header.set_cksum();
+        builder
+            .append(
+                &header,
+                vec![b'a'; OVERSIZED_HEADER_PAYLOAD_SIZE].as_slice(),
+            )
+            .unwrap();
+        let (file_header, file_content) = file_entry(b"00001.chunk", 0o644);
+        builder.append(&file_header, file_content).unwrap();
+
+        builder.into_inner().unwrap()
     }
 
     #[cfg(unix)]
@@ -517,6 +644,97 @@ mod tests {
         .expect("a pax global header carries no payload and must be skipped");
 
         assert_eq!(vec!["root.txt".to_string()], entry_names(&unpack_dir));
+    }
+
+    #[test]
+    fn unpacks_a_file_entry_with_a_gnu_long_name() {
+        let unpack_dir = temp_dir_create!();
+        let long_name = "a".repeat(200);
+        let mut builder = Builder::new(Vec::new());
+        let mut header = Header::new_gnu();
+        header.set_entry_type(EntryType::Regular);
+        header.set_mode(0o644);
+        header.set_size(CONTENT.len() as u64);
+        builder.append_data(&mut header, &long_name, CONTENT).unwrap();
+        let archive_bytes = builder.into_inner().unwrap();
+
+        TarArchiveUnpacker::new(UnpackedFilePermissions::Fixed(0o644))
+            .unpack(archive_bytes.as_slice(), &unpack_dir)
+            .expect("a GNU long name within the headers size limit must be accepted");
+
+        assert_eq!(vec![long_name], entry_names(&unpack_dir));
+    }
+
+    #[test]
+    fn unpacks_a_file_entry_larger_than_the_headers_size_limit() {
+        let unpack_dir = temp_dir_create!();
+        let content = vec![b'a'; 2 * TarArchiveUnpacker::MAX_ENTRY_HEADERS_SIZE as usize];
+        let mut builder = Builder::new(Vec::new());
+        let mut header = Header::new_gnu();
+        header.set_entry_type(EntryType::Regular);
+        header.set_mode(0o644);
+        header.set_size(content.len() as u64);
+        builder
+            .append_data(&mut header, "00001.chunk", content.as_slice())
+            .unwrap();
+        let archive_bytes = builder.into_inner().unwrap();
+
+        TarArchiveUnpacker::new(UnpackedFilePermissions::Fixed(0o644))
+            .unpack(archive_bytes.as_slice(), &unpack_dir)
+            .expect("the content of an entry must not be limited by the headers size limit");
+
+        assert_eq!(
+            content.len() as u64,
+            fs::metadata(unpack_dir.join("00001.chunk")).unwrap().len()
+        );
+    }
+
+    #[test]
+    fn stops_reading_an_oversized_gnu_long_name_header_before_its_end() {
+        let unpack_dir = temp_dir_create!();
+        let mut archive_reader =
+            CountingReader::new(archive_with_an_oversized_header(EntryType::GNULongName));
+
+        let error = TarArchiveUnpacker::new(UnpackedFilePermissions::Fixed(0o644))
+            .unpack(&mut archive_reader, &unpack_dir)
+            .expect_err("an oversized GNU long name header must be rejected");
+
+        assert_eq!(
+            Some(&ArchiveEntryRejection::OversizedHeaders(
+                TarArchiveUnpacker::MAX_ENTRY_HEADERS_SIZE
+            )),
+            error.downcast_ref::<ArchiveEntryRejection>()
+        );
+
+        assert!(
+            archive_reader.read_bytes < OVERSIZED_HEADER_PAYLOAD_SIZE / 2,
+            "the unpacker must stop reading the header early, read {} bytes",
+            archive_reader.read_bytes
+        );
+    }
+
+    #[test]
+    fn stops_reading_an_oversized_pax_extension_header_before_its_end() {
+        let unpack_dir = temp_dir_create!();
+        let mut archive_reader =
+            CountingReader::new(archive_with_an_oversized_header(EntryType::XHeader));
+
+        let error = TarArchiveUnpacker::new(UnpackedFilePermissions::Fixed(0o644))
+            .unpack(&mut archive_reader, &unpack_dir)
+            .expect_err("an oversized PAX extension header must be rejected");
+
+        assert_eq!(
+            Some(&ArchiveEntryRejection::OversizedHeaders(
+                TarArchiveUnpacker::MAX_ENTRY_HEADERS_SIZE
+            )),
+            error.downcast_ref::<ArchiveEntryRejection>()
+        );
+
+        assert!(
+            archive_reader.read_bytes < OVERSIZED_HEADER_PAYLOAD_SIZE / 2,
+            "the unpacker must stop reading the header early, read {} bytes",
+            archive_reader.read_bytes
+        );
     }
 
     #[test]
