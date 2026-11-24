@@ -334,10 +334,18 @@ You should see something like:
 
 You can run 'era generate-tx-datum' to create the transaction datum file that will be stored on the Cardano chain, providing era markers to the 'cardano-chain' era reader adapter.
 
+The era markers are signed with a sequence number: the 'cardano-chain' era reader adapter only reads the era markers signed with a sequence number and selects the ones with the highest sequence number, so the `--sequence-number` option must be strictly greater than the sequence number of the last era markers signed for the network.
+
+:::info
+
+The `--legacy` option replaces the `--sequence-number` option to create the deprecated legacy era markers (signed without a sequence number), which are the only ones that the nodes of the previous versions can read. Until all the nodes of a network support the sequence number, both the era markers and the legacy era markers must be stored on the Cardano chain.
+
+:::
+
 **Case 1**: If there is only one supported era in the code, create the datum file:
 
 ```bash
-./mithril-aggregator era generate-tx-datum --current-era-epoch **EPOCH_AT_WHICH_CURRENT_ERA_STARTS** --era-markers-secret-key **YOUR_ERA_ACTIVATION_SECRET_KEY** --target-path **TARGET_PATH**
+./mithril-aggregator era generate-tx-datum --current-era-epoch **EPOCH_AT_WHICH_CURRENT_ERA_STARTS** --sequence-number **SEQUENCE_NUMBER** --era-markers-secret-key **YOUR_ERA_ACTIVATION_SECRET_KEY** --target-path **TARGET_PATH**
 ```
 
 You should see something like:
@@ -349,13 +357,13 @@ You should see something like:
 **Case 2**: If there are two supported eras in the code and the activation epoch of the upcoming era is not yet known, run the command:
 
 ```bash
-./mithril-aggregator era generate-tx-datum --current-era-epoch **EPOCH_AT_WHICH_CURRENT_ERA_STARTS** --era-markers-secret-key **YOUR_ERA_ACTIVATION_SECRET_KEY** --target-path **TARGET_PATH**
+./mithril-aggregator era generate-tx-datum --current-era-epoch **EPOCH_AT_WHICH_CURRENT_ERA_STARTS** --sequence-number **SEQUENCE_NUMBER** --era-markers-secret-key **YOUR_ERA_ACTIVATION_SECRET_KEY** --target-path **TARGET_PATH**
 ```
 
 **Case 3**: If there are two supported eras in the code and the activation epoch of the era switch is known to be at the following epoch, run the command:
 
 ```bash
-./mithril-aggregator era generate-tx-datum --current-era-epoch **EPOCH_AT_WHICH_CURRENT_ERA_STARTS** --next-era-epoch **EPOCH_AT_WHICH_NEXT_ERA_STARTS** --era-markers-secret-key **YOUR_ERA_ACTIVATION_SECRET_KEY** --target-path **TARGET_PATH**
+./mithril-aggregator era generate-tx-datum --current-era-epoch **EPOCH_AT_WHICH_CURRENT_ERA_STARTS** --next-era-epoch **EPOCH_AT_WHICH_NEXT_ERA_STARTS** --sequence-number **SEQUENCE_NUMBER** --era-markers-secret-key **YOUR_ERA_ACTIVATION_SECRET_KEY** --target-path **TARGET_PATH**
 ```
 
 ## Building for release and running the binary 'protocol-configuration' command
@@ -692,6 +700,8 @@ Here is a list of the available parameters for the serve command:
 | ------------------------ | -------------------------- | :------------------: | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------- | :----------------: |
 | `current_era_epoch`      | `--current-era-epoch`      |          -           | `CURRENT_ERA_EPOCH`      | Epoch at which current era starts.                                                                                                                                                       | -             | -       | :heavy_check_mark: |
 | `next_era_epoch`         | `--next-era-epoch`         |          -           | `NEXT_ERA_EPOCH`         | Epoch at which the next era starts. If not specified and an upcoming era is available, it will announce the next era. If specified, it must be strictly greater than `current-epoch-era` | -             | -       |         -          |
+| `sequence_number`        | `--sequence-number`        |          -           | -                        | Sequence number of the era markers, strictly greater than the one of the last era markers signed for the network. Mandatory unless `--legacy` is specified.                              | -             | -       |         -          |
+| `legacy`                 | `--legacy`                 |          -           | -                        | Generate the deprecated legacy era markers (without sequence number), for the nodes that can not read the era markers with a sequence number yet.                                        | `false`       | -       |         -          |
 | `era_markers_secret_key` | `--era-markers-secret-key` |          -           | `ERA_MARKERS_SECRET_KEY` | Era markers secret key that is used to verify the authenticity of the era markers on the chain.                                                                                          | -             | -       | :heavy_check_mark: |
 | `target_path`            | `--target-path`            |          -           | -                        | Path of the file to export the payload to.                                                                                                                                               | -             | -       |         -          |
 
