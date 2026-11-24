@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 
+use crate::{Aggregator, Signer};
+
 /// Tool to check if the end-to-end runner can be launched with the given nodes versions
 pub struct CompatibilityChecker {
     rules: Vec<CompatibilityRule>,
@@ -32,6 +34,11 @@ impl Default for CompatibilityChecker {
                 "mithril-aggregator", below_version: semver::Version::new(0, 8, 46),
                 is_incompatible_with: "cardano-node", starting_version: semver::Version::new(10, 7, 0),
                 context: "older aggregator doesn't support new UTxO-HD ledger state snapshot format"
+            ),
+            incompatibility_rule!(
+                "mithril-aggregator", below_version: Aggregator::SEQUENCED_ERA_MARKERS_MIN_VERSION,
+                is_incompatible_with: "mithril-signer", starting_version: Signer::SEQUENCED_ERA_MARKERS_MIN_VERSION,
+                context: "these signers only read the era markers signed with a sequence number, which older aggregators can not generate"
             ),
         ])
     }

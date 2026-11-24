@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use mithril_cardano_node_chain::chain_observer::{ChainObserver, PallasChainObserver};
 use mithril_common::entities::{
@@ -17,10 +17,11 @@ use mithril_common::{CardanoNetwork, StdResult};
 
 use crate::mithril::relay_signer::RelaySignerConfiguration;
 use crate::toolkit::ScenarioToolkit;
+use crate::utils::NodeVersion;
 use crate::{
     AggregateSignatureType, Aggregator, AggregatorConfig, Client, DEVNET_MAGIC_ID, Devnet,
-    DmqNodeFlavor, FullNode, GenesisKeys, IPNS_KEY_NAME_FOR_SNAPSHOT, IpfsDevnet, KuboNode,
-    PoolNode, RelayAggregator, RelayPassive, RelaySigner, Signer,
+    DmqNodeFlavor, EraMarkersDatumFormat, FullNode, GenesisKeys, IPNS_KEY_NAME_FOR_SNAPSHOT,
+    IpfsDevnet, KuboNode, PoolNode, RelayAggregator, RelayPassive, RelaySigner, Signer,
 };
 
 use super::signer::SignerConfig;
@@ -146,6 +147,8 @@ pub struct MithrilInfrastructure {
     startup_protocol_configuration: ProtocolConfiguration,
     current_era: RwLock<String>,
     era_reader_adapter: String,
+    signers_read_era_markers_sequence_number: bool,
+    last_era_markers_sequence_number: Mutex<u64>,
     use_era_specific_work_dir: bool,
     aggregate_signature_types: Vec<AggregateSignatureType>,
     genesis_keys: GenesisKeys,
@@ -155,6 +158,9 @@ pub struct MithrilInfrastructure {
 }
 
 impl MithrilInfrastructure {
+    /// Sequence number of the era markers stored on chain at startup
+    const STARTUP_ERA_MARKERS_SEQUENCE_NUMBER: u64 = 1;
+
     pub async fn start(
         toolkit: ScenarioToolkit,
         config: &MithrilInfrastructureConfig,
@@ -196,7 +202,20 @@ impl MithrilInfrastructure {
             .await?;
         }
 
-        Self::register_startup_era(&toolkit, &leader_aggregator, config).await?;
+        let signers_read_era_markers_sequence_number = Signer::can_read_sequenced_era_markers(
+            &NodeVersion::fetch(Signer::BIN_NAME, &config.bin_dir)?,
+        );
+        Self::register_startup_era(
+            &toolkit,
+            &leader_aggregator,
+            config,
+            &EraMarkersDatumFormat::formats_to_store(
+                Aggregator::can_read_sequenced_era_markers(leader_aggregator.version()),
+                signers_read_era_markers_sequence_number,
+                Self::STARTUP_ERA_MARKERS_SEQUENCE_NUMBER,
+            ),
+        )
+        .await?;
         toolkit
             .wait
             .for_aggregator_at_target_epoch(
@@ -259,6 +278,8 @@ impl MithrilInfrastructure {
             startup_protocol_configuration: config.startup_protocol_configuration.clone(),
             current_era: RwLock::new(config.mithril_era.clone()),
             era_reader_adapter: config.mithril_era_reader_adapter.clone(),
+            signers_read_era_markers_sequence_number,
+            last_era_markers_sequence_number: Mutex::new(Self::STARTUP_ERA_MARKERS_SEQUENCE_NUMBER),
             use_era_specific_work_dir: config.use_era_specific_work_dir,
             aggregate_signature_types: config.aggregate_signature_types.clone(),
             genesis_keys: config.genesis_keys,
@@ -273,12 +294,19 @@ impl MithrilInfrastructure {
         toolkit: &ScenarioToolkit,
         aggregator: &Aggregator,
         config: &MithrilInfrastructureConfig,
+        datum_formats: &[EraMarkersDatumFormat],
     ) -> StdResult<()> {
         let era_epoch = Epoch(0);
         if config.mithril_era_reader_adapter == "cardano-chain" {
             toolkit
                 .exec
-                .register_era_marker(aggregator, &config.devnet, &config.mithril_era, era_epoch)
+                .register_era_marker(
+                    aggregator,
+                    &config.devnet,
+                    &config.mithril_era,
+                    era_epoch,
+                    datum_formats,
+                )
                 .await?;
         }
 
@@ -314,9 +342,23 @@ impl MithrilInfrastructure {
             + 1;
         if self.era_reader_adapter == "cardano-chain" {
             let devnet = self.devnet.clone();
+            let mut last_era_markers_sequence_number =
+                self.last_era_markers_sequence_number.lock().await;
+            *last_era_markers_sequence_number += 1;
+            let datum_formats = EraMarkersDatumFormat::formats_to_store(
+                Aggregator::can_read_sequenced_era_markers(self.leader_aggregator().version()),
+                self.signers_read_era_markers_sequence_number,
+                *last_era_markers_sequence_number,
+            );
             self.toolkit
                 .exec
-                .register_era_marker(self.leader_aggregator(), &devnet, next_era, next_era_epoch)
+                .register_era_marker(
+                    self.leader_aggregator(),
+                    &devnet,
+                    next_era,
+                    next_era_epoch,
+                    &datum_formats,
+                )
                 .await?;
         }
         let mut current_era = self.current_era.write().await;

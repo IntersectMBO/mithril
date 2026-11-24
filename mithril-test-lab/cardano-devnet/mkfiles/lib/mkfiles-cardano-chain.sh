@@ -137,47 +137,47 @@ function try_send_funds_to_address {
     done
 }
 
-# Write datums for address
+# Write datums for address (an optional additional datum is written in a second output)
 function write_datums_for_address {
     ADDR=\$1
     SCRIPT_TX_VALUE=\$2
     CONTEXT=\$3
     N=\$4
     DATUM_FILE=\$5
+    ADDITIONAL_DATUM_FILE=\$6
     
     # Remove if exists previous error file
     ERROR_FILE=\${CONTEXT}-error
     rm -f -- "\${ERROR_FILE}"
 
-    # Fetch transactions from UTxOs of the address
+    # Fetch transactions from UTxOs of the address:
+    # - all the outputs holding a datum (none at the first write, two when an additional datum was written)
+    # - the last output without datum, which pays for the transaction
     TX_IN_DATUM=\$(CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} query utxo \\
         --testnet-magic ${NETWORK_MAGIC} --address \$(cat addresses/\${ADDR}.addr) --out-file /dev/stdout \\
         | jq -r 'to_entries | map({utxo: .key} + .value) | . [] | select(.inlineDatum | . != null and . != "") | .utxo')
     TX_IN_NO_DATUM=\$(CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} query utxo \\
         --testnet-magic ${NETWORK_MAGIC} --address \$(cat addresses/\${ADDR}.addr) --out-file /dev/stdout \\
-        | jq  -r 'to_entries | [last] | .[0].key')
+        | jq  -r 'to_entries | map(select(.value.inlineDatum | . == null or . == "")) | [last] | .[0].key')
 
     ## Build the transaction
-    if [ "\${TX_IN_DATUM}" == "" ]; then
-        CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction build \\
-            --tx-in \${TX_IN_NO_DATUM} \\
-            --tx-out \$(cat addresses/\${ADDR}.addr)+\${SCRIPT_TX_VALUE} \\
-            --tx-out-inline-datum-file \${DATUM_FILE} \\
-            --change-address \$(cat addresses/\${ADDR}.addr) \\
-            --testnet-magic ${NETWORK_MAGIC} \\
-            --invalid-hereafter 100000 \\
-            --out-file node-pool\${N}/tx/tx\${N}-\${CONTEXT}-datum.txbody
-    else
-        CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction build \\
-            --tx-in \${TX_IN_DATUM} \\
-            --tx-in \${TX_IN_NO_DATUM} \\
-            --tx-out \$(cat addresses/\${ADDR}.addr)+\${SCRIPT_TX_VALUE} \\
-            --tx-out-inline-datum-file \${DATUM_FILE} \\
-            --change-address \$(cat addresses/\${ADDR}.addr) \\
-            --testnet-magic ${NETWORK_MAGIC} \\
-            --invalid-hereafter 100000 \\
-            --out-file node-pool\${N}/tx/tx\${N}-\${CONTEXT}-datum.txbody
+    # All the outputs holding a previous datum are spent, so that only the new datums remain at the address
+    TX_INS=""
+    for TX_IN in \${TX_IN_DATUM} \${TX_IN_NO_DATUM}; do
+        TX_INS="\${TX_INS} --tx-in \${TX_IN}"
+    done
+    TX_OUTS="--tx-out \$(cat addresses/\${ADDR}.addr)+\${SCRIPT_TX_VALUE} --tx-out-inline-datum-file \${DATUM_FILE}"
+    # The additional datum is written in a second output of the same transaction
+    if [ "\${ADDITIONAL_DATUM_FILE}" != "" ]; then
+        TX_OUTS="\${TX_OUTS} --tx-out \$(cat addresses/\${ADDR}.addr)+\${SCRIPT_TX_VALUE} --tx-out-inline-datum-file \${ADDITIONAL_DATUM_FILE}"
     fi
+    CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction build \\
+        \${TX_INS} \\
+        \${TX_OUTS} \\
+        --change-address \$(cat addresses/\${ADDR}.addr) \\
+        --testnet-magic ${NETWORK_MAGIC} \\
+        --invalid-hereafter 100000 \\
+        --out-file node-pool\${N}/tx/tx\${N}-\${CONTEXT}-datum.txbody
 
     ## Sign the transaction
     CARDANO_NODE_SOCKET_PATH=node-pool\${N}/ipc/node.sock $CARDANO_CLI \${CURRENT_CARDANO_ERA} transaction sign \\
@@ -214,6 +214,7 @@ function try_write_datums_for_address {
     CONTEXT=\$3
     N=\$4
     DATUM_FILE=\$5
+    ADDITIONAL_DATUM_FILE=\$6
 
     ERROR_FILE=\${CONTEXT}-error
     WRITE_DATUMS_ADDRESS_WAIT_ROUNDS_MAX=10
@@ -221,7 +222,7 @@ function try_write_datums_for_address {
     WRITE_DATUMS_ADDRESS_WAIT_ROUND_DELAY=2
     while true
     do
-        write_datums_for_address "\${ADDR}" "\${SCRIPT_TX_VALUE}" \${CONTEXT} "\${N}" "\${DATUM_FILE}"
+        write_datums_for_address "\${ADDR}" "\${SCRIPT_TX_VALUE}" \${CONTEXT} "\${N}" "\${DATUM_FILE}" "\${ADDITIONAL_DATUM_FILE}"
         if [ -f \${ERROR_FILE} ]; then
             echo ">>>> Datums not written successfully for \${CONTEXT} address, a rollback has happened [attempt \$WRITE_DATUMS_ADDRESS_WAIT_ROUNDS]!"
             sleep \$WRITE_DATUMS_ADDRESS_WAIT_ROUND_DELAY

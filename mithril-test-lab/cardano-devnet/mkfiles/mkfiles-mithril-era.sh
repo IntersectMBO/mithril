@@ -23,11 +23,11 @@ set -e
 
 . "cardano-chain.sh"
 
-# Try to send funds to protocol configuration address
+# Try to send funds to era address
 try_send_funds_to_address "${ADDR}" "${AMOUNT_TRANSFERRED}" "era" "${N}"
 
-# Try to write datums for protocol configuration address
-try_write_datums_for_address "${ADDR}" "${SCRIPT_TX_VALUE}" "era" "${N}" "\${DATUM_FILE}"
+# Try to write datums for era address
+try_write_datums_for_address "${ADDR}" "${SCRIPT_TX_VALUE}" "era" "${N}" "\${DATUM_FILE}" "\${ADDITIONAL_DATUM_FILE}"
     
 EOF
 
