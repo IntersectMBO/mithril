@@ -28,8 +28,8 @@ services:
     ports:
       - "${SIGNER_CARDANO_RELAY_PORT}:${SIGNER_CARDANO_RELAY_PORT}"
     environment:
-      - CARDANO_SOCKET_PATH=/ipc/node.socket
-      - CARDANO_NODE_SOCKET_PATH=/ipc/node.socket
+      - CARDANO_SOCKET_PATH=/ipc/relay.socket
+      - CARDANO_NODE_SOCKET_PATH=/ipc/relay.socket
     command:
       [
         "run",
