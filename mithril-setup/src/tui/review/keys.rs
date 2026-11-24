@@ -1,6 +1,6 @@
-//! Pure mapping of the keyboard events to the review table actions
+//! Pure mapping of the keyboard, paste and mouse events to the review table actions
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 use crate::tui::review::model::{Action, Button, Mode};
 
@@ -46,6 +46,28 @@ pub fn to_action(key: KeyEvent, mode: &Mode) -> Option<Action> {
         (Mode::Editing { .. }, CTRL | ALT, Delete) => Some(Action::DeleteWordForward),
         (Mode::Editing { .. }, CTRL | ALT, Left) => Some(Action::MoveWordBackward),
         (Mode::Editing { .. }, CTRL | ALT, Right) => Some(Action::MoveWordForward),
+
+        _ => None,
+    }
+}
+
+/// Map a pasted text to the action it triggers in the given mode, if any
+///
+/// Only a value being edited accepts a paste.
+pub fn paste_to_action(text: String, mode: &Mode) -> Option<Action> {
+    match mode {
+        Mode::Editing { .. } => Some(Action::Paste(text)),
+        Mode::Navigating | Mode::OnButton(_) => None,
+    }
+}
+
+/// Map a mouse event to the action it triggers in the given mode, if any
+///
+/// The wheel moves like the `↑`/`↓` keys, one row per wheel step, other mouse events are ignored.
+pub fn mouse_to_action(mouse: MouseEvent, mode: &Mode) -> Option<Action> {
+    match (mode, mouse.kind) {
+        (Mode::Navigating | Mode::OnButton(_), MouseEventKind::ScrollUp) => Some(Action::Up),
+        (Mode::Navigating, MouseEventKind::ScrollDown) => Some(Action::Down),
 
         _ => None,
     }
@@ -289,5 +311,78 @@ mod tests {
     fn arrows_are_ignored_while_editing() {
         assert_eq!(None, to_action(key(KeyCode::Up), &editing()));
         assert_eq!(None, to_action(key(KeyCode::Down), &editing()));
+    }
+
+    #[test]
+    fn paste_is_an_action_only_while_editing() {
+        let text = || "/ipc/node.socket".to_string();
+
+        assert_eq!(
+            Some(Action::Paste(text())),
+            paste_to_action(text(), &editing())
+        );
+        assert_eq!(None, paste_to_action(text(), &Mode::Navigating));
+        assert_eq!(
+            None,
+            paste_to_action(text(), &Mode::OnButton(Button::Continue))
+        );
+    }
+
+    mod mouse {
+        use ratatui::crossterm::event::MouseButton;
+
+        use super::*;
+
+        fn mouse(kind: MouseEventKind) -> MouseEvent {
+            MouseEvent {
+                kind,
+                column: 0,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            }
+        }
+
+        const SCROLL_UP: MouseEventKind = MouseEventKind::ScrollUp;
+        const SCROLL_DOWN: MouseEventKind = MouseEventKind::ScrollDown;
+
+        #[test]
+        fn wheel_moves_like_the_arrows_while_navigating() {
+            let mode = Mode::Navigating;
+
+            assert_eq!(Some(Action::Up), mouse_to_action(mouse(SCROLL_UP), &mode));
+            assert_eq!(
+                Some(Action::Down),
+                mouse_to_action(mouse(SCROLL_DOWN), &mode)
+            );
+        }
+
+        #[test]
+        fn only_wheel_up_moves_from_a_button() {
+            let mode = Mode::OnButton(Button::Continue);
+
+            assert_eq!(Some(Action::Up), mouse_to_action(mouse(SCROLL_UP), &mode));
+            assert_eq!(None, mouse_to_action(mouse(SCROLL_DOWN), &mode));
+        }
+
+        #[test]
+        fn wheel_is_ignored_while_editing() {
+            assert_eq!(None, mouse_to_action(mouse(SCROLL_UP), &editing()));
+            assert_eq!(None, mouse_to_action(mouse(SCROLL_DOWN), &editing()));
+        }
+
+        #[test]
+        fn clicks_and_moves_are_ignored() {
+            for kind in [
+                MouseEventKind::Down(MouseButton::Left),
+                MouseEventKind::Up(MouseButton::Left),
+                MouseEventKind::Moved,
+            ] {
+                assert_eq!(
+                    None,
+                    mouse_to_action(mouse(kind), &Mode::Navigating),
+                    "{kind:?}"
+                );
+            }
+        }
     }
 }

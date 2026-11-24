@@ -25,6 +25,9 @@ pub enum Action {
     /// Type a character at the cursor
     Input(char),
 
+    /// Insert a pasted text at the cursor, without its control characters (e.g. newlines)
+    Paste(String),
+
     /// Remove the character before the cursor
     Backspace,
 
@@ -272,6 +275,11 @@ fn edit_buffer(buffer: &mut String, cursor: &mut usize, action: Action) {
         Action::Input(character) => {
             buffer.insert(byte_index(buffer, *cursor), character);
             *cursor += 1;
+        }
+        Action::Paste(text) => {
+            let text: String = text.chars().filter(|character| !character.is_control()).collect();
+            buffer.insert_str(byte_index(buffer, *cursor), &text);
+            *cursor += text.chars().count();
         }
         Action::Backspace if *cursor > 0 => {
             *cursor -= 1;
@@ -904,6 +912,50 @@ mod tests {
                 model.update(Action::DeleteWordBackward);
 
                 assert_eq!(&editing_at("/dossier/", 9), model.mode());
+            }
+        }
+
+        mod paste {
+            use super::*;
+
+            #[test]
+            fn paste_inserts_the_text_at_the_cursor_and_moves_it_after() {
+                let mut model = editing_port("/ipc/socket");
+                for _ in 0.."socket".len() {
+                    model.update(Action::Left);
+                }
+
+                model.update(Action::Paste("node.".to_string()));
+
+                assert_eq!(&editing_at("/ipc/node.socket", 10), model.mode());
+            }
+
+            #[test]
+            fn paste_drops_the_newlines_and_other_control_characters() {
+                let mut model = editing_port("");
+
+                model.update(Action::Paste("/ipc/\tnode.socket\r\n".to_string()));
+
+                assert_eq!(&editing_at("/ipc/node.socket", 16), model.mode());
+            }
+
+            #[test]
+            fn paste_counts_multibyte_characters_as_one_cursor_step() {
+                let mut model = editing_port("");
+
+                model.update(Action::Paste("été".to_string()));
+
+                assert_eq!(&editing_at("été", 3), model.mode());
+            }
+
+            #[test]
+            fn paste_is_ignored_while_navigating() {
+                let mut model = model_with_port(Some("3000"));
+
+                model.update(Action::Paste("4000".to_string()));
+
+                assert_eq!(&Mode::Navigating, model.mode());
+                assert_eq!(Some("3000".to_string()), port_row(&model).value);
             }
         }
 
