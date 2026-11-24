@@ -5,12 +5,28 @@ use std::sync::Arc;
 /// Check of a single raw value, returns the reason of the rejection
 pub type FieldRule = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 
+/// Maximum number of characters of a value quoted in a rejection reason
+///
+/// Same as the review table value column, so the aggregator endpoints (up to 69 characters) are
+/// quoted whole.
+const QUOTED_VALUE_MAX_LENGTH: usize = 70;
+
+/// The value between quotes for a rejection reason, cut with `…` when it is too long
+fn quoted(value: &str) -> String {
+    if value.chars().count() <= QUOTED_VALUE_MAX_LENGTH {
+        return format!("'{value}'");
+    }
+
+    let shown: String = value.chars().take(QUOTED_VALUE_MAX_LENGTH - 1).collect();
+    format!("'{shown}…'")
+}
+
 /// The value is an integer between `min` and `max` (both included)
 pub fn integer_between(min: u64, max: u64) -> FieldRule {
     Arc::new(move |value| {
         let integer: u64 = value
             .parse()
-            .map_err(|_| format!("'{value}' is not a positive integer"))?;
+            .map_err(|_| format!("{} is not a positive integer", quoted(value)))?;
 
         if (min..=max).contains(&integer) {
             Ok(())
@@ -26,7 +42,11 @@ pub fn one_of(allowed: &'static [&'static str]) -> FieldRule {
         if allowed.contains(&value) {
             Ok(())
         } else {
-            Err(format!("'{value}' is not one of: {}", allowed.join(", ")))
+            Err(format!(
+                "{} is not one of: {}",
+                quoted(value),
+                allowed.join(", ")
+            ))
         }
     })
 }
@@ -47,6 +67,36 @@ pub fn valid_path() -> FieldRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod quoted {
+        use super::*;
+
+        #[test]
+        fn value_up_to_the_maximum_length_is_quoted_whole() {
+            let value = "x".repeat(QUOTED_VALUE_MAX_LENGTH);
+
+            assert_eq!(format!("'{value}'"), quoted(&value));
+        }
+
+        #[test]
+        fn value_over_the_maximum_length_is_cut_with_an_ellipsis() {
+            let value = "x".repeat(QUOTED_VALUE_MAX_LENGTH + 1);
+
+            let cut = "x".repeat(QUOTED_VALUE_MAX_LENGTH - 1);
+            assert_eq!(format!("'{cut}…'"), quoted(&value));
+        }
+
+        #[test]
+        fn rejection_reasons_quote_the_cut_value() {
+            let value = "x".repeat(QUOTED_VALUE_MAX_LENGTH + 1);
+
+            for rule in [integer_between(1, 10), one_of(&["mainnet"])] {
+                let reason = rule(&value).unwrap_err();
+
+                assert!(reason.starts_with(&quoted(&value)), "{reason}");
+            }
+        }
+    }
 
     mod integer_between {
         use super::*;

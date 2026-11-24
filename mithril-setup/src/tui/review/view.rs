@@ -3,9 +3,10 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Flex, Layout};
 use ratatui::style::{Style, Stylize};
-use ratatui::text::{Line, Span};
+use ratatui::text::Line;
 use ratatui::widgets::{Block, Cell, HighlightSpacing, Paragraph, Row, Table, TableState};
 
+use crate::tui::review::columns::{COLUMN_SPACING, COLUMNS, HIGHLIGHT_SYMBOL, ValueColumn};
 use crate::tui::review::model::{Button, Mode, ReviewModel};
 use crate::tui::widgets::ButtonWidget;
 
@@ -26,11 +27,6 @@ const BUTTONS_HEIGHT: u16 = 1;
 const BUTTONS_SPACING: u16 = 3;
 /// Height of the footer: description, errors and help lines, plus top and bottom borders
 const FOOTER_HEIGHT: u16 = 5;
-/// Width of the label column
-// Maybe later: compute the label width from the longest label (with a maximum)?
-const LABEL_WIDTH: u16 = 28;
-/// Width of the origin column, fits the longest origin ("Discovered")
-const ORIGIN_WIDTH: u16 = 12;
 
 /// Draw the review table, its buttons and its footer in the frame
 pub fn render(model: &ReviewModel, frame: &mut Frame) {
@@ -42,13 +38,15 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
     .areas(frame.area());
 
     let model_rows = model.rows();
+    let table_block = Block::bordered().title(" Review ");
+    let value_column = ValueColumn::in_table(table_block.inner(table_area));
 
     let table_rows = model_rows.iter().enumerate().map(|(index, row)| {
         let value = match model.mode() {
             Mode::Editing { buffer, cursor } if index == model.selected() => {
-                edited_value(buffer, *cursor)
+                value_column.edited_value(buffer, *cursor)
             }
-            _ => Line::from(row.value.clone().unwrap_or_default()),
+            _ => value_column.value(row.value.as_deref().unwrap_or_default()),
         };
         let origin = row.origin.map(|origin| format!("{origin:?}")).unwrap_or_default();
 
@@ -56,30 +54,21 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
             Cell::from(row.label),
             Cell::from(value),
             Cell::from(origin),
-            Cell::from(row.errors.join("; ")),
         ])
     });
 
-    let table = Table::new(
-        table_rows,
-        // Value and Errors columns share the remaining width equally
-        [
-            Constraint::Length(LABEL_WIDTH),
-            Constraint::Fill(1),
-            Constraint::Length(ORIGIN_WIDTH),
-            Constraint::Fill(1),
-        ],
-    )
-    .header(Row::new(vec!["Label", "Value", "Origin", "Errors"]).bold())
-    .block(Block::bordered().title(" Review "))
-    // While editing the row is bold, so the reversed cursor stands out
-    .row_highlight_style(match model.mode() {
-        Mode::Editing { .. } => Style::new().bold(),
-        Mode::Navigating | Mode::OnButton(_) => Style::new().reversed(),
-    })
-    .highlight_symbol("> ")
-    // Keep the space of the highlight symbol when no row is selected, so the columns don't move
-    .highlight_spacing(HighlightSpacing::Always);
+    let table = Table::new(table_rows, COLUMNS)
+        .header(Row::new(vec!["Label", "Value", "Origin"]).bold())
+        .block(table_block)
+        .column_spacing(COLUMN_SPACING)
+        // While editing the row is bold, so the reversed cursor stands out
+        .row_highlight_style(match model.mode() {
+            Mode::Editing { .. } => Style::new().bold(),
+            Mode::Navigating | Mode::OnButton(_) => Style::new().reversed(),
+        })
+        .highlight_symbol(HIGHLIGHT_SYMBOL)
+        // Keep the space of the highlight symbol when no row is selected, so the columns don't move
+        .highlight_spacing(HighlightSpacing::Always);
 
     // No row is selected while a button is focused, so only one element is highlighted
     let selected_row = match model.mode() {
@@ -135,19 +124,6 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
     frame.render_widget(footer, footer_area);
 }
 
-/// Edited value with the character under the cursor reversed (a space past the end)
-fn edited_value(buffer: &str, cursor: usize) -> Line<'static> {
-    let before: String = buffer.chars().take(cursor).collect();
-    let current: String = buffer.chars().nth(cursor).unwrap_or(' ').to_string();
-    let after: String = buffer.chars().skip(cursor + 1).collect();
-
-    Line::from(vec![
-        Span::raw(before),
-        Span::raw(current).reversed(),
-        Span::raw(after),
-    ])
-}
-
 #[cfg(test)]
 mod tests {
     use ratatui::Terminal;
@@ -157,11 +133,16 @@ mod tests {
 
     use crate::schema::{FieldError, FieldSpec, Presence};
     use crate::store::{Origin, Store};
+    use crate::tui::review::columns::VALUE_MAX_WIDTH;
     use crate::tui::review::model::Action;
 
     use super::*;
 
     fn model() -> ReviewModel {
+        model_with_socket("/ipc/node.socket")
+    }
+
+    fn model_with_socket(socket: &str) -> ReviewModel {
         let specs = vec![
             FieldSpec {
                 key: "socket",
@@ -179,14 +160,18 @@ mod tests {
             },
         ];
         let mut store = Store::default();
-        store.set("socket", "/ipc/node.socket", Origin::Discovered);
+        store.set("socket", socket, Origin::Discovered);
         let errors = vec![FieldError::new("network", "Network is required")];
 
         ReviewModel::new(specs, store, errors)
     }
 
     fn rendered_buffer(model: &ReviewModel) -> Buffer {
-        let mut terminal = Terminal::new(TestBackend::new(100, 12)).unwrap();
+        rendered_buffer_with_width(model, 100)
+    }
+
+    fn rendered_buffer_with_width(model: &ReviewModel, width: u16) -> Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(width, 12)).unwrap();
         terminal.draw(|frame| render(model, frame)).unwrap();
 
         terminal.backend().buffer().clone()
@@ -232,22 +217,16 @@ mod tests {
     fn shows_the_columns_headers() {
         let text = rendered_text(&model());
 
-        for header in ["Label", "Value", "Origin", "Errors"] {
+        for header in ["Label", "Value", "Origin"] {
             assert!(text.contains(header), "'{header}' not found in:\n{text}");
         }
     }
 
     #[test]
-    fn shows_each_row_label_value_origin_and_errors() {
+    fn shows_each_row_label_value_and_origin() {
         let text = rendered_text(&model());
 
-        for expected in [
-            "Socket path",
-            "/ipc/node.socket",
-            "Discovered",
-            "Network",
-            "Network is required",
-        ] {
+        for expected in ["Socket path", "/ipc/node.socket", "Discovered", "Network"] {
             assert!(
                 text.contains(expected),
                 "'{expected}' not found in:\n{text}"
@@ -329,5 +308,67 @@ mod tests {
 
         assert!(!is_reversed(&buffer, "/ipc/node.socket", 15));
         assert!(is_reversed(&buffer, "/ipc/node.socket", 16));
+    }
+
+    mod long_values {
+        use super::*;
+
+        /// Socket path longer than the value column
+        fn long_socket() -> String {
+            format!("/ipc/{}/node.socket", "x".repeat(80))
+        }
+
+        #[test]
+        fn value_too_long_ends_with_an_ellipsis_at_the_end_of_the_column() {
+            let text = rendered_text(&model_with_socket(&long_socket()));
+
+            // The origin column starts right after the ellipsis and the column spacing
+            assert!(text.contains("/ipc/xxx"), "{text}");
+            assert!(text.contains("x… Discovered"), "{text}");
+            assert!(!text.contains("node.socket"), "{text}");
+        }
+
+        #[test]
+        fn value_column_stops_at_its_maximum_width_on_a_wide_terminal() {
+            let buffer = rendered_buffer_with_width(&model_with_socket(&long_socket()), 160);
+            let text = lines(&buffer).join("\n");
+
+            // "/ipc/" and the ellipsis take 6 of the maximum width, the origin follows right after
+            let shown_value = format!("/ipc/{}…", "x".repeat(VALUE_MAX_WIDTH as usize - 6));
+            assert!(
+                text.contains(&format!("{shown_value} Discovered")),
+                "{text}"
+            );
+        }
+
+        #[test]
+        fn edited_value_too_long_hides_its_start_to_show_the_cursor_at_the_end() {
+            let mut model = model_with_socket(&long_socket());
+            model.update(Action::Edit);
+
+            let buffer = rendered_buffer(&model);
+            let text = lines(&buffer).join("\n");
+
+            // The cursor is on the last cell of the column, right before the column spacing
+            assert!(
+                is_reversed(&buffer, "node.socket  Discovered", 11),
+                "{text}"
+            );
+            assert!(!text.contains("/ipc/"), "{text}");
+        }
+
+        #[test]
+        fn edited_value_too_long_shows_its_start_when_the_cursor_is_at_the_start() {
+            let mut model = model_with_socket(&long_socket());
+            model.update(Action::Edit);
+            model.update(Action::Home);
+
+            let buffer = rendered_buffer(&model);
+            let text = lines(&buffer).join("\n");
+
+            assert!(is_reversed(&buffer, "/ipc/", 0), "{text}");
+            assert!(text.contains("xx Discovered"), "{text}");
+            assert!(!text.contains("node.socket"), "{text}");
+        }
     }
 }
