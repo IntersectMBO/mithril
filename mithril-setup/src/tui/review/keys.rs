@@ -2,7 +2,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::tui::review::model::{Action, Mode};
+use crate::tui::review::model::{Action, Button, Mode};
 
 /// Map a key event to the action it triggers in the given mode, if any
 ///
@@ -19,11 +19,17 @@ pub fn to_action(key: KeyEvent, mode: &Mode) -> Option<Action> {
     match (mode, key.modifiers, key.code) {
         (_, CTRL, Char('c')) => Some(Action::Abort),
 
-        (Mode::Navigating, NONE, Up) => Some(Action::Up),
+        (Mode::Navigating | Mode::OnButton(_), NONE, Up) => Some(Action::Up),
+        (Mode::Navigating | Mode::OnButton(_), NONE, Esc) => Some(Action::FocusAbort),
+        (Mode::Navigating | Mode::OnButton(_), CTRL, Char('s')) => Some(Action::FocusContinue),
+
         (Mode::Navigating, NONE, Down) => Some(Action::Down),
         (Mode::Navigating, NONE, Enter) => Some(Action::Edit),
-        (Mode::Navigating, NONE, Esc) => Some(Action::Abort),
-        (Mode::Navigating, CTRL, Char('s')) => Some(Action::Confirm),
+
+        (Mode::OnButton(_), NONE, Left) => Some(Action::Left),
+        (Mode::OnButton(_), NONE, Right) => Some(Action::Right),
+        (Mode::OnButton(Button::Abort), NONE, Enter) => Some(Action::Abort),
+        (Mode::OnButton(Button::Continue), NONE, Enter) => Some(Action::Confirm),
 
         (Mode::Editing { .. }, NONE | SHIFT | ALTGR, Char(character)) => {
             Some(Action::Input(character))
@@ -71,9 +77,34 @@ mod tests {
         assert_eq!(Some(Action::Up), to_action(key(KeyCode::Up), &mode));
         assert_eq!(Some(Action::Down), to_action(key(KeyCode::Down), &mode));
         assert_eq!(Some(Action::Edit), to_action(key(KeyCode::Enter), &mode));
-        assert_eq!(Some(Action::Abort), to_action(key(KeyCode::Esc), &mode));
-        assert_eq!(Some(Action::Confirm), to_action(ctrl('s'), &mode));
+        assert_eq!(
+            Some(Action::FocusAbort),
+            to_action(key(KeyCode::Esc), &mode)
+        );
+        assert_eq!(Some(Action::FocusContinue), to_action(ctrl('s'), &mode));
         assert_eq!(Some(Action::Abort), to_action(ctrl('c'), &mode));
+    }
+
+    #[test]
+    fn button_keys() {
+        let abort = Mode::OnButton(Button::Abort);
+        let mode_continue = Mode::OnButton(Button::Continue);
+
+        assert_eq!(Some(Action::Up), to_action(key(KeyCode::Up), &abort));
+        assert_eq!(Some(Action::Left), to_action(key(KeyCode::Left), &abort));
+        assert_eq!(Some(Action::Right), to_action(key(KeyCode::Right), &abort));
+        assert_eq!(
+            Some(Action::FocusAbort),
+            to_action(key(KeyCode::Esc), &abort)
+        );
+        assert_eq!(Some(Action::FocusContinue), to_action(ctrl('s'), &abort));
+        assert_eq!(Some(Action::Abort), to_action(key(KeyCode::Enter), &abort));
+        assert_eq!(
+            Some(Action::Confirm),
+            to_action(key(KeyCode::Enter), &mode_continue)
+        );
+        assert_eq!(None, to_action(key(KeyCode::Down), &mode_continue));
+        assert_eq!(None, to_action(key(KeyCode::Char('a')), &mode_continue));
     }
 
     #[test]

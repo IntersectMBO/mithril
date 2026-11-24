@@ -7,11 +7,17 @@ use crate::store::{Origin, Store};
 /// Actions the user can perform on the review table
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
-    /// Select the previous row
+    /// Select the previous row, or go back to the selected row from a button
     Up,
 
-    /// Select the next row
+    /// Select the next row, or focus the `Continue` button from the last row
     Down,
+
+    /// Focus the `Continue` button
+    FocusContinue,
+
+    /// Focus the `Abort` button
+    FocusAbort,
 
     /// Start editing the selected row
     Edit,
@@ -37,10 +43,10 @@ pub enum Action {
     /// Move the cursor to the end of the word after it
     MoveWordForward,
 
-    /// Move the cursor one character to the left
+    /// Move the cursor one character to the left, or focus the `Abort` button from a button
     Left,
 
-    /// Move the cursor one character to the right
+    /// Move the cursor one character to the right, or focus the `Continue` button from a button
     Right,
 
     /// Move the cursor to the start of the edited value
@@ -76,6 +82,19 @@ pub enum Mode {
         /// Position of the cursor in the buffer, in characters
         cursor: usize,
     },
+
+    /// Focusing a button below the table
+    OnButton(Button),
+}
+
+/// Buttons below the review table
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Button {
+    /// Abort the review
+    Abort,
+
+    /// Confirm the reviewed values
+    Continue,
 }
 
 /// A row of the review table
@@ -138,19 +157,34 @@ impl ReviewModel {
         }
 
         match self.mode {
-            Mode::Navigating => self.update_navigating(action),
+            Mode::Navigating => {
+                self.update_navigating(action);
+                None
+            }
             Mode::Editing { .. } => {
                 self.update_editing(action);
                 None
             }
+            Mode::OnButton(_) => self.update_on_button(action),
         }
     }
 
-    fn update_navigating(&mut self, action: Action) -> Option<ReviewOutcome> {
+    fn update_navigating(&mut self, action: Action) {
         match action {
             Action::Up if self.selected > 0 => self.selected -= 1,
             Action::Down if self.selected + 1 < self.specs.len() => self.selected += 1,
+            Action::Down | Action::FocusContinue => self.mode = Mode::OnButton(Button::Continue),
+            Action::FocusAbort => self.mode = Mode::OnButton(Button::Abort),
             Action::Edit => self.start_editing_selected_value(),
+            _ => {}
+        }
+    }
+
+    fn update_on_button(&mut self, action: Action) -> Option<ReviewOutcome> {
+        match action {
+            Action::Up => self.mode = Mode::Navigating,
+            Action::Left | Action::FocusAbort => self.mode = Mode::OnButton(Button::Abort),
+            Action::Right | Action::FocusContinue => self.mode = Mode::OnButton(Button::Continue),
             Action::Confirm => return Some(ReviewOutcome::Confirmed(self.store.clone())),
             _ => {}
         }
@@ -420,7 +454,7 @@ mod tests {
         }
 
         #[test]
-        fn down_on_the_last_row_keeps_it_selected() {
+        fn down_on_the_last_row_focuses_continue() {
             let mut model = model_with_three_rows();
             model.update(Action::Down);
             model.update(Action::Down);
@@ -428,6 +462,7 @@ mod tests {
             model.update(Action::Down);
 
             assert_eq!(2, model.selected());
+            assert_eq!(&Mode::OnButton(Button::Continue), model.mode());
         }
 
         #[test]
@@ -448,6 +483,112 @@ mod tests {
             model.update(Action::Up);
 
             assert_eq!(0, model.selected());
+        }
+    }
+
+    mod buttons {
+        use super::*;
+
+        fn model_with_two_rows() -> ReviewModel {
+            ReviewModel::new(
+                vec![spec("a", "A"), spec("b", "B")],
+                Store::default(),
+                vec![],
+            )
+        }
+
+        #[test]
+        fn focus_continue_from_the_table() {
+            let mut model = model_with_two_rows();
+
+            let outcome = model.update(Action::FocusContinue);
+
+            assert_eq!(None, outcome);
+            assert_eq!(&Mode::OnButton(Button::Continue), model.mode());
+        }
+
+        #[test]
+        fn focus_abort_from_the_table() {
+            let mut model = model_with_two_rows();
+
+            let outcome = model.update(Action::FocusAbort);
+
+            assert_eq!(None, outcome);
+            assert_eq!(&Mode::OnButton(Button::Abort), model.mode());
+        }
+
+        #[test]
+        fn focus_actions_switch_between_buttons() {
+            let mut model = model_with_two_rows();
+            model.update(Action::FocusContinue);
+
+            model.update(Action::FocusAbort);
+            assert_eq!(&Mode::OnButton(Button::Abort), model.mode());
+
+            model.update(Action::FocusContinue);
+            assert_eq!(&Mode::OnButton(Button::Continue), model.mode());
+        }
+
+        #[test]
+        fn left_and_right_switch_between_buttons() {
+            let mut model = model_with_two_rows();
+            model.update(Action::FocusContinue);
+
+            model.update(Action::Left);
+            assert_eq!(&Mode::OnButton(Button::Abort), model.mode());
+
+            model.update(Action::Left);
+            assert_eq!(&Mode::OnButton(Button::Abort), model.mode());
+
+            model.update(Action::Right);
+            assert_eq!(&Mode::OnButton(Button::Continue), model.mode());
+
+            model.update(Action::Right);
+            assert_eq!(&Mode::OnButton(Button::Continue), model.mode());
+        }
+
+        #[test]
+        fn up_goes_back_to_the_selected_row() {
+            let mut model = model_with_two_rows();
+            model.update(Action::Down);
+            model.update(Action::FocusAbort);
+
+            model.update(Action::Up);
+
+            assert_eq!(&Mode::Navigating, model.mode());
+            assert_eq!(1, model.selected());
+        }
+
+        #[test]
+        fn row_actions_are_ignored_on_a_button() {
+            let mut model = model_with_two_rows();
+            model.update(Action::FocusContinue);
+
+            for action in [Action::Down, Action::Edit, Action::Input('a')] {
+                model.update(action.clone());
+
+                assert_eq!(
+                    &Mode::OnButton(Button::Continue),
+                    model.mode(),
+                    "{action:?}"
+                );
+                assert_eq!(0, model.selected(), "{action:?}");
+            }
+        }
+
+        #[test]
+        fn focus_actions_are_ignored_while_editing() {
+            let mut model = model_with_two_rows();
+            model.update(Action::Edit);
+
+            model.update(Action::FocusContinue);
+            model.update(Action::FocusAbort);
+
+            assert!(
+                matches!(model.mode(), Mode::Editing { .. }),
+                "{:?}",
+                model.mode()
+            );
         }
     }
 
@@ -883,12 +1024,20 @@ mod tests {
             model.update(Action::Edit);
             model.update(Action::Input('!'));
             model.update(Action::Save);
+            model.update(Action::FocusContinue);
 
             let outcome = model.update(Action::Confirm);
 
             let mut expected_store = Store::default();
             expected_store.set("a", "value!", Origin::User);
             assert_eq!(Some(ReviewOutcome::Confirmed(expected_store)), outcome);
+        }
+
+        #[test]
+        fn confirm_is_ignored_while_navigating() {
+            let outcome = model().update(Action::Confirm);
+
+            assert_eq!(None, outcome);
         }
 
         #[test]
@@ -912,6 +1061,16 @@ mod tests {
         fn abort_returns_aborted_while_editing() {
             let mut model = model();
             model.update(Action::Edit);
+
+            let outcome = model.update(Action::Abort);
+
+            assert_eq!(Some(ReviewOutcome::Aborted), outcome);
+        }
+
+        #[test]
+        fn abort_returns_aborted_on_a_button() {
+            let mut model = model();
+            model.update(Action::FocusAbort);
 
             let outcome = model.update(Action::Abort);
 

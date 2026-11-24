@@ -1,19 +1,29 @@
 //! Rendering of the review table
 
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::{Constraint, Flex, Layout};
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Cell, Paragraph, Row, Table, TableState};
+use ratatui::widgets::{Block, Cell, HighlightSpacing, Paragraph, Row, Table, TableState};
 
-use crate::tui::review::model::{Mode, ReviewModel};
+use crate::tui::review::model::{Button, Mode, ReviewModel};
+use crate::tui::widgets::ButtonWidget;
 
-const NAVIGATING_HELP: &str = "↑/↓ move · Enter edit · Ctrl+S confirm · Esc/Ctrl+C abort";
+const NAVIGATING_HELP: &str =
+    "↑/↓ move · Enter edit · Ctrl+S go to Continue · Esc go to Abort · Ctrl+C abort";
 const EDITING_HELP: &str = "Enter save · Esc cancel · Ctrl+C abort";
+const BUTTONS_HELP: &str = "←/→ choose · ↑ back to the table · Enter press · Ctrl+C abort";
+
+const ABORT_DESCRIPTION: &str = "Quit the setup without saving the values";
+const CONTINUE_DESCRIPTION: &str = "Check the values and go to the next step";
 
 // Layout sizes are counted in terminal cells: rows for heights, characters for widths
 /// Minimum height of the table, it takes all the remaining rows
 const TABLE_MIN_HEIGHT: u16 = 3;
+/// Height of the buttons line
+const BUTTONS_HEIGHT: u16 = 1;
+/// Space between two buttons
+const BUTTONS_SPACING: u16 = 3;
 /// Height of the footer: description and help lines, plus top and bottom borders
 const FOOTER_HEIGHT: u16 = 4;
 /// Width of the label column
@@ -22,11 +32,14 @@ const LABEL_WIDTH: u16 = 28;
 /// Width of the origin column, fits the longest origin ("Discovered")
 const ORIGIN_WIDTH: u16 = 12;
 
-/// Draw the review table and its footer in the frame
+/// Draw the review table, its buttons and its footer in the frame
 pub fn render(model: &ReviewModel, frame: &mut Frame) {
-    let [table_area, footer_area] =
-        Layout::vertical([Constraint::Min(TABLE_MIN_HEIGHT), Constraint::Length(FOOTER_HEIGHT)])
-            .areas(frame.area());
+    let [table_area, buttons_area, footer_area] = Layout::vertical([
+        Constraint::Min(TABLE_MIN_HEIGHT),
+        Constraint::Length(BUTTONS_HEIGHT),
+        Constraint::Length(FOOTER_HEIGHT),
+    ])
+    .areas(frame.area());
 
     let model_rows = model.rows();
 
@@ -61,21 +74,56 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
     .block(Block::bordered().title(" Review "))
     // While editing the row is bold, so the reversed cursor stands out
     .row_highlight_style(match model.mode() {
-        Mode::Navigating => Style::new().reversed(),
         Mode::Editing { .. } => Style::new().bold(),
+        Mode::Navigating | Mode::OnButton(_) => Style::new().reversed(),
     })
-    .highlight_symbol("> ");
+    .highlight_symbol("> ")
+    // Keep the space of the highlight symbol when no row is selected, so the columns don't move
+    .highlight_spacing(HighlightSpacing::Always);
 
-    let mut table_state = TableState::default().with_selected(Some(model.selected()));
+    // No row is selected while a button is focused, so only one element is highlighted
+    let selected_row = match model.mode() {
+        Mode::OnButton(_) => None,
+        Mode::Navigating | Mode::Editing { .. } => Some(model.selected()),
+    };
+    let mut table_state = TableState::default().with_selected(selected_row);
     frame.render_stateful_widget(table, table_area, &mut table_state);
 
-    let description = model_rows
-        .get(model.selected())
-        .map(|row| row.description)
-        .unwrap_or_default();
+    let focused_button = match model.mode() {
+        Mode::OnButton(button) => Some(*button),
+        Mode::Navigating | Mode::Editing { .. } => None,
+    };
+    let abort_button = ButtonWidget {
+        label: "Abort",
+        focused: focused_button == Some(Button::Abort),
+    };
+    let continue_button = ButtonWidget {
+        label: "Continue",
+        focused: focused_button == Some(Button::Continue),
+    };
+    // Buttons take their own width and are centered in the line
+    let [abort_area, continue_area] = Layout::horizontal([
+        Constraint::Length(abort_button.width()),
+        Constraint::Length(continue_button.width()),
+    ])
+    .flex(Flex::Center)
+    .spacing(BUTTONS_SPACING)
+    .areas(buttons_area);
+    frame.render_widget(abort_button, abort_area);
+    frame.render_widget(continue_button, continue_area);
+
+    let description = match model.mode() {
+        Mode::OnButton(Button::Abort) => ABORT_DESCRIPTION,
+        Mode::OnButton(Button::Continue) => CONTINUE_DESCRIPTION,
+        Mode::Navigating | Mode::Editing { .. } => model_rows
+            .get(model.selected())
+            .map(|row| row.description)
+            .unwrap_or_default(),
+    };
     let help = match model.mode() {
         Mode::Navigating => NAVIGATING_HELP,
         Mode::Editing { .. } => EDITING_HELP,
+        Mode::OnButton(_) => BUTTONS_HELP,
     };
     let footer = Paragraph::new(vec![Line::from(description), Line::from(help).dim()])
         .block(Block::bordered());
