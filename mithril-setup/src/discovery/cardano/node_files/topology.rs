@@ -21,6 +21,14 @@ pub(crate) struct LocalRootGroup {
     /// Peers of the group
     #[serde(rename = "accessPoints", default)]
     pub access_points: Vec<Peer>,
+
+    /// Whether the group is advertised to other nodes (P2P format)
+    #[serde(default)]
+    pub advertised: Option<bool>,
+
+    /// Whether the group is trustable by other nodes (P2P format)
+    #[serde(default)]
+    pub trustable: Option<bool>,
 }
 
 /// A peer of the legacy topology format
@@ -41,6 +49,12 @@ pub struct Peer {
 
     /// Port of the peer
     pub port: u16,
+
+    /// Whether the group is advertised to other nodes (P2P format)
+    pub advertised: Option<bool>,
+
+    /// Whether the group is trustable by other nodes (P2P format)
+    pub trustable: Option<bool>,
 }
 
 impl TopologyConfiguration {
@@ -58,6 +72,8 @@ impl TopologyConfiguration {
         let producers = self.producers.iter().map(|producer| Peer {
             address: producer.addr.clone(),
             port: producer.port,
+            advertised: None,
+            trustable: None,
         });
 
         local_roots.chain(producers).collect()
@@ -72,6 +88,8 @@ mod tests {
         Peer {
             address: address.to_string(),
             port,
+            advertised: None,
+            trustable: None,
         }
     }
 
@@ -120,6 +138,95 @@ mod tests {
             vec![peer("relay1.example.com", 3001), peer("192.168.1.30", 3002)],
             topology.pool_peers()
         );
+    }
+
+    #[test]
+    fn reads_the_advertised_and_trustable_flags_of_a_local_root_group() {
+        let topology = TopologyConfiguration::parse(
+            r#"{
+            "localRoots": [
+                {
+                "accessPoints": [{ "address": "relay1.example.com", "port": 3001 }],
+                "advertised": true,
+                "trustable": false
+                },
+                {
+                "accessPoints": [{ "address": "relay2.example.com", "port": 3002 }],
+                "advertised": false,
+                "trustable": true
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+
+        let flags: Vec<_> = topology
+            .local_roots
+            .iter()
+            .map(|group| (group.advertised, group.trustable))
+            .collect();
+        assert_eq!(vec![(Some(true), Some(false)), (Some(false), Some(true))], flags);
+    }
+
+    #[test]
+    fn leaves_the_advertised_and_trustable_flags_of_a_local_root_group_unset_when_missing() {
+        let topology = TopologyConfiguration::parse(
+            r#"{
+            "localRoots": [
+                { "accessPoints": [{ "address": "relay1.example.com", "port": 3001 }] }
+            ]
+        }"#,
+        )
+        .unwrap();
+
+        let group = &topology.local_roots[0];
+        assert_eq!((None, None), (group.advertised, group.trustable));
+    }
+
+    #[test]
+    fn reads_the_advertised_and_trustable_flags_of_a_local_root_peer() {
+        let topology = TopologyConfiguration::parse(
+            r#"{
+            "localRoots": [
+                {
+                "accessPoints": [
+                    { "address": "relay1.example.com", "port": 3001, "advertised": true, "trustable": false },
+                    { "address": "relay2.example.com", "port": 3002, "advertised": false, "trustable": true },
+                    { "address": "relay3.example.com", "port": 3003 }
+                ]
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            vec![
+                Peer {
+                    advertised: Some(true),
+                    trustable: Some(false),
+                    ..peer("relay1.example.com", 3001)
+                },
+                Peer {
+                    advertised: Some(false),
+                    trustable: Some(true),
+                    ..peer("relay2.example.com", 3002)
+                },
+                peer("relay3.example.com", 3003),
+            ],
+            topology.pool_peers()
+        );
+    }
+
+    #[test]
+    fn fails_on_a_local_root_group_with_non_boolean_advertised_or_trustable_flags() {
+        for flags in [r#""advertised": "yes""#, r#""trustable": 1"#] {
+            let result = TopologyConfiguration::parse(&format!(
+                r#"{{ "localRoots": [{{ "accessPoints": [], {flags} }}] }}"#
+            ));
+
+            assert!(result.is_err(), "Expected Err for {flags}, got {result:?}");
+        }
     }
 
     #[test]

@@ -888,6 +888,8 @@ pub(crate) mod tests {
                     pool_peers: vec![Peer {
                         address: "relay1.example.com".to_string(),
                         port: 3001,
+                        advertised: None,
+                        trustable: None,
                     }],
                     kes_key_path: Some(PathBuf::from("/opt/cardano/kes.skey")),
                     operational_certificate_path: Some(PathBuf::from("/opt/cardano/node.cert")),
