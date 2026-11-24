@@ -283,6 +283,27 @@ For Signer in version **1.2.1 and later**, since protocol configuration is now *
 Setting up `PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG` as described in the following steps will allow the signer to retrieve this information on the Cardano Chain.
 :::
 
+:::tip
+
+If you deployed the signer with the [guild-operators](https://github.com/cardano-community/guild-operators) scripts, the environment file they generate sets `PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG` since commit [`2c0f73eb5`](https://github.com/cardano-community/guild-operators/commit/2c0f73eb5bf55ac2dbc36b39e43316f303336ab1).
+
+If your environment file was generated before, update your scripts, regenerate the environment file (answer the relay and metrics questions as during the initial setup) and check that it sets the protocol configuration reader (replace `"${CNODE_HOME}"/mithril` with your `MITHRIL_HOME` if you changed it):
+
+```bash
+mithril-signer.sh -e
+grep PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG "${CNODE_HOME}"/mithril/mithril.env
+```
+
+If the `grep` command prints nothing, the scripts update was applied during the run with the previous `mithril.library`: run `mithril-signer.sh -e` again.
+
+Then, restart the signer:
+
+```bash
+sudo systemctl restart cnode-mithril-signer.service
+```
+
+:::
+
 :::caution
 
 - `User=cardano`:
