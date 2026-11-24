@@ -43,13 +43,6 @@ pub trait ProcessProbe: Send + Sync {
     async fn cardano_node_processes(&self) -> anyhow::Result<Vec<NodeProcess>>;
 }
 
-/// Finds the service manager units running processes
-#[async_trait]
-pub trait ServiceProbe: Send + Sync {
-    /// Returns the name of the systemd unit running the given process, if any
-    async fn systemd_unit_of(&self, pid: u32) -> anyhow::Result<Option<String>>;
-}
-
 /// Reads the files of the Cardano node
 #[async_trait]
 pub trait FileProbe: Send + Sync {

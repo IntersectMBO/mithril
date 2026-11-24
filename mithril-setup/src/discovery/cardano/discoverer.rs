@@ -6,12 +6,12 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::discovery::cardano::command_line::NodeCommandLine;
-use crate::discovery::cardano::host::{CgroupServiceProbe, HostFileProbe, ProcfsProcessProbe};
+use crate::discovery::cardano::host::{HostFileProbe, ProcfsProcessProbe};
 use crate::discovery::cardano::node_files::{
     CardanoConfiguration, CardanoNetwork, Peer, ShelleyGenesisConfiguration, TopologyConfiguration,
 };
 use crate::discovery::cardano::{
-    CardanoDiscovery, FileProbe, NodeInstance, NodeProcess, NodeRole, ProcessProbe, ServiceProbe,
+    CardanoDiscovery, FileProbe, NodeInstance, NodeProcess, NodeRole, ProcessProbe,
 };
 
 /// Reasons why the Cardano block producer node could not be discovered
@@ -53,34 +53,24 @@ pub enum CardanoDiscoveryError {
 /// Discovers the facts of the Cardano block producer node through the given probes
 pub struct CardanoDiscoverer {
     processes: Arc<dyn ProcessProbe>,
-    services: Arc<dyn ServiceProbe>,
     files: Arc<dyn FileProbe>,
 }
 
 impl CardanoDiscoverer {
     /// Create a discoverer observing the runtime through the given probes
-    pub fn new(
-        processes: Arc<dyn ProcessProbe>,
-        services: Arc<dyn ServiceProbe>,
-        files: Arc<dyn FileProbe>,
-    ) -> Self {
-        Self {
-            processes,
-            services,
-            files,
-        }
+    pub fn new(processes: Arc<dyn ProcessProbe>, files: Arc<dyn FileProbe>) -> Self {
+        Self { processes, files }
     }
 
     /// Create a discoverer observing the Linux host the setup runs on
     pub fn host() -> Self {
         Self::new(
             Arc::new(ProcfsProcessProbe::default()),
-            Arc::new(CgroupServiceProbe::default()),
             Arc::new(HostFileProbe),
         )
     }
 
-    /// Detect the Cardano node instances running as host processes or systemd services
+    /// Detect the Cardano node instances running as host processes
     pub async fn detect_nodes(&self) -> anyhow::Result<Vec<NodeInstance>> {
         let nodes = self.detect().await?;
 
@@ -101,7 +91,6 @@ impl CardanoDiscoverer {
         ) = select_node(self.detect().await?)?;
         info!(
             pid = instance.pid,
-            systemd_unit = ?instance.systemd_unit,
             role = ?role,
             "Cardano node selected"
         );
@@ -257,14 +246,10 @@ impl CardanoDiscoverer {
 
         let mut nodes = Vec::with_capacity(processes.len());
         for process in processes {
-            let instance = NodeInstance {
-                pid: process.pid,
-                systemd_unit: self.services.systemd_unit_of(process.pid).await?,
-            };
+            let instance = NodeInstance { pid: process.pid };
             let command_line = NodeCommandLine::parse(&process.args);
             debug!(
                 pid = instance.pid,
-                systemd_unit = ?instance.systemd_unit,
                 block_producer = command_line.is_block_producer(),
                 "Cardano node detected"
             );
@@ -385,18 +370,6 @@ pub(crate) mod tests {
     }
 
     #[derive(Default)]
-    pub struct FakeServiceProbe {
-        units: HashMap<u32, String>,
-    }
-
-    #[async_trait]
-    impl ServiceProbe for FakeServiceProbe {
-        async fn systemd_unit_of(&self, pid: u32) -> anyhow::Result<Option<String>> {
-            Ok(self.units.get(&pid).cloned())
-        }
-    }
-
-    #[derive(Default)]
     pub struct FakeFileProbe {
         files: HashMap<PathBuf, String>,
     }
@@ -431,17 +404,12 @@ pub(crate) mod tests {
     #[derive(Default)]
     struct FakeProbes {
         processes: FakeProcessProbe,
-        services: FakeServiceProbe,
         files: FakeFileProbe,
     }
 
     impl FakeProbes {
         fn discoverer(self) -> CardanoDiscoverer {
-            CardanoDiscoverer::new(
-                Arc::new(self.processes),
-                Arc::new(self.services),
-                Arc::new(self.files),
-            )
+            CardanoDiscoverer::new(Arc::new(self.processes), Arc::new(self.files))
         }
     }
 
@@ -479,38 +447,7 @@ pub(crate) mod tests {
 
             let nodes = discoverer.detect_nodes().await.unwrap();
 
-            assert_eq!(
-                vec![NodeInstance {
-                    pid: 42,
-                    systemd_unit: None
-                }],
-                nodes
-            );
-        }
-
-        #[tokio::test]
-        async fn detects_a_node_running_as_a_systemd_service() {
-            let discoverer = FakeProbes {
-                processes: FakeProcessProbe {
-                    processes: vec![node_process(42, &["run"])],
-                    ..Default::default()
-                },
-                services: FakeServiceProbe {
-                    units: HashMap::from([(42, "cardano-node.service".to_string())]),
-                },
-                ..Default::default()
-            }
-            .discoverer();
-
-            let nodes = discoverer.detect_nodes().await.unwrap();
-
-            assert_eq!(
-                vec![NodeInstance {
-                    pid: 42,
-                    systemd_unit: Some("cardano-node.service".to_string())
-                }],
-                nodes
-            );
+            assert_eq!(vec![NodeInstance { pid: 42 }], nodes);
         }
 
         #[tokio::test]
@@ -520,9 +457,6 @@ pub(crate) mod tests {
                     processes: vec![node_process(42, &["run"]), node_process(43, &["run"])],
                     ..Default::default()
                 },
-                services: FakeServiceProbe {
-                    units: HashMap::from([(43, "relay.service".to_string())]),
-                },
                 ..Default::default()
             }
             .discoverer();
@@ -530,16 +464,7 @@ pub(crate) mod tests {
             let nodes = discoverer.detect_nodes().await.unwrap();
 
             assert_eq!(
-                vec![
-                    NodeInstance {
-                        pid: 42,
-                        systemd_unit: None
-                    },
-                    NodeInstance {
-                        pid: 43,
-                        systemd_unit: Some("relay.service".to_string())
-                    }
-                ],
+                vec![NodeInstance { pid: 42 }, NodeInstance { pid: 43 }],
                 nodes
             );
         }
@@ -766,22 +691,13 @@ pub(crate) mod tests {
                     ],
                     ..Default::default()
                 },
-                services: FakeServiceProbe {
-                    units: HashMap::from([(43, "cardano-bp.service".to_string())]),
-                },
                 ..Default::default()
             }
             .discoverer();
 
             let discovery = discoverer.discover().await.unwrap();
 
-            assert_eq!(
-                NodeInstance {
-                    pid: 43,
-                    systemd_unit: Some("cardano-bp.service".to_string())
-                },
-                discovery.node
-            );
+            assert_eq!(NodeInstance { pid: 43 }, discovery.node);
             assert_eq!(NodeRole::BlockProducer, discovery.role);
             assert_eq!(
                 Some(PathBuf::from("/opt/cardano/kes.skey")),
@@ -951,9 +867,6 @@ pub(crate) mod tests {
                     processes: vec![process],
                     ..Default::default()
                 },
-                services: FakeServiceProbe {
-                    units: HashMap::from([(42, "cardano-node.service".to_string())]),
-                },
                 ..probes
             }
             .discoverer()
@@ -995,10 +908,7 @@ pub(crate) mod tests {
 
             assert_eq!(
                 CardanoDiscovery {
-                    node: NodeInstance {
-                        pid: 42,
-                        systemd_unit: Some("cardano-node.service".to_string())
-                    },
+                    node: NodeInstance { pid: 42 },
                     role: NodeRole::BlockProducer,
                     socket_path: Some(PathBuf::from("/opt/cardano/node.socket")),
                     database_dir: Some(PathBuf::from("/opt/cardano/db")),

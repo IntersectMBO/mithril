@@ -71,7 +71,4 @@ pub enum NodeRole {
 pub struct NodeInstance {
     /// Process identifier of the node
     pub pid: u32,
-
-    /// Name of the systemd unit running the node, if it runs as a systemd service
-    pub systemd_unit: Option<String>,
 }

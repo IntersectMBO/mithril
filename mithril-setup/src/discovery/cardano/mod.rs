@@ -1,7 +1,7 @@
 //! Discovery of the Cardano block producer node running on the machine
 //!
 //! The [CardanoDiscoverer] holds the runtime agnostic logic, it observes the machine through
-//! the probe traits ([ProcessProbe], [ServiceProbe] and [FileProbe]) so that other runtimes
+//! the probe traits ([ProcessProbe] and [FileProbe]) so that other runtimes
 //! can be supported by providing other probe implementations.
 
 mod command_line;
