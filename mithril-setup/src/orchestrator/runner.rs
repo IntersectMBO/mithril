@@ -16,6 +16,16 @@ pub enum ReviewOutcome {
     Aborted,
 }
 
+/// Outcome of the result display
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResultOutcome {
+    /// The user closed the result, ending the flow
+    Exit,
+
+    /// The user went back to the review of the saved store
+    Back,
+}
+
 /// Outcome of a run that did not fail
 #[derive(Debug, Clone, PartialEq)]
 pub enum RunOutcome {
@@ -44,6 +54,10 @@ pub trait EffectHandler: Send + Sync {
 
     /// Save the store to the desired output
     async fn export_to_artifact(&self, store: Store) -> Result<(), String>;
+
+    /// Show the result of the setup, returns whether the user exits or goes back to the review,
+    /// or the reason of the result display failure
+    async fn show_result(&self) -> Result<ResultOutcome, String>;
 }
 
 /// Run the state machine until a final state, executing effects with the given handler
@@ -76,6 +90,11 @@ async fn execute(handler: &dyn EffectHandler, effect: Effect) -> Event {
         },
         Effect::Validate(store) => Event::Validated(handler.validate(store).await),
         Effect::Save(store) => Event::Saved(handler.export_to_artifact(store).await),
+        Effect::ShowResult => match handler.show_result().await {
+            Ok(ResultOutcome::Exit) => Event::ResultShown(Ok(())),
+            Ok(ResultOutcome::Back) => Event::WentBack,
+            Err(reason) => Event::ResultShown(Err(reason)),
+        },
     }
 }
 
@@ -84,6 +103,8 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
+    use crate::store::Origin;
+
     use super::*;
 
     struct FakeHandler {
@@ -91,7 +112,9 @@ mod tests {
         validate_results: Mutex<VecDeque<Result<(), Vec<FieldError>>>>,
         review_aborts: bool,
         review_failure: Option<String>,
+        received_review_stores: Mutex<Vec<Store>>,
         received_review_errors: Mutex<Vec<Vec<FieldError>>>,
+        result_outcomes: Mutex<VecDeque<Result<ResultOutcome, String>>>,
     }
 
     impl FakeHandler {
@@ -101,7 +124,9 @@ mod tests {
                 validate_results: Mutex::new(VecDeque::new()),
                 review_aborts: false,
                 review_failure: None,
+                received_review_stores: Mutex::new(vec![]),
                 received_review_errors: Mutex::new(vec![]),
+                result_outcomes: Mutex::new(VecDeque::new()),
             }
         }
     }
@@ -121,13 +146,17 @@ mod tests {
             store: Store,
             errors: Vec<FieldError>,
         ) -> Result<ReviewOutcome, String> {
+            self.received_review_stores.lock().unwrap().push(store.clone());
             self.received_review_errors.lock().unwrap().push(errors);
             if let Some(reason) = &self.review_failure {
                 Err(reason.clone())
             } else if self.review_aborts {
                 Ok(ReviewOutcome::Aborted)
             } else {
-                Ok(ReviewOutcome::Confirmed(store))
+                // The user edits a value before confirming
+                let mut confirmed_store = store;
+                confirmed_store.set("edited", "by the user", Origin::User);
+                Ok(ReviewOutcome::Confirmed(confirmed_store))
             }
         }
 
@@ -137,6 +166,14 @@ mod tests {
 
         async fn export_to_artifact(&self, _store: Store) -> Result<(), String> {
             Ok(())
+        }
+
+        async fn show_result(&self) -> Result<ResultOutcome, String> {
+            self.result_outcomes
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(ResultOutcome::Exit))
         }
     }
 
@@ -200,5 +237,40 @@ mod tests {
             vec![vec![], validation_errors],
             *handler.received_review_errors.lock().unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn run_reviews_the_confirmed_store_again_when_the_user_goes_back_from_the_result() {
+        let handler = FakeHandler {
+            result_outcomes: Mutex::new(VecDeque::from([Ok(ResultOutcome::Back)])),
+            ..FakeHandler::succeeding()
+        };
+
+        let result = run(&handler).await;
+
+        assert_eq!(Ok(RunOutcome::Completed), result);
+        let received_stores = handler.received_review_stores.lock().unwrap();
+        assert_eq!(2, received_stores.len());
+        assert_eq!(None, received_stores[0].get("edited"));
+        assert_eq!(
+            Some("by the user"),
+            received_stores[1].get("edited").map(|entry| entry.value.as_str())
+        );
+        assert_eq!(
+            vec![Vec::<FieldError>::new(), vec![]],
+            *handler.received_review_errors.lock().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn run_returns_failure_reason_when_the_result_display_fails() {
+        let handler = FakeHandler {
+            result_outcomes: Mutex::new(VecDeque::from([Err("no terminal".to_string())])),
+            ..FakeHandler::succeeding()
+        };
+
+        let result = run(&handler).await;
+
+        assert_eq!(Err("no terminal".to_string()), result);
     }
 }

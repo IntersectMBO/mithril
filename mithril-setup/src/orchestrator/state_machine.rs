@@ -24,6 +24,9 @@ pub enum State {
     /// Saving the values to the desired output
     Saving(Store),
 
+    /// Showing the result of the saved values, kept to go back to their review
+    ShowingResult(Store),
+
     /// Final state, the orchestrator has finished its work
     Done,
 
@@ -55,6 +58,12 @@ pub enum Event {
     /// The Store saving finished, or the reason of its failure
     Saved(Result<(), String>),
 
+    /// The user closed the result, or the reason of the result display failure
+    ResultShown(Result<(), String>),
+
+    /// The user went back from the result to the review of the saved values
+    WentBack,
+
     /// The user aborted the flow
     Aborted,
 }
@@ -81,6 +90,9 @@ pub enum Effect {
 
     /// Save the values to the desired output
     Save(Store),
+
+    /// Show the result of the saved values to the user
+    ShowResult,
 }
 
 /// Transition function to move from one state to another based on the event
@@ -124,9 +136,26 @@ pub fn transition(state: &State, event: Event) -> Result<(State, Option<Effect>)
             }),
         )),
 
-        (State::Saving(_), Event::Saved(Ok(()))) => Ok((State::Done, None)),
+        (State::Saving(store), Event::Saved(Ok(()))) => Ok((
+            State::ShowingResult(store.clone()),
+            Some(Effect::ShowResult),
+        )),
 
         (State::Saving(_), Event::Saved(Err(reason))) => Ok((State::Failed(reason), None)),
+
+        (State::ShowingResult(_), Event::ResultShown(Ok(()))) => Ok((State::Done, None)),
+
+        (State::ShowingResult(_), Event::ResultShown(Err(reason))) => {
+            Ok((State::Failed(reason), None))
+        }
+
+        (State::ShowingResult(store), Event::WentBack) => Ok((
+            State::Reviewing(store.clone()),
+            Some(Effect::Review {
+                store: store.clone(),
+                errors: vec![],
+            }),
+        )),
 
         (State::Done | State::Failed(_) | State::Aborted, Event::Aborted) => Err(format!(
             "{:?} is not accepted in final state {state:?}",
@@ -141,6 +170,8 @@ pub fn transition(state: &State, event: Event) -> Result<(State, Option<Effect>)
 
 #[cfg(test)]
 mod tests {
+    use crate::store::Origin;
+
     use super::*;
 
     fn store() -> Store {
@@ -251,10 +282,56 @@ mod tests {
     }
 
     #[test]
-    fn saving_saved_ok_goes_to_done() {
+    fn saving_saved_ok_goes_to_showing_result_and_requests_result_display() {
         let result = transition(&State::Saving(store()), Event::Saved(Ok(())));
 
+        assert_eq!(
+            Ok((State::ShowingResult(store()), Some(Effect::ShowResult))),
+            result
+        );
+    }
+
+    #[test]
+    fn showing_result_result_shown_ok_goes_to_done() {
+        let result = transition(&State::ShowingResult(store()), Event::ResultShown(Ok(())));
+
         assert_eq!(Ok((State::Done, None)), result);
+    }
+
+    #[test]
+    fn showing_result_result_shown_err_goes_to_failed() {
+        let result = transition(
+            &State::ShowingResult(store()),
+            Event::ResultShown(Err("boom".to_string())),
+        );
+
+        assert_eq!(Ok((State::Failed("boom".to_string()), None)), result);
+    }
+
+    #[test]
+    fn showing_result_went_back_goes_to_reviewing_the_saved_store_without_errors() {
+        let mut saved_store = Store::default();
+        saved_store.set("network", "preview", Origin::User);
+
+        let result = transition(&State::ShowingResult(saved_store.clone()), Event::WentBack);
+
+        assert_eq!(
+            Ok((
+                State::Reviewing(saved_store.clone()),
+                Some(Effect::Review {
+                    store: saved_store,
+                    errors: vec![]
+                })
+            )),
+            result
+        );
+    }
+
+    #[test]
+    fn went_back_is_rejected_outside_of_showing_result() {
+        let result = transition(&State::Saving(store()), Event::WentBack);
+
+        assert!(result.is_err(), "Expected Err, got {result:?}");
     }
 
     #[test]
@@ -276,6 +353,7 @@ mod tests {
             State::Reviewing(store()),
             State::Validating(store()),
             State::Saving(store()),
+            State::ShowingResult(store()),
         ] {
             let result = transition(&state, Event::Aborted);
 

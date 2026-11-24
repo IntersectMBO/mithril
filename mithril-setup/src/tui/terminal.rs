@@ -1,4 +1,5 @@
-//! Terminal shell running the TUI: owns the terminal and reads the keyboard, paste and mouse events
+//! Terminal shell running the TUI screens: owns the terminal and reads the keyboard, paste and
+//! mouse events
 
 use std::io::{self, stdout};
 
@@ -9,12 +10,14 @@ use ratatui::crossterm::event::{
 };
 use ratatui::crossterm::execute;
 
-use crate::runner::ReviewOutcome;
+use crate::runner::{ResultOutcome, ReviewOutcome};
 use crate::schema::{FieldError, FieldSpec};
 use crate::store::Store;
 use crate::tui::review::keys::{mouse_to_action, paste_to_action, to_action};
 use crate::tui::review::model::ReviewModel;
 use crate::tui::review::view::render;
+use crate::tui::setup_result::model::{ResultModel, SetupResult};
+use crate::tui::setup_result::{keys as result_keys, view as result_view};
 
 /// Let the user review the store values described by the specs in a table (blocking)
 pub fn review(
@@ -44,6 +47,39 @@ fn run_review(terminal: &mut DefaultTerminal, mut model: ReviewModel) -> io::Res
         };
 
         if let Some(action) = action
+            && let Some(outcome) = model.update(action)
+        {
+            return Ok(outcome);
+        }
+    }
+}
+
+/// Show the result of the setup until the user exits or goes back (blocking)
+///
+/// On exit the result is also printed in the terminal.
+/// The mouse is not captured, so the command can be selected to be copied.
+pub fn show_result(setup_result: SetupResult) -> io::Result<ResultOutcome> {
+    let mut terminal = ratatui::try_init()?;
+    let outcome = run_result(&mut terminal, ResultModel::new(setup_result.clone()));
+    ratatui::restore();
+    let outcome = outcome?;
+
+    if outcome == ResultOutcome::Exit {
+        // The screen is cleared on exit: the printed result stays in the terminal
+        println!("{}", setup_result.plain_text());
+    }
+
+    Ok(outcome)
+}
+
+fn run_result(terminal: &mut DefaultTerminal, mut model: ResultModel) -> io::Result<ResultOutcome> {
+    loop {
+        terminal.draw(|frame| result_view::render(&model, frame))?;
+
+        // Only key presses: some platforms (e.g. Windows) also send key releases
+        if let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+            && let Some(action) = result_keys::to_action(key, model.focused())
             && let Some(outcome) = model.update(action)
         {
             return Ok(outcome);

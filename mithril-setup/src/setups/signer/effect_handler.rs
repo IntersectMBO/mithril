@@ -2,11 +2,18 @@
 
 use async_trait::async_trait;
 
-use crate::runner::{EffectHandler, ReviewOutcome};
+use crate::runner::{EffectHandler, ResultOutcome, ReviewOutcome};
 use crate::schema::{FieldError, check_store};
 use crate::setups::signer::{CARDANO_NODE_SOCKET_PATH, NETWORK, signer_schema};
 use crate::store::{Origin, Store};
 use crate::tui;
+use crate::tui::setup_result::model::SetupResult;
+
+/// Message shown once the setup script is generated
+const SCRIPT_GENERATED_MESSAGE: &str = "The setup script of the Mithril signer is generated";
+
+/// Placeholder of the command running the setup script, to update once the script exists
+const SETUP_COMMAND_PLACEHOLDER: &str = "./mithril-signer-setup.sh --env-file ./mithril-signer.env";
 
 /// Effect handler performing the I/O needed to setup a Mithril signer
 pub struct SignerEffectHandler;
@@ -41,9 +48,21 @@ impl EffectHandler for SignerEffectHandler {
         check_store(&signer_schema(), &store)
     }
 
-    async fn export_to_artifact(&self, store: Store) -> Result<(), String> {
-        println!("{store:?}");
+    async fn export_to_artifact(&self, _store: Store) -> Result<(), String> {
+        // The setup script is not generated yet
         Ok(())
+    }
+
+    async fn show_result(&self) -> Result<ResultOutcome, String> {
+        let setup_result = SetupResult {
+            message: SCRIPT_GENERATED_MESSAGE,
+            command: SETUP_COMMAND_PLACEHOLDER,
+        };
+
+        tokio::task::spawn_blocking(move || tui::terminal::show_result(setup_result))
+            .await
+            .map_err(|error| format!("Result task failed: {error}"))?
+            .map_err(|error| format!("Result display failed: {error}"))
     }
 }
 
