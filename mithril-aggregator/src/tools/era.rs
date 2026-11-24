@@ -9,9 +9,24 @@ use mithril_common::{
     entities::{Epoch, SupportedEra},
 };
 #[allow(deprecated)]
-use mithril_era::{EraMarker, adapters::LegacyEraMarkersPayloadCardanoChain};
+use mithril_era::adapters::LegacyEraMarkersPayloadCardanoChain;
+use mithril_era::{EraMarker, adapters::EraMarkersPayloadCardanoChain};
 
 type EraToolsResult<R> = StdResult<R>;
+
+/// Format of the era markers stored in a transaction datum
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EraMarkersDatumFormat {
+    /// Era markers signed with a sequence number
+    Sequenced {
+        /// Sequence number of the era markers, incremented at each publication
+        sequence_number: u64,
+    },
+
+    /// Deprecated era markers signed without sequence number, for the nodes that can not read
+    /// the sequenced era markers yet
+    Legacy,
+}
 
 pub struct EraTools {}
 
@@ -30,6 +45,7 @@ impl EraTools {
         &self,
         current_era_epoch: Epoch,
         maybe_next_era_epoch: Option<Epoch>,
+        format: EraMarkersDatumFormat,
         era_markers_signer: &EraMarkersSigner,
     ) -> EraToolsResult<String> {
         if maybe_next_era_epoch.is_some()
@@ -49,15 +65,25 @@ impl EraTools {
             };
             era_markers.push(era_marker);
         }
-        #[allow(deprecated)]
-        let era_markers_payload = LegacyEraMarkersPayloadCardanoChain {
-            markers: era_markers,
-            signature: None,
-        }
-        .sign(era_markers_signer)?;
+        let era_markers_payload_json_hex = match format {
+            EraMarkersDatumFormat::Sequenced { sequence_number } => EraMarkersPayloadCardanoChain {
+                markers: era_markers,
+                sequence_number,
+                signature: None,
+            }
+            .sign(era_markers_signer)?
+            .to_json_hex()?,
+            #[allow(deprecated)]
+            EraMarkersDatumFormat::Legacy => LegacyEraMarkersPayloadCardanoChain {
+                markers: era_markers,
+                signature: None,
+            }
+            .sign(era_markers_signer)?
+            .to_json_hex()?,
+        };
 
         let tx_datum = TxDatumBuilder::new()
-            .add_field(TxDatumFieldValue::Bytes(era_markers_payload.to_json_hex()?))
+            .add_field(TxDatumFieldValue::Bytes(era_markers_payload_json_hex))
             .build()?;
         Ok(tx_datum.0)
     }
@@ -78,6 +104,7 @@ impl EraTools {
 
 #[cfg(test)]
 mod tests {
+    use mithril_cardano_node_chain::entities::{TxDatum, TxDatumFieldTypeName};
     use mithril_common::{
         crypto_helper::{EraMarkersVerifierSecretKey, EraMarkersVerifierVerificationKey},
         test::TempDir,
@@ -103,13 +130,62 @@ mod tests {
         assert_eq!(supported_eras_list, SupportedEra::eras());
     }
 
+    fn payload_json_hex_from_tx_datum(tx_datum: String) -> String {
+        TxDatum(tx_datum)
+            .get_fields_by_type(&TxDatumFieldTypeName::Bytes)
+            .expect("tx datum should have bytes fields")
+            .iter()
+            .filter_map(|field_value| field_value.as_str())
+            .collect::<Vec<&str>>()
+            .join("")
+    }
+
     #[test]
-    fn generate_tx_datum_ok() {
+    fn generate_tx_datum_with_a_sequence_number() {
         let era_markers_signer = EraMarkersSigner::create_deterministic_signer();
         let era_tools = build_tools();
-        let _ = era_tools
-            .generate_tx_datum(Epoch(1), None, &era_markers_signer)
+
+        let tx_datum = era_tools
+            .generate_tx_datum(
+                Epoch(1),
+                None,
+                EraMarkersDatumFormat::Sequenced { sequence_number: 7 },
+                &era_markers_signer,
+            )
             .expect("generate_tx_datum should not fail");
+
+        let payload =
+            EraMarkersPayloadCardanoChain::from_json_hex(&payload_json_hex_from_tx_datum(tx_datum))
+                .expect("tx datum should hold a sequenced era markers payload");
+        assert_eq!(7, payload.sequence_number);
+        assert_eq!(Some(Epoch(1)), payload.markers[0].epoch);
+        payload
+            .verify_signature(era_markers_signer.create_verifier().to_verification_key())
+            .expect("sequenced era markers payload signature should be valid");
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn generate_tx_datum_in_legacy_format() {
+        let era_markers_signer = EraMarkersSigner::create_deterministic_signer();
+        let era_tools = build_tools();
+
+        let tx_datum = era_tools
+            .generate_tx_datum(
+                Epoch(1),
+                None,
+                EraMarkersDatumFormat::Legacy,
+                &era_markers_signer,
+            )
+            .expect("generate_tx_datum should not fail");
+
+        let payload_json_hex = payload_json_hex_from_tx_datum(tx_datum);
+        let payload = LegacyEraMarkersPayloadCardanoChain::from_json_hex(&payload_json_hex)
+            .expect("tx datum should hold a legacy era markers payload");
+        assert_eq!(Some(Epoch(1)), payload.markers[0].epoch);
+        payload
+            .verify_signature(era_markers_signer.create_verifier().to_verification_key())
+            .expect("legacy era markers payload signature should be valid");
     }
 
     #[test]
@@ -117,7 +193,12 @@ mod tests {
         let era_markers_signer = EraMarkersSigner::create_deterministic_signer();
         let era_tools = build_tools();
         let _ = era_tools
-            .generate_tx_datum(Epoch(3), Some(Epoch(2)), &era_markers_signer)
+            .generate_tx_datum(
+                Epoch(3),
+                Some(Epoch(2)),
+                EraMarkersDatumFormat::Sequenced { sequence_number: 1 },
+                &era_markers_signer,
+            )
             .expect_err("generate_tx_datum should have failed");
     }
 

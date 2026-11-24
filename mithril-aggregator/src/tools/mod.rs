@@ -15,7 +15,7 @@ mod vacuum_tracker;
 pub use certificates_hash_migrator::CertificatesHashMigrator;
 #[cfg(feature = "snark")]
 pub use circuit_key_registry::CircuitKeyRegistryTools;
-pub use era::EraTools;
+pub use era::{EraMarkersDatumFormat, EraTools};
 #[cfg(feature = "snark")]
 pub use genesis::GenesisSignedPayload;
 pub use genesis::GenesisTools;
