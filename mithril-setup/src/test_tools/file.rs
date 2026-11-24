@@ -31,19 +31,3 @@ pub fn write_file(path: &Path, content: impl AsRef<[u8]>) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, content).unwrap();
 }
-
-/// Write an empty file with the execute permissions, creating its parent directories
-///
-/// The file is not meant to be run: running a file written by the test process could fail
-/// with `ETXTBSY` when a process forked concurrently by another test inherits its descriptor.
-#[cfg(test)]
-pub fn write_executable(path: &Path) {
-    write_file(path, "");
-
-    // Outside Unix, there is no execute permission to set
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-}

@@ -51,12 +51,6 @@ pub struct CardanoDiscovery {
 
     /// Name of the user running the node
     pub service_user: Option<String>,
-
-    /// Version of the node, ie: `10.1.4`
-    pub node_version: Option<String>,
-
-    /// Path of the `cardano-cli` executable
-    pub cardano_cli_path: Option<PathBuf>,
 }
 
 /// Role of the node selected on the machine

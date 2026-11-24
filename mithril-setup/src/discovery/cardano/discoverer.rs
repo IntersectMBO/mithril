@@ -6,15 +6,12 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::discovery::cardano::command_line::NodeCommandLine;
-use crate::discovery::cardano::host::{
-    CgroupServiceProbe, HostFileProbe, HostToolProbe, ProcfsProcessProbe,
-};
+use crate::discovery::cardano::host::{CgroupServiceProbe, HostFileProbe, ProcfsProcessProbe};
 use crate::discovery::cardano::node_files::{
     CardanoConfiguration, CardanoNetwork, Peer, ShelleyGenesisConfiguration, TopologyConfiguration,
 };
 use crate::discovery::cardano::{
     CardanoDiscovery, FileProbe, NodeInstance, NodeProcess, NodeRole, ProcessProbe, ServiceProbe,
-    ToolProbe,
 };
 
 /// Reasons why the Cardano block producer node could not be discovered
@@ -57,7 +54,6 @@ pub enum CardanoDiscoveryError {
 pub struct CardanoDiscoverer {
     processes: Arc<dyn ProcessProbe>,
     services: Arc<dyn ServiceProbe>,
-    tools: Arc<dyn ToolProbe>,
     files: Arc<dyn FileProbe>,
 }
 
@@ -66,13 +62,11 @@ impl CardanoDiscoverer {
     pub fn new(
         processes: Arc<dyn ProcessProbe>,
         services: Arc<dyn ServiceProbe>,
-        tools: Arc<dyn ToolProbe>,
         files: Arc<dyn FileProbe>,
     ) -> Self {
         Self {
             processes,
             services,
-            tools,
             files,
         }
     }
@@ -82,7 +76,6 @@ impl CardanoDiscoverer {
         Self::new(
             Arc::new(ProcfsProcessProbe::default()),
             Arc::new(CgroupServiceProbe::default()),
-            Arc::new(HostToolProbe::from_env()),
             Arc::new(HostFileProbe),
         )
     }
@@ -119,11 +112,8 @@ impl CardanoDiscoverer {
         let shelley_genesis_file = self.shelley_genesis_file(config_file.as_deref()).await;
         let network = self.network(shelley_genesis_file.as_deref()).await;
         let pool_peers = self.pool_peers(topology_file.as_deref()).await;
-        let node_version = self.node_version(&process).await;
-        let cardano_cli_path = self.cardano_cli_path(process.executable.as_deref()).await;
         info!(
             network = ?network,
-            node_version = ?node_version,
             pool_peers = pool_peers.len(),
             "Cardano node discovered"
         );
@@ -145,59 +135,8 @@ impl CardanoDiscoverer {
                 .map(resolve),
             kes_agent_socket: command_line.kes_agent_socket.as_deref().map(resolve),
             bulk_credentials_file: command_line.bulk_credentials_file.as_deref().map(resolve),
-            node_version,
-            cardano_cli_path,
             service_user: process.user,
         })
-    }
-
-    /// The node binary is only run with the identity of the node process, it is not run at all
-    /// when that identity is unknown
-    async fn node_version(&self, process: &NodeProcess) -> Option<String> {
-        let (Some(executable), Some(owner)) = (process.executable.as_deref(), process.owner) else {
-            debug!(
-                pid = process.pid,
-                "The node executable or its identity is unknown, the node version is not checked"
-            );
-            return None;
-        };
-
-        let output = self
-            .tools
-            .node_version_output(executable, owner)
-            .await
-            .inspect_err(|error| {
-                warn!(
-                    path = %executable.display(),
-                    error = %format_args!("{error:#}"),
-                    "Could not get the node version"
-                )
-            })
-            .ok()?;
-
-        let version = parse_node_version(&output);
-        if version.is_none() {
-            warn!(output = %output.trim(), "Unexpected output of the node version command");
-        }
-        version
-    }
-
-    /// Path of the `cardano-cli` executable, beside the node executable or in the search path
-    async fn cardano_cli_path(&self, node_executable: Option<&Path>) -> Option<PathBuf> {
-        match self.tools.find_cardano_cli(node_executable).await {
-            Ok(Some(path)) => {
-                debug!(path = %path.display(), "cardano-cli found");
-                Some(path)
-            }
-            Ok(None) => {
-                debug!("cardano-cli not found");
-                None
-            }
-            Err(error) => {
-                warn!(error = %format_args!("{error:#}"), "Could not look for cardano-cli");
-                None
-            }
-        }
     }
 
     /// Path of the Shelley genesis file, read from the node configuration file
@@ -356,17 +295,6 @@ fn resolve_path(working_dir: Option<&Path>, path: &str) -> PathBuf {
     }
 }
 
-/// Extract the version from a `cardano-node --version` output,
-/// ie: `cardano-node 10.1.4 - linux-x86_64 - ghc-9.6`
-fn parse_node_version(output: &str) -> Option<String> {
-    let mut words = output.lines().next()?.split_whitespace();
-
-    match (words.next(), words.next()) {
-        (Some("cardano-node"), Some(version)) => Some(version.to_string()),
-        _ => None,
-    }
-}
-
 /// Select the block producer, or the only node running when it is not a block producer
 fn select_node(
     nodes: Vec<DetectedNode>,
@@ -414,7 +342,6 @@ fn select_node(
 pub(crate) mod tests {
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
-    use std::sync::Mutex;
 
     use anyhow::anyhow;
     use async_trait::async_trait;
@@ -449,35 +376,6 @@ pub(crate) mod tests {
     impl ServiceProbe for FakeServiceProbe {
         async fn systemd_unit_of(&self, pid: u32) -> anyhow::Result<Option<String>> {
             Ok(self.units.get(&pid).cloned())
-        }
-    }
-
-    #[derive(Default)]
-    pub struct FakeToolProbe {
-        version_output: Option<String>,
-        cardano_cli: Option<PathBuf>,
-        /// Identities the version command was run with
-        version_run_as: Arc<Mutex<Vec<ProcessOwner>>>,
-    }
-
-    #[async_trait]
-    impl ToolProbe for FakeToolProbe {
-        async fn node_version_output(
-            &self,
-            _node_executable: &Path,
-            run_as: ProcessOwner,
-        ) -> anyhow::Result<String> {
-            self.version_run_as.lock().unwrap().push(run_as);
-            self.version_output
-                .clone()
-                .ok_or_else(|| anyhow!("version command failed"))
-        }
-
-        async fn find_cardano_cli(
-            &self,
-            _node_executable: Option<&Path>,
-        ) -> anyhow::Result<Option<PathBuf>> {
-            Ok(self.cardano_cli.clone())
         }
     }
 
@@ -517,7 +415,6 @@ pub(crate) mod tests {
     struct FakeProbes {
         processes: FakeProcessProbe,
         services: FakeServiceProbe,
-        tools: FakeToolProbe,
         files: FakeFileProbe,
     }
 
@@ -526,7 +423,6 @@ pub(crate) mod tests {
             CardanoDiscoverer::new(
                 Arc::new(self.processes),
                 Arc::new(self.services),
-                Arc::new(self.tools),
                 Arc::new(self.files),
             )
         }
@@ -960,14 +856,6 @@ pub(crate) mod tests {
                     "/opt/cardano/topology.json",
                 ])
             };
-            let tools = FakeToolProbe {
-                version_output: Some(
-                    "cardano-node 10.1.4 - linux-x86_64 - ghc-9.6\ngit rev 1f63dbf2ab39e0b32bf6901dc203866d3e37de08\n"
-                        .to_string(),
-                ),
-                cardano_cli: Some(PathBuf::from("/usr/local/bin/cardano-cli")),
-                ..Default::default()
-            };
 
             let files = node_files(&[
                 ("/opt/cardano/config.json", CONFIGURATION),
@@ -978,7 +866,6 @@ pub(crate) mod tests {
             let discovery = discover(
                 process,
                 FakeProbes {
-                    tools,
                     files,
                     ..Default::default()
                 },
@@ -1007,81 +894,9 @@ pub(crate) mod tests {
                     kes_agent_socket: None,
                     bulk_credentials_file: None,
                     service_user: Some("cardano".to_string()),
-                    node_version: Some("10.1.4".to_string()),
-                    cardano_cli_path: Some(PathBuf::from("/usr/local/bin/cardano-cli")),
                 },
                 discovery
             );
-        }
-
-        #[tokio::test]
-        async fn runs_the_version_command_with_the_identity_of_the_node() {
-            let tools = FakeToolProbe {
-                version_output: Some("cardano-node 10.1.4 - linux-x86_64 - ghc-9.6".to_string()),
-                ..Default::default()
-            };
-            let version_run_as = tools.version_run_as.clone();
-
-            discover(
-                block_producer_process(&[]),
-                FakeProbes {
-                    tools,
-                    ..Default::default()
-                },
-            )
-            .await;
-
-            assert_eq!(vec![NODE_OWNER], *version_run_as.lock().unwrap());
-        }
-
-        #[tokio::test]
-        async fn does_not_run_the_version_command_when_the_identity_of_the_node_is_unknown() {
-            let process = NodeProcess {
-                owner: None,
-                ..block_producer_process(&[])
-            };
-            let tools = FakeToolProbe {
-                version_output: Some("cardano-node 10.1.4 - linux-x86_64 - ghc-9.6".to_string()),
-                ..Default::default()
-            };
-            let version_run_as = tools.version_run_as.clone();
-
-            let discovery = discover(
-                process,
-                FakeProbes {
-                    tools,
-                    ..Default::default()
-                },
-            )
-            .await;
-
-            assert_eq!(None, discovery.node_version);
-            assert!(version_run_as.lock().unwrap().is_empty());
-        }
-
-        #[tokio::test]
-        async fn does_not_run_the_version_command_when_the_node_executable_is_unknown() {
-            let process = NodeProcess {
-                executable: None,
-                ..block_producer_process(&[])
-            };
-            let tools = FakeToolProbe {
-                version_output: Some("cardano-node 10.1.4 - linux-x86_64 - ghc-9.6".to_string()),
-                ..Default::default()
-            };
-            let version_run_as = tools.version_run_as.clone();
-
-            let discovery = discover(
-                process,
-                FakeProbes {
-                    tools,
-                    ..Default::default()
-                },
-            )
-            .await;
-
-            assert_eq!(None, discovery.node_version);
-            assert!(version_run_as.lock().unwrap().is_empty());
         }
 
         #[tokio::test]
@@ -1171,40 +986,6 @@ pub(crate) mod tests {
                 discovery.operational_certificate_path
             );
         }
-
-        #[tokio::test]
-        async fn leaves_the_node_version_undiscovered_when_the_version_command_fails() {
-            let discovery = discover(block_producer_process(&[]), FakeProbes::default()).await;
-
-            assert_eq!(None, discovery.node_version);
-        }
-
-        #[tokio::test]
-        async fn leaves_the_node_version_undiscovered_when_its_output_is_unexpected() {
-            let tools = FakeToolProbe {
-                version_output: Some("something else 1.0".to_string()),
-                ..Default::default()
-            };
-
-            let discovery = discover(
-                block_producer_process(&[]),
-                FakeProbes {
-                    tools,
-                    ..Default::default()
-                },
-            )
-            .await;
-
-            assert_eq!(None, discovery.node_version);
-        }
-
-        #[tokio::test]
-        async fn leaves_the_cardano_cli_path_undiscovered_when_not_found() {
-            let discovery = discover(block_producer_process(&[]), FakeProbes::default()).await;
-
-            assert_eq!(None, discovery.cardano_cli_path);
-        }
-
         fn process_with_node_files() -> NodeProcess {
             block_producer_process(&[
                 "--config",
@@ -1213,7 +994,6 @@ pub(crate) mod tests {
                 "/opt/cardano/topology.json",
             ])
         }
-
         async fn discover_with_files(files: &[(&str, &str)]) -> CardanoDiscovery {
             discover(
                 process_with_node_files(),

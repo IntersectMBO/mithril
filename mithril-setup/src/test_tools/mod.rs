@@ -31,4 +31,3 @@ macro_rules! current_function_path {
         std::path::PathBuf::from($crate::test_tools::format_current_function_path(f))
     }};
 }
-pub use current_function_path;

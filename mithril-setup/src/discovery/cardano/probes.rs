@@ -56,24 +56,3 @@ pub trait FileProbe: Send + Sync {
     /// Returns the content of the given file
     async fn read_to_string(&self, path: &Path) -> anyhow::Result<String>;
 }
-
-/// Inspects the Cardano binaries
-#[async_trait]
-pub trait ToolProbe: Send + Sync {
-    /// Returns the raw output of the `--version` command of the given node executable
-    ///
-    /// The command runs with the identity of the node process, so that the node binary is not
-    /// granted more privileges than the node already has (the setup may run as root).
-    async fn node_version_output(
-        &self,
-        node_executable: &Path,
-        run_as: ProcessOwner,
-    ) -> anyhow::Result<String>;
-
-    /// Returns the path of the `cardano-cli` executable, looking first beside the node executable
-    /// when it is known, then in the search path
-    async fn find_cardano_cli(
-        &self,
-        node_executable: Option<&Path>,
-    ) -> anyhow::Result<Option<PathBuf>>;
-}
