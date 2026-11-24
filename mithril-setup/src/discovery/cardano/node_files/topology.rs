@@ -165,7 +165,10 @@ mod tests {
             .iter()
             .map(|group| (group.advertised, group.trustable))
             .collect();
-        assert_eq!(vec![(Some(true), Some(false)), (Some(false), Some(true))], flags);
+        assert_eq!(
+            vec![(Some(true), Some(false)), (Some(false), Some(true))],
+            flags
+        );
     }
 
     #[test]

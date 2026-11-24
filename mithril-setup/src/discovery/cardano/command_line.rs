@@ -69,6 +69,11 @@ impl NodeCommandLine {
         has_credentials && !self.start_as_non_producing_node
     }
 
+    /// Check if the node is started as a non-producing node
+    pub fn is_a_non_producing_node(&self) -> bool {
+        self.start_as_non_producing_node
+    }
+
     /// Check if the node is using a KES agent
     pub fn is_using_kes_agent(&self) -> bool {
         self.kes_agent_socket.is_some()
@@ -272,6 +277,42 @@ mod tests {
         ]);
 
         assert!(!command_line.is_block_producer());
+    }
+
+    #[test]
+    fn a_node_started_with_the_non_producing_flag_or_its_deprecated_alias_is_a_non_producing_node()
+    {
+        assert!(parse(&["run", "--start-as-non-producing-node"]).is_a_non_producing_node());
+        assert!(parse(&["run", "--non-producing-node"]).is_a_non_producing_node());
+    }
+
+    #[test]
+    fn a_node_started_as_non_producing_is_a_non_producing_node_even_with_credentials() {
+        let command_line = parse(&[
+            "run",
+            "--shelley-kes-key",
+            "kes.skey",
+            "--shelley-operational-certificate",
+            "node.cert",
+            "--start-as-non-producing-node",
+        ]);
+
+        assert!(command_line.is_a_non_producing_node());
+    }
+
+    #[test]
+    fn a_node_started_without_the_non_producing_flag_is_not_a_non_producing_node() {
+        assert!(!parse(&["run"]).is_a_non_producing_node());
+        assert!(
+            !parse(&[
+                "run",
+                "--shelley-kes-key",
+                "kes.skey",
+                "--shelley-operational-certificate",
+                "node.cert",
+            ])
+            .is_a_non_producing_node()
+        );
     }
 
     #[test]

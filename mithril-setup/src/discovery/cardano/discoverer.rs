@@ -303,16 +303,31 @@ fn select_node(
         return Err(CardanoDiscoveryError::NoCardanoNode);
     }
 
-    let (mut block_producers, mut relays): (Vec<_>, Vec<_>) = nodes
+    let (mut block_producers, other_nodes): (Vec<_>, Vec<_>) = nodes
         .into_iter()
         .partition(|node| node.command_line.is_block_producer());
+    let (mut non_producing_nodes, mut relays): (Vec<_>, Vec<_>) = other_nodes
+        .into_iter()
+        .partition(|node| node.command_line.is_a_non_producing_node());
 
     match block_producers.len() {
-        // No block producer, One relay
-        0 if relays.len() == 1 => Ok((relays.remove(0), NodeRole::Relay)),
+        // No block producer, one relay
+        0 if non_producing_nodes.is_empty() && relays.len() == 1 => {
+            Ok((relays.remove(0), NodeRole::Relay))
+        },
+        // No block producer, and non producing node(s)
+        0 if !non_producing_nodes.is_empty() => Err(CardanoDiscoveryError::BlockProducerNotHandled {
+            node: non_producing_nodes.remove(0).instance,
+            reason: "The node is started as a non-producing node, run the setup beside the active block producer"
+                .to_string(),
+        }),
         // No block producer
         0 => Err(CardanoDiscoveryError::NoBlockProducer {
-            nodes: relays.into_iter().map(|node| node.instance).collect(),
+            nodes: non_producing_nodes
+                .into_iter()
+                .chain(relays)
+                .map(|node| node.instance)
+                .collect(),
         }),
         // One block producer
         1 => {
@@ -800,6 +815,85 @@ pub(crate) mod tests {
             let discovery = discoverer.discover().await.unwrap();
 
             assert_eq!(43, discovery.node.pid);
+        }
+
+        async fn discover_among(
+            processes: Vec<NodeProcess>,
+        ) -> Result<CardanoDiscovery, CardanoDiscoveryError> {
+            FakeProbes {
+                processes: FakeProcessProbe {
+                    processes,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+            .discoverer()
+            .discover()
+            .await
+        }
+
+        fn assert_non_producing_node_not_handled(
+            result: Result<CardanoDiscovery, CardanoDiscoveryError>,
+            expected_pid: u32,
+        ) {
+            match result {
+                Err(CardanoDiscoveryError::BlockProducerNotHandled { node, reason }) => {
+                    assert_eq!(expected_pid, node.pid);
+                    assert_eq!(
+                        "The node is started as a non-producing node, run the setup beside the active block producer",
+                        reason
+                    );
+                }
+                _ => panic!("Expected BlockProducerNotHandled, got {result:?}"),
+            }
+        }
+
+        #[tokio::test]
+        async fn fails_when_the_only_running_node_is_started_as_non_producing_with_credentials() {
+            let standby_args: Vec<&str> = BLOCK_PRODUCER_ARGS
+                .iter()
+                .copied()
+                .chain(["--start-as-non-producing-node"])
+                .collect();
+
+            let result = discover_among(vec![node_process(42, &standby_args)]).await;
+
+            assert_non_producing_node_not_handled(result, 42);
+        }
+
+        #[tokio::test]
+        async fn fails_when_the_only_running_node_is_started_as_non_producing_without_credentials()
+        {
+            let result = discover_among(vec![node_process(
+                42,
+                &["run", "--start-as-non-producing-node"],
+            )])
+            .await;
+
+            assert_non_producing_node_not_handled(result, 42);
+        }
+
+        #[tokio::test]
+        async fn fails_on_the_non_producing_node_when_it_runs_beside_a_relay_without_block_producer()
+         {
+            let result = discover_among(vec![
+                node_process(42, &["run"]),
+                node_process(43, &["run", "--start-as-non-producing-node"]),
+            ])
+            .await;
+
+            assert_non_producing_node_not_handled(result, 43);
+        }
+
+        #[tokio::test]
+        async fn fails_on_the_first_non_producing_node_when_several_run_without_block_producer() {
+            let result = discover_among(vec![
+                node_process(42, &["run", "--start-as-non-producing-node"]),
+                node_process(43, &["run", "--non-producing-node"]),
+            ])
+            .await;
+
+            assert_non_producing_node_not_handled(result, 42);
         }
 
         #[tokio::test]
