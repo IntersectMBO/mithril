@@ -5,6 +5,8 @@ use serde::de::DeserializeOwned;
 
 use mithril_client::MithrilResult;
 
+use crate::utils::http_client_builder;
+
 use super::{GitHubRelease, GitHubReleaseRetriever};
 
 pub struct ReqwestGitHubApiClient {
@@ -12,9 +14,23 @@ pub struct ReqwestGitHubApiClient {
     github_token: Option<String>,
 }
 
+/// Environment variable holding the GitHub token for authenticated API calls
+const GITHUB_TOKEN_ENV_VAR: &str = "GITHUB_TOKEN";
+
 impl ReqwestGitHubApiClient {
+    /// GitHub token for authenticated API calls read from the `GITHUB_TOKEN` environment variable,
+    /// an empty value is ignored.
+    ///
+    /// The token is read from the environment instead of a command line argument so that it does
+    /// not appear in the process list.
+    pub fn token_from_env() -> Option<String> {
+        std::env::var(GITHUB_TOKEN_ENV_VAR)
+            .ok()
+            .filter(|token| !token.is_empty())
+    }
+
     pub fn new(github_token: Option<String>) -> MithrilResult<Self> {
-        let client = Client::builder()
+        let client = http_client_builder()
             .user_agent("mithril-client")
             .build()
             .context("Failed to build Reqwest GitHub API client")?;

@@ -1,3 +1,5 @@
+use std::net::IpAddr;
+
 use reqwest::Url;
 
 pub fn enforce_trailing_slash(mut url: Url) -> Url {
@@ -10,6 +12,19 @@ pub fn enforce_trailing_slash(mut url: Url) -> Url {
         url.set_path(&format!("{}/", url.path()));
         url
     }
+}
+
+/// Whether the host of the URL is a loopback address (including an IPv4-mapped IPv6 one) or `localhost`
+pub fn is_loopback(url: &Url) -> bool {
+    // The host of an HTTP(S) URL is lowercased by the parser, and an IPv6 host is enclosed in brackets
+    url.host_str().is_some_and(|host| {
+        matches!(host, "localhost" | "localhost.")
+            || host
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .parse::<IpAddr>()
+                .is_ok_and(|ip| ip.to_canonical().is_loopback())
+    })
 }
 
 #[cfg(test)]
@@ -29,5 +44,34 @@ mod tests {
             url_with_trailing_slash,
             enforce_trailing_slash(url_with_trailing_slash.clone())
         );
+    }
+
+    #[test]
+    fn loopback_hosts_are_loopback() {
+        for url in [
+            "http://127.0.0.1:5001/",
+            "http://127.1.2.3:5001/",
+            "http://[::1]:5001/",
+            "http://localhost:5001/",
+            "http://LOCALHOST:5001/",
+            "http://localhost.:5001/",
+            "http://[::ffff:127.0.0.1]:5001/",
+        ] {
+            assert!(is_loopback(&Url::parse(url).unwrap()), "{url}");
+        }
+    }
+
+    #[test]
+    fn other_hosts_are_not_loopback() {
+        for url in [
+            "http://192.168.1.10:5001/",
+            "http://[2001:db8::1]:5001/",
+            "http://ipfs.example.com:5001/",
+            "http://localhost.example.com:5001/",
+            "http://[::ffff:192.168.1.10]:5001/",
+            "file:///tmp/localhost",
+        ] {
+            assert!(!is_loopback(&Url::parse(url).unwrap()), "{url}");
+        }
     }
 }

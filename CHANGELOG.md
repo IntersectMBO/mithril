@@ -19,6 +19,9 @@ As a minor extension, we have adopted a slightly different versioning convention
 
 - Support for stable certificate chain cache in the client library, CLI and WASM, which no longer requires the `unstable` feature of the library, the `--unstable` flag of the CLI or the `unstable` option of the WASM client.
 
+- **DEPRECATED** in Mithril client CLI:
+  - The `--github-token` option of the `tools utxo-hd snapshot-converter` command, as the token appears in the process list (set the token in the `GITHUB_TOKEN` environment variable instead).
+
 - **BREAKING** changes in Mithril client library:
   - The `MithrilCertificateVerifier::new` function takes the certificate chain cache and its verification mode as parameters, which only users building the certificate verifier without the `ClientBuilder` must provide (`None` and `CertificateVerifierCacheMode::default()` to keep the previous behavior).
 
@@ -30,6 +33,7 @@ As a minor extension, we have adopted a slightly different versioning convention
     - New `credentials` field of the `ipfs_rpc_server_config` configuration parameter of the Mithril aggregator to authenticate to a Kubo RPC API protected by `API.Authorizations`, with a Basic or a Bearer authorization.
     - The Mithril client library and CLI can authenticate to a Kubo RPC API protected by `API.Authorizations` with a Bearer token, set with the new `ClientBuilder::with_ipfs_rpc_auth_token` function of the library or the new `--ipfs-rpc-auth-token` option (`IPFS_RPC_AUTH_TOKEN` environment variable) of the `cardano-db download` command of the CLI. Credentials in the IPFS RPC URL still work and take precedence over the token.
     - The Mithril client library and CLI no longer download all the immutable files through IPFS first when an IPFS RPC URL is configured: IPFS is now tried first only for the share advertised by the aggregator, the other files try IPFS last.
+    - New `--ipfs-managed-node` option of the `cardano-db download` command of the Mithril client CLI to download through a Kubo node run by the client for the duration of the download, with the Kubo release downloaded from GitHub and cached on first use.
   - The SNARK proof systems are enabled by default in the Mithril nodes, client and libraries. Only `mithril-stm` and `mithril-common` can still leave them out with `--no-default-features`.
   - Mithril setup:
     - The `signer` command of the Mithril setup runs a minimal setup orchestrator, which discovers, reviews in an interactive terminal table, validates and saves the signer configuration values.

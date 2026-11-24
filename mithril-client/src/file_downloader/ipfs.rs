@@ -94,7 +94,14 @@ impl IpfsFileDownloader {
                 headers.insert(AUTHORIZATION, value);
             }
         }
-        let http_client = reqwest::ClientBuilder::new()
+
+        let mut http_client_builder = reqwest::ClientBuilder::new();
+        if url::is_loopback(&rpc_base_url) {
+            // A system proxy can't reach a local Kubo node, calls through it would fail
+            http_client_builder = http_client_builder.no_proxy();
+        }
+
+        let http_client = http_client_builder
             .default_headers(headers)
             .read_timeout(KUBO_RPC_API_READ_TIMEOUT)
             .build()
@@ -192,9 +199,9 @@ impl IpfsFileDownloader {
                 Ok(())
             }
             Err(error) => match error.downcast_ref::<reqwest::Error>() {
-                Some(error) if error.is_connect() => Err(anyhow!(
-                    "Cannot reach the Kubo RPC API at '{rpc_base_url}'"
-                )),
+                Some(error) if error.is_connect() => {
+                    Err(anyhow!("Cannot reach the Kubo RPC API at '{rpc_base_url}'"))
+                }
                 Some(error) if error.is_timeout() => Err(anyhow!(
                     "Kubo RPC API at '{rpc_base_url}' did not answer within {:?}",
                     self.kubo_rpc_api_check_timeout
@@ -507,13 +514,12 @@ mod tests {
 
     #[tokio::test]
     async fn kubo_rpc_api_check_fails_without_credentials_when_kubo_rpc_api_is_unreachable() {
-        let closed_port = TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+        let closed_port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
         let ipfs_file_downloader = IpfsFileDownloader::new(
-            Url::parse(&format!("http://user:secret-password@127.0.0.1:{closed_port}/")).unwrap(),
+            Url::parse(&format!(
+                "http://user:secret-password@127.0.0.1:{closed_port}/"
+            ))
+            .unwrap(),
             FeedbackSender::new(&[]),
             TestLogger::stdout(),
             None,
