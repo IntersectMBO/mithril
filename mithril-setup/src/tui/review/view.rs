@@ -24,8 +24,8 @@ const TABLE_MIN_HEIGHT: u16 = 3;
 const BUTTONS_HEIGHT: u16 = 1;
 /// Space between two buttons
 const BUTTONS_SPACING: u16 = 3;
-/// Height of the footer: description and help lines, plus top and bottom borders
-const FOOTER_HEIGHT: u16 = 4;
+/// Height of the footer: description, errors and help lines, plus top and bottom borders
+const FOOTER_HEIGHT: u16 = 5;
 /// Width of the label column
 // Maybe later: compute the label width from the longest label (with a maximum)?
 const LABEL_WIDTH: u16 = 28;
@@ -112,12 +112,12 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
     frame.render_widget(abort_button, abort_area);
     frame.render_widget(continue_button, continue_area);
 
-    let description = match model.mode() {
-        Mode::OnButton(Button::Abort) => ABORT_DESCRIPTION,
-        Mode::OnButton(Button::Continue) => CONTINUE_DESCRIPTION,
+    let (description, errors) = match model.mode() {
+        Mode::OnButton(Button::Abort) => (ABORT_DESCRIPTION, String::new()),
+        Mode::OnButton(Button::Continue) => (CONTINUE_DESCRIPTION, String::new()),
         Mode::Navigating | Mode::Editing { .. } => model_rows
             .get(model.selected())
-            .map(|row| row.description)
+            .map(|row| (row.description, row.errors.join("; ")))
             .unwrap_or_default(),
     };
     let help = match model.mode() {
@@ -125,8 +125,13 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
         Mode::Editing { .. } => EDITING_HELP,
         Mode::OnButton(_) => BUTTONS_HELP,
     };
-    let footer = Paragraph::new(vec![Line::from(description), Line::from(help).dim()])
-        .block(Block::bordered());
+    // The errors line is drawn even when empty, so the help line doesn't move
+    let footer = Paragraph::new(vec![
+        Line::from(description),
+        Line::from(errors).red(),
+        Line::from(help).dim(),
+    ])
+    .block(Block::bordered());
     frame.render_widget(footer, footer_area);
 }
 
@@ -200,6 +205,13 @@ mod tests {
         lines(&rendered_buffer(model)).join("\n")
     }
 
+    /// Render the model and return the drawn text of the footer only
+    fn rendered_footer(model: &ReviewModel) -> String {
+        let lines = lines(&rendered_buffer(model));
+
+        lines[lines.len() - FOOTER_HEIGHT as usize..].join("\n")
+    }
+
     /// Whether the cell at `offset` characters after the start of `text` is drawn reversed
     fn is_reversed(buffer: &Buffer, text: &str, offset: usize) -> bool {
         let (y, x) = lines(buffer)
@@ -252,6 +264,19 @@ mod tests {
 
         assert!(text.contains("Name of the network"), "{text}");
         assert!(!text.contains("Path of the node socket"), "{text}");
+    }
+
+    #[test]
+    fn footer_shows_the_errors_of_the_selected_row_only() {
+        let mut model = model();
+
+        let footer = rendered_footer(&model);
+        assert!(!footer.contains("Network is required"), "{footer}");
+
+        model.update(Action::Down);
+
+        let footer = rendered_footer(&model);
+        assert!(footer.contains("Network is required"), "{footer}");
     }
 
     #[test]

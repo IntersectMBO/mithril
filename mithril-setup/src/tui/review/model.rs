@@ -1,7 +1,7 @@
 //! Pure model of the review table
 
 use crate::runner::ReviewOutcome;
-use crate::schema::{FieldError, FieldSpec};
+use crate::schema::{FieldError, FieldSpec, check_store};
 use crate::store::{Origin, Store};
 
 /// Actions the user can perform on the review table
@@ -133,13 +133,29 @@ pub struct ReviewModel {
 
 impl ReviewModel {
     /// Create a model reviewing the store values described by the specs
+    ///
+    /// The values are checked right away, their errors are added to the given ones.
     pub fn new(specs: Vec<FieldSpec>, store: Store, errors: Vec<FieldError>) -> Self {
-        Self {
+        let mut model = Self {
             specs,
             store,
             errors,
             selected: 0,
             mode: Mode::Navigating,
+        };
+        model.check_all_values();
+
+        model
+    }
+
+    /// Add the errors of all the values, skipping the ones already known
+    fn check_all_values(&mut self) {
+        if let Err(errors) = check_store(&self.specs, &self.store) {
+            for error in errors {
+                if !self.errors.contains(&error) {
+                    self.errors.push(error);
+                }
+            }
         }
     }
 
@@ -361,7 +377,7 @@ mod tests {
         let mut store = Store::default();
         store.set("b", "value b", Origin::Discovered);
         let errors = vec![
-            FieldError::new("a", "a is required"),
+            FieldError::new("a", "A is required"),
             FieldError::new("b", "first"),
             FieldError::new("b", "second"),
         ];
@@ -376,7 +392,7 @@ mod tests {
                     description: "description",
                     value: None,
                     origin: None,
-                    errors: vec!["a is required".to_string()],
+                    errors: vec!["A is required".to_string()],
                 },
                 Row {
                     key: "b",
@@ -389,6 +405,52 @@ mod tests {
             ],
             model.rows()
         );
+    }
+
+    mod checks_on_open {
+        use super::*;
+
+        fn errors_of_row(model: &ReviewModel, index: usize) -> Vec<String> {
+            model.rows().remove(index).errors
+        }
+
+        #[test]
+        fn values_are_checked_when_the_review_opens() {
+            let model = ReviewModel::new(vec![spec("a", "A")], Store::default(), vec![]);
+
+            assert_eq!(vec!["A is required".to_string()], errors_of_row(&model, 0));
+        }
+
+        #[test]
+        fn given_errors_are_kept_next_to_the_errors_found_on_open() {
+            let errors = vec![FieldError::new("a", "socket not found")];
+
+            let model = ReviewModel::new(vec![spec("a", "A")], Store::default(), errors);
+
+            assert_eq!(
+                vec!["socket not found".to_string(), "A is required".to_string()],
+                errors_of_row(&model, 0)
+            );
+        }
+
+        #[test]
+        fn errors_given_and_found_on_open_are_not_duplicated() {
+            let errors = vec![FieldError::new("a", "A is required")];
+
+            let model = ReviewModel::new(vec![spec("a", "A")], Store::default(), errors);
+
+            assert_eq!(vec!["A is required".to_string()], errors_of_row(&model, 0));
+        }
+
+        #[test]
+        fn first_row_is_selected_at_start_even_with_errors_further_down() {
+            let mut store = Store::default();
+            store.set("a", "value", Origin::Discovered);
+
+            let model = ReviewModel::new(vec![spec("a", "A"), spec("b", "B")], store, vec![]);
+
+            assert_eq!(0, model.selected());
+        }
     }
 
     mod helpers {
