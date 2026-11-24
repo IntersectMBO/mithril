@@ -8,7 +8,8 @@ use mithril_common::{
     crypto_helper::EraMarkersSigner,
     entities::{Epoch, SupportedEra},
 };
-use mithril_era::{EraMarker, adapters::EraMarkersPayloadCardanoChain};
+#[allow(deprecated)]
+use mithril_era::{EraMarker, adapters::LegacyEraMarkersPayloadCardanoChain};
 
 type EraToolsResult<R> = StdResult<R>;
 
@@ -48,7 +49,8 @@ impl EraTools {
             };
             era_markers.push(era_marker);
         }
-        let era_markers_payload = EraMarkersPayloadCardanoChain {
+        #[allow(deprecated)]
+        let era_markers_payload = LegacyEraMarkersPayloadCardanoChain {
             markers: era_markers,
             signature: None,
         }

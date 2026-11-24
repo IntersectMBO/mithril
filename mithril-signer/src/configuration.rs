@@ -1,6 +1,7 @@
 use anyhow::Context;
 use config::{ConfigError, Map, Source, Value};
 use serde::Deserialize;
+use slog::Logger;
 use std::{path::PathBuf, sync::Arc};
 
 use mithril_cardano_node_chain::chain_observer::ChainObserver;
@@ -266,12 +267,13 @@ impl Configuration {
     pub fn build_era_reader_adapter(
         &self,
         chain_observer: Arc<dyn ChainObserver>,
+        logger: Logger,
     ) -> StdResult<Arc<dyn EraReaderAdapter>> {
         EraReaderAdapterBuilder::new(
             &self.era_reader_adapter_type,
             &self.era_reader_adapter_params,
         )
-        .build(chain_observer)
+        .build(chain_observer, logger)
         .with_context(|| {
             format!(
                 "Configuration: can not create era reader for adapter '{}'.",

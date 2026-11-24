@@ -320,7 +320,8 @@ impl<'a> DependenciesBuilder<'a> {
         };
 
         let era_reader = Arc::new(EraReader::new(
-            self.config.build_era_reader_adapter(chain_observer.clone())?,
+            self.config
+                .build_era_reader_adapter(chain_observer.clone(), self.root_logger())?,
         ));
         let era_epoch_token = era_reader
             .read_era_epoch_token(ticker_service.get_current_epoch().await?)

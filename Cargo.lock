@@ -5138,6 +5138,9 @@ dependencies = [
  "mithril-common",
  "serde",
  "serde_json",
+ "slog",
+ "slog-async",
+ "slog-term",
  "thiserror 2.0.21",
  "tokio",
 ]
