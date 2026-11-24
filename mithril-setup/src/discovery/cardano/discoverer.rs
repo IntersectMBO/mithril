@@ -317,7 +317,9 @@ fn select_node(
         // One block producer
         1 => {
             let node = block_producers.remove(0);
-            if node.command_line.is_using_kes_agent() {
+            if node.command_line.is_using_kes_agent()
+                && !node.command_line.has_kes_key_and_operational_certificate()
+            {
                 return Err(CardanoDiscoveryError::BlockProducerNotHandled {
                     node: node.instance,
                     reason: "The node is using a KES agent, use KES keys instead".to_string(),
@@ -659,6 +661,31 @@ pub(crate) mod tests {
                 }
                 _ => panic!("Expected BlockProducerNotHandled, got {result:?}"),
             }
+        }
+
+        #[tokio::test]
+        async fn selects_a_block_producer_given_kes_keys_besides_a_kes_agent() {
+            let args: Vec<&str> = BLOCK_PRODUCER_ARGS
+                .iter()
+                .copied()
+                .chain(["--shelley-kes-agent-socket", "/opt/cardano/kes-agent.socket"])
+                .collect();
+            let discoverer = FakeProbes {
+                processes: FakeProcessProbe {
+                    processes: vec![node_process(42, &args)],
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+            .discoverer();
+
+            let discovery = discoverer.discover().await.unwrap();
+
+            assert_eq!(NodeRole::BlockProducer, discovery.role);
+            assert_eq!(
+                Some(PathBuf::from("/opt/cardano/kes-agent.socket")),
+                discovery.kes_agent_socket
+            );
         }
 
         #[tokio::test]

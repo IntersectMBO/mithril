@@ -81,7 +81,7 @@ impl NodeCommandLine {
         self.bulk_credentials_file.is_some() && !self.has_kes_key_and_operational_certificate()
     }
 
-    fn has_kes_key_and_operational_certificate(&self) -> bool {
+    pub fn has_kes_key_and_operational_certificate(&self) -> bool {
         self.kes_key.is_some() && self.operational_certificate.is_some()
     }
 }
