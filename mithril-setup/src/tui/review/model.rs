@@ -122,6 +122,34 @@ pub struct Row {
     pub errors: Vec<String>,
 }
 
+/// Status of a row value
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    /// The value is set and has no error
+    Ok,
+
+    /// The value is unset and has no error (it is optional)
+    NotSet,
+
+    /// The value is unset and has errors
+    Missing,
+
+    /// The value is set and has errors
+    Invalid,
+}
+
+impl Row {
+    /// Status of the row value, from its errors
+    pub fn status(&self) -> Status {
+        match (&self.value, self.errors.is_empty()) {
+            (Some(_), true) => Status::Ok,
+            (None, true) => Status::NotSet,
+            (None, false) => Status::Missing,
+            (Some(_), false) => Status::Invalid,
+        }
+    }
+}
+
 /// Model of the review table
 pub struct ReviewModel {
     specs: Vec<FieldSpec>,
@@ -405,6 +433,41 @@ mod tests {
             ],
             model.rows()
         );
+    }
+
+    mod status {
+        use super::*;
+
+        fn row(value: Option<&str>, errors: &[&str]) -> Row {
+            Row {
+                key: "a",
+                label: "A",
+                description: "description",
+                value: value.map(str::to_string),
+                origin: value.map(|_| Origin::Discovered),
+                errors: errors.iter().map(|error| error.to_string()).collect(),
+            }
+        }
+
+        #[test]
+        fn set_value_without_error_is_ok() {
+            assert_eq!(Status::Ok, row(Some("value"), &[]).status());
+        }
+
+        #[test]
+        fn unset_value_without_error_is_not_set() {
+            assert_eq!(Status::NotSet, row(None, &[]).status());
+        }
+
+        #[test]
+        fn unset_value_with_errors_is_missing() {
+            assert_eq!(Status::Missing, row(None, &["A is required"]).status());
+        }
+
+        #[test]
+        fn set_value_with_errors_is_invalid() {
+            assert_eq!(Status::Invalid, row(Some("value"), &["invalid"]).status());
+        }
     }
 
     mod checks_on_open {

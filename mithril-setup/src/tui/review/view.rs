@@ -3,17 +3,22 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Flex, Layout};
 use ratatui::style::{Style, Stylize};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, HighlightSpacing, Paragraph, Row, Table, TableState};
 
 use crate::tui::review::columns::{COLUMN_SPACING, COLUMNS, HIGHLIGHT_SYMBOL, ValueColumn};
-use crate::tui::review::model::{Button, Mode, ReviewModel};
-use crate::tui::widgets::ButtonWidget;
+use crate::tui::review::model::{Button, Mode, ReviewModel, Status};
+use crate::tui::widgets::{ButtonWidget, WrappedText};
 
-const NAVIGATING_HELP: &str =
-    "↑/↓ move · Enter edit · Ctrl+S go to Continue · Esc go to Abort · Ctrl+C abort";
-const EDITING_HELP: &str = "Enter save · Esc cancel · Ctrl+C abort";
-const BUTTONS_HELP: &str = "←/→ choose · ↑ back to the table · Enter press · Ctrl+C abort";
+const NAVIGATING_HELP: &[&str] = &[
+    "↑/↓ move",
+    "Enter edit",
+    "Ctrl+S go to Continue",
+    "Esc go to Abort",
+    "Ctrl+C abort",
+];
+const EDITING_HELP: &[&str] = &["Enter save", "Esc cancel", "Ctrl+C abort"];
+const BUTTONS_HELP: &[&str] = &["←/→ choose", "↑ back to the table", "Enter press", "Ctrl+C abort"];
 
 const ABORT_DESCRIPTION: &str = "Quit the setup without saving the values";
 const CONTINUE_DESCRIPTION: &str = "Check the values and go to the next step";
@@ -25,19 +30,49 @@ const TABLE_MIN_HEIGHT: u16 = 3;
 const BUTTONS_HEIGHT: u16 = 1;
 /// Space between two buttons
 const BUTTONS_SPACING: u16 = 3;
-/// Height of the footer: description, errors and help lines, plus top and bottom borders
-const FOOTER_HEIGHT: u16 = 5;
+/// Height of the footer top and bottom borders, the height of its lines is added to it
+const FOOTER_BORDERS_HEIGHT: u16 = 2;
 
 /// Draw the review table, its buttons and its footer in the frame
 pub fn render(model: &ReviewModel, frame: &mut Frame) {
+    let model_rows = model.rows();
+
+    let (description, errors) = match model.mode() {
+        Mode::OnButton(Button::Abort) => (ABORT_DESCRIPTION, String::new()),
+        Mode::OnButton(Button::Continue) => (CONTINUE_DESCRIPTION, String::new()),
+        Mode::Navigating | Mode::Editing { .. } => model_rows
+            .get(model.selected())
+            .map(|row| {
+                let errors = match row.errors.as_slice() {
+                    [] => String::new(),
+                    [error] => format!("Error: {error}"),
+                    errors => format!("Errors: {}", errors.join("; ")),
+                };
+                (row.description, errors)
+            })
+            .unwrap_or_default(),
+    };
+    let help = match model.mode() {
+        Mode::Navigating => NAVIGATING_HELP,
+        Mode::Editing { .. } => EDITING_HELP,
+        Mode::OnButton(_) => BUTTONS_HELP,
+    };
+    // The footer takes the full width, its texts go on more lines when they don't fit
+    let footer_block = Block::bordered();
+    let footer_width = footer_block.inner(frame.area()).width.into();
+    let description_lines = WrappedText::words(description).lines(footer_width);
+    let errors_lines = WrappedText::words(&errors).lines(footer_width);
+    let help_lines = WrappedText::key_help(help).lines(footer_width);
+    let footer_lines_count = description_lines.len() + errors_lines.len() + help_lines.len();
+    let footer_height = FOOTER_BORDERS_HEIGHT + footer_lines_count as u16;
+
     let [table_area, buttons_area, footer_area] = Layout::vertical([
         Constraint::Min(TABLE_MIN_HEIGHT),
         Constraint::Length(BUTTONS_HEIGHT),
-        Constraint::Length(FOOTER_HEIGHT),
+        Constraint::Length(footer_height),
     ])
     .areas(frame.area());
 
-    let model_rows = model.rows();
     let table_block = Block::bordered().title(" Review ");
     let value_column = ValueColumn::in_table(table_block.inner(table_area));
 
@@ -49,16 +84,23 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
             _ => value_column.value(row.value.as_deref().unwrap_or_default()),
         };
         let origin = row.origin.map(|origin| format!("{origin:?}")).unwrap_or_default();
+        let status = match row.status() {
+            Status::Ok => Span::raw("OK").green(),
+            Status::NotSet => Span::raw("Not set").dim(),
+            Status::Missing => Span::raw("Missing").red(),
+            Status::Invalid => Span::raw("Invalid").red(),
+        };
 
         Row::new(vec![
             Cell::from(row.label),
             Cell::from(value),
             Cell::from(origin),
+            Cell::from(status),
         ])
     });
 
     let table = Table::new(table_rows, COLUMNS)
-        .header(Row::new(vec!["Label", "Value", "Origin"]).bold())
+        .header(Row::new(vec!["Label", "Value", "Origin", "Status"]).bold())
         .block(table_block)
         .column_spacing(COLUMN_SPACING)
         // While editing the row is bold, so the reversed cursor stands out
@@ -101,26 +143,14 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
     frame.render_widget(abort_button, abort_area);
     frame.render_widget(continue_button, continue_area);
 
-    let (description, errors) = match model.mode() {
-        Mode::OnButton(Button::Abort) => (ABORT_DESCRIPTION, String::new()),
-        Mode::OnButton(Button::Continue) => (CONTINUE_DESCRIPTION, String::new()),
-        Mode::Navigating | Mode::Editing { .. } => model_rows
-            .get(model.selected())
-            .map(|row| (row.description, row.errors.join("; ")))
-            .unwrap_or_default(),
-    };
-    let help = match model.mode() {
-        Mode::Navigating => NAVIGATING_HELP,
-        Mode::Editing { .. } => EDITING_HELP,
-        Mode::OnButton(_) => BUTTONS_HELP,
-    };
-    // The errors line is drawn even when empty, so the help line doesn't move
-    let footer = Paragraph::new(vec![
-        Line::from(description),
-        Line::from(errors).red(),
-        Line::from(help).dim(),
-    ])
-    .block(Block::bordered());
+    // An empty errors text still takes a line, so the help lines don't move between rows
+    let footer_lines: Vec<Line> = description_lines
+        .into_iter()
+        .map(Line::from)
+        .chain(errors_lines.into_iter().map(|line| Line::from(line).red()))
+        .chain(help_lines.into_iter().map(|line| Line::from(line).dim()))
+        .collect();
+    let footer = Paragraph::new(footer_lines).block(footer_block);
     frame.render_widget(footer, footer_area);
 }
 
@@ -135,6 +165,7 @@ mod tests {
     use crate::store::{Origin, Store};
     use crate::tui::review::columns::VALUE_MAX_WIDTH;
     use crate::tui::review::model::Action;
+    use crate::tui::widgets::KEY_HELP_SEPARATOR;
 
     use super::*;
 
@@ -167,11 +198,11 @@ mod tests {
     }
 
     fn rendered_buffer(model: &ReviewModel) -> Buffer {
-        rendered_buffer_with_width(model, 100)
+        rendered_buffer_with_size(model, 100, 12)
     }
 
-    fn rendered_buffer_with_width(model: &ReviewModel, width: u16) -> Buffer {
-        let mut terminal = Terminal::new(TestBackend::new(width, 12)).unwrap();
+    fn rendered_buffer_with_size(model: &ReviewModel, width: u16, height: u16) -> Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal.draw(|frame| render(model, frame)).unwrap();
 
         terminal.backend().buffer().clone()
@@ -193,12 +224,19 @@ mod tests {
     /// Render the model and return the drawn text of the footer only
     fn rendered_footer(model: &ReviewModel) -> String {
         let lines = lines(&rendered_buffer(model));
+        // The description, errors and help fit on one line each in the default test terminal
+        let footer_height = FOOTER_BORDERS_HEIGHT as usize + 3;
 
-        lines[lines.len() - FOOTER_HEIGHT as usize..].join("\n")
+        lines[lines.len() - footer_height..].join("\n")
     }
 
-    /// Whether the cell at `offset` characters after the start of `text` is drawn reversed
-    fn is_reversed(buffer: &Buffer, text: &str, offset: usize) -> bool {
+    /// The help with all its items on one line
+    fn one_line(help: &[&str]) -> String {
+        help.join(KEY_HELP_SEPARATOR)
+    }
+
+    /// Modifiers of the cell at `offset` characters after the start of `text`
+    fn modifier_at(buffer: &Buffer, text: &str, offset: usize) -> Modifier {
         let (y, x) = lines(buffer)
             .iter()
             .enumerate()
@@ -208,25 +246,35 @@ mod tests {
             })
             .unwrap_or_else(|| panic!("'{text}' not found in:\n{}", lines(buffer).join("\n")));
 
-        buffer[((x + offset) as u16, y as u16)]
-            .modifier
-            .contains(Modifier::REVERSED)
+        buffer[((x + offset) as u16, y as u16)].modifier
+    }
+
+    /// Whether the cell at `offset` characters after the start of `text` is drawn reversed
+    fn is_reversed(buffer: &Buffer, text: &str, offset: usize) -> bool {
+        modifier_at(buffer, text, offset).contains(Modifier::REVERSED)
     }
 
     #[test]
     fn shows_the_columns_headers() {
         let text = rendered_text(&model());
 
-        for header in ["Label", "Value", "Origin"] {
+        for header in ["Label", "Value", "Origin", "Status"] {
             assert!(text.contains(header), "'{header}' not found in:\n{text}");
         }
     }
 
     #[test]
-    fn shows_each_row_label_value_and_origin() {
+    fn shows_each_row_label_value_origin_and_status() {
         let text = rendered_text(&model());
 
-        for expected in ["Socket path", "/ipc/node.socket", "Discovered", "Network"] {
+        for expected in [
+            "Socket path",
+            "/ipc/node.socket",
+            "Discovered",
+            "OK",
+            "Network",
+            "Missing",
+        ] {
             assert!(
                 text.contains(expected),
                 "'{expected}' not found in:\n{text}"
@@ -255,15 +303,53 @@ mod tests {
         model.update(Action::Down);
 
         let footer = rendered_footer(&model);
-        assert!(footer.contains("Network is required"), "{footer}");
+        assert!(footer.contains("Error: Network is required"), "{footer}");
+    }
+
+    #[test]
+    fn footer_prefixes_several_errors_with_errors() {
+        let specs = vec![FieldSpec {
+            key: "network",
+            label: "Network",
+            description: "Name of the network",
+            presence: Presence::Optional,
+            rules: vec![],
+        }];
+        let errors = vec![
+            FieldError::new("network", "first"),
+            FieldError::new("network", "second"),
+        ];
+        let model = ReviewModel::new(specs, Store::default(), errors);
+
+        let footer = rendered_footer(&model);
+
+        assert!(footer.contains("Errors: first; second"), "{footer}");
+    }
+
+    #[test]
+    fn unset_optional_value_shows_not_set_dimmed() {
+        let specs = vec![FieldSpec {
+            key: "magic",
+            label: "Network magic",
+            description: "Magic number of the network",
+            presence: Presence::Optional,
+            rules: vec![],
+        }];
+        let model = ReviewModel::new(specs, Store::default(), vec![]);
+
+        let buffer = rendered_buffer(&model);
+
+        let text = lines(&buffer).join("\n");
+        assert!(!text.contains("OK"), "{text}");
+        assert!(modifier_at(&buffer, "Not set", 0).contains(Modifier::DIM));
     }
 
     #[test]
     fn shows_the_navigating_keys_help() {
         let text = rendered_text(&model());
 
-        assert!(text.contains(NAVIGATING_HELP), "{text}");
-        assert!(!text.contains(EDITING_HELP), "{text}");
+        assert!(text.contains(&one_line(NAVIGATING_HELP)), "{text}");
+        assert!(!text.contains(&one_line(EDITING_HELP)), "{text}");
     }
 
     #[test]
@@ -273,8 +359,8 @@ mod tests {
 
         let text = rendered_text(&model);
 
-        assert!(text.contains(EDITING_HELP), "{text}");
-        assert!(!text.contains(NAVIGATING_HELP), "{text}");
+        assert!(text.contains(&one_line(EDITING_HELP)), "{text}");
+        assert!(!text.contains(&one_line(NAVIGATING_HELP)), "{text}");
     }
 
     #[test]
@@ -310,6 +396,34 @@ mod tests {
         assert!(is_reversed(&buffer, "/ipc/node.socket", 16));
     }
 
+    mod narrow_terminal {
+        use super::*;
+
+        #[test]
+        fn help_goes_on_more_lines_on_a_narrow_terminal() {
+            let buffer = rendered_buffer_with_size(&model(), 60, 12);
+            let text = lines(&buffer).join("\n");
+
+            assert!(!text.contains(&one_line(NAVIGATING_HELP)), "{text}");
+            for item in NAVIGATING_HELP {
+                assert!(text.contains(item), "'{item}' not found in:\n{text}");
+            }
+        }
+
+        #[test]
+        fn error_goes_on_more_lines_on_a_narrow_terminal() {
+            let mut model = model();
+            model.update(Action::Down);
+
+            let buffer = rendered_buffer_with_size(&model, 24, 20);
+            let text = lines(&buffer).join("\n");
+
+            assert!(!text.contains("Error: Network is required"), "{text}");
+            assert!(text.contains("Error: Network is"), "{text}");
+            assert!(text.contains("required"), "{text}");
+        }
+    }
+
     mod long_values {
         use super::*;
 
@@ -330,7 +444,7 @@ mod tests {
 
         #[test]
         fn value_column_stops_at_its_maximum_width_on_a_wide_terminal() {
-            let buffer = rendered_buffer_with_width(&model_with_socket(&long_socket()), 160);
+            let buffer = rendered_buffer_with_size(&model_with_socket(&long_socket()), 160, 12);
             let text = lines(&buffer).join("\n");
 
             // "/ipc/" and the ellipsis take 6 of the maximum width, the origin follows right after

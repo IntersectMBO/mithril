@@ -11,14 +11,17 @@ const LABEL_WIDTH: u16 = 28;
 pub const VALUE_MAX_WIDTH: u16 = 70;
 /// Width of the origin column, fits the longest origin ("Discovered")
 const ORIGIN_WIDTH: u16 = 12;
-/// Columns of the table: label, value and origin
+/// Width of the status column, fits the longest status ("Not set", "Missing" and "Invalid")
+const STATUS_WIDTH: u16 = 7;
+/// Columns of the table: label, value, origin and status
 ///
 /// The value column shrinks first on narrow terminals, the extra width of wide terminals is left
-/// empty after the origin column, so the origin stays next to the value.
-pub const COLUMNS: [Constraint; 3] = [
+/// empty after the status column, so the origin and status stay next to the value.
+pub const COLUMNS: [Constraint; 4] = [
     Constraint::Length(LABEL_WIDTH),
     Constraint::Max(VALUE_MAX_WIDTH),
     Constraint::Length(ORIGIN_WIDTH),
+    Constraint::Length(STATUS_WIDTH),
 ];
 /// Space between two columns of the table
 pub const COLUMN_SPACING: u16 = 1;
@@ -39,7 +42,7 @@ impl ValueColumn {
     pub fn in_table(inner_area: Rect) -> Self {
         let highlight_width = Span::raw(HIGHLIGHT_SYMBOL).width() as u16;
         let columns_area = Rect::new(0, 0, inner_area.width.saturating_sub(highlight_width), 1);
-        let [_, value_area, _] = Layout::horizontal(COLUMNS)
+        let [_, value_area, _, _] = Layout::horizontal(COLUMNS)
             .spacing(COLUMN_SPACING)
             .areas(columns_area);
 
