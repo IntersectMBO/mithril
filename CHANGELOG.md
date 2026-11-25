@@ -17,6 +17,10 @@ As a minor extension, we have adopted a slightly different versioning convention
 
 - The Mithril aggregator creates the missing immutable files archives at startup, instead of during the next Cardano database snapshot creation. Note: this is only done if the `CardanoDatabase` signed entity is enabled in its configuration, and the Cardano database is not certified while the archives are being created.
 
+- New `dev-dijkstranet` Mithril network in the infrastructure, on the Cardano Dijkstranet test network with Cardano node `11.2`:
+  - The block producers of the signers run in Praos mode and trust their relay, so that they sync from an empty database.
+  - The test stake pools are registered with a BLS key in the Dijkstra era.
+
 - Support for stable certificate chain cache in the client library, CLI and WASM, which no longer requires the `unstable` feature of the library, the `--unstable` flag of the CLI or the `unstable` option of the WASM client.
 
 - **DEPRECATED** in Mithril client CLI:
