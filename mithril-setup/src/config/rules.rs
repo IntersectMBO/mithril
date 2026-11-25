@@ -1,5 +1,6 @@
 //! Field rules: small, pure and composable checks of a single raw value
 
+use std::net::IpAddr;
 use std::sync::Arc;
 
 /// Check of a single raw value, returns the reason of the rejection
@@ -62,6 +63,63 @@ pub fn valid_path() -> FieldRule {
             Ok(())
         }
     })
+}
+
+/// The value is an absolute Unix path, it may not exist
+///
+/// The configuration is for a Unix machine, the check doesn't depend on the platform running it.
+pub fn absolute_path() -> FieldRule {
+    Arc::new(|value| {
+        if value.starts_with('/') {
+            Ok(())
+        } else {
+            Err(format!("{} is not an absolute path", quoted(value)))
+        }
+    })
+}
+
+/// The value has no whitespace, it would need quoting in the generated configuration
+pub fn no_whitespace() -> FieldRule {
+    Arc::new(|value| {
+        if value.contains(char::is_whitespace) {
+            Err(format!("{} contains whitespace", quoted(value)))
+        } else {
+            Ok(())
+        }
+    })
+}
+
+/// The value is an HTTP or HTTPS URL with a host, e.g. `https://example.com/path`
+pub fn http_url() -> FieldRule {
+    Arc::new(|value| {
+        let after_scheme = value
+            .strip_prefix("https://")
+            .or_else(|| value.strip_prefix("http://"));
+
+        match after_scheme {
+            Some(rest) if !rest.is_empty() && !rest.starts_with('/') => Ok(()),
+            _ => Err(format!("{} is not an http(s) URL", quoted(value))),
+        }
+    })
+}
+
+/// The value is an IPv4 or IPv6 address, e.g. `0.0.0.0` or `::1`, not a host name
+pub fn ip_address() -> FieldRule {
+    Arc::new(|value| match value.parse::<IpAddr>() {
+        Ok(_) => Ok(()),
+        Err(_) => Err(format!("{} is not an IP address", quoted(value))),
+    })
+}
+
+/// The value is a JSON object, e.g. `{"key": "value"}`
+pub fn json_object() -> FieldRule {
+    Arc::new(
+        |value| match serde_json::from_str::<serde_json::Value>(value) {
+            Ok(serde_json::Value::Object(_)) => Ok(()),
+            Ok(_) => Err(format!("{} is not a JSON object", quoted(value))),
+            Err(error) => Err(format!("{} is not valid JSON: {error}", quoted(value))),
+        },
+    )
 }
 
 #[cfg(test)]
@@ -168,6 +226,124 @@ mod tests {
         #[test]
         fn rejects_path_with_nul_byte() {
             assert!(valid_path()("/tmp/a\0b").is_err());
+        }
+    }
+
+    mod absolute_path {
+        use super::*;
+
+        #[test]
+        fn accepts_absolute_paths_even_if_they_do_not_exist() {
+            assert_eq!(Ok(()), absolute_path()("/does/not/exist/node.socket"));
+        }
+
+        #[test]
+        fn rejects_relative_empty_and_windows_paths() {
+            assert_eq!(
+                Err("'relative/path' is not an absolute path".to_string()),
+                absolute_path()("relative/path")
+            );
+            assert!(absolute_path()("").is_err());
+            assert!(absolute_path()(r"C:\cardano\db").is_err());
+        }
+    }
+
+    mod no_whitespace {
+        use super::*;
+
+        #[test]
+        fn accepts_values_without_whitespace() {
+            assert_eq!(Ok(()), no_whitespace()("/cardano/db"));
+        }
+
+        #[test]
+        fn rejects_values_with_spaces_or_tabs() {
+            assert_eq!(
+                Err("'/cardano/my db' contains whitespace".to_string()),
+                no_whitespace()("/cardano/my db")
+            );
+            assert!(no_whitespace()("/cardano/my\tdb").is_err());
+        }
+    }
+
+    mod http_url {
+        use super::*;
+
+        #[test]
+        fn accepts_http_and_https_urls() {
+            let rule = http_url();
+
+            assert_eq!(Ok(()), rule("https://aggregator.example.com/aggregator"));
+            assert_eq!(Ok(()), rule("http://192.168.1.50:3132"));
+        }
+
+        #[test]
+        fn rejects_other_schemes_and_urls_without_host() {
+            let rule = http_url();
+
+            for value in ["ftp://example.com", "example.com", "https://", "https:///path", ""] {
+                assert_eq!(
+                    Err(format!("{} is not an http(s) URL", quoted(value))),
+                    rule(value),
+                    "{value}"
+                );
+            }
+        }
+    }
+
+    mod ip_address {
+        use super::*;
+
+        #[test]
+        fn accepts_ipv4_and_ipv6_addresses() {
+            let rule = ip_address();
+
+            for value in ["0.0.0.0", "127.0.0.1", "::", "::1", "fe80::1"] {
+                assert_eq!(Ok(()), rule(value), "{value}");
+            }
+        }
+
+        #[test]
+        fn rejects_host_names_invalid_addresses_and_addresses_with_a_port() {
+            let rule = ip_address();
+
+            for value in ["localhost", "256.0.0.1", "0.0.0", "0.0.0.0:9090", " 0.0.0.0", ""] {
+                assert_eq!(
+                    Err(format!("{} is not an IP address", quoted(value))),
+                    rule(value),
+                    "{value}"
+                );
+            }
+        }
+    }
+
+    mod json_object {
+        use super::*;
+
+        #[test]
+        fn accepts_json_objects() {
+            assert_eq!(
+                Ok(()),
+                json_object()(r#"{"address": "addr1", "keys": [1, 2]}"#)
+            );
+        }
+
+        #[test]
+        fn rejects_other_json_values() {
+            assert_eq!(
+                Err("'[1, 2]' is not a JSON object".to_string()),
+                json_object()("[1, 2]")
+            );
+        }
+
+        #[test]
+        fn rejects_invalid_json() {
+            let reason = json_object()("{address").unwrap_err();
+
+            assert!(
+                reason.starts_with("'{address' is not valid JSON: "),
+                "{reason}"
+            );
         }
     }
 }
