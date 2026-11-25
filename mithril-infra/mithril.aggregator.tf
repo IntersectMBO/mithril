@@ -173,7 +173,7 @@ else
 fi
 EOT
       ,
-      "export MITHRIL_IMAGE_ID=${var.mithril_image_id}",
+      "export MITHRIL_IMAGE_ID='${var.mithril_image_id}'",
       "export DMQ_IMAGE_ID='${var.dmq_image_id}'",
       "export DMQ_IMAGE_REGISTRY=${var.dmq_image_registry}",
       "export IPFS_IMAGE_ID=${var.ipfs_image_id}",

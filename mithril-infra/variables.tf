@@ -194,6 +194,10 @@ variable "mithril_api_domain" {
 variable "mithril_image_id" {
   type        = string
   description = "The Mithril image tag of service to deploy"
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_][A-Za-z0-9_./-]{0,254}$", var.mithril_image_id))
+    error_message = "The Mithril image id must only contain letters, digits, '_', '.', '-' and '/'."
+  }
 }
 
 variable "mithril_container_logging_driver" {

@@ -202,7 +202,7 @@ EOT
       "export NETWORK_MAGIC=${var.cardano_network_magic_map[var.cardano_network]}",
       "export CARDANO_IMAGE_ID=${var.cardano_image_id}",
       "export CARDANO_IMAGE_REGISTRY=${var.cardano_image_registry}",
-      "export MITHRIL_IMAGE_ID=${var.mithril_image_id}",
+      "export MITHRIL_IMAGE_ID='${var.mithril_image_id}'",
       "export DMQ_IMAGE_ID='${var.dmq_image_id}'",
       "export DMQ_IMAGE_REGISTRY=${var.dmq_image_registry}",
       "export SIGNER_HOST=${local.mithril_signers_host[each.key]}",
