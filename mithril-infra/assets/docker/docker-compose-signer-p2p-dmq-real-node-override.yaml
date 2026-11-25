@@ -54,7 +54,7 @@ services:
     volumes:
       - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/dmq/relay/config:/config
       - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/dmq/relay/ipc:/ipc
-      - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/cardano/ipc:/ipc-cardano
+      - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/cardano/ipc-relay:/ipc-cardano
       - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/cardano/config/relay/${NETWORK}:/config-cardano:ro
     ports:
       - "${SIGNER_DMQ_RELAY_PORT}:${SIGNER_DMQ_RELAY_PORT}"
