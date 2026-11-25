@@ -610,7 +610,6 @@ jobs:
           - package: mithril-client-wasm
             tag: latest
             access: public
-            api_token_secret_name: NPM_API_TOKEN_MITHRIL_CLIENT_WASM
 
     runs-on: ubuntu-24.04
     steps:
@@ -630,7 +629,6 @@ jobs:
           dry_run: "true"
           package_dir: ${{ matrix.package }}
           access: ${{ matrix.access }}
-          api_token: ${{ secrets[matrix.api_token_secret_name] }}
 
   unstable-release:
     if: vars.PUBLISH_UNSTABLE_RELEASE_IN_CI == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith('refs/heads/hotfix', github.ref))

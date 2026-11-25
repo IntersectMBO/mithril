@@ -266,7 +266,10 @@ jobs:
           - package: mithril-client-wasm
             tag: latest
             access: public
-            api_token_secret_name: NPM_API_TOKEN_MITHRIL_CLIENT_WASM
+
+    permissions:
+      id-token: write
+      contents: read
 
     runs-on: ubuntu-24.04
     steps:
@@ -287,4 +290,3 @@ jobs:
           package_dir: ${{ matrix.package }}
           tag: latest
           access: ${{ matrix.access }}
-          api_token: ${{ secrets[matrix.api_token_secret_name] }}
