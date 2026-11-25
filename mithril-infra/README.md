@@ -129,8 +129,8 @@ export DEBUG=1
 export NETWORK=preview
 export NETWORK_MAGIC=2
 
-# Select Cardano node
-export CARDANO_NODE=cardano-node-relay-signer-1
+# Select Cardano node (the block producer, which mounts the pool files)
+export CARDANO_NODE=cardano-node-block-producer-signer-1
 
 # Select Mithril signer node
 export SIGNER_NODE=mithril-signer-1

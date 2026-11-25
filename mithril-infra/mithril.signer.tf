@@ -45,7 +45,9 @@ resource "null_resource" "mithril_signer" {
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/db/block-producer",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/db/relay",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/ipc",
+      "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/ipc-relay",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool",
+      "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/relay",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/www",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/mithril/stores",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/mithril/snapshots",
@@ -89,11 +91,11 @@ for SIGNER_TYPE in $SIGNER_TYPES; do
       cat /home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network}/cardano-node/topology.json | jq 'del(.peerSnapshotFile)' | jq 'del(.bootstrapPeers)' | jq '.localRoots[0].accessPoints[0] |= . + { "address": "${google_compute_address.mithril-external-address.address}", "port": ${local.mithril_signers_relay_cardano_port[each.key]}}' | jq '.localRoots[0].trustable = true' > /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool/topology-block-producer.json
 
       # Setup cardano node relay topology
-      cat /home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network}/cardano-node/topology.json > /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool/topology-relay.json
+      cat /home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network}/cardano-node/topology.json > /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/relay/topology-relay.json
       
       # Copy peer snapshot file (if exists)
       if [ -f "/home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network}/cardano-node/peer-snapshot.json" ]; then
-        cp /home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network}/cardano-node/peer-snapshot.json /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool/peer-snapshot.json
+        cp /home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network}/cardano-node/peer-snapshot.json /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/relay/peer-snapshot.json
       fi
 
       FOUND_CONFIGURATION=true
