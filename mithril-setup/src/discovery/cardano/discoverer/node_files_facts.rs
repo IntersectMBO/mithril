@@ -6,8 +6,9 @@ use tracing::{debug, warn};
 
 use crate::discovery::cardano::CardanoDiscoverer;
 use crate::discovery::cardano::node_files::{
-    CardanoConfiguration, CardanoNetwork, Peer, ShelleyGenesisConfiguration, TopologyConfiguration,
+    CardanoConfiguration, Peer, ShelleyGenesisConfiguration, TopologyConfiguration,
 };
+use crate::guessing::CardanoNetwork;
 
 impl CardanoDiscoverer {
     /// Path of the Shelley genesis file, read from the node configuration file
@@ -130,7 +131,8 @@ impl CardanoDiscoverer {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::discovery::cardano::{CardanoDiscovery, CardanoNetwork, NodeProcess, Peer};
+    use crate::discovery::cardano::{CardanoDiscovery, NodeProcess, Peer};
+    use crate::guessing::CardanoNetwork;
     use crate::test_tools::logs::capture_logs;
 
     use super::super::test_doubles::*;

@@ -142,7 +142,8 @@ fn resolve_path(working_dir: Option<&Path>, path: &str) -> PathBuf {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::discovery::cardano::{CardanoNetwork, NodeRole, Peer};
+    use crate::discovery::cardano::{NodeRole, Peer};
+    use crate::guessing::CardanoNetwork;
 
     use super::test_doubles::*;
     use super::*;

@@ -5,5 +5,5 @@ mod shelley_genesis;
 mod topology;
 
 pub(crate) use configuration::*;
-pub use shelley_genesis::*;
+pub(crate) use shelley_genesis::*;
 pub use topology::*;

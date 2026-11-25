@@ -2,7 +2,8 @@
 
 use std::path::PathBuf;
 
-use crate::discovery::cardano::{CardanoNetwork, Peer};
+use crate::discovery::cardano::Peer;
+use crate::guessing::CardanoNetwork;
 
 /// Facts discovered about the Cardano node selected on the machine
 #[derive(Debug, Clone, PartialEq, Eq)]
