@@ -2,6 +2,8 @@
 //!
 //! The guessing is pure: it takes the facts already read from the environment and does no I/O.
 
-mod network;
+mod cardano_network;
+mod dmq_network;
 
-pub use network::*;
+pub use cardano_network::*;
+pub use dmq_network::*;
