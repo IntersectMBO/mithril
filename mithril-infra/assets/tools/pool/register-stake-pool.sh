@@ -48,9 +48,14 @@ POOL_RELAY_PORT=$(cat ${POOL_ARTIFACTS_DIR_PREFIX}/pool/port)
 SLOT=$(CARDANO_CLI_CMD ${CARDANO_ERA} query tip --testnet-magic $NETWORK_MAGIC | jq .slot)
 
 # Build registration certificate
+BLS_KEY_ARGS=""
+if [ "${CARDANO_ERA}" = "dijkstra" ]; then
+    BLS_KEY_ARGS="--bls-signing-key-file ${POOL_ARTIFACTS_DIR}/bls.skey"
+fi
 CARDANO_CLI_CMD ${CARDANO_ERA} stake-pool registration-certificate \
 --cold-verification-key-file ${POOL_ARTIFACTS_DIR}/cold.vkey \
 --vrf-verification-key-file ${POOL_ARTIFACTS_DIR}/vrf.vkey \
+${BLS_KEY_ARGS} \
 --pool-pledge $POOL_PLEDGE \
 --pool-cost $POOL_COST \
 --pool-margin $POOL_MARGIN \
