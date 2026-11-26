@@ -11,6 +11,11 @@ use serde::Deserialize;
 
 use crate::guessing::CardanoNetwork;
 
+/// `networks.json` and the readers configuration, embedded by the build script
+mod embedded {
+    include!(concat!(env!("OUT_DIR"), "/embedded_mithril_networks.rs"));
+}
+
 /// The Mithril networks, grouped by the Cardano network they run on
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MithrilNetworks {
@@ -67,6 +72,26 @@ pub struct ReaderConfiguration {
 }
 
 impl MithrilNetworks {
+    /// Mithril networks embedded at build time, from `networks.json` and the readers
+    /// configuration of `mithril-infra/configuration`
+    pub fn embedded() -> Self {
+        let readers_configuration = embedded::READERS_CONFIGURATION
+            .iter()
+            .map(|(name, era_reader, protocol_configuration_reader)| {
+                let configuration = ReadersConfiguration {
+                    era_reader: era_reader.map(ReaderConfiguration::from),
+                    protocol_configuration_reader: protocol_configuration_reader
+                        .map(ReaderConfiguration::from),
+                };
+                (name.to_string(), configuration)
+            })
+            .collect();
+
+        // The build script embeds the configuration of every reader declared by `networks.json`
+        Self::parse(embedded::NETWORKS_JSON, &readers_configuration)
+            .expect("The embedded Mithril networks should be valid")
+    }
+
     /// Parse the content of `networks.json`, with the readers configuration of its Mithril
     /// networks keyed by their name
     ///
@@ -115,6 +140,15 @@ impl MithrilNetworks {
         match name {
             Some(name) => networks.find(|network| network.name == name),
             None => networks.next(),
+        }
+    }
+}
+
+impl From<(&str, &str)> for ReaderConfiguration {
+    fn from((address, verification_key): (&str, &str)) -> Self {
+        Self {
+            address: address.to_string(),
+            verification_key: verification_key.to_string(),
         }
     }
 }
@@ -464,6 +498,73 @@ mod tests {
             let network = mithril_networks.select(CardanoNetwork::Devnet, None);
 
             assert_eq!(None, network);
+        }
+    }
+
+    mod embedded {
+        use std::path::PathBuf;
+
+        use super::*;
+
+        /// Content of a file of the Mithril repository, trimmed
+        fn repository_file(path: &str) -> String {
+            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join(path);
+
+            std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("Could not read '{}': {error}", path.display()))
+                .trim()
+                .to_string()
+        }
+
+        #[test]
+        fn embeds_the_mithril_networks_of_networks_json() {
+            let mithril_networks = MithrilNetworks::embedded();
+
+            for cardano_network in [
+                CardanoNetwork::Mainnet,
+                CardanoNetwork::Preprod,
+                CardanoNetwork::Preview,
+            ] {
+                assert!(
+                    !mithril_networks.running_on(cardano_network).is_empty(),
+                    "Expected Mithril networks running on {}",
+                    cardano_network.name()
+                );
+            }
+        }
+
+        #[test]
+        fn embeds_the_readers_configuration_of_mithril_infra() {
+            let mithril_networks = MithrilNetworks::embedded();
+
+            let network = mithril_networks
+                .select(CardanoNetwork::Mainnet, Some("release-mainnet"))
+                .unwrap();
+
+            assert_eq!(
+                Some(ReaderAdapter {
+                    adapter_type: "cardano-chain".to_string(),
+                    address: repository_file(
+                        "mithril-infra/configuration/release-mainnet/era.addr"
+                    ),
+                    verification_key: repository_file(
+                        "mithril-infra/configuration/release-mainnet/era.vkey"
+                    ),
+                }),
+                network.era_reader
+            );
+            assert_eq!(
+                Some(ReaderAdapter {
+                    adapter_type: "cardano-chain".to_string(),
+                    address: repository_file(
+                        "mithril-infra/configuration/release-mainnet/protocol-config.addr"
+                    ),
+                    verification_key: repository_file(
+                        "mithril-infra/configuration/release-mainnet/protocol-config.vkey"
+                    ),
+                }),
+                network.protocol_configuration_reader
+            );
         }
     }
 }
