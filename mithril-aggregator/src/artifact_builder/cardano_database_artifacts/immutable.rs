@@ -1,4 +1,8 @@
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
@@ -43,6 +47,11 @@ pub trait ImmutableFilesUploader: Send + Sync {
         filepaths: &[PathBuf],
         compression_algorithm: Option<CompressionAlgorithm>,
     ) -> StdResult<ImmutablesLocation>;
+
+    /// Discards the remote copy of the given archive, if any, so it can be uploaded again.
+    async fn discard_remote_archive(&self, _archive_path: &Path) -> StdResult<()> {
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -116,6 +125,10 @@ impl ImmutableFilesUploader for IpfsUploader {
             ))),
             compression_algorithm,
         })
+    }
+
+    async fn discard_remote_archive(&self, archive_path: &Path) -> StdResult<()> {
+        self.discard_file(archive_path).await
     }
 }
 
@@ -1015,6 +1028,24 @@ mod tests {
                 },
                 location
             );
+        }
+    }
+
+    mod discard_remote_archive {
+        use super::*;
+
+        #[tokio::test]
+        async fn ipfs_uploader_delegates_to_discard_file() {
+            let uploader = IpfsUploader::new_for_test("/dir", |mock| {
+                mock.expect_file_exists().returning(|_, _| Ok(None)).once();
+            });
+
+            ImmutableFilesUploader::discard_remote_archive(
+                &uploader,
+                Path::new("/a/00001.tar.zst"),
+            )
+            .await
+            .unwrap();
         }
     }
 
