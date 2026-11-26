@@ -1,4 +1,4 @@
-//! Pure model of the result screen
+//! Pure model of the result screen, showing the success or the failure of the setup
 
 use crate::runner::ResultOutcome;
 
@@ -10,21 +10,37 @@ pub const COMMAND_INDENT: &str = "  ";
 
 /// Result of the setup shown to the user
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SetupResult {
-    /// What the setup produced
-    pub message: &'static str,
+pub enum SetupResult {
+    /// The setup succeeded, the user runs a command to finish it
+    Success {
+        /// What the setup produced
+        message: &'static str,
 
-    /// Command the user runs to finish the setup
-    pub command: &'static str,
+        /// Command the user runs to finish the setup
+        command: &'static str,
+    },
+
+    /// The setup failed
+    Failure {
+        /// What the setup could not produce
+        message: &'static str,
+
+        /// Reason of the failure
+        reason: String,
+    },
 }
 
 impl SetupResult {
-    /// Text of the result, printed in the terminal once the screen is closed
-    pub fn plain_text(&self) -> String {
-        format!(
-            "{}\n{COMMAND_INTRO}\n{COMMAND_INDENT}{}",
-            self.message, self.command
-        )
+    /// Text printed in the terminal once the screen is exited, the screen being cleared
+    ///
+    /// Nothing for a failure: the command prints its reason when it ends with the failure.
+    pub fn text_printed_on_exit(&self) -> Option<String> {
+        match self {
+            Self::Success { message, command } => Some(format!(
+                "{message}\n{COMMAND_INTRO}\n{COMMAND_INDENT}{command}"
+            )),
+            Self::Failure { .. } => None,
+        }
     }
 }
 
@@ -61,11 +77,17 @@ pub struct ResultModel {
 }
 
 impl ResultModel {
-    /// Create a model showing the setup result, with the `Exit` button focused
+    /// Create a model showing the setup result, with the `Exit` button focused on a success and
+    /// the `Back` button on a failure (going back to fix a value is the likely next step)
     pub fn new(setup_result: SetupResult) -> Self {
+        let focused = match setup_result {
+            SetupResult::Success { .. } => Button::Exit,
+            SetupResult::Failure { .. } => Button::Back,
+        };
+
         Self {
             setup_result,
-            focused: Button::Exit,
+            focused,
         }
     }
 
@@ -97,23 +119,32 @@ mod tests {
     use super::*;
 
     fn setup_result() -> SetupResult {
-        SetupResult {
+        SetupResult::Success {
             message: "Script generated",
             command: "./setup.sh",
         }
     }
 
-    #[test]
-    fn plain_text_has_the_message_then_the_indented_command() {
-        assert_eq!(
-            format!("Script generated\n{COMMAND_INTRO}\n  ./setup.sh"),
-            setup_result().plain_text()
-        );
+    fn setup_failure() -> SetupResult {
+        SetupResult::Failure {
+            message: "Script not generated",
+            reason: "disk full".to_string(),
+        }
     }
 
     #[test]
-    fn exit_is_focused_at_start() {
+    fn only_a_success_is_printed_on_exit() {
+        assert_eq!(
+            Some(format!("Script generated\n{COMMAND_INTRO}\n  ./setup.sh")),
+            setup_result().text_printed_on_exit()
+        );
+        assert_eq!(None, setup_failure().text_printed_on_exit());
+    }
+
+    #[test]
+    fn exit_is_focused_at_start_on_a_success_and_back_on_a_failure() {
         assert_eq!(Button::Exit, ResultModel::new(setup_result()).focused());
+        assert_eq!(Button::Back, ResultModel::new(setup_failure()).focused());
     }
 
     #[test]

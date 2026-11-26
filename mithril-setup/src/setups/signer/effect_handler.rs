@@ -25,6 +25,18 @@ const PROTOCOL_CONFIGURATION_READER_ADAPTER_CONFIG_EXAMPLE: &str = r#"{"type": "
 /// Message shown once the setup script is generated
 const SCRIPT_GENERATED_MESSAGE: &str = "The setup script of the Mithril signer is generated";
 
+/// Message shown when the setup script could not be generated
+const SCRIPT_NOT_GENERATED_MESSAGE: &str =
+    "The setup script of the Mithril signer could not be generated";
+
+/// Whether the script generation fails, set to `true` to try the failure screen
+// Placeholder until the script generation is implemented
+const SIMULATE_SCRIPT_GENERATION_FAILURE: bool = false;
+
+/// Reason of the simulated failure of the script generation
+const SIMULATED_FAILURE_REASON: &str =
+    "Could not write ./mithril-signer-setup.sh: permission denied (simulated failure)";
+
 /// Placeholder of the command running the setup script, to update once the script exists
 const SETUP_COMMAND_PLACEHOLDER: &str = "./mithril-signer-setup.sh --env-file ./mithril-signer.env";
 
@@ -90,15 +102,33 @@ impl EffectHandler for SignerEffectHandler {
 
     async fn export_to_artifact(&self, _store: Store) -> Result<(), String> {
         // The setup script is not generated yet
+        if SIMULATE_SCRIPT_GENERATION_FAILURE {
+            return Err(SIMULATED_FAILURE_REASON.to_string());
+        }
+
         Ok(())
     }
 
     async fn show_result(&self) -> Result<ResultOutcome, String> {
-        let setup_result = SetupResult {
+        Self::show_setup_result(SetupResult::Success {
             message: SCRIPT_GENERATED_MESSAGE,
             command: SETUP_COMMAND_PLACEHOLDER,
-        };
+        })
+        .await
+    }
 
+    async fn show_failure(&self, reason: String) -> Result<ResultOutcome, String> {
+        Self::show_setup_result(SetupResult::Failure {
+            message: SCRIPT_NOT_GENERATED_MESSAGE,
+            reason,
+        })
+        .await
+    }
+}
+
+impl SignerEffectHandler {
+    /// Show the success or the failure of the setup on the result screen
+    async fn show_setup_result(setup_result: SetupResult) -> Result<ResultOutcome, String> {
         tokio::task::spawn_blocking(move || tui::terminal::show_result(setup_result))
             .await
             .map_err(|error| format!("Result task failed: {error}"))?

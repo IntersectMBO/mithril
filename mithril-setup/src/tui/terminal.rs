@@ -54,9 +54,10 @@ fn run_review(terminal: &mut DefaultTerminal, mut model: ReviewModel) -> io::Res
     }
 }
 
-/// Show the result of the setup until the user exits or goes back (blocking)
+/// Show the result of the setup, a success or a failure, until the user exits or goes back
+/// (blocking)
 ///
-/// On exit the result is also printed in the terminal.
+/// On exit a success is also printed in the terminal.
 /// The mouse is not captured, so the command can be selected to be copied.
 pub fn show_result(setup_result: SetupResult) -> io::Result<ResultOutcome> {
     let mut terminal = ratatui::try_init()?;
@@ -64,9 +65,11 @@ pub fn show_result(setup_result: SetupResult) -> io::Result<ResultOutcome> {
     ratatui::restore();
     let outcome = outcome?;
 
-    if outcome == ResultOutcome::Exit {
+    if outcome == ResultOutcome::Exit
+        && let Some(text) = setup_result.text_printed_on_exit()
+    {
         // The screen is cleared on exit: the printed result stays in the terminal
-        println!("{}", setup_result.plain_text());
+        println!("{text}");
     }
 
     Ok(outcome)

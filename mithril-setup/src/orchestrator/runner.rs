@@ -16,13 +16,13 @@ pub enum ReviewOutcome {
     Aborted,
 }
 
-/// Outcome of the result display
+/// Outcome of the result or failure display
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResultOutcome {
-    /// The user closed the result, ending the flow
+    /// The user closed the result or the failure, ending the flow
     Exit,
 
-    /// The user went back to the review of the saved store
+    /// The user went back to the review of the store
     Back,
 }
 
@@ -58,6 +58,10 @@ pub trait EffectHandler: Send + Sync {
     /// Show the result of the setup, returns whether the user exits or goes back to the review,
     /// or the reason of the result display failure
     async fn show_result(&self) -> Result<ResultOutcome, String>;
+
+    /// Show why the store could not be saved, returns whether the user exits or goes back to the
+    /// review, or the reason of the failure display failure
+    async fn show_failure(&self, reason: String) -> Result<ResultOutcome, String>;
 }
 
 /// Run the state machine until a final state, executing effects with the given handler
@@ -95,6 +99,11 @@ async fn execute(handler: &dyn EffectHandler, effect: Effect) -> Event {
             Ok(ResultOutcome::Back) => Event::WentBack,
             Err(reason) => Event::ResultShown(Err(reason)),
         },
+        Effect::ShowFailure(reason) => match handler.show_failure(reason).await {
+            Ok(ResultOutcome::Exit) => Event::ResultShown(Ok(())),
+            Ok(ResultOutcome::Back) => Event::WentBack,
+            Err(reason) => Event::ResultShown(Err(reason)),
+        },
     }
 }
 
@@ -114,7 +123,10 @@ mod tests {
         review_failure: Option<String>,
         received_review_stores: Mutex<Vec<Store>>,
         received_review_errors: Mutex<Vec<Vec<FieldError>>>,
+        save_results: Mutex<VecDeque<Result<(), String>>>,
+        /// Outcomes of the result and failure screens, in the order they are shown
         result_outcomes: Mutex<VecDeque<Result<ResultOutcome, String>>>,
+        received_failure_reasons: Mutex<Vec<String>>,
     }
 
     impl FakeHandler {
@@ -126,7 +138,9 @@ mod tests {
                 review_failure: None,
                 received_review_stores: Mutex::new(vec![]),
                 received_review_errors: Mutex::new(vec![]),
+                save_results: Mutex::new(VecDeque::new()),
                 result_outcomes: Mutex::new(VecDeque::new()),
+                received_failure_reasons: Mutex::new(vec![]),
             }
         }
     }
@@ -165,10 +179,21 @@ mod tests {
         }
 
         async fn export_to_artifact(&self, _store: Store) -> Result<(), String> {
-            Ok(())
+            self.save_results.lock().unwrap().pop_front().unwrap_or(Ok(()))
         }
 
         async fn show_result(&self) -> Result<ResultOutcome, String> {
+            self.next_result_outcome()
+        }
+
+        async fn show_failure(&self, reason: String) -> Result<ResultOutcome, String> {
+            self.received_failure_reasons.lock().unwrap().push(reason);
+            self.next_result_outcome()
+        }
+    }
+
+    impl FakeHandler {
+        fn next_result_outcome(&self) -> Result<ResultOutcome, String> {
             self.result_outcomes
                 .lock()
                 .unwrap()
@@ -241,25 +266,31 @@ mod tests {
 
     #[tokio::test]
     async fn run_reviews_the_confirmed_store_again_when_the_user_goes_back_from_the_result() {
-        let handler = FakeHandler {
-            result_outcomes: Mutex::new(VecDeque::from([Ok(ResultOutcome::Back)])),
-            ..FakeHandler::succeeding()
-        };
+        // Back from the result screen after a save, and from the failure screen after a failed one
+        for save_result in [Ok(()), Err("disk full".to_string())] {
+            let handler = FakeHandler {
+                save_results: Mutex::new(VecDeque::from([save_result.clone()])),
+                result_outcomes: Mutex::new(VecDeque::from([Ok(ResultOutcome::Back)])),
+                ..FakeHandler::succeeding()
+            };
 
-        let result = run(&handler).await;
+            let result = run(&handler).await;
 
-        assert_eq!(Ok(RunOutcome::Completed), result);
-        let received_stores = handler.received_review_stores.lock().unwrap();
-        assert_eq!(2, received_stores.len());
-        assert_eq!(None, received_stores[0].get("edited"));
-        assert_eq!(
-            Some("by the user"),
-            received_stores[1].get("edited").map(|entry| entry.value.as_str())
-        );
-        assert_eq!(
-            vec![Vec::<FieldError>::new(), vec![]],
-            *handler.received_review_errors.lock().unwrap()
-        );
+            assert_eq!(Ok(RunOutcome::Completed), result, "{save_result:?}");
+            let received_stores = handler.received_review_stores.lock().unwrap();
+            assert_eq!(2, received_stores.len(), "{save_result:?}");
+            assert_eq!(None, received_stores[0].get("edited"), "{save_result:?}");
+            assert_eq!(
+                Some("by the user"),
+                received_stores[1].get("edited").map(|entry| entry.value.as_str()),
+                "{save_result:?}"
+            );
+            assert_eq!(
+                vec![Vec::<FieldError>::new(), vec![]],
+                *handler.received_review_errors.lock().unwrap(),
+                "{save_result:?}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -272,5 +303,21 @@ mod tests {
         let result = run(&handler).await;
 
         assert_eq!(Err("no terminal".to_string()), result);
+    }
+
+    #[tokio::test]
+    async fn run_returns_the_save_failure_reason_when_the_user_exits_the_failure() {
+        let handler = FakeHandler {
+            save_results: Mutex::new(VecDeque::from([Err("disk full".to_string())])),
+            ..FakeHandler::succeeding()
+        };
+
+        let result = run(&handler).await;
+
+        assert_eq!(Err("disk full".to_string()), result);
+        assert_eq!(
+            vec!["disk full".to_string()],
+            *handler.received_failure_reasons.lock().unwrap()
+        );
     }
 }

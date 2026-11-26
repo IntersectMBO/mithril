@@ -1,18 +1,24 @@
-//! Rendering of the result screen
+//! Rendering of the result screen, showing the success or the failure of the setup
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Flex, Layout};
-use ratatui::style::Stylize;
+use ratatui::style::{Style, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Paragraph};
 
-use crate::tui::setup_result::model::{Button, COMMAND_INTRO, ResultModel};
+use crate::tui::setup_result::model::{Button, COMMAND_INTRO, ResultModel, SetupResult};
 use crate::tui::widgets::{ButtonWidget, WrappedText};
 
 const HELP: &[&str] = &["←/→ choose", "Enter press", "Esc exit"];
 
+/// Title of the box on a success
+const SUCCESS_TITLE: &str = " Setup result ";
 /// Mark in front of the message, telling the setup succeeded
 const SUCCESS_MARK: &str = "✓";
+/// Title of the box on a failure
+const FAILURE_TITLE: &str = " Setup failed ";
+/// Mark in front of the message, telling the setup failed
+const FAILURE_MARK: &str = "✗";
 
 // Layout sizes are counted in terminal cells: rows for heights, characters for widths
 /// Minimum height of the content, it takes all the remaining rows
@@ -26,8 +32,6 @@ const FOOTER_BORDERS_HEIGHT: u16 = 2;
 
 /// Draw the result of the setup, its buttons and the keys help in the frame
 pub fn render(model: &ResultModel, frame: &mut Frame) {
-    let setup_result = model.setup_result();
-
     // The footer takes the full width, its help goes on more lines when it doesn't fit
     let footer_block = Block::bordered();
     let help_lines =
@@ -41,21 +45,32 @@ pub fn render(model: &ResultModel, frame: &mut Frame) {
     ])
     .areas(frame.area());
 
-    let content_block = Block::bordered().title(" Setup result ");
-    let text_area = content_block.inner(content_area);
+    let text_area = Block::bordered().inner(content_area);
     let text_width = usize::from(text_area.width);
-    let message = format!("{SUCCESS_MARK} {}", setup_result.message);
+    let wrapped =
+        |text: &str| WrappedText::words(text).lines(text_width).into_iter().map(Line::from);
 
-    let message_lines = WrappedText::words(&message).lines(text_width);
-    let intro_lines = WrappedText::words(COMMAND_INTRO).lines(text_width);
-    let command_lines = WrappedText::words(setup_result.command).lines(text_width);
-    let text_lines: Vec<Line> = message_lines
-        .into_iter()
-        .map(|line| Line::from(line).green())
-        .chain([Line::default()])
-        .chain(intro_lines.into_iter().map(Line::from))
-        .chain(command_lines.into_iter().map(|line| Line::from(line).bold()))
-        .collect();
+    let (content_block, text_lines): (Block, Vec<Line>) = match model.setup_result() {
+        SetupResult::Success { message, command } => (
+            Block::bordered().title(SUCCESS_TITLE),
+            wrapped(&format!("{SUCCESS_MARK} {message}"))
+                .map(|line| line.green())
+                .chain([Line::default()])
+                .chain(wrapped(COMMAND_INTRO))
+                .chain(wrapped(command).map(|line| line.bold()))
+                .collect(),
+        ),
+        SetupResult::Failure { message, reason } => (
+            Block::bordered()
+                .title(FAILURE_TITLE)
+                .border_style(Style::new().red()),
+            wrapped(&format!("{FAILURE_MARK} {message}"))
+                .map(|line| line.red())
+                .chain([Line::default()])
+                .chain(wrapped(reason))
+                .collect(),
+        ),
+    };
 
     // The text is centered in the box, each line horizontally and all the lines vertically
     let [centered_text_area] = Layout::vertical([Constraint::Length(text_lines.len() as u16)])
@@ -102,15 +117,24 @@ mod tests {
 
     use super::*;
 
+    const COMMAND: &str = "./mithril-signer-setup.sh --env-file ./mithril-signer.env";
+
     fn setup_result() -> SetupResult {
-        SetupResult {
+        SetupResult::Success {
             message: "The setup script is generated",
-            command: "./mithril-signer-setup.sh --env-file ./mithril-signer.env",
+            command: COMMAND,
         }
     }
 
     fn model() -> ResultModel {
         ResultModel::new(setup_result())
+    }
+
+    fn failure_model() -> ResultModel {
+        ResultModel::new(SetupResult::Failure {
+            message: "The setup script could not be generated",
+            reason: "Could not write the script: permission denied".to_string(),
+        })
     }
 
     fn rendered_buffer(model: &ResultModel, width: u16) -> Buffer {
@@ -160,6 +184,25 @@ mod tests {
     }
 
     #[test]
+    fn failure_shows_the_message_the_reason_and_the_buttons_without_command() {
+        let text = lines(&rendered_buffer(&failure_model(), 100)).join("\n");
+
+        for expected in [
+            FAILURE_TITLE,
+            "✗ The setup script could not be generated",
+            "Could not write the script: permission denied",
+            "[ Back ]",
+            "[ Exit ]",
+        ] {
+            assert!(
+                text.contains(expected),
+                "'{expected}' not found in:\n{text}"
+            );
+        }
+        assert!(!text.contains(COMMAND_INTRO), "{text}");
+    }
+
+    #[test]
     fn only_the_focused_button_is_reversed() {
         let mut model = model();
 
@@ -179,7 +222,7 @@ mod tests {
         // 38 characters inside the borders
         let text = lines(&rendered_buffer(&model(), 40)).join("\n");
 
-        assert!(!text.contains(setup_result().command), "{text}");
+        assert!(!text.contains(COMMAND), "{text}");
         assert!(
             text.contains("./mithril-signer-setup.sh --env-file"),
             "{text}"
@@ -200,11 +243,7 @@ mod tests {
     fn each_line_is_centered_horizontally_in_the_box() {
         let lines = lines(&rendered_buffer(&model(), 100));
 
-        for text in [
-            "✓ The setup script is generated",
-            COMMAND_INTRO,
-            setup_result().command,
-        ] {
+        for text in ["✓ The setup script is generated", COMMAND_INTRO, COMMAND] {
             let line = lines.iter().find(|line| line.contains(text)).unwrap();
             let (before, after) = inner_margins(line);
 
