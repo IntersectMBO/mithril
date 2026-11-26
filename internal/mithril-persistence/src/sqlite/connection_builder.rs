@@ -163,6 +163,9 @@ impl ConnectionBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::thread;
+    use std::time::Duration;
+
     use sqlite::Value;
 
     use mithril_common::temp_dir_create;
@@ -344,5 +347,28 @@ mod tests {
 
         assert!(connection.prepare("select * from first;").is_ok());
         assert!(connection.prepare("select * from second;").is_ok());
+    }
+
+    #[test]
+    fn a_write_waits_for_the_write_lock_held_by_another_connection() {
+        let builder = ConnectionBuilder::open_file(&temp_dir_create!().join("db.sqlite3"))
+            .with_options(&[ConnectionOptions::EnableWriteAheadLog])
+            .with_migrations(vec![SqlMigration::new(1, "create table test(id integer);")]);
+        let locking_connection = builder.build().unwrap();
+        let waiting_connection = builder.build_without_migrations().unwrap();
+        locking_connection
+            .execute("begin immediate; insert into test values (1);")
+            .unwrap();
+
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                thread::sleep(Duration::from_millis(100));
+                locking_connection.execute("commit;").unwrap();
+            });
+
+            waiting_connection
+                .execute("insert into test values (2);")
+                .expect("The write should wait for the write lock to be released");
+        });
     }
 }
