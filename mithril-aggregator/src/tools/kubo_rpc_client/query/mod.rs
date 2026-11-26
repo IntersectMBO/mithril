@@ -5,6 +5,7 @@ mod ipfs_files_rm;
 mod ipfs_files_stat;
 mod ipfs_key_ls;
 mod ipfs_name_publish;
+mod ipfs_pin_rm;
 mod ipfs_version;
 
 pub use ipfs_add::*;
@@ -14,4 +15,5 @@ pub use ipfs_files_rm::*;
 pub use ipfs_files_stat::*;
 pub use ipfs_key_ls::*;
 pub use ipfs_name_publish::*;
+pub use ipfs_pin_rm::*;
 pub use ipfs_version::*;
