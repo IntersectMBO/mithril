@@ -16,19 +16,22 @@ inputs:
     description: npm package access.
     required: false
     default: "public"
-  api_token:
-    description: npm API token.
-    required: false
 
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-node@v6
+    - uses: actions/setup-node@v7
       with:
         node-version: "lts/*"
         package-manager-cache: "false"
-        # Note: setting up the registry allows auth to be passed via env.NODE_AUTH_TOKEN
         registry-url: https://registry.npmjs.org
+
+    # Note: temporary until the retrieved node version ships npm 11.21.0+ or 12.2.0+ (first versions supporting trusted publisher for npm dist-tag)
+    - name: Update to npm 12
+      shell: bash
+      run: |
+        npm install -g npm@^12.2.0
+        npm --version
 
     - name: Prepare
       id: prepare
@@ -107,36 +110,27 @@ runs:
       if: steps.check_version.outputs.deploy_mode == 'publish'
       shell: bash
       working-directory: ${{ inputs.package_dir }}
-      env:
-        NODE_AUTH_TOKEN: ${{ inputs.api_token }}
       run: |
-        echo "Publish '${{ steps.prepare.outputs.package_name }}' package"
-        if [ -z "${NODE_AUTH_TOKEN}" -a "${{ inputs.dry_run }}" == "true" ]; then
-          echo "Warning: An NPM access token is required for authentication and has not been provided."
-        else
-          npm whoami
-        fi
-
         if [ "${{ inputs.dry_run }}" == "false" ]; then
+          echo "Publish '${{ steps.prepare.outputs.package_name }}' package"
           dry_run_option=""
         else
+          echo "Dry run: Publish '${{ steps.prepare.outputs.package_name }}' package"
           dry_run_option="--dry-run"
         fi
+
         npm publish --tag ${{ inputs.tag }} --access ${{ inputs.access }} $dry_run_option
 
     - name: Promote package distribution tag to 'latest'
       if: steps.check_version.outputs.deploy_mode == 'promote'
       shell: bash
       working-directory: ${{ inputs.package_dir }}
-      env:
-        NODE_AUTH_TOKEN: ${{ inputs.api_token }}
       run: |
         echo "Promote '${{ steps.prepare.outputs.package_name }}' package version '${{ steps.prepare.outputs.package_local_version }}' from 'next' to 'latest'"
         if [ "${{ inputs.dry_run }}" == "false" ]; then
-          npm whoami
           npm dist-tag add ${{ steps.prepare.outputs.package_name }}@${{ steps.prepare.outputs.package_local_version }} latest
           npm dist-tag rm ${{ steps.prepare.outputs.package_name }}@${{ steps.prepare.outputs.package_local_version }} next
         else
-          echo "Dry run: npm dist-tag add ${{ steps.prepare.outputs.package_name }}@${{ steps.prepare.outputs.package_local_version }} latest
-          echo "Dry run: npm dist-tag rm ${{ steps.prepare.outputs.package_name }}@${{ steps.prepare.outputs.package_local_version }} next
+          echo "Dry run: npm dist-tag add ${{ steps.prepare.outputs.package_name }}@${{ steps.prepare.outputs.package_local_version }} latest"
+          echo "Dry run: npm dist-tag rm ${{ steps.prepare.outputs.package_name }}@${{ steps.prepare.outputs.package_local_version }} next"
         fi
