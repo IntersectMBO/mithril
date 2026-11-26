@@ -5,7 +5,7 @@ use warp::http::StatusCode;
 
 use mithril_common::StdError;
 use mithril_common::entities::{ClientError, ServerError};
-use mithril_persistence::sqlite::error::{SQLITE_BUSY, SqliteError};
+use mithril_persistence::sqlite::error::{PRIMARY_ERROR_CODE_MASK, SQLITE_BUSY, SqliteError};
 
 use crate::SignerRegistrationError;
 use crate::tools::downcast_check;
@@ -47,7 +47,8 @@ pub fn server_error<E: Into<StdError>>(error: E) -> Box<dyn warp::Reply> {
         let mut code = StatusCode::INTERNAL_SERVER_ERROR;
 
         if downcast_check::<SqliteError>(&std_error, |e| {
-            e.code.is_some_and(|code| code == SQLITE_BUSY)
+            e.code
+                .is_some_and(|code| code & PRIMARY_ERROR_CODE_MASK == SQLITE_BUSY)
         }) {
             code = StatusCode::SERVICE_UNAVAILABLE;
         }
@@ -87,6 +88,8 @@ mod tests {
     use anyhow::anyhow;
     use warp::Reply;
 
+    use mithril_persistence::sqlite::error::SQLITE_BUSY_SNAPSHOT;
+
     use super::*;
 
     #[test]
@@ -112,6 +115,17 @@ mod tests {
             code: Some(SQLITE_BUSY),
             message: None,
         });
+        let response = server_error(res).into_response();
+
+        assert_eq!(StatusCode::SERVICE_UNAVAILABLE, response.status());
+    }
+
+    #[test]
+    fn test_server_error_convert_sqlite_busy_extended_error_to_503() {
+        let res = sqlite::Error {
+            code: Some(SQLITE_BUSY_SNAPSHOT),
+            message: None,
+        };
         let response = server_error(res).into_response();
 
         assert_eq!(StatusCode::SERVICE_UNAVAILABLE, response.status());

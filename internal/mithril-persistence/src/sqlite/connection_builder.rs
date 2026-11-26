@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use slog::{Logger, debug};
+use sqlite::ffi::sqlite3_extended_result_codes;
 use sqlite::{Connection, ConnectionThreadSafe};
 
 use mithril_common::StdResult;
@@ -121,6 +122,9 @@ impl ConnectionBuilder {
                 )
             })?;
 
+        // SAFETY: the handle is valid, it belongs to the connection opened above
+        unsafe { sqlite3_extended_result_codes(connection.as_raw(), 1) };
+
         connection
             .execute(format!(
                 "pragma busy_timeout = {}",
@@ -182,6 +186,7 @@ mod tests {
     use mithril_common::test::TempDir;
 
     use crate::sqlite::ConnectionOptions::ForceDisableForeignKeys;
+    use crate::sqlite::error::SQLITE_BUSY_SNAPSHOT;
 
     use super::*;
 
@@ -380,5 +385,22 @@ mod tests {
                 .execute("insert into test values (2);")
                 .expect("The write should wait for the write lock to be released");
         });
+    }
+
+    #[test]
+    fn a_write_on_an_outdated_read_snapshot_fails_with_its_extended_result_code() {
+        let builder = ConnectionBuilder::open_file(&temp_dir_create!().join("db.sqlite3"))
+            .with_options(&[ConnectionOptions::EnableWriteAheadLog])
+            .with_migrations(vec![SqlMigration::new(1, "create table test(id integer);")]);
+        let writing_connection = builder.build().unwrap();
+        let outdated_connection = builder.build_without_migrations().unwrap();
+        outdated_connection.execute("begin; select * from test;").unwrap();
+        writing_connection.execute("insert into test values (1);").unwrap();
+
+        let error = outdated_connection
+            .execute("insert into test values (2);")
+            .expect_err("The write should fail on an outdated read snapshot");
+
+        assert_eq!(Some(SQLITE_BUSY_SNAPSHOT), error.code);
     }
 }
