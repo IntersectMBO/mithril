@@ -22,9 +22,8 @@ services:
     volumes:
       - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/cardano/config/relay/${NETWORK}:/config
       - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/cardano/db/relay:/db
-      - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/cardano/ipc:/ipc
-      - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/cardano/pool:/pool
-      - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/cardano/www:/www
+      - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/cardano/ipc-relay:/ipc
+      - ../data/${NETWORK}/mithril-signer-${SIGNER_ID}/cardano/relay:/relay:ro
     ports:
       - "${SIGNER_CARDANO_RELAY_PORT}:${SIGNER_CARDANO_RELAY_PORT}"
     environment:
@@ -36,7 +35,7 @@ services:
         "--config",
         "/config/cardano-node/config.json",
         "--topology",
-        "/pool/topology-relay.json",
+        "/relay/topology-relay.json",
         "--database-path",
         "/db",
         "--port",
@@ -52,6 +51,7 @@ services:
       dockerfile: Dockerfile.cardano
       args:
         CARDANO_IMAGE_ID: ${CARDANO_IMAGE_ID}
+        CARDANO_IMAGE_REGISTRY: ${CARDANO_IMAGE_REGISTRY}
     user: ${CURRENT_UID}
     profiles:
       - cardano

@@ -11,7 +11,7 @@ variable "environment_suffix" {
 
 variable "cardano_network" {
   type        = string
-  description = "The Cardano network name to attach: preview, preprod, mainnet or dijkstranet"
+  description = "The Cardano network name to attach: preview, preprod, mainnet, dijkstranet or musashinet"
 }
 
 variable "cardano_network_magic_map" {
@@ -22,6 +22,7 @@ variable "cardano_network_magic_map" {
     "preprod"     = 1,
     "preview"     = 2,
     "dijkstranet" = 6,
+    "musashinet"  = 164,
   }
 }
 
@@ -33,6 +34,7 @@ variable "dmq_network_magic_map" {
     "preprod"     = 2147483649,
     "preview"     = 2147483650,
     "dijkstranet" = 2147483654,
+    "musashinet"  = 2147483812,
   }
 }
 
@@ -192,6 +194,10 @@ variable "mithril_api_domain" {
 variable "mithril_image_id" {
   type        = string
   description = "The Mithril image tag of service to deploy"
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_][A-Za-z0-9_./-]{0,254}$", var.mithril_image_id))
+    error_message = "The Mithril image id must only contain letters, digits, '_', '.', '-' and '/'."
+  }
 }
 
 variable "mithril_container_logging_driver" {

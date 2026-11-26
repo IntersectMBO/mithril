@@ -20,6 +20,8 @@ resource "null_resource" "mithril_signer" {
     vm_instance                    = google_compute_instance.vm_instance.id,
     cardano_image_id               = var.cardano_image_id,
     cardano_image_registry         = var.cardano_image_registry,
+    docker_assets_digest           = local.docker_assets_digest,
+    provisioner_digest             = filesha256("${path.module}/mithril.signer.tf"),
     dmq_image_id                   = var.dmq_image_id,
     dmq_image_registry             = var.dmq_image_registry,
     image_id                       = var.mithril_image_id,
@@ -43,7 +45,9 @@ resource "null_resource" "mithril_signer" {
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/db/block-producer",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/db/relay",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/ipc",
+      "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/ipc-relay",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool",
+      "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/relay",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/www",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/mithril/stores",
       "mkdir -p /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/mithril/snapshots",
@@ -57,19 +61,19 @@ set -e
 # Setup cardano node configuration
 CARDANO_NODE_EXACT_VERSION="${var.cardano_image_id}"
 CARDANO_NODE_MINOR_VERSION=$(echo $CARDANO_NODE_EXACT_VERSION | cut -d. -f1,2)
-CARDANO_NODE_VERSIONS="$CARDANO_NODE_EXACT_VERSION $CARDANO_NODE_MINOR_VERSION"
+CARDANO_CONFIGURATION_VERSIONS="$CARDANO_NODE_EXACT_VERSION $CARDANO_NODE_MINOR_VERSION"
 SIGNER_TYPES="full relay block-producer"
 for SIGNER_TYPE in $SIGNER_TYPES; do
   # Copy the cardano node configuration files to the signer and setup topology files (exact version, and fallback to minor version of the Cardano node)
   FOUND_CONFIGURATION=false
-  for CARDANO_NODE_VERSION in $CARDANO_NODE_VERSIONS; do
-    if [ -d "/home/curry/docker/cardano/config/$CARDANO_NODE_VERSION/${var.cardano_network}" ]; then 
+  for CARDANO_CONFIGURATION_VERSION in $CARDANO_CONFIGURATION_VERSIONS; do
+    if [ -d "/home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network}" ]; then 
       # Copy the configuration files to the signer
       SIGNER_TYPE_CONFIG_DIRECTORY=/home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/config/$SIGNER_TYPE
       rm -rf $SIGNER_TYPE_CONFIG_DIRECTORY/config
       mkdir -p $SIGNER_TYPE_CONFIG_DIRECTORY
-      cp -R /home/curry/docker/cardano/config/$CARDANO_NODE_VERSION/${var.cardano_network} $SIGNER_TYPE_CONFIG_DIRECTORY
-      echo $CARDANO_NODE_VERSION > $SIGNER_TYPE_CONFIG_DIRECTORY/config.version
+      cp -R /home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network} $SIGNER_TYPE_CONFIG_DIRECTORY
+      echo $CARDANO_CONFIGURATION_VERSION > $SIGNER_TYPE_CONFIG_DIRECTORY/config.version
 
       # Copy config.json files to the signer
       cat $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json | jq '(if has("Configuration") then .Configuration.HermodTracing.TraceOptions else .TraceOptions end)[""].backends |= map(if startswith("PrometheusSimple ") then sub("127.0.0.1"; "0.0.0.0") else . end)' > $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json.new
@@ -83,15 +87,15 @@ for SIGNER_TYPE in $SIGNER_TYPES; do
         mv $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json.new $SIGNER_TYPE_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json
       fi
 
-      # Setup cardano node block producer topology
-      cat /home/curry/docker/cardano/config/$CARDANO_NODE_VERSION/${var.cardano_network}/cardano-node/topology.json | jq 'del(.peerSnapshotFile)' | jq 'del(.bootstrapPeers)' | jq '.localRoots[0].accessPoints[0] |= . + { "address": "${google_compute_address.mithril-external-address.address}", "port": ${local.mithril_signers_relay_cardano_port[each.key]}}' | jq '.localRoots[0].trustable = true' > /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool/topology-block-producer.json
+      # Setup cardano node block producer topology (its relay is its only peer, no ledger or public peers)
+      cat /home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network}/cardano-node/topology.json | jq 'del(.peerSnapshotFile)' | jq 'del(.bootstrapPeers)' | jq '.useLedgerAfterSlot = -1' | jq '.publicRoots = []' | jq '.localRoots[0].accessPoints[0] |= . + { "address": "${google_compute_address.mithril-external-address.address}", "port": ${local.mithril_signers_relay_cardano_port[each.key]}}' | jq '.localRoots[0].trustable = true' > /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool/topology-block-producer.json
 
       # Setup cardano node relay topology
-      cat /home/curry/docker/cardano/config/$CARDANO_NODE_VERSION/${var.cardano_network}/cardano-node/topology.json > /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool/topology-relay.json
+      cat /home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network}/cardano-node/topology.json > /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/relay/topology-relay.json
       
       # Copy peer snapshot file (if exists)
-      if [ -f "/home/curry/docker/cardano/config/$CARDANO_NODE_VERSION/${var.cardano_network}/cardano-node/peer-snapshot.json" ]; then
-        cp /home/curry/docker/cardano/config/$CARDANO_NODE_VERSION/${var.cardano_network}/cardano-node/peer-snapshot.json /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool/peer-snapshot.json
+      if [ -f "/home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network}/cardano-node/peer-snapshot.json" ]; then
+        cp /home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network}/cardano-node/peer-snapshot.json /home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/relay/peer-snapshot.json
       fi
 
       FOUND_CONFIGURATION=true
@@ -125,8 +129,8 @@ if [ "${var.mithril_use_p2p_network}" = "true" ] && [ "${var.mithril_p2p_use_dmq
         # Block-producer: disable PeerSharing
         cat $SIGNER__TYPE_CONFIG_DIRECTORY/config.json | jq '. + {"NetworkMagic": ${var.dmq_network_magic_map[var.cardano_network]}, "CardanoNetworkMagic": ${var.cardano_network_magic_map[var.cardano_network]}, "CardanoNodeSocket": "/ipc-cardano/node.socket", "ShelleyGenesisFile": "/config-cardano/cardano-node/shelley-genesis.json", "PeerSharing": false}' > $SIGNER__TYPE_CONFIG_DIRECTORY/config.json.new
       else
-        # Relay: keep default PeerSharing
-        cat $SIGNER__TYPE_CONFIG_DIRECTORY/config.json | jq '. + {"NetworkMagic": ${var.dmq_network_magic_map[var.cardano_network]}, "CardanoNetworkMagic": ${var.cardano_network_magic_map[var.cardano_network]}, "CardanoNodeSocket": "/ipc-cardano/node.socket", "ShelleyGenesisFile": "/config-cardano/cardano-node/shelley-genesis.json"}' > $SIGNER__TYPE_CONFIG_DIRECTORY/config.json.new
+        # Relay: keep default PeerSharing, use the Cardano node socket of the relay
+        cat $SIGNER__TYPE_CONFIG_DIRECTORY/config.json | jq '. + {"NetworkMagic": ${var.dmq_network_magic_map[var.cardano_network]}, "CardanoNetworkMagic": ${var.cardano_network_magic_map[var.cardano_network]}, "CardanoNodeSocket": "/ipc-cardano/relay.socket", "ShelleyGenesisFile": "/config-cardano/cardano-node/shelley-genesis.json"}' > $SIGNER__TYPE_CONFIG_DIRECTORY/config.json.new
       fi
       rm -f $SIGNER__TYPE_CONFIG_DIRECTORY/config.json
       mv $SIGNER__TYPE_CONFIG_DIRECTORY/config.json.new $SIGNER__TYPE_CONFIG_DIRECTORY/config.json
@@ -200,7 +204,7 @@ EOT
       "export NETWORK_MAGIC=${var.cardano_network_magic_map[var.cardano_network]}",
       "export CARDANO_IMAGE_ID=${var.cardano_image_id}",
       "export CARDANO_IMAGE_REGISTRY=${var.cardano_image_registry}",
-      "export MITHRIL_IMAGE_ID=${var.mithril_image_id}",
+      "export MITHRIL_IMAGE_ID='${var.mithril_image_id}'",
       "export DMQ_IMAGE_ID='${var.dmq_image_id}'",
       "export DMQ_IMAGE_REGISTRY=${var.dmq_image_registry}",
       "export SIGNER_HOST=${local.mithril_signers_host[each.key]}",
@@ -264,6 +268,18 @@ fi
 if [ "${each.value.type}" = "verified-norelay" ]; then
   DOCKER_COMPOSE_FILES="$DOCKER_COMPOSE_FILES -f $DOCKER_DIRECTORY/docker-compose-signer-verified-override.yaml"
   DOCKER_COMPOSE_FILES="$DOCKER_COMPOSE_FILES -f $DOCKER_DIRECTORY/docker-compose-signer-cardano-bp-override.yaml"
+fi
+# Support for the BLS key of the block producer when its Cardano node configuration enables Leios
+BLOCK_PRODUCER_CARDANO_CONFIGURATION=/home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/config/block-producer/${var.cardano_network}/cardano-node/config.json
+BLOCK_PRODUCER_BLS_KEY=/home/curry/data/${var.cardano_network}/mithril-signer-${each.key}/cardano/pool/bls.skey
+if [ "${each.value.type}" = "verified" ] || [ "${each.value.type}" = "verified-norelay" ]; then
+  if jq -e '(if has("Configuration") then .Configuration else . end) | keys | any(startswith("Leios"))' $BLOCK_PRODUCER_CARDANO_CONFIGURATION > /dev/null; then
+    if [ -f "$BLOCK_PRODUCER_BLS_KEY" ]; then
+      DOCKER_COMPOSE_FILES="$DOCKER_COMPOSE_FILES -f $DOCKER_DIRECTORY/docker-compose-signer-cardano-bp-leios-override.yaml"
+    else
+      echo "WARNING: the Cardano node configuration enables Leios but $BLOCK_PRODUCER_BLS_KEY is missing, the block producer starts without its BLS key"
+    fi
+  fi
 fi
 # Support for unverified signer with passive Cardano node
 if [ "${each.value.type}" = "unverified-cardano-passive" ]; then
@@ -340,7 +356,7 @@ if [ "${var.mithril_use_p2p_network}" = "true" ] && [ "${var.mithril_p2p_use_dmq
 fi
 EOT
       ,
-      "docker compose -p $SIGNER_ID $DOCKER_COMPOSE_FILES --profile all up -d",
+      "docker compose -p $SIGNER_ID $DOCKER_COMPOSE_FILES --profile all up -d --build",
     ]
   }
 }

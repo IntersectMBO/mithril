@@ -8,9 +8,16 @@ FROM $CARDANO_IMAGE_REGISTRY:$CARDANO_IMAGE_ID
 # The following modifications allow the node to run with such a user
 # Since Cardano node '11.1.0', the env file is a symlink to a runtime directory
 # created by the entrypoint under '/tmp' and needs no rights fix
-RUN if [ ! -L /usr/local/bin/env ]; then \
+# The Leios node image has no '/usr/local/bin' directory and needs no rights fix either
+RUN if [ -d /usr/local/bin ] && [ ! -L /usr/local/bin/env ]; then \
         touch /usr/local/bin/env && chmod a+w /usr/local/bin/env; \
     fi
+
+# The Leios node image runs the bare 'cardano-node' binary, without the socket path that the
+# entrypoint of the official image adds
+COPY cardano/cardano-node-entrypoint.sh /cardano-node-entrypoint.sh
+RUN chmod a+rx /cardano-node-entrypoint.sh
+ENTRYPOINT ["/cardano-node-entrypoint.sh"]
 
 # If the Cardano node has already been launched with root user,
 # you migt have to run manually this command as 'root' user to update ownership of some folders

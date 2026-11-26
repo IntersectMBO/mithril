@@ -16,6 +16,8 @@ resource "null_resource" "mithril_aggregator" {
     vm_instance                                                                  = google_compute_instance.vm_instance.id,
     cardano_image_id                                                             = var.cardano_image_id,
     cardano_image_registry                                                       = var.cardano_image_registry,
+    docker_assets_digest                                                         = local.docker_assets_digest,
+    provisioner_digest                                                           = filesha256("${path.module}/mithril.aggregator.tf"),
     image_id                                                                     = var.mithril_image_id,
     dmq_image_id                                                                 = var.dmq_image_id,
     dmq_image_registry                                                           = var.dmq_image_registry,
@@ -64,15 +66,15 @@ set -e
 # Copy the cardano node configuration files to the aggregator (exact version, and fallback to minor version)
 CARDANO_NODE_EXACT_VERSION="${var.cardano_image_id}"
 CARDANO_NODE_MINOR_VERSION=$(echo $CARDANO_NODE_EXACT_VERSION | cut -d. -f1,2)
-CARDANO_NODE_VERSIONS="$CARDANO_NODE_EXACT_VERSION $CARDANO_NODE_MINOR_VERSION"
+CARDANO_CONFIGURATION_VERSIONS="$CARDANO_NODE_EXACT_VERSION $CARDANO_NODE_MINOR_VERSION"
 FOUND_CONFIGURATION=false
-for CARDANO_NODE_VERSION in $CARDANO_NODE_VERSIONS; do
-  if [ -d "/home/curry/docker/cardano/config/$CARDANO_NODE_VERSION/${var.cardano_network}" ]; then 
+for CARDANO_CONFIGURATION_VERSION in $CARDANO_CONFIGURATION_VERSIONS; do
+  if [ -d "/home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network}" ]; then 
     AGGREGATOR_CONFIG_DIRECTORY=/home/curry/data/${var.cardano_network}/mithril-aggregator/cardano/config
     rm -rf $AGGREGATOR_CONFIG_DIRECTORY
     mkdir -p $AGGREGATOR_CONFIG_DIRECTORY
-    cp -R /home/curry/docker/cardano/config/$CARDANO_NODE_VERSION/${var.cardano_network} $AGGREGATOR_CONFIG_DIRECTORY
-    echo $CARDANO_NODE_VERSION > $AGGREGATOR_CONFIG_DIRECTORY/config.version
+    cp -R /home/curry/docker/cardano/config/$CARDANO_CONFIGURATION_VERSION/${var.cardano_network} $AGGREGATOR_CONFIG_DIRECTORY
+    echo $CARDANO_CONFIGURATION_VERSION > $AGGREGATOR_CONFIG_DIRECTORY/config.version
     cat $AGGREGATOR_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json | jq '(if has("Configuration") then .Configuration.HermodTracing.TraceOptions else .TraceOptions end)[""].backends |= map(if startswith("PrometheusSimple ") then sub("127.0.0.1"; "0.0.0.0") else . end)' > $AGGREGATOR_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json.new
     rm -f $AGGREGATOR_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json
     mv $AGGREGATOR_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json.new $AGGREGATOR_CONFIG_DIRECTORY/${var.cardano_network}/cardano-node/config.json
@@ -151,7 +153,27 @@ EOT
       "export NETWORK_MAGIC=${var.cardano_network_magic_map[var.cardano_network]}",
       "export CARDANO_IMAGE_ID=${var.cardano_image_id}",
       "export CARDANO_IMAGE_REGISTRY=${var.cardano_image_registry}",
-      "export MITHRIL_IMAGE_ID=${var.mithril_image_id}",
+      <<-EOT
+# The aggregator requires a semantic version of the Cardano node: when the image tag is not one
+# (e.g. 'rc-2026w46' for a Leios node), it is the node binary version with the tag as pre-release
+SEMANTIC_VERSION_REGEX='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+if echo "$CARDANO_IMAGE_ID" | grep -Eq "$SEMANTIC_VERSION_REGEX"; then
+  export CARDANO_NODE_VERSION=$CARDANO_IMAGE_ID
+else
+  CARDANO_NODE_BINARY_VERSION=$(docker run --rm --entrypoint cardano-node $CARDANO_IMAGE_REGISTRY:$CARDANO_IMAGE_ID --version | head -n 1 | awk '{print $2}' | cut -d. -f1-3)
+  if ! echo "$CARDANO_NODE_BINARY_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "ERROR: could not read the version of the Cardano node of the image $CARDANO_IMAGE_REGISTRY:$CARDANO_IMAGE_ID"
+    exit 1
+  fi
+  export CARDANO_NODE_VERSION=$CARDANO_NODE_BINARY_VERSION-$CARDANO_IMAGE_ID
+  if ! echo "$CARDANO_NODE_VERSION" | grep -Eq "$SEMANTIC_VERSION_REGEX"; then
+    echo "ERROR: the Cardano node version $CARDANO_NODE_VERSION derived from the image tag is not a semantic version"
+    exit 1
+  fi
+fi
+EOT
+      ,
+      "export MITHRIL_IMAGE_ID='${var.mithril_image_id}'",
       "export DMQ_IMAGE_ID='${var.dmq_image_id}'",
       "export DMQ_IMAGE_REGISTRY=${var.dmq_image_registry}",
       "export IPFS_IMAGE_ID=${var.ipfs_image_id}",
@@ -277,7 +299,7 @@ if [ "${var.mithril_use_p2p_network}" = "true" ] && [ "${var.mithril_p2p_use_dmq
 fi
 EOT
       ,
-      "docker compose $DOCKER_COMPOSE_FILES --profile all up -d",
+      "docker compose $DOCKER_COMPOSE_FILES --profile all up -d --build",
     ]
   }
 }

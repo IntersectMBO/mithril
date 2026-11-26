@@ -271,6 +271,16 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Check the Mithril image id
+      shell: bash
+      env:
+        MITHRIL_IMAGE_ID: ${{ inputs.mithril_image_id }}
+      run: |
+        if [[ ! "$MITHRIL_IMAGE_ID" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]{0,254}$ ]]; then
+          echo "::error::The Mithril image id must only contain letters, digits, '_', '.', '-' and '/'"
+          exit 1
+        fi
+
     - name: Checkout sources
       uses: actions/checkout@v6
 
