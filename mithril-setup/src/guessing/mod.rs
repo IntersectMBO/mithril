@@ -4,6 +4,8 @@
 
 mod cardano_network;
 mod dmq_network;
+mod mithril_networks;
 
 pub use cardano_network::*;
 pub use dmq_network::*;
+pub use mithril_networks::*;
