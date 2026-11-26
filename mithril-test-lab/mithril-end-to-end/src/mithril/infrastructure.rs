@@ -133,6 +133,7 @@ impl MithrilInfrastructureConfig {
 
 pub struct MithrilInfrastructure {
     toolkit: ScenarioToolkit,
+    work_dir: PathBuf,
     artifacts_dir: PathBuf,
     bin_dir: PathBuf,
     devnet: Devnet,
@@ -264,6 +265,7 @@ impl MithrilInfrastructure {
 
         Ok(Self {
             toolkit,
+            work_dir: config.work_dir.to_path_buf(),
             bin_dir: config.bin_dir.to_path_buf(),
             artifacts_dir: config.artifacts_dir.to_path_buf(),
             devnet: config.devnet.clone(),
@@ -751,6 +753,7 @@ impl MithrilInfrastructure {
             &work_dir,
             &self.bin_dir,
             self.genesis_keys,
+            &Aggregator::circuit_verification_key_registry_path(&self.work_dir),
         )
     }
 

@@ -180,7 +180,7 @@ impl Aggregator {
         let aggregate_signature_type = aggregator_config.aggregate_signature_type.to_string();
         let circuit_verification_key_registry_url = format!(
             "file://{}",
-            Self::circuit_verification_key_registry_path().display()
+            Self::circuit_verification_key_registry_path(aggregator_config.work_dir).display()
         );
         let mut env = EnvVars::from([
             ("NETWORK", "devnet"),
@@ -343,8 +343,9 @@ impl Aggregator {
         format!("{}", index + 1)
     }
 
-    pub fn circuit_verification_key_registry_path() -> PathBuf {
-        std::env::temp_dir().join("circuit-verification-key-registry.json")
+    /// Path of the circuit verification key registry of a run, in its work directory
+    pub fn circuit_verification_key_registry_path(work_dir: &Path) -> PathBuf {
+        work_dir.join("circuit-verification-key-registry.json")
     }
 
     /// Protocol parameters the scenarios switch to after the startup ones, per aggregate signature
@@ -542,7 +543,11 @@ impl Aggregator {
             args.push(serde_json::to_string(&protocol_parameters)?);
         }
         args.push("--target-registry-path".to_string());
-        args.push(Self::circuit_verification_key_registry_path().display().to_string());
+        args.push(
+            Self::circuit_verification_key_registry_path(work_dir)
+                .display()
+                .to_string(),
+        );
 
         let exit_status = command
             .start(&args)?
