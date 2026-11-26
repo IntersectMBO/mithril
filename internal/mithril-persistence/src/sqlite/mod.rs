@@ -40,6 +40,16 @@ pub mod error {
     ///
     /// see: <https://www.sqlite.org/rescode.html#busy>
     pub const SQLITE_BUSY: isize = 5;
+
+    /// Mask extracting the primary error code of an extended error code
+    ///
+    /// see: <https://www.sqlite.org/rescode.html#primary_result_codes_versus_extended_result_codes>
+    pub const PRIMARY_ERROR_CODE_MASK: isize = 0xFF;
+
+    /// SQLITE_BUSY_SNAPSHOT extended error code
+    ///
+    /// see: <https://www.sqlite.org/rescode.html#busy_snapshot>
+    pub const SQLITE_BUSY_SNAPSHOT: isize = 517;
 }
 
 #[cfg(test)]

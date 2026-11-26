@@ -10,6 +10,7 @@ use mithril_cardano_node_internal_database::entities::{
     AncillaryFilesManifest, LedgerStateSnapshot,
 };
 use mithril_cardano_node_internal_database::{IMMUTABLE_DIR, LEDGER_DIR, immutable_trio_names};
+use mithril_cardano_node_leios::LeiosImmutableDatabaseSnapshotter;
 use mithril_common::StdResult;
 use mithril_common::entities::{CompressionAlgorithm, ImmutableFileNumber};
 use mithril_common::logging::LoggerExtensions;
@@ -42,6 +43,9 @@ pub struct CompressedArchiveSnapshotter {
     file_archiver: Arc<FileArchiver>,
 
     ancillary_signer: Arc<dyn AncillarySigner>,
+
+    /// Snapshotter of the Leios database of the Cardano node, if it has one
+    leios_immutable_database_snapshotter: Arc<LeiosImmutableDatabaseSnapshotter>,
 
     logger: Logger,
 }
@@ -161,6 +165,10 @@ impl CompressedArchiveSnapshotter {
         })?;
 
         Ok(Self {
+            leios_immutable_database_snapshotter: Arc::new(LeiosImmutableDatabaseSnapshotter::new(
+                db_directory.clone(),
+                cardano_node_version.clone(),
+            )),
             cardano_node_version,
             db_directory,
             ongoing_snapshot_directory,
@@ -291,7 +299,44 @@ impl CompressedArchiveSnapshotter {
             })?;
         }
 
+        files_to_snapshot.extend(
+            self.snapshot_leios_immutable_database(immutable_file_number, target_folder)
+                .await?,
+        );
+
         Ok(files_to_snapshot)
+    }
+
+    /// Copies the Leios database of the Cardano node, if it has one, to the target folder and returns
+    /// its path relative to the folder.
+    ///
+    /// The copy is taken after the copy of the partial immutable file to the target folder, so that it
+    /// holds the closures of the endorser blocks certified in the immutable files up to that copy.
+    async fn snapshot_leios_immutable_database(
+        &self,
+        immutable_file_number: ImmutableFileNumber,
+        target_folder: &Path,
+    ) -> StdResult<Option<PathBuf>> {
+        let snapshotter = self.leios_immutable_database_snapshotter.clone();
+        let target_folder = target_folder.to_path_buf();
+
+        tokio::task::spawn_blocking(move || {
+            let snapshot_path = snapshotter.snapshot(
+                &target_folder,
+                immutable_file_number,
+                &target_folder.join(IMMUTABLE_DIR),
+            )?;
+
+            snapshot_path
+                .map(|path| {
+                    path.strip_prefix(&target_folder)
+                        .map(Path::to_path_buf)
+                        .with_context(|| "The Leios database copy is not in the target folder")
+                })
+                .transpose()
+        })
+        .await
+        .with_context(|| "The Leios database snapshot task failed")?
     }
 
     async fn build_and_sign_ancillary_manifest(
@@ -316,8 +361,14 @@ mod tests {
     use std::fs::File;
     use std::path::Path;
     use std::sync::Arc;
+    use std::time::Duration;
 
-    use mithril_cardano_node_internal_database::test::DummyCardanoDbBuilder;
+    use mithril_cardano_node_internal_database::test::{DummyCardanoDb, DummyCardanoDbBuilder};
+    use mithril_cardano_node_leios::test::LeiosFixtures;
+    use mithril_cardano_node_leios::{
+        LeiosImmutableDatabase, LeiosImmutableDatabaseLayoutProvider,
+        LeiosImmutableDatabaseSnapshotError, LeiosImmutableDatabaseSnapshotRetryPolicy,
+    };
     use mithril_common::test::assert_equivalent;
     use mithril_common::{assert_dir_eq, current_function, temp_dir_create};
     use mithril_file_archiver::test::FileArchiveTestExtension;
@@ -328,6 +379,7 @@ mod tests {
     use super::*;
 
     const DUMMY_CARDANO_NODE_VERSION: Version = Version::new(1, 2, 3);
+    const LEIOS_CARDANO_NODE_VERSION: Version = Version::new(11, 2, 0);
 
     fn list_files(test_dir: &Path) -> Vec<String> {
         fs::read_dir(test_dir)
@@ -753,6 +805,114 @@ mod tests {
             assert!(
                 err.to_string().contains("MockAncillarySigner failed"),
                 "Expected error message to be raised by the mock ancillary signer, but got: '{err:?}'",
+            );
+        }
+
+        fn leios_cardano_db(test_name: &str) -> DummyCardanoDb {
+            let cardano_db = DummyCardanoDbBuilder::new(test_name)
+                .with_legacy_ledger_snapshots(&[737])
+                .build();
+            LeiosFixtures::copy_to(cardano_db.get_dir());
+
+            cardano_db
+        }
+
+        fn leios_snapshotter_for_test(
+            test_directory: &Path,
+            db_directory: &Path,
+        ) -> CompressedArchiveSnapshotter {
+            CompressedArchiveSnapshotter {
+                cardano_node_version: LEIOS_CARDANO_NODE_VERSION,
+                ancillary_signer: Arc::new(MockAncillarySigner::that_succeeds_with_signature(
+                    fake_keys::signable_manifest_signature()[0],
+                )),
+                leios_immutable_database_snapshotter: Arc::new(
+                    LeiosImmutableDatabaseSnapshotter::new(
+                        db_directory.to_path_buf(),
+                        LEIOS_CARDANO_NODE_VERSION,
+                    )
+                    .with_retry_policy(
+                        LeiosImmutableDatabaseSnapshotRetryPolicy {
+                            attempts: 1,
+                            delay: Duration::ZERO,
+                        },
+                    ),
+                ),
+                ..snapshotter_for_test(
+                    test_directory,
+                    db_directory,
+                    CompressionAlgorithm::Zstandard,
+                )
+            }
+        }
+
+        #[tokio::test]
+        async fn create_archive_include_a_copy_of_the_leios_database_in_the_signed_manifest() {
+            let test_dir = temp_dir_create!();
+            let cardano_db = leios_cardano_db(current_function!());
+            let snapshotter = leios_snapshotter_for_test(&test_dir, cardano_db.get_dir());
+
+            let archive = snapshotter.snapshot_ancillary(6, "ancillary").await.unwrap();
+            let unpacked = archive.unpack_zstandard(test_dir);
+
+            let manifest = serde_json::from_reader::<_, AncillaryFilesManifest>(
+                File::open(unpacked.join(AncillaryFilesManifest::ANCILLARY_MANIFEST_FILE_NAME))
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                vec![
+                    PathBuf::from(IMMUTABLE_DIR).join("00007.chunk"),
+                    PathBuf::from(IMMUTABLE_DIR).join("00007.primary"),
+                    PathBuf::from(IMMUTABLE_DIR).join("00007.secondary"),
+                    PathBuf::from(LEDGER_DIR).join("737"),
+                    PathBuf::from(LeiosImmutableDatabase::FILE_NAME),
+                ],
+                manifest.files()
+            );
+            assert_eq!(
+                vec![
+                    AncillaryFilesManifest::ANCILLARY_MANIFEST_FILE_NAME.to_string(),
+                    IMMUTABLE_DIR.to_string(),
+                    LEDGER_DIR.to_string(),
+                    LeiosImmutableDatabase::FILE_NAME.to_string(),
+                ],
+                {
+                    let mut files = list_files(&unpacked);
+                    files.sort();
+                    files
+                }
+            );
+            let leios_database = LeiosImmutableDatabase::open_read_only(
+                &unpacked,
+                LeiosImmutableDatabaseLayoutProvider::layout_for_cardano_node_version(
+                    &LEIOS_CARDANO_NODE_VERSION,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            for endorser_block_hash in LeiosFixtures::ENDORSER_BLOCK_HASHES {
+                assert!(leios_database.has_closure(endorser_block_hash).unwrap());
+            }
+        }
+
+        #[tokio::test]
+        async fn create_archive_fail_if_the_leios_database_misses_a_closure() {
+            let test_dir = temp_dir_create!();
+            let cardano_db = leios_cardano_db(current_function!());
+            LeiosFixtures::delete_closure(
+                &LeiosFixtures::open_node_connection(cardano_db.get_dir()),
+                LeiosFixtures::ENDORSER_BLOCK_HASHES[2],
+            );
+            let snapshotter = leios_snapshotter_for_test(&test_dir, cardano_db.get_dir());
+
+            let error = snapshotter.snapshot_ancillary(6, "ancillary").await.unwrap_err();
+
+            assert_eq!(
+                error.downcast_ref::<LeiosImmutableDatabaseSnapshotError>(),
+                Some(&LeiosImmutableDatabaseSnapshotError::MissingClosures(vec![
+                    LeiosFixtures::ENDORSER_BLOCK_HASHES[2].to_string()
+                ]))
             );
         }
 

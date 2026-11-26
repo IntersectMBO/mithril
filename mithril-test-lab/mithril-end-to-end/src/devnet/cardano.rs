@@ -68,11 +68,18 @@ pub struct DevnetBootstrapArgs {
     pub number_of_full_nodes: u8,
     pub cardano_slot_length: f64,
     pub cardano_epoch_length: f64,
+    pub cardano_active_slots_coeff: f64,
     pub cardano_node_version: semver::Version,
     pub dmq_node_version: Option<String>,
     pub cardano_hard_fork_latest_era_at_epoch: u16,
     pub skip_cardano_bin_download: bool,
     pub cardano_binary_url: Option<String>,
+    pub use_leios: bool,
+    pub leios_load_duration: Option<u32>,
+    pub leios_load_tps: u32,
+    pub leios_announcement_period_ms: Option<u32>,
+    pub leios_vote_period_ms: Option<u32>,
+    pub leios_diffusion_period_ms: Option<u32>,
 }
 
 impl Devnet {
@@ -143,6 +150,10 @@ impl Devnet {
             bootstrap_args.cardano_epoch_length.to_string(),
         );
         bootstrap_command.env(
+            "ACTIVE_SLOTS_COEFF",
+            bootstrap_args.cardano_active_slots_coeff.to_string(),
+        );
+        bootstrap_command.env(
             "CARDANO_NODE_VERSION",
             bootstrap_args.cardano_node_version.to_string(),
         );
@@ -159,6 +170,29 @@ impl Devnet {
 
         if let Some(cardano_binary_url) = &bootstrap_args.cardano_binary_url {
             bootstrap_command.env("CARDANO_BINARY_URL", cardano_binary_url);
+        }
+
+        if bootstrap_args.use_leios {
+            bootstrap_command.env("USE_LEIOS", "true");
+            if let Some(leios_load_duration) = bootstrap_args.leios_load_duration {
+                bootstrap_command.env("LOAD_DURATION", leios_load_duration.to_string());
+            }
+            bootstrap_command.env("LOAD_TPS", bootstrap_args.leios_load_tps.to_string());
+            for (variable, period_ms) in [
+                (
+                    "LEIOS_ANNOUNCEMENT_PERIOD_MS",
+                    bootstrap_args.leios_announcement_period_ms,
+                ),
+                ("LEIOS_VOTE_PERIOD_MS", bootstrap_args.leios_vote_period_ms),
+                (
+                    "LEIOS_DIFFUSION_PERIOD_MS",
+                    bootstrap_args.leios_diffusion_period_ms,
+                ),
+            ] {
+                if let Some(period_ms) = period_ms {
+                    bootstrap_command.env(variable, period_ms.to_string());
+                }
+            }
         }
 
         bootstrap_command
@@ -442,6 +476,28 @@ impl Devnet {
             None => Err(anyhow!(
                 "Write protocol configuration markers on chain terminated by signal"
             )),
+        }
+    }
+
+    pub async fn generate_load(&self) -> StdResult<()> {
+        let run_script = "load-mithril.sh";
+        let run_script_path = self.artifacts_dir.join(run_script);
+        let mut run_command = self.build_command(&run_script_path)?;
+
+        info!("Starting the transaction load on the devnet"; "script" => &run_script_path.display());
+
+        let status = run_command
+            .spawn()
+            .with_context(|| "Failed to start the transaction load on the devnet")?
+            .wait_forwarding_output_to_slog_scope(run_script)
+            .await
+            .with_context(|| "Error while starting the transaction load on the devnet")?;
+        match status.code() {
+            Some(0) => Ok(()),
+            Some(code) => Err(anyhow!(RetryableDevnetError(format!(
+                "Transaction load exited with status code: {code}"
+            )))),
+            None => Err(anyhow!("Transaction load terminated by signal")),
         }
     }
 

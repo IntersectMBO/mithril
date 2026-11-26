@@ -265,13 +265,17 @@ struct CardanoDevnetArgs {
     #[clap(long, default_value = "./devnet")]
     devnet_scripts_directory: PathBuf,
 
-    /// Length of a Cardano slot in the devnet (in s)
-    #[clap(long, default_value_t = 0.10)]
-    cardano_slot_length: f64,
+    /// Length of a Cardano slot in the devnet (in s, 0.10 by default and in Leios mode)
+    #[clap(long)]
+    cardano_slot_length: Option<f64>,
 
-    /// Length of a Cardano epoch in the devnet (multiple of the slot length)
-    #[clap(long, default_value_t = 30.0)]
-    cardano_epoch_length: f64,
+    /// Length of a Cardano epoch in the devnet (multiple of the slot length, 30 by default and 300 in Leios mode)
+    #[clap(long)]
+    cardano_epoch_length: Option<f64>,
+
+    /// Active slots coefficient of the devnet (1.0 by default and 0.1 in Leios mode)
+    #[clap(long)]
+    cardano_active_slots_coeff: Option<f64>,
 
     /// Cardano node version, must be a valid semver version
     #[clap(long, default_value = "11.1.3")]
@@ -289,10 +293,60 @@ struct CardanoDevnetArgs {
     /// URL to download cardano binaries from (if not set, it will default to the official cardano releases)
     #[clap(long)]
     cardano_binary_url: Option<String>,
+
+    /// Run the devnet in Leios mode (requires a Cardano node supporting Leios, cardano-node 11.2.0 or later
+    /// and a hard fork at epoch 0): the pools vote on endorser blocks, a transaction load gets them certified, and the Cardano database
+    /// check verifies that the client restored the closure of every certified endorser block
+    #[clap(long)]
+    use_leios: bool,
+
+    /// Duration of the transaction load of the Leios mode (in s, the default of the devnet scripts if not set)
+    #[clap(long)]
+    leios_load_duration: Option<u32>,
+
+    /// Rate of the transaction load of the Leios mode (in transactions per second)
+    #[clap(long, default_value_t = 30)]
+    leios_load_tps: u32,
+
+    /// Length of the Leios announcement period (in ms, the default of the devnet scripts if not set)
+    #[clap(long)]
+    leios_announcement_period_ms: Option<u32>,
+
+    /// Length of the Leios vote period (in ms, the default of the devnet scripts if not set)
+    #[clap(long)]
+    leios_vote_period_ms: Option<u32>,
+
+    /// Length of the Leios diffusion period (in ms, the default of the devnet scripts if not set)
+    #[clap(long)]
+    leios_diffusion_period_ms: Option<u32>,
 }
 
 impl CardanoDevnetArgs {
+    fn cardano_slot_length(&self) -> f64 {
+        self.cardano_slot_length.unwrap_or(0.10)
+    }
+
+    fn cardano_epoch_length(&self) -> f64 {
+        self.cardano_epoch_length
+            .unwrap_or(if self.use_leios { 300.0 } else { 30.0 })
+    }
+
+    fn cardano_active_slots_coeff(&self) -> f64 {
+        self.cardano_active_slots_coeff
+            .unwrap_or(if self.use_leios { 0.1 } else { 1.0 })
+    }
+
     fn validate(&self) -> StdResult<()> {
+        if self.use_leios
+            && (!Devnet::runs_dijkstra(&self.cardano_node_version)
+                || self.cardano_hard_fork_latest_era_at_epoch != 0)
+        {
+            return Err(anyhow!(
+                "The 'use_leios' parameter requires cardano-node {} or later with the hard fork to the latest era at epoch 0",
+                Devnet::MIN_CARDANO_NODE_VERSION_WITH_DIJKSTRA
+            ));
+        }
+
         if self.cardano_hard_fork_latest_era_at_epoch != 0
             && !Devnet::runs_dijkstra(&self.cardano_node_version)
         {
@@ -553,8 +607,8 @@ impl App {
         );
 
         let toolkit = ScenarioToolkit::new(ScenarioToolkitContext::new_from_cardano_epoch(
-            args.cardano_devnet.cardano_slot_length,
-            args.cardano_devnet.cardano_epoch_length,
+            args.cardano_devnet.cardano_slot_length(),
+            args.cardano_devnet.cardano_epoch_length(),
         ));
 
         let aggregate_signature_type =
@@ -604,13 +658,17 @@ impl App {
         };
         *self.ipfs_devnet.lock().await = ipfs_devnet.clone();
 
+        let cardano_slot_length = args.cardano_devnet.cardano_slot_length();
+        let cardano_epoch_length = args.cardano_devnet.cardano_epoch_length();
+        let cardano_active_slots_coeff = args.cardano_devnet.cardano_active_slots_coeff();
         let devnet = Devnet::bootstrap(&DevnetBootstrapArgs {
             devnet_scripts_dir: args.cardano_devnet.devnet_scripts_directory,
             artifacts_target_dir: work_dir.join("devnet"),
             number_of_pool_nodes: args.network_topology.number_of_signers,
             number_of_full_nodes: args.network_topology.number_of_aggregators,
-            cardano_slot_length: args.cardano_devnet.cardano_slot_length,
-            cardano_epoch_length: args.cardano_devnet.cardano_epoch_length,
+            cardano_slot_length,
+            cardano_epoch_length,
+            cardano_active_slots_coeff,
             cardano_node_version: args.cardano_devnet.cardano_node_version.to_owned(),
             dmq_node_version: args.network_topology.dmq_node_version.clone(),
             cardano_hard_fork_latest_era_at_epoch: args
@@ -618,6 +676,12 @@ impl App {
                 .cardano_hard_fork_latest_era_at_epoch,
             skip_cardano_bin_download: args.cardano_devnet.skip_cardano_bin_download,
             cardano_binary_url: args.cardano_devnet.cardano_binary_url.clone(),
+            use_leios: args.cardano_devnet.use_leios,
+            leios_load_duration: args.cardano_devnet.leios_load_duration,
+            leios_load_tps: args.cardano_devnet.leios_load_tps,
+            leios_announcement_period_ms: args.cardano_devnet.leios_announcement_period_ms,
+            leios_vote_period_ms: args.cardano_devnet.leios_vote_period_ms,
+            leios_diffusion_period_ms: args.cardano_devnet.leios_diffusion_period_ms,
         })
         .await?;
         *self.devnet.lock().await = Some(devnet.clone());
@@ -639,6 +703,7 @@ impl App {
                     cardano_hard_fork_latest_era_at_epoch: args
                         .cardano_devnet
                         .cardano_hard_fork_latest_era_at_epoch,
+                    use_leios: args.cardano_devnet.use_leios,
                     mithril_run_interval: args.mithril.mithril_run_interval,
                     mithril_era: args.mithril.mithril_era,
                     mithril_era_reader_adapter: args.mithril.mithril_era_reader_adapter,
@@ -850,6 +915,65 @@ mod tests {
     use mithril_common::test::TempDir;
 
     use super::*;
+
+    #[test]
+    fn validate_refuses_use_leios_before_cardano_node_11_2_0() {
+        let args = Cli::parse_from(["", "--use-leios", "--cardano-node-version", "11.1.3"]);
+
+        args.validate().expect_err("should refuse the Leios mode");
+    }
+
+    #[test]
+    fn validate_refuses_use_leios_with_a_hard_fork_after_epoch_0() {
+        let args = Cli::parse_from([
+            "",
+            "--use-leios",
+            "--cardano-node-version",
+            "11.2.0",
+            "--cardano-hard-fork-latest-era-at-epoch",
+            "2",
+        ]);
+
+        args.validate().expect_err("should refuse the Leios mode");
+    }
+
+    #[test]
+    fn validate_accepts_use_leios_from_cardano_node_11_2_0_at_epoch_0() {
+        let args = Cli::parse_from(["", "--use-leios", "--cardano-node-version", "11.2.0"]);
+
+        args.validate().unwrap();
+    }
+
+    #[test]
+    fn leios_mode_defaults_slot_and_epoch_lengths_and_active_slots_coefficient() {
+        let plain = Cli::parse_from([""]).cardano_devnet;
+        let leios =
+            Cli::parse_from(["", "--use-leios", "--cardano-node-version", "11.2.0"]).cardano_devnet;
+        let leios_overridden = Cli::parse_from([
+            "",
+            "--use-leios",
+            "--cardano-node-version",
+            "11.2.0",
+            "--cardano-slot-length",
+            "0.5",
+            "--cardano-epoch-length",
+            "60",
+            "--cardano-active-slots-coeff",
+            "0.3",
+        ])
+        .cardano_devnet;
+
+        assert_eq!(plain.cardano_slot_length(), 0.10);
+        assert_eq!(plain.cardano_epoch_length(), 30.0);
+        assert_eq!(plain.cardano_active_slots_coeff(), 1.0);
+        assert_eq!(leios.cardano_slot_length(), 0.10);
+        assert_eq!(leios.cardano_epoch_length(), 300.0);
+        assert_eq!(leios.cardano_active_slots_coeff(), 0.1);
+        assert_eq!(leios.leios_load_tps, 30);
+        assert_eq!(leios_overridden.cardano_slot_length(), 0.5);
+        assert_eq!(leios_overridden.cardano_epoch_length(), 60.0);
+        assert_eq!(leios_overridden.cardano_active_slots_coeff(), 0.3);
+    }
 
     #[test]
     fn create_workdir_creates_its_missing_parent_directories() {

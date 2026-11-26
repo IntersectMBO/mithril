@@ -46,6 +46,7 @@ pub struct MithrilInfrastructureConfig {
     pub bin_dir: PathBuf,
     pub cardano_node_version: semver::Version,
     pub cardano_hard_fork_latest_era_at_epoch: u16,
+    pub use_leios: bool,
     pub mithril_run_interval: u32,
     pub mithril_era: String,
     pub mithril_era_reader_adapter: String,
@@ -101,6 +102,7 @@ impl MithrilInfrastructureConfig {
             bin_dir: PathBuf::from("/tmp/bin"),
             cardano_node_version: semver::Version::new(1, 0, 0),
             cardano_hard_fork_latest_era_at_epoch: 0,
+            use_leios: false,
             mithril_run_interval: 10,
             mithril_era: "era1".to_string(),
             mithril_era_reader_adapter: "adapter1".to_string(),
@@ -145,6 +147,7 @@ pub struct MithrilInfrastructure {
     relay_passives: Vec<RelayPassive>,
     cardano_node_version: semver::Version,
     cardano_hard_fork_latest_era_at_epoch: u16,
+    use_leios: bool,
     cardano_chain_observer: Arc<dyn ChainObserver>,
     startup_protocol_configuration: ProtocolConfiguration,
     current_era: RwLock<String>,
@@ -260,6 +263,7 @@ impl MithrilInfrastructure {
             cardano_chain_observer,
             cardano_node_version: config.cardano_node_version.clone(),
             cardano_hard_fork_latest_era_at_epoch: config.cardano_hard_fork_latest_era_at_epoch,
+            use_leios: config.use_leios,
             startup_protocol_configuration: config.startup_protocol_configuration.clone(),
             current_era: RwLock::new(config.mithril_era.clone()),
             era_reader_adapter: config.mithril_era_reader_adapter.clone(),
@@ -694,6 +698,10 @@ impl MithrilInfrastructure {
             &self.cardano_node_version,
             self.cardano_hard_fork_latest_era_at_epoch,
         )
+    }
+
+    pub fn use_leios(&self) -> bool {
+        self.use_leios
     }
 
     pub fn most_constraining_aggregate_signature_type(&self) -> AggregateSignatureType {

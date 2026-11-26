@@ -17,7 +17,7 @@ pub enum DmqNetwork {
     /// The Dmq mainnet network
     MainNet,
 
-    /// A Dmq test network (preview, preprod, dijkstranet or private testnet)
+    /// A Dmq test network (preview, preprod, dijkstranet, musashinet or private testnet)
     TestNet(MagicId),
 }
 
@@ -32,6 +32,8 @@ impl DmqNetwork {
     pub(crate) const DEVNET_MAGIC_ID: MagicId = 2147483690;
     /// Dijkstranet magic ID
     pub const DIJKSTRANET_MAGIC_ID: MagicId = 2147483654;
+    /// Musashinet magic ID
+    pub const MUSASHINET_MAGIC_ID: MagicId = 2147483812;
 
     /// Instantiates a DmqNetwork from its code and magic id
     pub fn from_code(
@@ -44,6 +46,7 @@ impl DmqNetwork {
             "preprod" => Ok(DmqNetwork::TestNet(Self::PREPROD_MAGIC_ID)),
             "devnet" => Ok(DmqNetwork::TestNet(Self::DEVNET_MAGIC_ID)),
             "dijkstranet" => Ok(DmqNetwork::TestNet(Self::DIJKSTRANET_MAGIC_ID)),
+            "musashinet" => Ok(DmqNetwork::TestNet(Self::MUSASHINET_MAGIC_ID)),
             "private" => {
                 if let Some(magic) = network_magic {
                     Ok(DmqNetwork::TestNet(magic))
@@ -54,7 +57,7 @@ impl DmqNetwork {
                 }
             }
             what => Err(DmqNetworkError::ParseFromCode(format!(
-                "could not parse network '{what}', the only recognized networks are: mainnet, devnet, testnet, preview, preprod, dijkstranet and private"
+                "could not parse network '{what}', the only recognized networks are: mainnet, devnet, testnet, preview, preprod, dijkstranet, musashinet and private"
             ))),
         }
     }
@@ -77,6 +80,7 @@ impl Display for DmqNetwork {
                 Self::PREPROD_MAGIC_ID => write!(f, "preprod"),
                 Self::DEVNET_MAGIC_ID => write!(f, "devnet"),
                 Self::DIJKSTRANET_MAGIC_ID => write!(f, "dijkstranet"),
+                Self::MUSASHINET_MAGIC_ID => write!(f, "musashinet"),
                 _ => write!(f, "private"),
             },
         }
@@ -151,6 +155,14 @@ mod tests {
             DmqNetwork::TestNet(DmqNetwork::DIJKSTRANET_MAGIC_ID)
         );
         assert_eq!(
+            DmqNetwork::from_code("musashinet".to_string(), None).unwrap(),
+            DmqNetwork::TestNet(DmqNetwork::MUSASHINET_MAGIC_ID)
+        );
+        assert_eq!(
+            DmqNetwork::from_code("musashinet".to_string(), Some(123)).unwrap(),
+            DmqNetwork::TestNet(DmqNetwork::MUSASHINET_MAGIC_ID)
+        );
+        assert_eq!(
             DmqNetwork::from_code("private".to_string(), Some(123)).unwrap(),
             DmqNetwork::TestNet(123)
         );
@@ -172,6 +184,10 @@ mod tests {
         assert_all_conversions_eq(
             DmqNetwork::TestNet(DmqNetwork::DIJKSTRANET_MAGIC_ID),
             "dijkstranet",
+        );
+        assert_all_conversions_eq(
+            DmqNetwork::TestNet(DmqNetwork::MUSASHINET_MAGIC_ID),
+            "musashinet",
         );
         assert_all_conversions_eq(DmqNetwork::TestNet(123456), "private");
     }
@@ -200,6 +216,10 @@ mod tests {
         assert_magic_id_conversion_roundtrip(
             DmqNetwork::DIJKSTRANET_MAGIC_ID,
             DmqNetwork::TestNet(DmqNetwork::DIJKSTRANET_MAGIC_ID),
+        );
+        assert_magic_id_conversion_roundtrip(
+            DmqNetwork::MUSASHINET_MAGIC_ID,
+            DmqNetwork::TestNet(DmqNetwork::MUSASHINET_MAGIC_ID),
         );
         assert_magic_id_conversion_roundtrip(123456, DmqNetwork::TestNet(123456));
     }

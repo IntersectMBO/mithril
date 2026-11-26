@@ -31,6 +31,10 @@ pub struct FullScenario {
 }
 
 impl FullScenario {
+    /// Number of epochs to wait once the protocol parameters are updated, so that the new
+    /// protocol parameters and the new stake distribution are used a few times
+    const EPOCHS_TO_WAIT_AFTER_PROTOCOL_PARAMETERS_UPDATE: u64 = 6;
+
     pub fn new(
         toolkit: ScenarioToolkit,
         infrastructure: Arc<MithrilInfrastructure>,
@@ -246,8 +250,19 @@ impl FullScenario {
                 .await?;
         }
 
-        // Wait 6 epochs after protocol parameters update, so that we make sure that we use new protocol parameters as well as new stake distribution a few times
-        target_epoch += 6;
+        // Start the transaction load of the Leios mode after the last transaction written on chain by the scenario:
+        // the load delays the other transactions, which would break the timing of the steps above
+        if infrastructure.use_leios() && aggregator.is_leader() {
+            self.toolkit.exec.generate_load(infrastructure.devnet()).await?;
+        }
+
+        let update_end_epoch = aggregator
+            .chain_observer()
+            .get_current_epoch()
+            .await?
+            .ok_or(anyhow!("Current epoch is not available"))?;
+        target_epoch =
+            Self::epoch_to_wait_after_protocol_parameters_update(target_epoch, update_end_epoch);
         self.toolkit.wait.for_aggregator_at_target_epoch(
             aggregator,
             target_epoch,
@@ -349,6 +364,18 @@ impl FullScenario {
         })
     }
 
+    /// Compute the epoch to wait for once the protocol parameters are updated.
+    ///
+    /// The wait counts from the epoch at which the update is written on chain, which is later
+    /// than the epoch at which it started when the writing spans several short epochs.
+    fn epoch_to_wait_after_protocol_parameters_update(
+        update_start_epoch: Epoch,
+        update_end_epoch: Epoch,
+    ) -> Epoch {
+        update_start_epoch.max(update_end_epoch)
+            + Self::EPOCHS_TO_WAIT_AFTER_PROTOCOL_PARAMETERS_UPDATE
+    }
+
     fn defers_certification_to_a_re_genesis(conditions: CertificationDeferralConditions) -> bool {
         !conditions.is_leader_aggregator
             && conditions.aggregate_signature_type == AggregateSignatureType::IvcSnark
@@ -436,6 +463,12 @@ impl FullScenario {
                     infrastructure.signers().len(),
                 )
                 .await?;
+            if infrastructure.use_leios() && aggregator.is_leader() {
+                self.toolkit
+                    .check
+                    .cardano_database
+                    .leios_closures_are_restored(&client, infrastructure.cardano_node_version())?;
+            }
         }
 
         // Verify that Cardano transactions artifacts are produced and signed correctly
@@ -503,6 +536,23 @@ struct CertificationDeferralConditions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wait_after_protocol_parameters_update_counts_from_its_start_when_written_in_the_same_epoch()
+    {
+        assert_eq!(
+            Epoch(26),
+            FullScenario::epoch_to_wait_after_protocol_parameters_update(Epoch(20), Epoch(20))
+        );
+    }
+
+    #[test]
+    fn wait_after_protocol_parameters_update_counts_from_the_epoch_it_is_written_at() {
+        assert_eq!(
+            Epoch(28),
+            FullScenario::epoch_to_wait_after_protocol_parameters_update(Epoch(20), Epoch(22))
+        );
+    }
 
     #[test]
     fn only_an_ivc_snark_follower_defers_its_certification_to_a_planned_re_genesis() {

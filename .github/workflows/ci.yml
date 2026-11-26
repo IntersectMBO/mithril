@@ -358,6 +358,42 @@ jobs:
             hard_fork_latest_era_at_epoch: 2
             run_id: "#1"
             extra_args: "--aggregate-signature-type=Concatenation full --check-client-cli-snapshot-converter"
+          # Include a test with a Leios devnet: the Leios node is a release candidate of input-output-hk/ouroboros-leios, with 15s epochs, short Leios periods and a 60s transaction load to bound the run time
+          - mode: "leios"
+            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
+            next_era: ""
+            cardano_node_version: "11.2.0"
+            hard_fork_latest_era_at_epoch: 0
+            run_id: "#1"
+            extra_args: "--use-leios --cardano-binary-url=https://github.com/input-output-hk/ouroboros-leios/releases/download/rc-2026w46/cardano-node-leios-x86_64-linux.tar.gz --cardano-epoch-length=150 --cardano-active-slots-coeff=0.3 --leios-announcement-period-ms=50 --leios-vote-period-ms=100 --leios-diffusion-period-ms=150 --leios-load-duration=60 --aggregate-signature-type=Concatenation full"
+          - mode: "leios"
+            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
+            next_era: ""
+            cardano_node_version: "11.2.0"
+            hard_fork_latest_era_at_epoch: 0
+            run_id: "#2"
+            extra_args: "--use-leios --cardano-binary-url=https://github.com/input-output-hk/ouroboros-leios/releases/download/rc-2026w46/cardano-node-leios-x86_64-linux.tar.gz --cardano-epoch-length=150 --cardano-active-slots-coeff=0.3 --leios-announcement-period-ms=50 --leios-vote-period-ms=100 --leios-diffusion-period-ms=150 --leios-load-duration=60 --aggregate-signature-type=Concatenation full"
+          - mode: "leios"
+            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
+            next_era: ""
+            cardano_node_version: "11.2.0"
+            hard_fork_latest_era_at_epoch: 0
+            run_id: "#3"
+            extra_args: "--use-leios --cardano-binary-url=https://github.com/input-output-hk/ouroboros-leios/releases/download/rc-2026w46/cardano-node-leios-x86_64-linux.tar.gz --cardano-epoch-length=150 --cardano-active-slots-coeff=0.3 --leios-announcement-period-ms=50 --leios-vote-period-ms=100 --leios-diffusion-period-ms=150 --leios-load-duration=60 --aggregate-signature-type=Concatenation full"
+          - mode: "leios"
+            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
+            next_era: ""
+            cardano_node_version: "11.2.0"
+            hard_fork_latest_era_at_epoch: 0
+            run_id: "#4"
+            extra_args: "--use-leios --cardano-binary-url=https://github.com/input-output-hk/ouroboros-leios/releases/download/rc-2026w46/cardano-node-leios-x86_64-linux.tar.gz --cardano-epoch-length=150 --cardano-active-slots-coeff=0.3 --leios-announcement-period-ms=50 --leios-vote-period-ms=100 --leios-diffusion-period-ms=150 --leios-load-duration=60 --aggregate-signature-type=Concatenation full"
+          - mode: "leios"
+            era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
+            next_era: ""
+            cardano_node_version: "11.2.0"
+            hard_fork_latest_era_at_epoch: 0
+            run_id: "#5"
+            extra_args: "--use-leios --cardano-binary-url=https://github.com/input-output-hk/ouroboros-leios/releases/download/rc-2026w46/cardano-node-leios-x86_64-linux.tar.gz --cardano-epoch-length=150 --cardano-active-slots-coeff=0.3 --leios-announcement-period-ms=50 --leios-vote-period-ms=100 --leios-diffusion-period-ms=150 --leios-load-duration=60 --aggregate-signature-type=Concatenation full"
           # Include a test with a signer using HTTP adapter for protocol configurations (instead of on-chain by default)
           - mode: "signer-legacy-http-protocol-configurations"
             era: ${{ fromJSON(needs.build-ubuntu.outputs.eras)[0] }}
