@@ -14,8 +14,8 @@ use crate::FileUploader;
 use crate::file_uploaders::FileUploadRetryPolicy;
 use crate::file_uploaders::interface::retry;
 use crate::tools::kubo_rpc_client::query::{
-    IpfsAddQuery, IpfsFilesLsQuery, IpfsFilesMkdirQuery, IpfsFilesStatQuery, IpfsKeyLsQuery,
-    IpfsNamePublishQuery, IpfsVersionQuery,
+    IpfsAddQuery, IpfsFilesLsQuery, IpfsFilesMkdirQuery, IpfsFilesRmQuery, IpfsFilesStatQuery,
+    IpfsKeyLsQuery, IpfsNamePublishQuery, IpfsPinRmQuery, IpfsVersionQuery,
 };
 use crate::tools::kubo_rpc_client::{IpfsMfsDirPath, KuboRpcClient};
 
@@ -127,6 +127,43 @@ impl IpfsUploader {
             format!(" Directory CID retrieval: {}", self.ipfs_dir_path),
         )
         .await
+    }
+
+    /// Discard a file from the target IPFS MFS directory: its content is unpinned and its entry
+    /// is removed from the directory, allowing it to be uploaded again.
+    ///
+    /// Note: the content is not deleted, it stays available until garbage collected by the node.
+    pub async fn discard_file(&self, filepath: &Path) -> StdResult<()> {
+        let Some(cid) = self
+            .rpc_client
+            .file_exists(&self.ipfs_dir_path, filepath)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to check if file '{}' exists in IPFS",
+                    filepath.display()
+                )
+            })?
+        else {
+            return Ok(());
+        };
+
+        self.rpc_client
+            .unpin(&cid)
+            .await
+            .with_context(|| format!("Failed to unpin file '{}' from IPFS", filepath.display()))?;
+        self.rpc_client
+            .remove_file(&self.ipfs_dir_path, filepath)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to remove file '{}' from IPFS MFS",
+                    filepath.display()
+                )
+            })?;
+        debug!(self.logger, "File discarded from IPFS"; "file_path" => %filepath.display(), "cid" => %cid);
+
+        Ok(())
     }
 
     async fn ensure_directory_exists(&self) -> StdResult<()> {
@@ -263,6 +300,12 @@ pub trait IpfsBackendUploader: Sync + Send {
         file_path: &Path,
     ) -> StdResult<Option<IpfsCid>>;
 
+    /// Remove a file from a given MFS directory
+    async fn remove_file(&self, mfs_dir_path: &IpfsMfsDirPath, file_path: &Path) -> StdResult<()>;
+
+    /// Unpin a CID, allowing it to be garbage collected
+    async fn unpin(&self, cid: &IpfsCid) -> StdResult<()>;
+
     /// Publish a directory to IPNS using a given key
     async fn publish_dir_to_ipns(&self, dir_cid: &IpfsCid, key_name: &str) -> StdResult<()>;
 
@@ -314,6 +357,17 @@ impl IpfsBackendUploader for KuboRpcClient {
         Ok(stat.map(|stat| stat.hash))
     }
 
+    async fn remove_file(&self, mfs_dir_path: &IpfsMfsDirPath, file_path: &Path) -> StdResult<()> {
+        self.send(IpfsFilesRmQuery::new(
+            mfs_dir_path.join_file_name_from(file_path)?,
+        ))
+        .await
+    }
+
+    async fn unpin(&self, cid: &IpfsCid) -> StdResult<()> {
+        self.send(IpfsPinRmQuery::new(cid)).await
+    }
+
     async fn publish_dir_to_ipns(&self, dir_cid: &IpfsCid, key_name: &str) -> StdResult<()> {
         let object_path = format!("/ipfs/{dir_cid}");
         self.send(
@@ -332,6 +386,7 @@ impl IpfsBackendUploader for KuboRpcClient {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::anyhow;
     use mockall::predicate::eq;
 
     use mithril_common::test::logging::MemoryDrainForTestInspector;
@@ -367,8 +422,6 @@ mod tests {
     }
 
     mod check_backend_availability {
-        use anyhow::anyhow;
-
         use super::*;
 
         fn uploader_with_memory_logger(
@@ -792,6 +845,100 @@ mod tests {
 
             assert_eq!("directory-cid", directory_cid);
             assert!(log_inspector.contains_log("IPNS key not found in the IPFS node"));
+        }
+    }
+
+    mod discard_file {
+        use mockall::Sequence;
+
+        use super::*;
+
+        const MFS_DIR: &str = "/test/dir";
+
+        #[tokio::test]
+        async fn unpins_then_removes_an_existing_file() {
+            let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
+                let mut seq = Sequence::new();
+                mock.expect_file_exists()
+                    .with(
+                        eq(IpfsMfsDirPath::from(MFS_DIR)),
+                        eq(Path::new("/a/00001.tar.zst")),
+                    )
+                    .returning(|_, _| Ok(Some("file_cid".to_string())))
+                    .once()
+                    .in_sequence(&mut seq);
+                mock.expect_unpin()
+                    .with(eq("file_cid".to_string()))
+                    .returning(|_| Ok(()))
+                    .once()
+                    .in_sequence(&mut seq);
+                mock.expect_remove_file()
+                    .with(
+                        eq(IpfsMfsDirPath::from(MFS_DIR)),
+                        eq(Path::new("/a/00001.tar.zst")),
+                    )
+                    .returning(|_, _| Ok(()))
+                    .once()
+                    .in_sequence(&mut seq);
+            });
+
+            uploader.discard_file(Path::new("/a/00001.tar.zst")).await.unwrap();
+        }
+
+        #[tokio::test]
+        async fn does_nothing_if_the_file_does_not_exist() {
+            let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
+                mock.expect_file_exists().returning(|_, _| Ok(None));
+                mock.expect_unpin().never();
+                mock.expect_remove_file().never();
+            });
+
+            uploader.discard_file(Path::new("/a/00001.tar.zst")).await.unwrap();
+        }
+
+        #[tokio::test]
+        async fn returns_error_when_checking_file_existence_fails() {
+            let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
+                mock.expect_file_exists()
+                    .returning(|_, _| Err(anyhow!("stat failure")));
+                mock.expect_unpin().never();
+                mock.expect_remove_file().never();
+            });
+
+            uploader
+                .discard_file(Path::new("/a/00001.tar.zst"))
+                .await
+                .unwrap_err();
+        }
+
+        #[tokio::test]
+        async fn does_not_remove_the_file_when_unpinning_fails() {
+            let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
+                mock.expect_file_exists()
+                    .returning(|_, _| Ok(Some("file_cid".to_string())));
+                mock.expect_unpin().returning(|_| Err(anyhow!("unpin failure")));
+                mock.expect_remove_file().never();
+            });
+
+            uploader
+                .discard_file(Path::new("/a/00001.tar.zst"))
+                .await
+                .unwrap_err();
+        }
+
+        #[tokio::test]
+        async fn returns_error_when_removing_the_file_fails() {
+            let uploader = IpfsUploader::new_for_test(MFS_DIR, |mock| {
+                mock.expect_file_exists()
+                    .returning(|_, _| Ok(Some("file_cid".to_string())));
+                mock.expect_unpin().returning(|_| Ok(()));
+                mock.expect_remove_file().returning(|_, _| Err(anyhow!("rm failure")));
+            });
+
+            uploader
+                .discard_file(Path::new("/a/00001.tar.zst"))
+                .await
+                .unwrap_err();
         }
     }
 
