@@ -68,6 +68,7 @@ pub struct DevnetBootstrapArgs {
     pub number_of_full_nodes: u8,
     pub cardano_slot_length: f64,
     pub cardano_epoch_length: f64,
+    pub cardano_active_slots_coeff: f64,
     pub cardano_node_version: semver::Version,
     pub dmq_node_version: Option<String>,
     pub cardano_hard_fork_latest_era_at_epoch: u16,
@@ -76,6 +77,9 @@ pub struct DevnetBootstrapArgs {
     pub use_leios: bool,
     pub leios_load_duration: Option<u32>,
     pub leios_load_tps: u32,
+    pub leios_announcement_period_ms: Option<u32>,
+    pub leios_vote_period_ms: Option<u32>,
+    pub leios_diffusion_period_ms: Option<u32>,
 }
 
 impl Devnet {
@@ -146,6 +150,10 @@ impl Devnet {
             bootstrap_args.cardano_epoch_length.to_string(),
         );
         bootstrap_command.env(
+            "ACTIVE_SLOTS_COEFF",
+            bootstrap_args.cardano_active_slots_coeff.to_string(),
+        );
+        bootstrap_command.env(
             "CARDANO_NODE_VERSION",
             bootstrap_args.cardano_node_version.to_string(),
         );
@@ -166,11 +174,25 @@ impl Devnet {
 
         if bootstrap_args.use_leios {
             bootstrap_command.env("USE_LEIOS", "true");
-            bootstrap_command.env("ACTIVE_SLOTS_COEFF", "0.1");
             if let Some(leios_load_duration) = bootstrap_args.leios_load_duration {
                 bootstrap_command.env("LOAD_DURATION", leios_load_duration.to_string());
             }
             bootstrap_command.env("LOAD_TPS", bootstrap_args.leios_load_tps.to_string());
+            for (variable, period_ms) in [
+                (
+                    "LEIOS_ANNOUNCEMENT_PERIOD_MS",
+                    bootstrap_args.leios_announcement_period_ms,
+                ),
+                ("LEIOS_VOTE_PERIOD_MS", bootstrap_args.leios_vote_period_ms),
+                (
+                    "LEIOS_DIFFUSION_PERIOD_MS",
+                    bootstrap_args.leios_diffusion_period_ms,
+                ),
+            ] {
+                if let Some(period_ms) = period_ms {
+                    bootstrap_command.env(variable, period_ms.to_string());
+                }
+            }
         }
 
         bootstrap_command
