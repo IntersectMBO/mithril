@@ -27,7 +27,7 @@ impl DependenciesBuilder {
                 &self.configuration.era_reader_adapter_type(),
                 &self.configuration.era_reader_adapter_params(),
             )
-            .build(self.get_chain_observer().await?)
+            .build(self.get_chain_observer().await?, self.root_logger())
             .map_err(|e| DependenciesBuilderError::Initialization {
                 message: "Could not build EraReader as dependency.".to_string(),
                 error: Some(e.into()),

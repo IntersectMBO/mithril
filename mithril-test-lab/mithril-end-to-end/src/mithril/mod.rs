@@ -7,7 +7,7 @@ mod relay_passive;
 mod relay_signer;
 mod signer;
 
-pub use aggregator::{Aggregator, AggregatorConfig};
+pub use aggregator::{Aggregator, AggregatorConfig, EraMarkersDatumFormat};
 pub use client::{
     CardanoBlockCommand, CardanoDbV2Command, CardanoStakeDistributionCommand,
     CardanoTransactionCommand, CardanoTransactionV2Command, Client, ClientCommand, ClientOutput,

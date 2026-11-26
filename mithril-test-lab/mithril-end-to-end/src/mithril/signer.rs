@@ -48,6 +48,10 @@ pub struct Signer {
 impl Signer {
     pub const BIN_NAME: &'static str = "mithril-signer";
 
+    /// First version of the signer that reads era markers with a sequence number, to update
+    /// with the version that ships them
+    pub const SEQUENCED_ERA_MARKERS_MIN_VERSION: semver::Version = semver::Version::new(1, 3, 0);
+
     pub fn new(signer_config: &SignerConfig) -> StdResult<Self> {
         let version = NodeVersion::fetch(Self::BIN_NAME, signer_config.bin_dir)?;
 
@@ -183,6 +187,11 @@ impl Signer {
     /// Get the version of the mithril-signer binary.
     pub fn version(&self) -> &NodeVersion {
         &self.version
+    }
+
+    /// Whether a signer of this version reads era markers with a sequence number
+    pub fn can_read_sequenced_era_markers(version: &NodeVersion) -> bool {
+        semver::Version::from(version) >= Self::SEQUENCED_ERA_MARKERS_MIN_VERSION
     }
 
     pub fn can_read_protocol_configurations_on_chain(version: &NodeVersion) -> bool {

@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use slog_scope::info;
 
 use mithril_common::StdResult;
@@ -10,7 +10,9 @@ use mithril_common::entities::Epoch;
 use mithril_common::messages::AggregatorStatusMessage;
 
 use crate::toolkit::ScenarioToolkitContext;
-use crate::{Aggregator, Devnet, MithrilInfrastructure, ProtocolConfiguration};
+use crate::{
+    Aggregator, Devnet, EraMarkersDatumFormat, MithrilInfrastructure, ProtocolConfiguration,
+};
 
 #[derive(Debug, Clone)]
 pub struct ExecToolkit {
@@ -56,19 +58,34 @@ impl ExecToolkit {
         devnet: &Devnet,
         mithril_era: &str,
         era_epoch: Epoch,
+        datum_formats: &[EraMarkersDatumFormat],
     ) -> StdResult<()> {
-        info!("Register '{mithril_era}' era marker"; "aggregator" => &aggregator.name());
-
-        info!("> generating era marker tx datum..."; "aggregator" => &aggregator.name());
-        let tx_datum_file_path = devnet
-            .artifacts_dir()
-            .join(PathBuf::from("era-tx-datum.txt".to_string()));
-        aggregator
-            .era_generate_tx_datum(&tx_datum_file_path, mithril_era, era_epoch)
-            .await?;
+        info!("Register '{mithril_era}' era marker"; "aggregator" => &aggregator.name(), "datum_formats" => ?datum_formats);
+        if datum_formats.len() > 2 {
+            return Err(anyhow!(
+                "At most two era markers datums can be stored on the Cardano chain"
+            ));
+        }
+        let mut datum_file_paths = vec![];
+        for datum_format in datum_formats {
+            info!("> generating era marker tx datum..."; "aggregator" => &aggregator.name(), "datum_format" => ?datum_format);
+            let datum_file_path = devnet.artifacts_dir().join(datum_format.datum_file_name());
+            aggregator
+                .era_generate_tx_datum(&datum_file_path, mithril_era, era_epoch, *datum_format)
+                .await?;
+            datum_file_paths.push(datum_file_path);
+        }
+        let (datum_file_path, additional_datum_file_paths) = datum_file_paths
+            .split_first()
+            .ok_or_else(|| anyhow!("No era markers datum to store on the Cardano chain"))?;
 
         info!("> writing '{mithril_era}' era marker on the Cardano chain..."; "aggregator" => &aggregator.name());
-        devnet.write_era_marker(&tx_datum_file_path).await?;
+        devnet
+            .write_era_marker(
+                datum_file_path,
+                additional_datum_file_paths.first().map(|path| path.as_path()),
+            )
+            .await?;
 
         Ok(())
     }

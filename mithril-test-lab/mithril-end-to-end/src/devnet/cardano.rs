@@ -358,11 +358,21 @@ impl Devnet {
         }
     }
 
-    pub async fn write_era_marker(&self, target_path: &Path) -> StdResult<()> {
+    pub async fn write_era_marker(
+        &self,
+        target_path: &Path,
+        additional_target_path: Option<&Path>,
+    ) -> StdResult<()> {
         let run_script = "era-mithril.sh";
         let run_script_path = self.artifacts_dir.join(run_script);
         let mut run_command = self.build_command(&run_script_path)?;
         run_command.env("DATUM_FILE", target_path.to_str().unwrap());
+        if let Some(additional_target_path) = additional_target_path {
+            run_command.env(
+                "ADDITIONAL_DATUM_FILE",
+                additional_target_path.to_str().unwrap(),
+            );
+        }
 
         info!("Writing era marker on chain"; "script" => &run_script_path.display());
 

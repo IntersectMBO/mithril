@@ -11,3 +11,8 @@ mod era_reader;
 
 pub use era_checker::EraChecker;
 pub use era_reader::*;
+
+#[cfg(test)]
+pub(crate) mod test_tools {
+    mithril_common::define_test_logger!();
+}

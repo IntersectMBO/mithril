@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use slog::Logger;
 use std::{fmt::Display, path::PathBuf, sync::Arc};
 use thiserror::Error;
 
@@ -80,6 +81,7 @@ impl AdapterBuilder {
     pub fn build(
         &self,
         chain_observer: Arc<dyn ChainObserver>,
+        logger: Logger,
     ) -> Result<Arc<dyn EraReaderAdapter>, AdapterBuilderError> {
         match self.adapter_type {
             AdapterType::CardanoChain => {
@@ -100,6 +102,7 @@ impl AdapterBuilder {
                     adapter_config.address,
                     chain_observer,
                     adapter_config.verification_key,
+                    logger,
                 )))
             }
             AdapterType::File => {
@@ -145,6 +148,8 @@ impl AdapterBuilder {
 mod test {
     use mithril_cardano_node_chain::test::double::FakeChainObserver;
 
+    use crate::test_tools::TestLogger;
+
     use super::*;
 
     const GOLDEN_ADAPTER_PARAMS: &str = r#"{
@@ -158,7 +163,7 @@ mod test {
             &AdapterType::CardanoChain,
             &Some(GOLDEN_ADAPTER_PARAMS.to_owned()),
         )
-        .build(Arc::new(FakeChainObserver::new(None)))
+        .build(Arc::new(FakeChainObserver::new(None)), TestLogger::stdout())
         .expect("building an cardano chain era reader with golden params should not fail");
     }
 }
