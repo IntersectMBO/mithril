@@ -10,6 +10,7 @@ use mithril_common::{
 use crate::{
     Aggregator, CardanoBlockCommand, CardanoTransactionV2Command, Client, ClientCommand,
     toolkit::{CheckCertificateToolkit, ScenarioToolkitContext},
+    utils::CardanoBlockTransactions,
 };
 
 use super::utils;
@@ -45,6 +46,54 @@ impl CheckCardanoBlocksTransactionsToolkit {
             .await?;
         self.verify_transactions_with_client(client, tx_hashes).await?;
         self.verify_blocks_with_client(client, block_hashes).await?;
+
+        Ok(())
+    }
+
+    /// Checks that every transaction and sub-transaction id computed by cardano-cli on the devnet is listed by the immutable files, so that the certified ids are the ids the ledger uses
+    pub fn check_payments_hashes_are_in_blocks(
+        &self,
+        blocks_transactions: &[CardanoBlockTransactions],
+        transaction_hashes: &[String],
+        sub_transaction_hashes: &[String],
+    ) -> StdResult<()> {
+        let missing_transaction = transaction_hashes.iter().find(|hash| {
+            !blocks_transactions
+                .iter()
+                .any(|bt| bt.transaction_hashes.contains(hash))
+        });
+        if let Some(hash) = missing_transaction {
+            return Err(anyhow!(
+                "Transaction {hash} submitted by the devnet payment script is not listed by the immutable files"
+            ));
+        }
+        let missing_sub_transaction = sub_transaction_hashes.iter().find(|hash| {
+            !blocks_transactions
+                .iter()
+                .any(|bt| bt.sub_transaction_hashes.contains(hash))
+        });
+        if let Some(hash) = missing_sub_transaction {
+            return Err(anyhow!(
+                "Sub-transaction {hash} submitted by the devnet payment script is not listed by the immutable files"
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Checks that the blocks hold at least one sub-transaction, as a devnet started in the Dijkstra era must
+    pub fn check_blocks_contain_sub_transactions(
+        &self,
+        blocks_transactions: &[CardanoBlockTransactions],
+    ) -> StdResult<()> {
+        if blocks_transactions
+            .iter()
+            .all(|bt| bt.sub_transaction_hashes.is_empty())
+        {
+            return Err(anyhow!(
+                "No sub-transaction found in the immutable files of a devnet started in the Dijkstra era"
+            ));
+        }
 
         Ok(())
     }
@@ -168,5 +217,93 @@ impl CheckCardanoBlocksTransactionsToolkit {
         } else {
             Err(anyhow!("Not all blocks were certified:\n'{:#?}'", result,))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn toolkit() -> CheckCardanoBlocksTransactionsToolkit {
+        CheckCardanoBlocksTransactionsToolkit::new(ScenarioToolkitContext::new_from_cardano_epoch(
+            1.0, 10.0,
+        ))
+    }
+
+    fn block(
+        transaction_hashes: &[&str],
+        sub_transaction_hashes: &[&str],
+    ) -> CardanoBlockTransactions {
+        CardanoBlockTransactions {
+            block_hash: "block".to_string(),
+            transaction_hashes: transaction_hashes.iter().map(|h| h.to_string()).collect(),
+            sub_transaction_hashes: sub_transaction_hashes.iter().map(|h| h.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn check_payments_hashes_are_in_blocks_accepts_listed_hashes() {
+        toolkit()
+            .check_payments_hashes_are_in_blocks(
+                &[block(&["tx1"], &["sub1"]), block(&["tx2"], &["sub2"])],
+                &["tx2".to_string()],
+                &["sub1".to_string(), "sub2".to_string()],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn check_payments_hashes_are_in_blocks_accepts_empty_lists() {
+        toolkit()
+            .check_payments_hashes_are_in_blocks(&[block(&["tx1"], &[])], &[], &[])
+            .unwrap();
+    }
+
+    #[test]
+    fn check_payments_hashes_are_in_blocks_fails_on_an_unlisted_transaction() {
+        let error = toolkit()
+            .check_payments_hashes_are_in_blocks(
+                &[block(&["tx1"], &["sub1"])],
+                &["tx9".to_string()],
+                &[],
+            )
+            .unwrap_err();
+
+        assert!(error.to_string().contains("Transaction tx9"));
+    }
+
+    #[test]
+    fn check_payments_hashes_are_in_blocks_fails_on_an_unlisted_sub_transaction() {
+        let error = toolkit()
+            .check_payments_hashes_are_in_blocks(
+                &[block(&["tx1"], &["sub1"])],
+                &[],
+                &["sub9".to_string()],
+            )
+            .unwrap_err();
+
+        assert!(error.to_string().contains("Sub-transaction sub9"));
+    }
+
+    #[test]
+    fn check_blocks_contain_sub_transactions_accepts_blocks_with_a_sub_transaction() {
+        toolkit()
+            .check_blocks_contain_sub_transactions(&[
+                block(&["tx1"], &[]),
+                block(&["tx2"], &["sub1"]),
+            ])
+            .unwrap();
+    }
+
+    #[test]
+    fn check_blocks_contain_sub_transactions_fails_without_sub_transaction() {
+        toolkit()
+            .check_blocks_contain_sub_transactions(&[block(&["tx1"], &[]), block(&["tx2"], &[])])
+            .unwrap_err();
+    }
+
+    #[test]
+    fn check_blocks_contain_sub_transactions_fails_without_block() {
+        toolkit().check_blocks_contain_sub_transactions(&[]).unwrap_err();
     }
 }

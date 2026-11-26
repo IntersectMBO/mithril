@@ -176,7 +176,7 @@ impl<M: TryFromBytes + Debug> Drop for DmqConsumerClientPallas<M> {
 mod tests {
     use anyhow::anyhow;
     use pallas_network::{
-        facades::DmqServer,
+        facades::{DEFAULT_HANDSHAKE_TIMEOUT, DmqServer},
         miniprotocols::{
             localmsgnotification,
             localmsgsubmission::{DmqMsg, DmqMsgOperationalCertificate, DmqMsgPayload},
@@ -265,9 +265,10 @@ mod tests {
                     fs::remove_file(socket_path.clone()).unwrap();
                 }
                 let listener = UnixListener::bind(socket_path).unwrap();
-                let mut server = pallas_network::facades::DmqServer::accept(&listener, 0)
-                    .await
-                    .unwrap();
+                let mut server =
+                    DmqServer::accept_with_timeout(&listener, 0, DEFAULT_HANDSHAKE_TIMEOUT)
+                        .await
+                        .unwrap();
 
                 // init local msg notification server
                 let server_msg = server.msg_notification();

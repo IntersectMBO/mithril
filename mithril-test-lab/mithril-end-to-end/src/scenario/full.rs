@@ -13,7 +13,7 @@ use crate::{
     AggregateSignatureType, Aggregator, MithrilInfrastructure, NodeVersion,
     toolkit::ScenarioToolkit,
     utils::{
-        randomly_take_blocks_hashes, randomly_take_transactions_hashes,
+        randomly_take_blocks_and_transactions_hashes,
         retrieve_blocks_transactions_from_immutable_files,
     },
 };
@@ -389,8 +389,20 @@ impl FullScenario {
         let blocks_transactions =
             retrieve_blocks_transactions_from_immutable_files(&immutable_files_directory)?;
 
-        let transaction_hashes = randomly_take_transactions_hashes(&blocks_transactions, 5);
-        let block_hashes = randomly_take_blocks_hashes(&blocks_transactions, 5);
+        if self.is_signing_cardano_transactions || self.is_signing_cardano_blocks_transactions {
+            let blocks_transactions_toolkit = &self.toolkit.check.cardano_blocks_transactions;
+            blocks_transactions_toolkit.check_payments_hashes_are_in_blocks(
+                &blocks_transactions,
+                &infrastructure.devnet().mithril_payments_transaction_hashes()?,
+                &infrastructure.devnet().mithril_payments_sub_transaction_hashes()?,
+            )?;
+            if infrastructure.devnet_starts_in_dijkstra() {
+                blocks_transactions_toolkit
+                    .check_blocks_contain_sub_transactions(&blocks_transactions)?;
+            }
+        }
+        let (transaction_hashes, block_hashes) =
+            randomly_take_blocks_and_transactions_hashes(&blocks_transactions, true);
 
         // Verify that the aggregator is still producing a certificate chain
         self.toolkit

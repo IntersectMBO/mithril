@@ -9,6 +9,25 @@ use pallas_traverse::MultiEraBlock;
 pub struct CardanoBlockTransactions {
     pub block_hash: String,
     pub transaction_hashes: Vec<String>,
+    /// Hashes of the sub-transactions carried by the transactions of the block (Dijkstra era)
+    pub sub_transaction_hashes: Vec<String>,
+}
+
+impl CardanoBlockTransactions {
+    /// Lists the top-level transactions and their sub-transactions of a decoded block
+    pub fn from_block(block: &MultiEraBlock) -> Self {
+        let transactions = block.txs();
+
+        Self {
+            block_hash: block.hash().to_string(),
+            transaction_hashes: transactions.iter().map(|tx| tx.hash().to_string()).collect(),
+            sub_transaction_hashes: transactions
+                .iter()
+                .flat_map(|tx| tx.sub_transactions())
+                .map(|sub_transaction| sub_transaction.hash().to_string())
+                .collect(),
+        }
+    }
 }
 
 pub fn retrieve_blocks_transactions_from_immutable_files(
@@ -20,14 +39,7 @@ pub fn retrieve_blocks_transactions_from_immutable_files(
         let block = block?;
         let decoded_block = MultiEraBlock::decode(&block)?;
 
-        block_transaction_list.push(CardanoBlockTransactions {
-            block_hash: decoded_block.hash().to_string(),
-            transaction_hashes: decoded_block
-                .txs()
-                .iter()
-                .map(|tx| tx.hash().to_string())
-                .collect(),
-        });
+        block_transaction_list.push(CardanoBlockTransactions::from_block(&decoded_block));
     }
     Ok(block_transaction_list)
 }
@@ -38,7 +50,31 @@ fn randomly_take<T: Clone>(items: &[T], count: usize) -> Vec<T> {
     items.into_iter().take(count).collect()
 }
 
-pub fn randomly_take_transactions_hashes(
+/// Number of block hashes, transaction hashes and sub-transaction hashes taken at random
+const RANDOMLY_TAKEN_HASHES_COUNT: usize = 5;
+
+/// Takes at random the transaction hashes, with the sub-transaction hashes when `include_sub_transactions` is set, and the block hashes to certify
+pub fn randomly_take_blocks_and_transactions_hashes(
+    blocks_transactions: &[CardanoBlockTransactions],
+    include_sub_transactions: bool,
+) -> (Vec<String>, Vec<String>) {
+    let sub_transaction_hashes = if include_sub_transactions {
+        randomly_take_sub_transactions_hashes(blocks_transactions, RANDOMLY_TAKEN_HASHES_COUNT)
+    } else {
+        vec![]
+    };
+    let transaction_hashes = [
+        randomly_take_transactions_hashes(blocks_transactions, RANDOMLY_TAKEN_HASHES_COUNT),
+        sub_transaction_hashes,
+    ]
+    .concat();
+    let block_hashes =
+        randomly_take_blocks_hashes(blocks_transactions, RANDOMLY_TAKEN_HASHES_COUNT);
+
+    (transaction_hashes, block_hashes)
+}
+
+fn randomly_take_transactions_hashes(
     blocks_transactions: &[CardanoBlockTransactions],
     count: usize,
 ) -> Vec<String> {
@@ -51,7 +87,21 @@ pub fn randomly_take_transactions_hashes(
     )
 }
 
-pub fn randomly_take_blocks_hashes(
+/// Takes at most `count` sub-transaction hashes at random from the blocks
+fn randomly_take_sub_transactions_hashes(
+    blocks_transactions: &[CardanoBlockTransactions],
+    count: usize,
+) -> Vec<String> {
+    randomly_take(
+        &blocks_transactions
+            .iter()
+            .flat_map(|bt| bt.sub_transaction_hashes.clone())
+            .collect::<Vec<_>>(),
+        count,
+    )
+}
+
+fn randomly_take_blocks_hashes(
     blocks_transactions: &[CardanoBlockTransactions],
     count: usize,
 ) -> Vec<String> {
@@ -66,8 +116,10 @@ pub fn randomly_take_blocks_hashes(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::BTreeSet;
     use std::path::PathBuf;
+
+    use super::*;
 
     #[test]
     fn test_retrieve_blocks_transactions_from_immutable_files() {
@@ -85,7 +137,29 @@ mod tests {
             transaction_hashes: vec![
                 "ce2872d64240a25d7d43fb57efacfd1d9bd20073e91e1539bd31ef3ebc16555e".to_string()
             ],
+            sub_transaction_hashes: vec![],
         }));
+    }
+
+    #[test]
+    fn from_block_separates_top_level_and_sub_transactions_of_a_dijkstra_block() {
+        let raw_block = hex::decode(include_str!("../../tests/assets/dijkstra1.block")).unwrap();
+        let block = MultiEraBlock::decode(&raw_block).unwrap();
+
+        let block_transactions = CardanoBlockTransactions::from_block(&block);
+
+        assert_eq!(
+            block_transactions.block_hash,
+            "27a8e2d79a1ea9bfb7906f1d049b6c81b7a77c08504ab45c8c49d50a5f109d64"
+        );
+        assert_eq!(
+            block_transactions.transaction_hashes,
+            vec!["7ff742461176a381748e6c0e79f0c483a738e646da8422cdf8fa19deecac52cc".to_string()]
+        );
+        assert_eq!(
+            block_transactions.sub_transaction_hashes,
+            vec!["d0fecaa8853c23d59b233149d11d4918cbfd5f8fb7892280d04ed84646e3f586".to_string()]
+        );
     }
 
     #[test]
@@ -94,10 +168,12 @@ mod tests {
             CardanoBlockTransactions {
                 block_hash: "block1".to_string(),
                 transaction_hashes: vec!["tx1".to_string(), "tx2".to_string()],
+                sub_transaction_hashes: vec![],
             },
             CardanoBlockTransactions {
                 block_hash: "block2".to_string(),
                 transaction_hashes: vec!["tx3".to_string(), "tx4".to_string()],
+                sub_transaction_hashes: vec![],
             },
         ];
         let transaction_hashes = randomly_take_transactions_hashes(&blocks_transactions, 3);
@@ -117,18 +193,22 @@ mod tests {
             CardanoBlockTransactions {
                 block_hash: "block1".to_string(),
                 transaction_hashes: vec![],
+                sub_transaction_hashes: vec![],
             },
             CardanoBlockTransactions {
                 block_hash: "block2".to_string(),
                 transaction_hashes: vec![],
+                sub_transaction_hashes: vec![],
             },
             CardanoBlockTransactions {
                 block_hash: "block3".to_string(),
                 transaction_hashes: vec![],
+                sub_transaction_hashes: vec![],
             },
             CardanoBlockTransactions {
                 block_hash: "block4".to_string(),
                 transaction_hashes: vec![],
+                sub_transaction_hashes: vec![],
             },
         ];
         let block_hashes = randomly_take_blocks_hashes(&blocks_transactions, 2);
@@ -138,5 +218,77 @@ mod tests {
             .iter()
             .all(|item| blocks_transactions.iter().any(|bt| bt.block_hash == *item));
         assert!(all_contained);
+    }
+
+    fn blocks_with_sub_transactions() -> Vec<CardanoBlockTransactions> {
+        vec![
+            CardanoBlockTransactions {
+                block_hash: "block1".to_string(),
+                transaction_hashes: vec!["tx1".to_string()],
+                sub_transaction_hashes: vec!["sub1".to_string(), "sub2".to_string()],
+            },
+            CardanoBlockTransactions {
+                block_hash: "block2".to_string(),
+                transaction_hashes: vec!["tx2".to_string()],
+                sub_transaction_hashes: vec!["sub3".to_string()],
+            },
+        ]
+    }
+
+    #[test]
+    fn randomly_take_sub_transactions_hashes_takes_hashes_of_the_blocks() {
+        let blocks_transactions = blocks_with_sub_transactions();
+
+        let sub_transaction_hashes = randomly_take_sub_transactions_hashes(&blocks_transactions, 2);
+        assert_eq!(sub_transaction_hashes.len(), 2);
+
+        let all_contained = sub_transaction_hashes.iter().all(|item| {
+            blocks_transactions
+                .iter()
+                .any(|bt| bt.sub_transaction_hashes.contains(item))
+        });
+        assert!(all_contained);
+    }
+
+    #[test]
+    fn randomly_take_sub_transactions_hashes_returns_all_hashes_when_count_exceeds_them() {
+        let hashes = randomly_take_sub_transactions_hashes(&blocks_with_sub_transactions(), 10);
+
+        assert_eq!(hashes.len(), 3);
+    }
+
+    #[test]
+    fn randomly_take_sub_transactions_hashes_with_count_zero_is_empty_when_sub_transactions_exist()
+    {
+        let hashes = randomly_take_sub_transactions_hashes(&blocks_with_sub_transactions(), 0);
+
+        assert!(hashes.is_empty());
+    }
+
+    #[test]
+    fn randomly_take_blocks_and_transactions_hashes_includes_the_sub_transactions_when_requested() {
+        let (transaction_hashes, block_hashes) =
+            randomly_take_blocks_and_transactions_hashes(&blocks_with_sub_transactions(), true);
+
+        assert_eq!(
+            BTreeSet::from_iter(transaction_hashes),
+            BTreeSet::from_iter(["tx1", "tx2", "sub1", "sub2", "sub3"].map(String::from))
+        );
+        assert_eq!(
+            BTreeSet::from_iter(block_hashes),
+            BTreeSet::from_iter(["block1", "block2"].map(String::from))
+        );
+    }
+
+    #[test]
+    fn randomly_take_blocks_and_transactions_hashes_excludes_the_sub_transactions_when_not_requested()
+     {
+        let (transaction_hashes, _) =
+            randomly_take_blocks_and_transactions_hashes(&blocks_with_sub_transactions(), false);
+
+        assert_eq!(
+            BTreeSet::from_iter(transaction_hashes),
+            BTreeSet::from_iter(["tx1", "tx2"].map(String::from))
+        );
     }
 }

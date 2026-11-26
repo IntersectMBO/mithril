@@ -42,6 +42,11 @@ if [ -z "${CARDANO_BINARY_URL}" ]; then
     CARDANO_BINARY_URL="https://github.com/IntersectMBO/cardano-node/releases/download/${CARDANO_NODE_VERSION}/cardano-node-${CARDANO_NODE_VERSION_RELEASE}-${OPERATING_SYSTEM}-${ARCHITECTURE}.tar.gz"
   fi
 fi
+if [ "$(version_lt ${CARDANO_NODE_VERSION_RELEASE} 11.2.0)" = "true" ]; then
+  CARDANO_LATEST_ERA=conway
+else
+  CARDANO_LATEST_ERA=dijkstra
+fi
 if [ -z "${CARDANO_CLI_ERA}" ]; then
     CARDANO_CLI_ERA=latest
 fi
@@ -57,14 +62,16 @@ fi
 if [ -z "${DMQ_NETWORK_MAGIC}" ]; then 
   DMQ_NETWORK_MAGIC=2147483690
 fi
-if [ -z "${HARD_FORK_BABBAGE_AT_EPOCH}" ]; then 
-  HARD_FORK_BABBAGE_AT_EPOCH=0
+if [ -z "${CARDANO_HARD_FORK_LATEST_ERA_AT_EPOCH}" ]; then
+  CARDANO_HARD_FORK_LATEST_ERA_AT_EPOCH=0
 fi
-if [ -n "${CARDANO_HARD_FORK_LATEST_ERA_AT_EPOCH}" ]; then 
-  HARD_FORK_CONWAY_AT_EPOCH=$(( HARD_FORK_BABBAGE_AT_EPOCH + CARDANO_HARD_FORK_LATEST_ERA_AT_EPOCH ))
+if [ "${CARDANO_LATEST_ERA}" != "dijkstra" ] && [ "${CARDANO_HARD_FORK_LATEST_ERA_AT_EPOCH}" != "0" ]; then
+  echo "A hard fork to the latest era after epoch 0 needs cardano-node 11.2.0 or later: the devnet forks to every era up to Conway at epoch 0 and only forks to Dijkstra later" >&2
+  exit 1
 fi
-if [ -z "${HARD_FORK_CONWAY_AT_EPOCH}" ]; then 
-  HARD_FORK_CONWAY_AT_EPOCH=0
+if [ -n "${HARD_FORK_BABBAGE_AT_EPOCH}" ] || [ -n "${HARD_FORK_CONWAY_AT_EPOCH}" ]; then
+  echo "HARD_FORK_BABBAGE_AT_EPOCH and HARD_FORK_CONWAY_AT_EPOCH are not supported anymore: the devnet forks to every era up to Conway at epoch 0, CARDANO_HARD_FORK_LATEST_ERA_AT_EPOCH sets the Dijkstra epoch" >&2
+  exit 1
 fi
 if [ -z "${NUM_FULL_NODES}" ]; then 
   NUM_FULL_NODES="1"
@@ -90,8 +97,8 @@ echo ">> Cardano Full nodes [env::NUM_FULL_NODES]: ${NUM_FULL_NODES}"
 echo ">> Cardano SPO nodes [env::NUM_POOL_NODES]: ${NUM_POOL_NODES}"
 echo ">> Cardano Node Version [env::CARDANO_NODE_VERSION]: ${CARDANO_NODE_VERSION}"
 echo ">> Cardano Network Magic [env::NETWORK_MAGIC]: ${NETWORK_MAGIC}"
-echo ">> Cardano Hard Fork Babbage At Epoch [env::HARD_FORK_BABBAGE_AT_EPOCH]: ${HARD_FORK_BABBAGE_AT_EPOCH}"
-echo ">> Cardano Hard Fork Conway At Epoch [env::HARD_FORK_CONWAY_AT_EPOCH]: ${HARD_FORK_CONWAY_AT_EPOCH}"
+echo ">> Cardano Latest Era: ${CARDANO_LATEST_ERA}"
+echo ">> Cardano Hard Fork Latest Era At Epoch [env::CARDANO_HARD_FORK_LATEST_ERA_AT_EPOCH]: ${CARDANO_HARD_FORK_LATEST_ERA_AT_EPOCH}"
 echo ">> Cardano Slot Length [env::SLOT_LENGTH]: ${SLOT_LENGTH}s"
 echo ">> Cardano Epoch Length [env::EPOCH_LENGTH]: ${EPOCH_LENGTH}s"
 echo ">> Cardano Listening Address [env::LISTENING_ADDR]: ${LISTENING_ADDR}"
