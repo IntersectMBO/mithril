@@ -64,8 +64,14 @@ pub enum Action {
     /// Cancel the edition, discarding the edited value
     Cancel,
 
-    /// Confirm the reviewed values, ending the review
+    /// Confirm the reviewed values, ending the review unless a value is in error
     Confirm,
+
+    /// Close the errors popup and select the row of the chosen field
+    GoToField,
+
+    /// Close the errors popup and go back to the `Continue` button
+    ClosePopup,
 
     /// Abort the review
     Abort,
@@ -88,6 +94,12 @@ pub enum Mode {
 
     /// Focusing a button below the table
     OnButton(Button),
+
+    /// Listing the fields in error in a popup, opened when confirming values in error
+    ErrorsPopup {
+        /// Position of the chosen field in the list of the rows in error
+        selected: usize,
+    },
 }
 
 /// Buttons below the review table
@@ -187,6 +199,16 @@ impl ReviewModel {
         }
     }
 
+    /// Indexes of the rows with an error, in rows order
+    pub fn rows_in_error(&self) -> Vec<usize> {
+        self.specs
+            .iter()
+            .enumerate()
+            .filter(|(_, spec)| self.errors.iter().any(|error| error.key == spec.key))
+            .map(|(index, _)| index)
+            .collect()
+    }
+
     /// Current interaction mode
     pub fn mode(&self) -> &Mode {
         &self.mode
@@ -213,6 +235,10 @@ impl ReviewModel {
                 None
             }
             Mode::OnButton(_) => self.update_on_button(action),
+            Mode::ErrorsPopup { .. } => {
+                self.update_errors_popup(action);
+                None
+            }
         }
     }
 
@@ -232,11 +258,35 @@ impl ReviewModel {
             Action::Up => self.mode = Mode::Navigating,
             Action::Left | Action::FocusAbort => self.mode = Mode::OnButton(Button::Abort),
             Action::Right | Action::FocusContinue => self.mode = Mode::OnButton(Button::Continue),
-            Action::Confirm => return Some(ReviewOutcome::Confirmed(self.store.clone())),
+            // Values in error must be fixed first: list them instead of ending
+            Action::Confirm if self.rows_in_error().is_empty() => {
+                return Some(ReviewOutcome::Confirmed(self.store.clone()));
+            }
+            Action::Confirm => self.mode = Mode::ErrorsPopup { selected: 0 },
             _ => {}
         }
 
         None
+    }
+
+    fn update_errors_popup(&mut self, action: Action) {
+        let rows_in_error = self.rows_in_error();
+        let Mode::ErrorsPopup { selected } = &mut self.mode else {
+            return;
+        };
+
+        match action {
+            Action::Up if *selected > 0 => *selected -= 1,
+            Action::Down if *selected + 1 < rows_in_error.len() => *selected += 1,
+            Action::GoToField => {
+                if let Some(row) = rows_in_error.get(*selected) {
+                    self.selected = *row;
+                }
+                self.mode = Mode::Navigating;
+            }
+            Action::ClosePopup => self.mode = Mode::OnButton(Button::Continue),
+            _ => {}
+        }
     }
 
     fn update_editing(&mut self, action: Action) {
@@ -467,6 +517,93 @@ mod tests {
         #[test]
         fn set_value_with_errors_is_invalid() {
             assert_eq!(Status::Invalid, row(Some("value"), &["invalid"]).status());
+        }
+    }
+
+    mod errors_popup {
+        use super::*;
+
+        /// Model with the rows "b" and "d" in error, its errors popup opened
+        fn model_in_errors_popup() -> ReviewModel {
+            let mut store = Store::default();
+            store.set("a", "value", Origin::Discovered);
+            store.set("c", "value", Origin::Discovered);
+            let mut model = ReviewModel::new(
+                vec![spec("a", "A"), spec("b", "B"), spec("c", "C"), spec("d", "D")],
+                store,
+                vec![],
+            );
+            model.update(Action::FocusContinue);
+            model.update(Action::Confirm);
+            model
+        }
+
+        #[test]
+        fn rows_in_error_follow_rows_order() {
+            assert_eq!(vec![1, 3], model_in_errors_popup().rows_in_error());
+        }
+
+        #[test]
+        fn up_and_down_choose_a_field_within_the_popup() {
+            let mut model = model_in_errors_popup();
+
+            model.update(Action::Down);
+            assert_eq!(&Mode::ErrorsPopup { selected: 1 }, model.mode());
+
+            model.update(Action::Down);
+            assert_eq!(&Mode::ErrorsPopup { selected: 1 }, model.mode());
+
+            model.update(Action::Up);
+            model.update(Action::Up);
+            assert_eq!(&Mode::ErrorsPopup { selected: 0 }, model.mode());
+        }
+
+        #[test]
+        fn go_to_field_closes_the_popup_and_selects_the_row_of_the_chosen_field() {
+            let mut model = model_in_errors_popup();
+            model.update(Action::Down);
+
+            let outcome = model.update(Action::GoToField);
+
+            assert_eq!(None, outcome);
+            assert_eq!(&Mode::Navigating, model.mode());
+            assert_eq!(3, model.selected());
+        }
+
+        #[test]
+        fn close_popup_goes_back_to_the_continue_button() {
+            let mut model = model_in_errors_popup();
+
+            model.update(Action::ClosePopup);
+
+            assert_eq!(&Mode::OnButton(Button::Continue), model.mode());
+        }
+
+        #[test]
+        fn table_actions_are_ignored_in_the_popup() {
+            let mut model = model_in_errors_popup();
+
+            for action in [
+                Action::Edit,
+                Action::Input('a'),
+                Action::Left,
+                Action::Confirm,
+                Action::FocusAbort,
+            ] {
+                assert_eq!(None, model.update(action.clone()), "{action:?}");
+                assert_eq!(
+                    &Mode::ErrorsPopup { selected: 0 },
+                    model.mode(),
+                    "{action:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn abort_works_in_the_popup() {
+            let outcome = model_in_errors_popup().update(Action::Abort);
+
+            assert_eq!(Some(ReviewOutcome::Aborted), outcome);
         }
     }
 
@@ -1208,6 +1345,23 @@ mod tests {
             let mut expected_store = Store::default();
             expected_store.set("a", "value!", Origin::User);
             assert_eq!(Some(ReviewOutcome::Confirmed(expected_store)), outcome);
+        }
+
+        #[test]
+        fn confirm_with_errors_opens_the_errors_popup_instead_of_ending() {
+            let mut store = Store::default();
+            store.set("a", "value", Origin::Discovered);
+            let mut model = ReviewModel::new(
+                vec![spec("a", "A"), spec("b", "B"), spec("c", "C")],
+                store,
+                vec![],
+            );
+            model.update(Action::FocusContinue);
+
+            let outcome = model.update(Action::Confirm);
+
+            assert_eq!(None, outcome);
+            assert_eq!(&Mode::ErrorsPopup { selected: 0 }, model.mode());
         }
 
         #[test]

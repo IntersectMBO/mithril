@@ -7,6 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, HighlightSpacing, Paragraph, Row, Table, TableState};
 
 use crate::tui::review::columns::{COLUMN_SPACING, COLUMNS, HIGHLIGHT_SYMBOL, ValueColumn};
+use crate::tui::review::errors_popup::ErrorsPopup;
 use crate::tui::review::model::{Button, Mode, ReviewModel, Status};
 use crate::tui::widgets::{ButtonWidget, WrappedText};
 
@@ -19,6 +20,8 @@ const NAVIGATING_HELP: &[&str] = &[
 ];
 const EDITING_HELP: &[&str] = &["Enter save", "Esc cancel", "Ctrl+C abort"];
 const BUTTONS_HELP: &[&str] = &["←/→ choose", "↑ back to the table", "Enter press", "Ctrl+C abort"];
+const ERRORS_POPUP_HELP: &[&str] =
+    &["↑/↓ choose", "Enter go to the field", "Esc close", "Ctrl+C abort"];
 
 const ABORT_DESCRIPTION: &str = "Quit the setup without saving the values";
 const CONTINUE_DESCRIPTION: &str = "Check the values and go to the next step";
@@ -36,26 +39,34 @@ const FOOTER_BORDERS_HEIGHT: u16 = 2;
 /// Draw the review table, its buttons and its footer in the frame
 pub fn render(model: &ReviewModel, frame: &mut Frame) {
     let model_rows = model.rows();
+    let rows_in_error = model.rows_in_error();
 
-    let (description, errors) = match model.mode() {
-        Mode::OnButton(Button::Abort) => (ABORT_DESCRIPTION, String::new()),
-        Mode::OnButton(Button::Continue) => (CONTINUE_DESCRIPTION, String::new()),
-        Mode::Navigating | Mode::Editing { .. } => model_rows
-            .get(model.selected())
-            .map(|row| {
-                let errors = match row.errors.as_slice() {
-                    [] => String::new(),
-                    [error] => format!("Error: {error}"),
-                    errors => format!("Errors: {}", errors.join("; ")),
-                };
-                (row.description, errors)
-            })
-            .unwrap_or_default(),
+    // Row described in the footer: the selected one, or the one chosen in the errors popup
+    let described_row = match model.mode() {
+        Mode::Navigating | Mode::Editing { .. } => model_rows.get(model.selected()),
+        Mode::ErrorsPopup { selected } => {
+            rows_in_error.get(*selected).and_then(|index| model_rows.get(*index))
+        }
+        Mode::OnButton(_) => None,
+    };
+    let (description, errors) = match (model.mode(), described_row) {
+        (Mode::OnButton(Button::Abort), _) => (ABORT_DESCRIPTION, String::new()),
+        (Mode::OnButton(Button::Continue), _) => (CONTINUE_DESCRIPTION, String::new()),
+        (_, Some(row)) => {
+            let errors = match row.errors.as_slice() {
+                [] => String::new(),
+                [error] => format!("Error: {error}"),
+                errors => format!("Errors: {}", errors.join("; ")),
+            };
+            (row.description, errors)
+        }
+        (_, None) => ("", String::new()),
     };
     let help = match model.mode() {
         Mode::Navigating => NAVIGATING_HELP,
         Mode::Editing { .. } => EDITING_HELP,
         Mode::OnButton(_) => BUTTONS_HELP,
+        Mode::ErrorsPopup { .. } => ERRORS_POPUP_HELP,
     };
     // The footer takes the full width, its texts go on more lines when they don't fit
     let footer_block = Block::bordered();
@@ -106,15 +117,18 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
         // While editing the row is bold, so the reversed cursor stands out
         .row_highlight_style(match model.mode() {
             Mode::Editing { .. } => Style::new().bold(),
-            Mode::Navigating | Mode::OnButton(_) => Style::new().reversed(),
+            Mode::Navigating | Mode::OnButton(_) | Mode::ErrorsPopup { .. } => {
+                Style::new().reversed()
+            }
         })
         .highlight_symbol(HIGHLIGHT_SYMBOL)
         // Keep the space of the highlight symbol when no row is selected, so the columns don't move
         .highlight_spacing(HighlightSpacing::Always);
 
-    // No row is selected while a button is focused, so only one element is highlighted
+    // No row is selected while a button or the popup has the focus, so only one element is
+    // highlighted
     let selected_row = match model.mode() {
-        Mode::OnButton(_) => None,
+        Mode::OnButton(_) | Mode::ErrorsPopup { .. } => None,
         Mode::Navigating | Mode::Editing { .. } => Some(model.selected()),
     };
     let mut table_state = TableState::default().with_selected(selected_row);
@@ -122,7 +136,7 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
 
     let focused_button = match model.mode() {
         Mode::OnButton(button) => Some(*button),
-        Mode::Navigating | Mode::Editing { .. } => None,
+        Mode::Navigating | Mode::Editing { .. } | Mode::ErrorsPopup { .. } => None,
     };
     let abort_button = ButtonWidget {
         label: "Abort",
@@ -152,6 +166,18 @@ pub fn render(model: &ReviewModel, frame: &mut Frame) {
         .collect();
     let footer = Paragraph::new(footer_lines).block(footer_block);
     frame.render_widget(footer, footer_area);
+
+    // Drawn last, over the table
+    if let Mode::ErrorsPopup { selected } = model.mode() {
+        let popup = ErrorsPopup {
+            rows: rows_in_error
+                .iter()
+                .filter_map(|index| model_rows.get(*index))
+                .collect(),
+            selected: *selected,
+        };
+        frame.render_widget(popup, table_area);
+    }
 }
 
 #[cfg(test)]
@@ -483,6 +509,57 @@ mod tests {
             assert!(is_reversed(&buffer, "/ipc/", 0), "{text}");
             assert!(text.contains("xx Discovered"), "{text}");
             assert!(!text.contains("node.socket"), "{text}");
+        }
+    }
+
+    mod errors_popup {
+        use super::*;
+
+        /// Model with the "Network" row in error, its errors popup opened
+        fn model_in_errors_popup() -> ReviewModel {
+            let mut model = model();
+            model.update(Action::FocusContinue);
+            model.update(Action::Confirm);
+            model
+        }
+
+        #[test]
+        fn no_popup_while_navigating() {
+            let text = rendered_text(&model());
+
+            assert!(!text.contains("to fix"), "{text}");
+        }
+
+        #[test]
+        fn popup_lists_only_the_fields_in_error_with_their_errors() {
+            let text = rendered_text(&model_in_errors_popup());
+
+            assert!(text.contains(" 1 value to fix "), "{text}");
+            assert!(text.contains("Network: Network is required"), "{text}");
+            assert!(!text.contains("Socket path:"), "{text}");
+        }
+
+        #[test]
+        fn chosen_field_is_reversed() {
+            let buffer = rendered_buffer(&model_in_errors_popup());
+
+            assert!(is_reversed(&buffer, "Network: Network is required", 0));
+        }
+
+        #[test]
+        fn footer_shows_the_chosen_field_and_the_popup_keys_help() {
+            let footer = rendered_footer(&model_in_errors_popup());
+
+            for expected in [
+                "Name of the network",
+                "Error: Network is required",
+                &one_line(ERRORS_POPUP_HELP),
+            ] {
+                assert!(
+                    footer.contains(expected),
+                    "'{expected}' not found in:\n{footer}"
+                );
+            }
         }
     }
 }
