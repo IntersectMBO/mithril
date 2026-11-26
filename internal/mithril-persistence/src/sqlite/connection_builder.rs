@@ -38,6 +38,9 @@ pub enum ConnectionOptions {
 impl ConnectionBuilder {
     pub(crate) const APPLY_MIGRATIONS_LOG: &str = "Applying database migrations";
 
+    /// Time a connection waits for a lock held by another connection before failing
+    const BUSY_TIMEOUT_IN_MILLISECONDS: usize = 30_000;
+
     /// Builder of file SQLite connection
     pub fn open_file(path: &Path) -> Self {
         Self {
@@ -117,6 +120,13 @@ impl ConnectionBuilder {
                     self.connection_path.display()
                 )
             })?;
+
+        connection
+            .execute(format!(
+                "pragma busy_timeout = {}",
+                Self::BUSY_TIMEOUT_IN_MILLISECONDS
+            ))
+            .with_context(|| "SQLite initialization: could not set the busy timeout.")?;
 
         if self.options.contains(&ConnectionOptions::EnableWriteAheadLog) {
             connection
