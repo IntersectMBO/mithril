@@ -24,16 +24,12 @@ fn quoted(value: &str) -> String {
 
 /// The value is an integer between `min` and `max` (both included)
 pub fn integer_between(min: u64, max: u64) -> FieldRule {
-    Arc::new(move |value| {
-        let integer: u64 = value
-            .parse()
-            .map_err(|_| format!("{} is not a positive integer", quoted(value)))?;
-
-        if (min..=max).contains(&integer) {
-            Ok(())
-        } else {
-            Err(format!("{integer} is not between {min} and {max}"))
-        }
+    Arc::new(move |value| match value.parse::<u64>() {
+        Ok(integer) if (min..=max).contains(&integer) => Ok(()),
+        _ => Err(format!(
+            "{} is not an integer between {min} and {max} (maximum value accepted)",
+            quoted(value)
+        )),
     })
 }
 
@@ -56,9 +52,9 @@ pub fn one_of(allowed: &'static [&'static str]) -> FieldRule {
 pub fn valid_path() -> FieldRule {
     Arc::new(|value| {
         if value.is_empty() {
-            Err("path is empty".to_string())
+            Err(format!("{} is an empty path", quoted(value)))
         } else if value.contains('\0') {
-            Err("path contains a NUL byte".to_string())
+            Err(format!("{} contains a NUL byte", quoted(value)))
         } else {
             Ok(())
         }
@@ -169,21 +165,19 @@ mod tests {
         }
 
         #[test]
-        fn rejects_integers_out_of_bounds() {
+        fn rejects_integers_out_of_bounds_and_non_integers() {
             let rule = integer_between(1, 10);
 
-            assert!(rule("0").is_err());
-            assert!(rule("11").is_err());
-        }
-
-        #[test]
-        fn rejects_non_integers() {
-            let rule = integer_between(1, 10);
-
-            assert!(rule("").is_err());
-            assert!(rule("abc").is_err());
-            assert!(rule("-1").is_err());
-            assert!(rule("1.5").is_err());
+            for value in ["0", "11", "18446744073709551616", "", "abc", "-1", "1.5"] {
+                assert_eq!(
+                    Err(format!(
+                        "{} is not an integer between 1 and 10 (maximum value accepted)",
+                        quoted(value)
+                    )),
+                    rule(value),
+                    "{value}"
+                );
+            }
         }
     }
 
@@ -219,13 +213,12 @@ mod tests {
         }
 
         #[test]
-        fn rejects_empty_path() {
-            assert!(valid_path()("").is_err());
-        }
-
-        #[test]
-        fn rejects_path_with_nul_byte() {
-            assert!(valid_path()("/tmp/a\0b").is_err());
+        fn rejects_empty_path_and_path_with_nul_byte() {
+            assert_eq!(Err("'' is an empty path".to_string()), valid_path()(""));
+            assert_eq!(
+                Err("'/tmp/a\0b' contains a NUL byte".to_string()),
+                valid_path()("/tmp/a\0b")
+            );
         }
     }
 

@@ -120,7 +120,7 @@ pub fn signer_schema() -> Vec<FieldSpec> {
             label: "Network magic",
             description: "Magic number of the Cardano network, for the devnet and private networks",
             presence: Presence::Optional,
-            rules: vec![integer_between(0, u32::MAX as u64)],
+            rules: vec![integer_between(0, u64::MAX)],
         },
         FieldSpec {
             key: KES_SECRET_KEY_PATH,
@@ -185,14 +185,14 @@ pub fn signer_schema() -> Vec<FieldSpec> {
             label: "Store retention limit",
             description: "Maximum number of records kept in the signer stores, no limit if unset",
             presence: Presence::Optional,
-            rules: vec![integer_between(1, u32::MAX as u64)],
+            rules: vec![integer_between(1, u64::MAX)],
         },
         FieldSpec {
             key: RUN_INTERVAL,
             label: "Run interval",
             description: "Interval between two runtime cycles of the signer, in milliseconds",
             presence: Presence::Required,
-            rules: vec![integer_between(1, u32::MAX as u64)],
+            rules: vec![integer_between(1, u64::MAX)],
         },
         FieldSpec {
             key: ENABLE_METRICS_SERVER,

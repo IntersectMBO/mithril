@@ -999,7 +999,10 @@ mod tests {
             model.update(Action::Save);
 
             assert_eq!(
-                vec!["0 is not between 1 and 65535".to_string()],
+                vec![
+                    "'0' is not an integer between 1 and 65535 (maximum value accepted)"
+                        .to_string()
+                ],
                 port_row(&model).errors
             );
         }
