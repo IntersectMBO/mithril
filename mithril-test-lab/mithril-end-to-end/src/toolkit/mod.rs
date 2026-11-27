@@ -10,6 +10,8 @@ pub use wait::*;
 
 #[derive(Debug, Clone)]
 pub struct ScenarioToolkit {
+    /// Context shared by the toolkits, exposing the Cardano epoch timing.
+    pub context: ScenarioToolkitContext,
     pub check: CheckToolkit,
     pub exec: ExecToolkit,
     pub wait: WaitToolkit,
@@ -20,7 +22,8 @@ impl ScenarioToolkit {
         Self {
             check: CheckToolkit::new(context.clone()),
             exec: ExecToolkit::new(context.clone()),
-            wait: WaitToolkit::new(context),
+            wait: WaitToolkit::new(context.clone()),
+            context,
         }
     }
 }

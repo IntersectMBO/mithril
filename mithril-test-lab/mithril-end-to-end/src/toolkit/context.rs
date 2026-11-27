@@ -26,6 +26,11 @@ impl ScenarioToolkitContext {
         }
     }
 
+    /// Wall-clock duration of a single Cardano epoch.
+    pub fn epoch_duration(&self) -> Duration {
+        self.attempt_policy.timeout_for_epochs(1)
+    }
+
     /// Backoff spacing out polling attempts while waiting for a condition.
     pub fn poll_backoff(&self) -> Backoff {
         Backoff::default()
@@ -119,6 +124,13 @@ mod tests {
         let number_of_slot_per_epoch = 10.0;
         let policy = AttemptPolicy::from_cardano_epoch(slot_length_in_s, number_of_slot_per_epoch);
         assert_eq!(policy.epoch_duration, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn context_exposes_the_epoch_duration_of_the_cardano_network() {
+        let context = ScenarioToolkitContext::new_from_cardano_epoch(0.1, 30.0);
+
+        assert_eq!(Duration::from_secs(3), context.epoch_duration());
     }
 
     #[test]

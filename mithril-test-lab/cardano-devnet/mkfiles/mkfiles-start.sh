@@ -106,6 +106,10 @@ for NODE in ${ALL_NODES}; do
   done
 done
 
+echo ">> Check that the Cardano pool nodes follow the same chain"
+. ./cardano-chain.sh
+exit_when_pool_nodes_are_partitioned
+
 EOF
 
 chmod u+x start-cardano.sh

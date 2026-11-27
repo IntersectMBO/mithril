@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::anyhow;
 use slog_scope::{info, warn};
@@ -10,7 +11,7 @@ use mithril_common::{
 };
 
 use crate::{
-    AggregateSignatureType, Aggregator, MithrilInfrastructure, NodeVersion,
+    AggregateSignatureType, Aggregator, MithrilInfrastructure, NodeVersion, RetryableDevnetError,
     toolkit::ScenarioToolkit,
     utils::{
         randomly_take_blocks_hashes, randomly_take_transactions_hashes,
@@ -31,6 +32,21 @@ pub struct FullScenario {
 }
 
 impl FullScenario {
+    /// Number of epochs between the start of the protocol parameters update and its activation
+    const PROTOCOL_PARAMETERS_UPDATE_LEAD_EPOCHS: u64 = 3;
+
+    /// Number of epochs between the start of the protocol parameters update and its activation on
+    /// a fast network, long enough for the devnet scripts to retry a lost transaction
+    const PROTOCOL_PARAMETERS_UPDATE_LEAD_EPOCHS_ON_FAST_NETWORK: u64 = 6;
+
+    /// Epoch duration below which a network is fast: a transaction retry of the devnet scripts
+    /// spans a significant part of an epoch
+    const FAST_NETWORK_MAX_EPOCH_DURATION: Duration = Duration::from_secs(30);
+
+    /// Number of epochs to wait once the protocol parameters are activated, so that the new
+    /// protocol parameters and the new stake distribution are used a few times
+    const EPOCHS_TO_WAIT_AFTER_PROTOCOL_PARAMETERS_ACTIVATION: u64 = 3;
+
     pub fn new(
         toolkit: ScenarioToolkit,
         infrastructure: Arc<MithrilInfrastructure>,
@@ -223,7 +239,21 @@ impl FullScenario {
             )
             .await?;
 
-        if aggregator.is_leader() || aggregator.version().is_below("0.7.94") {
+        let updates_protocol_parameters =
+            aggregator.is_leader() || aggregator.version().is_below("0.7.94");
+        let protocol_parameters_writer = if updates_protocol_parameters {
+            aggregator
+        } else {
+            infrastructure.leader_aggregator()
+        };
+        let is_protocol_parameters_update_written_on_chain =
+            protocol_parameters_writer.is_reading_protocol_configurations_on_chain();
+        let protocol_parameters_activation_epoch = target_epoch
+            + Self::protocol_parameters_update_lead_epochs(
+                self.toolkit.context.epoch_duration(),
+                is_protocol_parameters_update_written_on_chain,
+            );
+        if updates_protocol_parameters {
             // Ensure the current epoch is certified
             // Given the time needed to restart the aggregator, a restart crossing an epoch
             // boundary before the current epoch is certified would create an unrecoverable
@@ -239,15 +269,30 @@ impl FullScenario {
                 .is_creating_certificate_with_min_epoch(aggregator, current_epoch)
                 .await?;
 
-            // Write new protocol parameters 3 epoch in the future to let time to nodes to properly switch to the new configuration
+            // Write new protocol parameters a few epochs in the future to let time to nodes to properly switch to the new configuration
             self.toolkit
                 .exec
-                .update_protocol_parameters(aggregator, infrastructure, target_epoch + 3)
+                .update_protocol_parameters(
+                    aggregator,
+                    infrastructure,
+                    protocol_parameters_activation_epoch,
+                )
                 .await?;
         }
 
-        // Wait 6 epochs after protocol parameters update, so that we make sure that we use new protocol parameters as well as new stake distribution a few times
-        target_epoch += 6;
+        if updates_protocol_parameters && is_protocol_parameters_update_written_on_chain {
+            let update_end_epoch = aggregator
+                .chain_observer()
+                .get_current_epoch()
+                .await?
+                .ok_or(anyhow!("Current epoch is not available"))?;
+            Self::check_protocol_parameters_update_precedes_its_activation(
+                update_end_epoch,
+                protocol_parameters_activation_epoch,
+            )?;
+        }
+        target_epoch = protocol_parameters_activation_epoch
+            + Self::EPOCHS_TO_WAIT_AFTER_PROTOCOL_PARAMETERS_ACTIVATION;
         self.toolkit.wait.for_aggregator_at_target_epoch(
             aggregator,
             target_epoch,
@@ -347,6 +392,41 @@ impl FullScenario {
             era_switch_with_regenesis_planned: self.next_era.is_some()
                 && self.regenesis_on_era_switch,
         })
+    }
+
+    /// Number of epochs between the start of the protocol parameters update and its activation.
+    ///
+    /// An update written on chain on a fast network gets a longer lead, so that the devnet scripts
+    /// can retry a lost transaction before the activation epoch. A long epoch network, and an
+    /// update applied by restarting the aggregator, keep a short lead to keep the run short.
+    fn protocol_parameters_update_lead_epochs(
+        epoch_duration: Duration,
+        is_update_written_on_chain: bool,
+    ) -> u64 {
+        if is_update_written_on_chain && epoch_duration < Self::FAST_NETWORK_MAX_EPOCH_DURATION {
+            Self::PROTOCOL_PARAMETERS_UPDATE_LEAD_EPOCHS_ON_FAST_NETWORK
+        } else {
+            Self::PROTOCOL_PARAMETERS_UPDATE_LEAD_EPOCHS
+        }
+    }
+
+    /// Check that the protocol parameters update is written at least one full epoch before its
+    /// activation epoch.
+    ///
+    /// The aggregator computes the protocol parameters of an epoch before it starts, so a later
+    /// update makes the signers and the aggregator disagree and blocks the certification: the
+    /// devnet must be restarted.
+    fn check_protocol_parameters_update_precedes_its_activation(
+        update_end_epoch: Epoch,
+        activation_epoch: Epoch,
+    ) -> StdResult<()> {
+        if update_end_epoch + 1 >= activation_epoch {
+            return Err(anyhow!(RetryableDevnetError(format!(
+                "Protocol parameters update written at epoch {update_end_epoch} for activation epoch {activation_epoch}"
+            ))));
+        }
+
+        Ok(())
     }
 
     fn defers_certification_to_a_re_genesis(conditions: CertificationDeferralConditions) -> bool {
@@ -491,6 +571,80 @@ struct CertificationDeferralConditions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn protocol_parameters_update_lead_is_6_epochs_on_a_fast_network() {
+        assert_eq!(
+            6,
+            FullScenario::protocol_parameters_update_lead_epochs(Duration::from_secs(3), true)
+        );
+    }
+
+    #[test]
+    fn protocol_parameters_update_lead_is_3_epochs_when_restarting_the_aggregator() {
+        assert_eq!(
+            3,
+            FullScenario::protocol_parameters_update_lead_epochs(Duration::from_secs(3), false)
+        );
+    }
+
+    #[test]
+    fn protocol_parameters_update_lead_is_3_epochs_from_the_fast_network_max_epoch_duration() {
+        assert_eq!(
+            3,
+            FullScenario::protocol_parameters_update_lead_epochs(Duration::from_secs(30), true)
+        );
+    }
+
+    #[test]
+    fn protocol_parameters_update_lead_is_3_epochs_on_a_long_epoch_network() {
+        assert_eq!(
+            3,
+            FullScenario::protocol_parameters_update_lead_epochs(Duration::from_secs(600), true)
+        );
+    }
+
+    #[test]
+    fn protocol_parameters_update_written_a_full_epoch_before_its_activation_is_accepted() {
+        FullScenario::check_protocol_parameters_update_precedes_its_activation(
+            Epoch(24),
+            Epoch(26),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn protocol_parameters_update_written_the_epoch_before_its_activation_is_retryable() {
+        let error = FullScenario::check_protocol_parameters_update_precedes_its_activation(
+            Epoch(25),
+            Epoch(26),
+        )
+        .unwrap_err();
+
+        assert!(error.is::<RetryableDevnetError>());
+    }
+
+    #[test]
+    fn protocol_parameters_update_written_at_its_activation_is_retryable() {
+        let error = FullScenario::check_protocol_parameters_update_precedes_its_activation(
+            Epoch(26),
+            Epoch(26),
+        )
+        .unwrap_err();
+
+        assert!(error.is::<RetryableDevnetError>());
+    }
+
+    #[test]
+    fn protocol_parameters_update_written_after_its_activation_is_retryable() {
+        let error = FullScenario::check_protocol_parameters_update_precedes_its_activation(
+            Epoch(27),
+            Epoch(26),
+        )
+        .unwrap_err();
+
+        assert!(error.is::<RetryableDevnetError>());
+    }
 
     #[test]
     fn only_an_ivc_snark_follower_defers_its_certification_to_a_planned_re_genesis() {

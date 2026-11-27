@@ -102,11 +102,18 @@ if ! mkdir -p "${ARTIFACTS_DIR}"; then
   exit
 fi
 
+# Download a gzip archive, retrying on transient network and HTTP errors, and check its integrity
+download_archive() {
+  local url=$1
+  local output=$2
+  curl -fsSL --retry 5 --retry-connrefused --retry-delay 5 "${url}" --output "${output}" && gzip -t "${output}"
+}
+
 echo ">> Creating artifacts directory..."
 # Download cardano-cli & cardano-node if enabled (default: yes)
 if [[ "$SKIP_CARDANO_BIN_DOWNLOAD" != "true" ]]; then
   echo ">> Downloading cardano-cli & cardano-node..."
-  curl -sL "${CARDANO_BINARY_URL}" --output cardano-bin.tar.gz
+  download_archive "${CARDANO_BINARY_URL}" cardano-bin.tar.gz
   echo ">> Extracting cardano-cli & cardano-node..."
   # First tar when archive has a 'bin' directory, and second tar is to handle legacy archive without 'bin' directory
   tar xzf cardano-bin.tar.gz -C "${ARTIFACTS_DIR}/" ./bin || (mkdir -p "${ARTIFACTS_DIR}/bin" && tar --strip-components=1 -C "${ARTIFACTS_DIR}/bin" -xzf cardano-bin.tar.gz)
@@ -121,7 +128,7 @@ fi
 # Download DMQ node binary if enabled (default: yes)
 if [[ "$SKIP_DMQ_BIN_DOWNLOAD" != "true" ]]; then
   echo ">> Downloading dmq node binary..."
-  curl -sL "${DMQ_NODE_BINARY_URL}" --output dmq-bin.tar.gz
+  download_archive "${DMQ_NODE_BINARY_URL}" dmq-bin.tar.gz
   echo ">> Extracting dmq-node..."
   tar xzf dmq-bin.tar.gz --strip-components=2 -C "${ARTIFACTS_DIR}/bin" result/bin
   rm -f dmq-bin.tar.gz
