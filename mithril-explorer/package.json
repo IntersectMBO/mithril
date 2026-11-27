@@ -20,11 +20,11 @@
   "dependencies": {
     "@mithril-dev/mithril-client-wasm": "file:../mithril-client-wasm",
     "@popperjs/core": "^2.11.8",
-    "@reduxjs/toolkit": "^2.13.0",
-    "bootstrap": "^5.3.8",
+    "@reduxjs/toolkit": "^2.15.0",
+    "bootstrap": "^5.3.9",
     "bootstrap-icons": "^1.13.2",
-    "chart.js": "^4.6.1",
-    "next": "^16.4.3",
+    "chart.js": "^4.6.2",
+    "next": "^16.4.6",
     "react": "^19.3.1",
     "react-bootstrap": "^2.10.10",
     "react-chartjs-2": "^5.3.1",
@@ -32,14 +32,14 @@
     "react-redux": "^9.3.1"
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/jest-dom": "^8.0.0",
     "@testing-library/react": "^16.3.3",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.4.3",
+    "eslint-config-next": "^16.4.6",
     "fantasticon": "^4.1.0",
     "jest": "^30.5.2",
     "jest-environment-jsdom": "^30.5.2",
     "next-router-mock": "^1.0.5",
-    "prettier": "^3.9.10"
+    "prettier": "^3.10.1"
   }
 }
