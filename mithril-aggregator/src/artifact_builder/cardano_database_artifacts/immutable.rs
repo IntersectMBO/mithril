@@ -1,4 +1,8 @@
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
@@ -43,6 +47,11 @@ pub trait ImmutableFilesUploader: Send + Sync {
         filepaths: &[PathBuf],
         compression_algorithm: Option<CompressionAlgorithm>,
     ) -> StdResult<ImmutablesLocation>;
+
+    /// Discards the remote copy of the given archive, if any, so it can be uploaded again.
+    async fn discard_remote_archive(&self, _archive_path: &Path) -> StdResult<()> {
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -116,6 +125,10 @@ impl ImmutableFilesUploader for IpfsUploader {
             ))),
             compression_algorithm,
         })
+    }
+
+    async fn discard_remote_archive(&self, archive_path: &Path) -> StdResult<()> {
+        self.discard_file(archive_path).await
     }
 }
 
@@ -230,6 +243,9 @@ impl ImmutableArtifactBuilder {
                     .await?;
 
                 let target_path = self.immutables_storage_dir.join(&archive_name);
+                // Discard before moving the archive into the cache: if the process stops in between,
+                // the archive is not in the cache, so it is created and discarded again on the next run
+                self.discard_remote_archive(&target_path).await;
                 fs::rename(snapshot.get_file_path(), &target_path).with_context(|| {
                     format!(
                         "Can not move archive of immutable {immutable_file_number} from '{}' to '{}'",
@@ -243,6 +259,21 @@ impl ImmutableArtifactBuilder {
         }
 
         Ok((archive_paths, compression_algorithm))
+    }
+
+    /// Discard the remote copy of a newly created archive on all uploaders, so the new archive
+    /// replaces it on the next upload.
+    ///
+    /// Errors are logged but not propagated, so a failing uploader does not block the archive creation.
+    async fn discard_remote_archive(&self, archive_path: &Path) {
+        for uploader in &self.uploaders {
+            if let Err(e) = uploader.discard_remote_archive(archive_path).await {
+                error!(
+                    self.logger, "Failed to discard remote immutable archive";
+                    "archive_path" => %archive_path.display(), "error" => ?e
+                );
+            }
+        }
     }
 
     async fn upload_immutable_archives(
@@ -313,7 +344,7 @@ mod tests {
     use mithril_common::{
         entities::TemplateUri,
         temp_dir_create,
-        test::{TempDir, assert_equivalent, equivalent_to},
+        test::{TempDir, assert_equivalent, equivalent_to, mock_extensions::MockBuilder},
     };
     use mithril_file_archiver::FileArchiver;
     use semver::Version;
@@ -349,6 +380,7 @@ mod tests {
                     compression_algorithm,
                 })
             });
+        uploader.expect_discard_remote_archive().returning(|_| Ok(()));
 
         uploader
     }
@@ -502,7 +534,9 @@ mod tests {
 
             let builder = ImmutableArtifactBuilder::new(
                 work_dir.clone(),
-                vec![Arc::new(MockImmutableFilesUploader::new())],
+                vec![MockBuilder::<MockImmutableFilesUploader>::configure(|mock| {
+                    mock.expect_discard_remote_archive().returning(|_| Ok(()));
+                })],
                 Arc::new(snapshotter),
                 TestLogger::stdout(),
             )
@@ -678,7 +712,9 @@ mod tests {
 
             let builder = ImmutableArtifactBuilder::new(
                 work_dir.clone(),
-                vec![Arc::new(MockImmutableFilesUploader::new())],
+                vec![MockBuilder::<MockImmutableFilesUploader>::configure(|mock| {
+                    mock.expect_discard_remote_archive().returning(|_| Ok(()));
+                })],
                 Arc::new(snapshotter),
                 TestLogger::stdout(),
             )
@@ -702,6 +738,135 @@ mod tests {
             assert_file_content!(work_dir.join("00000.tar.zst"), "00000 content");
             assert_file_content!(work_dir.join("00001.tar.zst"), "00001 content");
             assert_file_content!(work_dir.join("00002.tar.zst"), "00002 content");
+        }
+
+        #[tokio::test]
+        async fn discard_remote_archives_only_for_newly_created_archives_on_all_uploaders() {
+            let work_dir = get_builder_work_dir("discard_remote_archives_only_for_new_archives");
+            let test_dir = "discard_remote_archives_only_for_new_archives/cardano_database";
+            let cardano_db = DummyCardanoDbBuilder::new(test_dir).with_immutables(&[0, 1]).build();
+
+            let db_directory = cardano_db.get_dir().to_path_buf();
+            let snapshotter = CompressedArchiveSnapshotter::new(
+                DUMMY_CARDANO_NODE_VERSION,
+                db_directory.clone(),
+                db_directory.parent().unwrap().join("snapshot_dest"),
+                CompressionAlgorithm::Zstandard,
+                Arc::new(file_archiver_for_test(&work_dir)),
+                Arc::new(MockAncillarySigner::new()),
+                TestLogger::stdout(),
+            )
+            .unwrap();
+
+            create_fake_file(&work_dir.join("00000.tar.zst"), "00000 content");
+
+            let uploader_discarding = |expected_path: PathBuf| {
+                MockBuilder::<MockImmutableFilesUploader>::configure(|mock| {
+                    mock.expect_discard_remote_archive()
+                        .withf(move |path| path == expected_path)
+                        .returning(|_| Ok(()))
+                        .once();
+                })
+            };
+            let builder = ImmutableArtifactBuilder::new(
+                work_dir.clone(),
+                vec![
+                    uploader_discarding(work_dir.join("00001.tar.zst")),
+                    uploader_discarding(work_dir.join("00001.tar.zst")),
+                ],
+                Arc::new(snapshotter),
+                TestLogger::stdout(),
+            )
+            .unwrap();
+
+            builder
+                .immutable_archives_paths_creating_the_missing_ones(1)
+                .await
+                .unwrap();
+        }
+
+        #[tokio::test]
+        async fn discard_remote_archive_before_moving_the_new_archive_into_the_cache() {
+            let work_dir = get_builder_work_dir("discard_remote_archive_before_moving_archive");
+            let test_dir = "discard_remote_archive_before_moving_archive/cardano_database";
+            let cardano_db = DummyCardanoDbBuilder::new(test_dir).with_immutables(&[0]).build();
+
+            let db_directory = cardano_db.get_dir().to_path_buf();
+            let snapshotter = CompressedArchiveSnapshotter::new(
+                DUMMY_CARDANO_NODE_VERSION,
+                db_directory.clone(),
+                db_directory.parent().unwrap().join("snapshot_dest"),
+                CompressionAlgorithm::Zstandard,
+                Arc::new(file_archiver_for_test(&work_dir)),
+                Arc::new(MockAncillarySigner::new()),
+                TestLogger::stdout(),
+            )
+            .unwrap();
+
+            let builder = ImmutableArtifactBuilder::new(
+                work_dir.clone(),
+                vec![MockBuilder::<MockImmutableFilesUploader>::configure(|mock| {
+                    mock.expect_discard_remote_archive()
+                        .returning(|path| {
+                            assert!(
+                                !path.exists(),
+                                "The archive should not be in the cache when it is discarded"
+                            );
+                            Ok(())
+                        })
+                        .once();
+                })],
+                Arc::new(snapshotter),
+                TestLogger::stdout(),
+            )
+            .unwrap();
+
+            builder
+                .immutable_archives_paths_creating_the_missing_ones(0)
+                .await
+                .unwrap();
+
+            assert!(work_dir.join("00000.tar.zst").exists());
+        }
+
+        #[tokio::test]
+        async fn log_discard_remote_archive_errors_without_failing() {
+            let work_dir = get_builder_work_dir("log_discard_remote_archive_errors");
+            let test_dir = "log_discard_remote_archive_errors/cardano_database";
+            let cardano_db = DummyCardanoDbBuilder::new(test_dir).with_immutables(&[0]).build();
+
+            let db_directory = cardano_db.get_dir().to_path_buf();
+            let snapshotter = CompressedArchiveSnapshotter::new(
+                DUMMY_CARDANO_NODE_VERSION,
+                db_directory.clone(),
+                db_directory.parent().unwrap().join("snapshot_dest"),
+                CompressionAlgorithm::Zstandard,
+                Arc::new(file_archiver_for_test(&work_dir)),
+                Arc::new(MockAncillarySigner::new()),
+                TestLogger::stdout(),
+            )
+            .unwrap();
+
+            let uploader = MockBuilder::<MockImmutableFilesUploader>::configure(|mock| {
+                mock.expect_discard_remote_archive()
+                    .returning(|_| Err(anyhow!("Failure while discarding...")));
+            });
+            let (logger, log_inspector) = TestLogger::memory();
+            let builder = ImmutableArtifactBuilder::new(
+                work_dir.clone(),
+                vec![uploader],
+                Arc::new(snapshotter),
+                logger,
+            )
+            .unwrap();
+
+            let (archive_paths, _) = builder
+                .immutable_archives_paths_creating_the_missing_ones(0)
+                .await
+                .unwrap();
+
+            assert_eq!(vec![work_dir.join("00000.tar.zst")], archive_paths);
+            assert!(log_inspector.contains_log("Failure while discarding..."));
         }
 
         #[tokio::test]
@@ -1015,6 +1180,24 @@ mod tests {
                 },
                 location
             );
+        }
+    }
+
+    mod discard_remote_archive {
+        use super::*;
+
+        #[tokio::test]
+        async fn ipfs_uploader_delegates_to_discard_file() {
+            let uploader = IpfsUploader::new_for_test("/dir", |mock| {
+                mock.expect_file_exists().returning(|_, _| Ok(None)).once();
+            });
+
+            ImmutableFilesUploader::discard_remote_archive(
+                &uploader,
+                Path::new("/a/00001.tar.zst"),
+            )
+            .await
+            .unwrap();
         }
     }
 

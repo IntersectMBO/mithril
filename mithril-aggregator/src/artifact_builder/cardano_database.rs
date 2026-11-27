@@ -254,6 +254,9 @@ mod tests {
                         compression_algorithm: Some(CompressionAlgorithm::Zstandard),
                     })
                 });
+            immutable_uploader
+                .expect_discard_remote_archive()
+                .returning(|_| Ok(()));
 
             ImmutableArtifactBuilder::new(
                 cardano_db.get_immutable_dir().to_path_buf(),
