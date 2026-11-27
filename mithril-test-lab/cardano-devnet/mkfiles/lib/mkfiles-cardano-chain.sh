@@ -1,6 +1,25 @@
+POOL_NODES_PORTS=$(for NODE in ${POOL_NODES}; do cat ${NODE}/port; done | xargs)
+
 cat >> cardano-chain.sh <<EOF
 #!/usr/bin/env bash
 set -e
+
+POOL_NODES_PORTS=(${POOL_NODES_PORTS})
+
+# Exit when two pool nodes logged a fork deeper than k against each other: neither can switch to the chain of the other any more
+function exit_when_pool_nodes_are_partitioned {
+    for (( i=1; i<=${NUM_POOL_NODES}; i++ )); do
+        for (( j=i+1; j<=${NUM_POOL_NODES}; j++ )); do
+            PORT_I=\${POOL_NODES_PORTS[i-1]}
+            PORT_J=\${POOL_NODES_PORTS[j-1]}
+            if grep -s "ForkTooDeep" node-pool\${i}/node.log | grep -q ":\${PORT_J}\"" \\
+                && grep -s "ForkTooDeep" node-pool\${j}/node.log | grep -q ":\${PORT_I}\""; then
+                echo ">>>> Error: node-pool\${i} and node-pool\${j} follow chains forked beyond k from each other, the pool nodes are partitioned"
+                exit 1
+            fi
+        done
+    done
+}
 
 # Wait for a number of blocks has elapsed
 function wait_for_elapsed_blocks {
@@ -121,6 +140,7 @@ function try_send_funds_to_address {
     SEND_FUNDS_ADDRESS_WAIT_ROUND_DELAY=2
     while true
     do
+        exit_when_pool_nodes_are_partitioned
         send_funds_to_address "\${ADDR}" "\${AMOUNT_TRANSFERRED}" "\${CONTEXT}" "\${N}"
         if [ -f \${ERROR_FILE} ]; then
             echo ">>>> Funds not transferred successfully to \${CONTEXT} address, a rollback has happened [attempt \$SEND_FUNDS_ADDRESS_WAIT_ROUNDS]!"
@@ -227,6 +247,7 @@ function try_write_datums_for_address {
     WRITE_DATUMS_ADDRESS_WAIT_ROUND_DELAY=2
     while true
     do
+        exit_when_pool_nodes_are_partitioned
         write_datums_for_address "\${ADDR}" "\${SCRIPT_TX_VALUE}" \${CONTEXT} "\${N}" "\${DATUM_FILE}"
         if [ -f \${ERROR_FILE} ]; then
             echo ">>>> Datums not written successfully for \${CONTEXT} address, a rollback has happened [attempt \$WRITE_DATUMS_ADDRESS_WAIT_ROUNDS]!"
