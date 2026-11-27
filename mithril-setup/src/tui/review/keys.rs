@@ -1,8 +1,8 @@
-//! Pure mapping of the keyboard events to the review table actions
+//! Pure mapping of the keyboard, paste and mouse events to the review table actions
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
-use crate::tui::review::model::{Action, Mode};
+use crate::tui::review::model::{Action, Button, Mode};
 
 /// Map a key event to the action it triggers in the given mode, if any
 ///
@@ -19,11 +19,22 @@ pub fn to_action(key: KeyEvent, mode: &Mode) -> Option<Action> {
     match (mode, key.modifiers, key.code) {
         (_, CTRL, Char('c')) => Some(Action::Abort),
 
-        (Mode::Navigating, NONE, Up) => Some(Action::Up),
+        (Mode::Navigating | Mode::OnButton(_), NONE, Up) => Some(Action::Up),
+        (Mode::Navigating | Mode::OnButton(_), NONE, Esc) => Some(Action::FocusAbort),
+        (Mode::Navigating | Mode::OnButton(_), CTRL, Char('s')) => Some(Action::FocusContinue),
+
         (Mode::Navigating, NONE, Down) => Some(Action::Down),
         (Mode::Navigating, NONE, Enter) => Some(Action::Edit),
-        (Mode::Navigating, NONE, Esc) => Some(Action::Abort),
-        (Mode::Navigating, CTRL, Char('s')) => Some(Action::Confirm),
+
+        (Mode::OnButton(_), NONE, Left) => Some(Action::Left),
+        (Mode::OnButton(_), NONE, Right) => Some(Action::Right),
+        (Mode::OnButton(Button::Abort), NONE, Enter) => Some(Action::Abort),
+        (Mode::OnButton(Button::Continue), NONE, Enter) => Some(Action::Confirm),
+
+        (Mode::ErrorsPopup { .. }, NONE, Up) => Some(Action::Up),
+        (Mode::ErrorsPopup { .. }, NONE, Down) => Some(Action::Down),
+        (Mode::ErrorsPopup { .. }, NONE, Enter) => Some(Action::GoToField),
+        (Mode::ErrorsPopup { .. }, NONE, Esc) => Some(Action::ClosePopup),
 
         (Mode::Editing { .. }, NONE | SHIFT | ALTGR, Char(character)) => {
             Some(Action::Input(character))
@@ -40,6 +51,33 @@ pub fn to_action(key: KeyEvent, mode: &Mode) -> Option<Action> {
         (Mode::Editing { .. }, CTRL | ALT, Delete) => Some(Action::DeleteWordForward),
         (Mode::Editing { .. }, CTRL | ALT, Left) => Some(Action::MoveWordBackward),
         (Mode::Editing { .. }, CTRL | ALT, Right) => Some(Action::MoveWordForward),
+
+        _ => None,
+    }
+}
+
+/// Map a pasted text to the action it triggers in the given mode, if any
+///
+/// Only a value being edited accepts a paste.
+pub fn paste_to_action(text: String, mode: &Mode) -> Option<Action> {
+    match mode {
+        Mode::Editing { .. } => Some(Action::Paste(text)),
+        Mode::Navigating | Mode::OnButton(_) | Mode::ErrorsPopup { .. } => None,
+    }
+}
+
+/// Map a mouse event to the action it triggers in the given mode, if any
+///
+/// The wheel moves like the `↑`/`↓` keys, one row per wheel step, other mouse events are ignored.
+pub fn mouse_to_action(mouse: MouseEvent, mode: &Mode) -> Option<Action> {
+    match (mode, mouse.kind) {
+        (
+            Mode::Navigating | Mode::OnButton(_) | Mode::ErrorsPopup { .. },
+            MouseEventKind::ScrollUp,
+        ) => Some(Action::Up),
+        (Mode::Navigating | Mode::ErrorsPopup { .. }, MouseEventKind::ScrollDown) => {
+            Some(Action::Down)
+        }
 
         _ => None,
     }
@@ -71,9 +109,65 @@ mod tests {
         assert_eq!(Some(Action::Up), to_action(key(KeyCode::Up), &mode));
         assert_eq!(Some(Action::Down), to_action(key(KeyCode::Down), &mode));
         assert_eq!(Some(Action::Edit), to_action(key(KeyCode::Enter), &mode));
-        assert_eq!(Some(Action::Abort), to_action(key(KeyCode::Esc), &mode));
-        assert_eq!(Some(Action::Confirm), to_action(ctrl('s'), &mode));
+        assert_eq!(
+            Some(Action::FocusAbort),
+            to_action(key(KeyCode::Esc), &mode)
+        );
+        assert_eq!(Some(Action::FocusContinue), to_action(ctrl('s'), &mode));
         assert_eq!(Some(Action::Abort), to_action(ctrl('c'), &mode));
+    }
+
+    #[test]
+    fn button_keys() {
+        let abort = Mode::OnButton(Button::Abort);
+        let mode_continue = Mode::OnButton(Button::Continue);
+
+        assert_eq!(Some(Action::Up), to_action(key(KeyCode::Up), &abort));
+        assert_eq!(Some(Action::Left), to_action(key(KeyCode::Left), &abort));
+        assert_eq!(Some(Action::Right), to_action(key(KeyCode::Right), &abort));
+        assert_eq!(
+            Some(Action::FocusAbort),
+            to_action(key(KeyCode::Esc), &abort)
+        );
+        assert_eq!(Some(Action::FocusContinue), to_action(ctrl('s'), &abort));
+        assert_eq!(Some(Action::Abort), to_action(key(KeyCode::Enter), &abort));
+        assert_eq!(
+            Some(Action::Confirm),
+            to_action(key(KeyCode::Enter), &mode_continue)
+        );
+        assert_eq!(None, to_action(key(KeyCode::Down), &mode_continue));
+        assert_eq!(None, to_action(key(KeyCode::Char('a')), &mode_continue));
+    }
+
+    #[test]
+    fn errors_popup_keys() {
+        let mode = Mode::ErrorsPopup { selected: 0 };
+
+        assert_eq!(Some(Action::Up), to_action(key(KeyCode::Up), &mode));
+        assert_eq!(Some(Action::Down), to_action(key(KeyCode::Down), &mode));
+        assert_eq!(
+            Some(Action::GoToField),
+            to_action(key(KeyCode::Enter), &mode)
+        );
+        assert_eq!(
+            Some(Action::ClosePopup),
+            to_action(key(KeyCode::Esc), &mode)
+        );
+        assert_eq!(Some(Action::Abort), to_action(ctrl('c'), &mode));
+    }
+
+    #[test]
+    fn other_keys_are_ignored_in_the_errors_popup() {
+        let mode = Mode::ErrorsPopup { selected: 0 };
+
+        for key in [
+            key(KeyCode::Left),
+            key(KeyCode::Right),
+            key(KeyCode::Char('a')),
+            ctrl('s'),
+        ] {
+            assert_eq!(None, to_action(key, &mode), "{key:?}");
+        }
     }
 
     #[test]
@@ -258,5 +352,93 @@ mod tests {
     fn arrows_are_ignored_while_editing() {
         assert_eq!(None, to_action(key(KeyCode::Up), &editing()));
         assert_eq!(None, to_action(key(KeyCode::Down), &editing()));
+    }
+
+    #[test]
+    fn paste_is_an_action_only_while_editing() {
+        let text = || "/ipc/node.socket".to_string();
+
+        assert_eq!(
+            Some(Action::Paste(text())),
+            paste_to_action(text(), &editing())
+        );
+        assert_eq!(None, paste_to_action(text(), &Mode::Navigating));
+        assert_eq!(
+            None,
+            paste_to_action(text(), &Mode::OnButton(Button::Continue))
+        );
+        assert_eq!(
+            None,
+            paste_to_action(text(), &Mode::ErrorsPopup { selected: 0 })
+        );
+    }
+
+    mod mouse {
+        use ratatui::crossterm::event::MouseButton;
+
+        use super::*;
+
+        fn mouse(kind: MouseEventKind) -> MouseEvent {
+            MouseEvent {
+                kind,
+                column: 0,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            }
+        }
+
+        const SCROLL_UP: MouseEventKind = MouseEventKind::ScrollUp;
+        const SCROLL_DOWN: MouseEventKind = MouseEventKind::ScrollDown;
+
+        #[test]
+        fn wheel_moves_like_the_arrows_while_navigating() {
+            let mode = Mode::Navigating;
+
+            assert_eq!(Some(Action::Up), mouse_to_action(mouse(SCROLL_UP), &mode));
+            assert_eq!(
+                Some(Action::Down),
+                mouse_to_action(mouse(SCROLL_DOWN), &mode)
+            );
+        }
+
+        #[test]
+        fn only_wheel_up_moves_from_a_button() {
+            let mode = Mode::OnButton(Button::Continue);
+
+            assert_eq!(Some(Action::Up), mouse_to_action(mouse(SCROLL_UP), &mode));
+            assert_eq!(None, mouse_to_action(mouse(SCROLL_DOWN), &mode));
+        }
+
+        #[test]
+        fn wheel_moves_like_the_arrows_in_the_errors_popup() {
+            let mode = Mode::ErrorsPopup { selected: 0 };
+
+            assert_eq!(Some(Action::Up), mouse_to_action(mouse(SCROLL_UP), &mode));
+            assert_eq!(
+                Some(Action::Down),
+                mouse_to_action(mouse(SCROLL_DOWN), &mode)
+            );
+        }
+
+        #[test]
+        fn wheel_is_ignored_while_editing() {
+            assert_eq!(None, mouse_to_action(mouse(SCROLL_UP), &editing()));
+            assert_eq!(None, mouse_to_action(mouse(SCROLL_DOWN), &editing()));
+        }
+
+        #[test]
+        fn clicks_and_moves_are_ignored() {
+            for kind in [
+                MouseEventKind::Down(MouseButton::Left),
+                MouseEventKind::Up(MouseButton::Left),
+                MouseEventKind::Moved,
+            ] {
+                assert_eq!(
+                    None,
+                    mouse_to_action(mouse(kind), &Mode::Navigating),
+                    "{kind:?}"
+                );
+            }
+        }
     }
 }

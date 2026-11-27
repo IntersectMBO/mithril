@@ -1,23 +1,32 @@
 //! Pure model of the review table
 
 use crate::runner::ReviewOutcome;
-use crate::schema::{FieldError, FieldSpec};
+use crate::schema::{FieldError, FieldSpec, check_store};
 use crate::store::{Origin, Store};
 
 /// Actions the user can perform on the review table
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
-    /// Select the previous row
+    /// Select the previous row, or go back to the selected row from a button
     Up,
 
-    /// Select the next row
+    /// Select the next row, or focus the `Continue` button from the last row
     Down,
+
+    /// Focus the `Continue` button
+    FocusContinue,
+
+    /// Focus the `Abort` button
+    FocusAbort,
 
     /// Start editing the selected row
     Edit,
 
     /// Type a character at the cursor
     Input(char),
+
+    /// Insert a pasted text at the cursor, without its control characters (e.g. newlines)
+    Paste(String),
 
     /// Remove the character before the cursor
     Backspace,
@@ -37,10 +46,10 @@ pub enum Action {
     /// Move the cursor to the end of the word after it
     MoveWordForward,
 
-    /// Move the cursor one character to the left
+    /// Move the cursor one character to the left, or focus the `Abort` button from a button
     Left,
 
-    /// Move the cursor one character to the right
+    /// Move the cursor one character to the right, or focus the `Continue` button from a button
     Right,
 
     /// Move the cursor to the start of the edited value
@@ -55,8 +64,14 @@ pub enum Action {
     /// Cancel the edition, discarding the edited value
     Cancel,
 
-    /// Confirm the reviewed values, ending the review
+    /// Confirm the reviewed values, ending the review unless a value is in error
     Confirm,
+
+    /// Close the errors popup and select the row of the chosen field
+    GoToField,
+
+    /// Close the errors popup and go back to the `Continue` button
+    ClosePopup,
 
     /// Abort the review
     Abort,
@@ -76,6 +91,25 @@ pub enum Mode {
         /// Position of the cursor in the buffer, in characters
         cursor: usize,
     },
+
+    /// Focusing a button below the table
+    OnButton(Button),
+
+    /// Listing the fields in error in a popup, opened when confirming values in error
+    ErrorsPopup {
+        /// Position of the chosen field in the list of the rows in error
+        selected: usize,
+    },
+}
+
+/// Buttons below the review table
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Button {
+    /// Abort the review
+    Abort,
+
+    /// Confirm the reviewed values
+    Continue,
 }
 
 /// A row of the review table
@@ -100,6 +134,34 @@ pub struct Row {
     pub errors: Vec<String>,
 }
 
+/// Status of a row value
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    /// The value is set and has no error
+    Ok,
+
+    /// The value is unset and has no error (it is optional)
+    NotSet,
+
+    /// The value is unset and has errors
+    Missing,
+
+    /// The value is set and has errors
+    Invalid,
+}
+
+impl Row {
+    /// Status of the row value, from its errors
+    pub fn status(&self) -> Status {
+        match (&self.value, self.errors.is_empty()) {
+            (Some(_), true) => Status::Ok,
+            (None, true) => Status::NotSet,
+            (None, false) => Status::Missing,
+            (Some(_), false) => Status::Invalid,
+        }
+    }
+}
+
 /// Model of the review table
 pub struct ReviewModel {
     specs: Vec<FieldSpec>,
@@ -111,14 +173,40 @@ pub struct ReviewModel {
 
 impl ReviewModel {
     /// Create a model reviewing the store values described by the specs
+    ///
+    /// The values are checked right away, their errors are added to the given ones.
     pub fn new(specs: Vec<FieldSpec>, store: Store, errors: Vec<FieldError>) -> Self {
-        Self {
+        let mut model = Self {
             specs,
             store,
             errors,
             selected: 0,
             mode: Mode::Navigating,
+        };
+        model.check_all_values();
+
+        model
+    }
+
+    /// Add the errors of all the values, skipping the ones already known
+    fn check_all_values(&mut self) {
+        if let Err(errors) = check_store(&self.specs, &self.store) {
+            for error in errors {
+                if !self.errors.contains(&error) {
+                    self.errors.push(error);
+                }
+            }
         }
+    }
+
+    /// Indexes of the rows with an error, in rows order
+    pub fn rows_in_error(&self) -> Vec<usize> {
+        self.specs
+            .iter()
+            .enumerate()
+            .filter(|(_, spec)| self.errors.iter().any(|error| error.key == spec.key))
+            .map(|(index, _)| index)
+            .collect()
     }
 
     /// Current interaction mode
@@ -138,24 +226,67 @@ impl ReviewModel {
         }
 
         match self.mode {
-            Mode::Navigating => self.update_navigating(action),
+            Mode::Navigating => {
+                self.update_navigating(action);
+                None
+            }
             Mode::Editing { .. } => {
                 self.update_editing(action);
+                None
+            }
+            Mode::OnButton(_) => self.update_on_button(action),
+            Mode::ErrorsPopup { .. } => {
+                self.update_errors_popup(action);
                 None
             }
         }
     }
 
-    fn update_navigating(&mut self, action: Action) -> Option<ReviewOutcome> {
+    fn update_navigating(&mut self, action: Action) {
         match action {
             Action::Up if self.selected > 0 => self.selected -= 1,
             Action::Down if self.selected + 1 < self.specs.len() => self.selected += 1,
+            Action::Down | Action::FocusContinue => self.mode = Mode::OnButton(Button::Continue),
+            Action::FocusAbort => self.mode = Mode::OnButton(Button::Abort),
             Action::Edit => self.start_editing_selected_value(),
-            Action::Confirm => return Some(ReviewOutcome::Confirmed(self.store.clone())),
+            _ => {}
+        }
+    }
+
+    fn update_on_button(&mut self, action: Action) -> Option<ReviewOutcome> {
+        match action {
+            Action::Up => self.mode = Mode::Navigating,
+            Action::Left | Action::FocusAbort => self.mode = Mode::OnButton(Button::Abort),
+            Action::Right | Action::FocusContinue => self.mode = Mode::OnButton(Button::Continue),
+            // Values in error must be fixed first: list them instead of ending
+            Action::Confirm if self.rows_in_error().is_empty() => {
+                return Some(ReviewOutcome::Confirmed(self.store.clone()));
+            }
+            Action::Confirm => self.mode = Mode::ErrorsPopup { selected: 0 },
             _ => {}
         }
 
         None
+    }
+
+    fn update_errors_popup(&mut self, action: Action) {
+        let rows_in_error = self.rows_in_error();
+        let Mode::ErrorsPopup { selected } = &mut self.mode else {
+            return;
+        };
+
+        match action {
+            Action::Up if *selected > 0 => *selected -= 1,
+            Action::Down if *selected + 1 < rows_in_error.len() => *selected += 1,
+            Action::GoToField => {
+                if let Some(row) = rows_in_error.get(*selected) {
+                    self.selected = *row;
+                }
+                self.mode = Mode::Navigating;
+            }
+            Action::ClosePopup => self.mode = Mode::OnButton(Button::Continue),
+            _ => {}
+        }
     }
 
     fn update_editing(&mut self, action: Action) {
@@ -239,6 +370,11 @@ fn edit_buffer(buffer: &mut String, cursor: &mut usize, action: Action) {
             buffer.insert(byte_index(buffer, *cursor), character);
             *cursor += 1;
         }
+        Action::Paste(text) => {
+            let text: String = text.chars().filter(|character| !character.is_control()).collect();
+            buffer.insert_str(byte_index(buffer, *cursor), &text);
+            *cursor += text.chars().count();
+        }
         Action::Backspace if *cursor > 0 => {
             *cursor -= 1;
             buffer.remove(byte_index(buffer, *cursor));
@@ -319,7 +455,7 @@ mod tests {
         let mut store = Store::default();
         store.set("b", "value b", Origin::Discovered);
         let errors = vec![
-            FieldError::new("a", "a is required"),
+            FieldError::new("a", "A is required"),
             FieldError::new("b", "first"),
             FieldError::new("b", "second"),
         ];
@@ -334,7 +470,7 @@ mod tests {
                     description: "description",
                     value: None,
                     origin: None,
-                    errors: vec!["a is required".to_string()],
+                    errors: vec!["A is required".to_string()],
                 },
                 Row {
                     key: "b",
@@ -347,6 +483,174 @@ mod tests {
             ],
             model.rows()
         );
+    }
+
+    mod status {
+        use super::*;
+
+        fn row(value: Option<&str>, errors: &[&str]) -> Row {
+            Row {
+                key: "a",
+                label: "A",
+                description: "description",
+                value: value.map(str::to_string),
+                origin: value.map(|_| Origin::Discovered),
+                errors: errors.iter().map(|error| error.to_string()).collect(),
+            }
+        }
+
+        #[test]
+        fn set_value_without_error_is_ok() {
+            assert_eq!(Status::Ok, row(Some("value"), &[]).status());
+        }
+
+        #[test]
+        fn unset_value_without_error_is_not_set() {
+            assert_eq!(Status::NotSet, row(None, &[]).status());
+        }
+
+        #[test]
+        fn unset_value_with_errors_is_missing() {
+            assert_eq!(Status::Missing, row(None, &["A is required"]).status());
+        }
+
+        #[test]
+        fn set_value_with_errors_is_invalid() {
+            assert_eq!(Status::Invalid, row(Some("value"), &["invalid"]).status());
+        }
+    }
+
+    mod errors_popup {
+        use super::*;
+
+        /// Model with the rows "b" and "d" in error, its errors popup opened
+        fn model_in_errors_popup() -> ReviewModel {
+            let mut store = Store::default();
+            store.set("a", "value", Origin::Discovered);
+            store.set("c", "value", Origin::Discovered);
+            let mut model = ReviewModel::new(
+                vec![spec("a", "A"), spec("b", "B"), spec("c", "C"), spec("d", "D")],
+                store,
+                vec![],
+            );
+            model.update(Action::FocusContinue);
+            model.update(Action::Confirm);
+            model
+        }
+
+        #[test]
+        fn rows_in_error_follow_rows_order() {
+            assert_eq!(vec![1, 3], model_in_errors_popup().rows_in_error());
+        }
+
+        #[test]
+        fn up_and_down_choose_a_field_within_the_popup() {
+            let mut model = model_in_errors_popup();
+
+            model.update(Action::Down);
+            assert_eq!(&Mode::ErrorsPopup { selected: 1 }, model.mode());
+
+            model.update(Action::Down);
+            assert_eq!(&Mode::ErrorsPopup { selected: 1 }, model.mode());
+
+            model.update(Action::Up);
+            model.update(Action::Up);
+            assert_eq!(&Mode::ErrorsPopup { selected: 0 }, model.mode());
+        }
+
+        #[test]
+        fn go_to_field_closes_the_popup_and_selects_the_row_of_the_chosen_field() {
+            let mut model = model_in_errors_popup();
+            model.update(Action::Down);
+
+            let outcome = model.update(Action::GoToField);
+
+            assert_eq!(None, outcome);
+            assert_eq!(&Mode::Navigating, model.mode());
+            assert_eq!(3, model.selected());
+        }
+
+        #[test]
+        fn close_popup_goes_back_to_the_continue_button() {
+            let mut model = model_in_errors_popup();
+
+            model.update(Action::ClosePopup);
+
+            assert_eq!(&Mode::OnButton(Button::Continue), model.mode());
+        }
+
+        #[test]
+        fn table_actions_are_ignored_in_the_popup() {
+            let mut model = model_in_errors_popup();
+
+            for action in [
+                Action::Edit,
+                Action::Input('a'),
+                Action::Left,
+                Action::Confirm,
+                Action::FocusAbort,
+            ] {
+                assert_eq!(None, model.update(action.clone()), "{action:?}");
+                assert_eq!(
+                    &Mode::ErrorsPopup { selected: 0 },
+                    model.mode(),
+                    "{action:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn abort_works_in_the_popup() {
+            let outcome = model_in_errors_popup().update(Action::Abort);
+
+            assert_eq!(Some(ReviewOutcome::Aborted), outcome);
+        }
+    }
+
+    mod checks_on_open {
+        use super::*;
+
+        fn errors_of_row(model: &ReviewModel, index: usize) -> Vec<String> {
+            model.rows().remove(index).errors
+        }
+
+        #[test]
+        fn values_are_checked_when_the_review_opens() {
+            let model = ReviewModel::new(vec![spec("a", "A")], Store::default(), vec![]);
+
+            assert_eq!(vec!["A is required".to_string()], errors_of_row(&model, 0));
+        }
+
+        #[test]
+        fn given_errors_are_kept_next_to_the_errors_found_on_open() {
+            let errors = vec![FieldError::new("a", "socket not found")];
+
+            let model = ReviewModel::new(vec![spec("a", "A")], Store::default(), errors);
+
+            assert_eq!(
+                vec!["socket not found".to_string(), "A is required".to_string()],
+                errors_of_row(&model, 0)
+            );
+        }
+
+        #[test]
+        fn errors_given_and_found_on_open_are_not_duplicated() {
+            let errors = vec![FieldError::new("a", "A is required")];
+
+            let model = ReviewModel::new(vec![spec("a", "A")], Store::default(), errors);
+
+            assert_eq!(vec!["A is required".to_string()], errors_of_row(&model, 0));
+        }
+
+        #[test]
+        fn first_row_is_selected_at_start_even_with_errors_further_down() {
+            let mut store = Store::default();
+            store.set("a", "value", Origin::Discovered);
+
+            let model = ReviewModel::new(vec![spec("a", "A"), spec("b", "B")], store, vec![]);
+
+            assert_eq!(0, model.selected());
+        }
     }
 
     mod helpers {
@@ -420,7 +724,7 @@ mod tests {
         }
 
         #[test]
-        fn down_on_the_last_row_keeps_it_selected() {
+        fn down_on_the_last_row_focuses_continue() {
             let mut model = model_with_three_rows();
             model.update(Action::Down);
             model.update(Action::Down);
@@ -428,6 +732,7 @@ mod tests {
             model.update(Action::Down);
 
             assert_eq!(2, model.selected());
+            assert_eq!(&Mode::OnButton(Button::Continue), model.mode());
         }
 
         #[test]
@@ -448,6 +753,112 @@ mod tests {
             model.update(Action::Up);
 
             assert_eq!(0, model.selected());
+        }
+    }
+
+    mod buttons {
+        use super::*;
+
+        fn model_with_two_rows() -> ReviewModel {
+            ReviewModel::new(
+                vec![spec("a", "A"), spec("b", "B")],
+                Store::default(),
+                vec![],
+            )
+        }
+
+        #[test]
+        fn focus_continue_from_the_table() {
+            let mut model = model_with_two_rows();
+
+            let outcome = model.update(Action::FocusContinue);
+
+            assert_eq!(None, outcome);
+            assert_eq!(&Mode::OnButton(Button::Continue), model.mode());
+        }
+
+        #[test]
+        fn focus_abort_from_the_table() {
+            let mut model = model_with_two_rows();
+
+            let outcome = model.update(Action::FocusAbort);
+
+            assert_eq!(None, outcome);
+            assert_eq!(&Mode::OnButton(Button::Abort), model.mode());
+        }
+
+        #[test]
+        fn focus_actions_switch_between_buttons() {
+            let mut model = model_with_two_rows();
+            model.update(Action::FocusContinue);
+
+            model.update(Action::FocusAbort);
+            assert_eq!(&Mode::OnButton(Button::Abort), model.mode());
+
+            model.update(Action::FocusContinue);
+            assert_eq!(&Mode::OnButton(Button::Continue), model.mode());
+        }
+
+        #[test]
+        fn left_and_right_switch_between_buttons() {
+            let mut model = model_with_two_rows();
+            model.update(Action::FocusContinue);
+
+            model.update(Action::Left);
+            assert_eq!(&Mode::OnButton(Button::Abort), model.mode());
+
+            model.update(Action::Left);
+            assert_eq!(&Mode::OnButton(Button::Abort), model.mode());
+
+            model.update(Action::Right);
+            assert_eq!(&Mode::OnButton(Button::Continue), model.mode());
+
+            model.update(Action::Right);
+            assert_eq!(&Mode::OnButton(Button::Continue), model.mode());
+        }
+
+        #[test]
+        fn up_goes_back_to_the_selected_row() {
+            let mut model = model_with_two_rows();
+            model.update(Action::Down);
+            model.update(Action::FocusAbort);
+
+            model.update(Action::Up);
+
+            assert_eq!(&Mode::Navigating, model.mode());
+            assert_eq!(1, model.selected());
+        }
+
+        #[test]
+        fn row_actions_are_ignored_on_a_button() {
+            let mut model = model_with_two_rows();
+            model.update(Action::FocusContinue);
+
+            for action in [Action::Down, Action::Edit, Action::Input('a')] {
+                model.update(action.clone());
+
+                assert_eq!(
+                    &Mode::OnButton(Button::Continue),
+                    model.mode(),
+                    "{action:?}"
+                );
+                assert_eq!(0, model.selected(), "{action:?}");
+            }
+        }
+
+        #[test]
+        fn focus_actions_are_ignored_while_editing() {
+            let mut model = model_with_two_rows();
+            model.update(Action::Edit);
+
+            model.update(Action::FocusContinue);
+            model.update(Action::FocusAbort);
+
+            assert!(
+                matches!(model.mode(), Mode::Editing { .. }),
+                "{:?}",
+                model.mode()
+            );
         }
     }
 
@@ -588,7 +999,10 @@ mod tests {
             model.update(Action::Save);
 
             assert_eq!(
-                vec!["0 is not between 1 and 65535".to_string()],
+                vec![
+                    "'0' is not an integer between 1 and 65535 (maximum value accepted)"
+                        .to_string()
+                ],
                 port_row(&model).errors
             );
         }
@@ -766,6 +1180,50 @@ mod tests {
             }
         }
 
+        mod paste {
+            use super::*;
+
+            #[test]
+            fn paste_inserts_the_text_at_the_cursor_and_moves_it_after() {
+                let mut model = editing_port("/ipc/socket");
+                for _ in 0.."socket".len() {
+                    model.update(Action::Left);
+                }
+
+                model.update(Action::Paste("node.".to_string()));
+
+                assert_eq!(&editing_at("/ipc/node.socket", 10), model.mode());
+            }
+
+            #[test]
+            fn paste_drops_the_newlines_and_other_control_characters() {
+                let mut model = editing_port("");
+
+                model.update(Action::Paste("/ipc/\tnode.socket\r\n".to_string()));
+
+                assert_eq!(&editing_at("/ipc/node.socket", 16), model.mode());
+            }
+
+            #[test]
+            fn paste_counts_multibyte_characters_as_one_cursor_step() {
+                let mut model = editing_port("");
+
+                model.update(Action::Paste("été".to_string()));
+
+                assert_eq!(&editing_at("été", 3), model.mode());
+            }
+
+            #[test]
+            fn paste_is_ignored_while_navigating() {
+                let mut model = model_with_port(Some("3000"));
+
+                model.update(Action::Paste("4000".to_string()));
+
+                assert_eq!(&Mode::Navigating, model.mode());
+                assert_eq!(Some("3000".to_string()), port_row(&model).value);
+            }
+        }
+
         mod cursor {
             use super::*;
 
@@ -883,12 +1341,37 @@ mod tests {
             model.update(Action::Edit);
             model.update(Action::Input('!'));
             model.update(Action::Save);
+            model.update(Action::FocusContinue);
 
             let outcome = model.update(Action::Confirm);
 
             let mut expected_store = Store::default();
             expected_store.set("a", "value!", Origin::User);
             assert_eq!(Some(ReviewOutcome::Confirmed(expected_store)), outcome);
+        }
+
+        #[test]
+        fn confirm_with_errors_opens_the_errors_popup_instead_of_ending() {
+            let mut store = Store::default();
+            store.set("a", "value", Origin::Discovered);
+            let mut model = ReviewModel::new(
+                vec![spec("a", "A"), spec("b", "B"), spec("c", "C")],
+                store,
+                vec![],
+            );
+            model.update(Action::FocusContinue);
+
+            let outcome = model.update(Action::Confirm);
+
+            assert_eq!(None, outcome);
+            assert_eq!(&Mode::ErrorsPopup { selected: 0 }, model.mode());
+        }
+
+        #[test]
+        fn confirm_is_ignored_while_navigating() {
+            let outcome = model().update(Action::Confirm);
+
+            assert_eq!(None, outcome);
         }
 
         #[test]
@@ -912,6 +1395,16 @@ mod tests {
         fn abort_returns_aborted_while_editing() {
             let mut model = model();
             model.update(Action::Edit);
+
+            let outcome = model.update(Action::Abort);
+
+            assert_eq!(Some(ReviewOutcome::Aborted), outcome);
+        }
+
+        #[test]
+        fn abort_returns_aborted_on_a_button() {
+            let mut model = model();
+            model.update(Action::FocusAbort);
 
             let outcome = model.update(Action::Abort);
 
