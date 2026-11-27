@@ -5185,7 +5185,7 @@ dependencies = [
  "slog-async",
  "slog-term",
  "tar",
- "zstd 0.13.3",
+ "zstd 0.13.6",
 ]
 
 [[package]]
@@ -10131,9 +10131,9 @@ dependencies = [
 
 [[package]]
 name = "zstd"
-version = "0.13.3"
+version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
+checksum = "b04655dc7bf4abd8ebe23dac6bef20fceea52a29ad19e37a4101b3951d7e8b45"
 dependencies = [
  "zstd-safe 7.4.2",
 ]
