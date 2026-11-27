@@ -9,4 +9,7 @@ ignore = [
     # paste is no longer a direct dependency, it comes through midnight-curves, binary-layout (pallas-hardano), netlink-packet-core and pallas-traverse.
     # To do: remove once these crates move to a maintained alternative such as pastey.
     { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained, only used by third party dependencies" },
+    # chrono is used directly by most crates of the workspace for dates and times, and it comes through expect-json, prometheus-parse and slog-term.
+    # To do: migrate our usages to a maintained alternative such as jiff or time.
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained, used directly and through third party dependencies" },
 ]

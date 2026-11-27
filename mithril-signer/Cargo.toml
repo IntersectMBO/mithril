@@ -60,7 +60,7 @@ mimalloc = { version = "0.1.52" }
 axum = { version = "0.8.9", features = ["json"] }
 axum-test = "21.1.0"
 criterion = { version = "0.8.2", features = ["html_reports", "async_tokio"] }
-httpmock = "0.8.3"
+httpmock = "0.9.0"
 mockall = { workspace = true }
 prometheus-parse = "0.2.5"
 slog-scope = "4.4.1"
