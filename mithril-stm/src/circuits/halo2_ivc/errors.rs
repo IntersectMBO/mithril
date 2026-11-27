@@ -57,6 +57,10 @@ pub enum IvcCircuitError {
     /// Off-circuit accumulator check: the msm does not match the provided the fixed bases
     #[error("Fixed base `{name}` in the dual MSM does not match the provided map")]
     MsmFixedBasesNamesMismatch { name: String },
+
+    /// A proving/verification backend error surfaced at the relation boundary.
+    #[error("Backend error: {0}")]
+    Backend(String),
 }
 
 /// Subcategorization for `IvcCircuitError::InvalidEpochTransition`. Lets negative
@@ -97,4 +101,25 @@ pub enum EpochTransitionErrorKind {
 /// type and no downcasting is needed.
 pub(crate) fn to_synthesis_error(error: IvcCircuitError) -> PlonkError {
     PlonkError::Synthesis(error.to_string())
+}
+
+impl From<PlonkError> for IvcCircuitError {
+    fn from(error: PlonkError) -> Self {
+        Self::Backend(error.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plonk_error_converts_to_backend_variant() {
+        let plonk_error = PlonkError::ConstraintSystemFailure;
+        let expected_message = plonk_error.to_string();
+        assert_eq!(
+            IvcCircuitError::from(plonk_error),
+            IvcCircuitError::Backend(expected_message),
+        );
+    }
 }
