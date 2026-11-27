@@ -41,5 +41,9 @@
     "jest-environment-jsdom": "^30.5.2",
     "next-router-mock": "^1.0.5",
     "prettier": "^3.10.1"
+  },
+  "overrides": {
+    "glob": "^14.0.6",
+    "minimatch@>=7.0.0 <11.0.1": "^11.0.9"
   }
 }
