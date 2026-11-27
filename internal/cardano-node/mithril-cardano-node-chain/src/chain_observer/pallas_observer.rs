@@ -483,7 +483,7 @@ mod tests {
 
     use mithril_common::test::TempDir;
     use pallas_codec::utils::{AnyCbor, AnyUInt, CborWrap, KeyValuePairs};
-    use pallas_network::facades::NodeServer;
+    use pallas_network::facades::{DEFAULT_HANDSHAKE_TIMEOUT, NodeServer};
     use pallas_network::miniprotocols::localstate::queries_v16::{
         BigInt, PlutusData, PostAlonsoTransactionOutput,
     };
@@ -676,7 +676,10 @@ mod tests {
                 }
 
                 let unix_listener = UnixListener::bind(socket_path.as_path()).unwrap();
-                let mut server = NodeServer::accept(&unix_listener, 10).await.unwrap();
+                let mut server =
+                    NodeServer::accept_with_timeout(&unix_listener, 10, DEFAULT_HANDSHAKE_TIMEOUT)
+                        .await
+                        .unwrap();
 
                 server.statequery().recv_while_idle().await.unwrap();
                 server.statequery().send_acquired().await.unwrap();

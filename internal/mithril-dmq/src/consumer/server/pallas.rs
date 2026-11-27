@@ -1,7 +1,10 @@
 use std::{fs, path::PathBuf};
 
 use anyhow::{Context, anyhow};
-use pallas_network::{facades::DmqServer, miniprotocols::localmsgnotification::Request};
+use pallas_network::{
+    facades::{DEFAULT_HANDSHAKE_TIMEOUT, DmqServer},
+    miniprotocols::localmsgnotification::Request,
+};
 use tokio::{
     join,
     net::UnixListener,
@@ -66,7 +69,7 @@ impl DmqConsumerServerPallas {
             )
         })?;
 
-        DmqServer::accept(&listener, magic)
+        DmqServer::accept_with_timeout(&listener, magic, DEFAULT_HANDSHAKE_TIMEOUT)
             .await
             .with_context(|| "DmqConsumerServerPallas failed to create a new server")
     }
