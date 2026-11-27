@@ -311,7 +311,8 @@ where
             &mut transcript,
             rng,
         )
-        .map_err(|e| IvcProofError::ProofGenerationFailed(e.to_string()))?;
+        .map_err(|error| circuit.take_error().unwrap_or_else(|| error.into()))
+        .context("IVC proof generation failed")?;
         Ok(transcript.finalize())
     }
 }

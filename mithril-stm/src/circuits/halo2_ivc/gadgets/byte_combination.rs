@@ -3,8 +3,7 @@
 use ff::Field;
 
 use crate::circuits::halo2_ivc::{
-    ArithInstructions, AssignedNative, Error, Layouter, NativeField,
-    errors::{IvcCircuitError, to_synthesis_error},
+    ArithInstructions, AssignedNative, Layouter, NativeField, errors::IvcCircuitError,
 };
 
 /// Rejects more bytes than base weights, which would silently truncate the combination.
@@ -26,9 +25,9 @@ pub(crate) fn combine_bytes(
     layouter: &mut impl Layouter<NativeField>,
     bytes: impl IntoIterator<Item = impl Into<AssignedNative<NativeField>>>,
     bases: &[NativeField],
-) -> Result<AssignedNative<NativeField>, Error> {
+) -> Result<AssignedNative<NativeField>, IvcCircuitError> {
     let bytes: Vec<AssignedNative<NativeField>> = bytes.into_iter().map(Into::into).collect();
-    check_byte_count(bytes.len(), bases.len()).map_err(to_synthesis_error)?;
+    check_byte_count(bytes.len(), bases.len())?;
 
     let items: Vec<_> = bytes
         .into_iter()
@@ -36,7 +35,9 @@ pub(crate) fn combine_bytes(
         .map(|(v, base)| (*base, v))
         .collect();
 
-    native_gadget.linear_combination(layouter, &items, NativeField::ZERO)
+    native_gadget
+        .linear_combination(layouter, &items, NativeField::ZERO)
+        .map_err(IvcCircuitError::from)
 }
 
 #[cfg(test)]

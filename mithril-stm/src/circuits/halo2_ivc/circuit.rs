@@ -6,9 +6,9 @@ use crate::circuits::halo2_ivc::keys::RecursiveCircuitVerifyingKey;
 use crate::codec::{TryFromBytes, TryToBytes};
 
 use super::{
-    Accumulator, BinaryInstructions, CircuitValue, ConstraintSystem, Error, EvaluationDomain,
-    Layouter, NativeField, PublicInputInstructions, RECURSIVE_CIRCUIT_DEGREE, RecursiveEmulation,
-    Relation, ZkStdLib, ZkStdLibArch,
+    Accumulator, BinaryInstructions, CircuitValue, ConstraintSystem, EvaluationDomain, Layouter,
+    NativeField, PublicInputInstructions, RECURSIVE_CIRCUIT_DEGREE, RecursiveEmulation, Relation,
+    ZkStdLib, ZkStdLibArch,
     constraint_builder::IvcConstraintBuilder,
     errors::IvcCircuitError,
     state::{Global, State, Witness},
@@ -116,11 +116,11 @@ impl IvcCircuit {
 }
 
 impl Relation for IvcCircuit {
-    type Error = Error;
+    type Error = IvcCircuitError;
     type Instance = Vec<NativeField>;
     type Witness = IvcCircuitData;
 
-    fn format_instance(instance: &Self::Instance) -> Result<Vec<NativeField>, Error> {
+    fn format_instance(instance: &Self::Instance) -> Result<Vec<NativeField>, Self::Error> {
         Ok(instance.clone())
     }
 
@@ -132,7 +132,7 @@ impl Relation for IvcCircuit {
         layouter: &mut impl Layouter<NativeField>,
         _instance: CircuitValue<Self::Instance>,
         witness: CircuitValue<Self::Witness>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Self::Error> {
         let builder = IvcConstraintBuilder::new(std_lib);
 
         // Borrowed, so each part is copied once rather than the whole witness copied once per part.
@@ -193,7 +193,10 @@ impl Relation for IvcCircuit {
             &accumulator_value,
         )?;
         // Constrain the next accumulator as public input
-        builder.verifier_gadget.constrain_as_public_input(layouter, &next_acc)
+        builder
+            .verifier_gadget
+            .constrain_as_public_input(layouter, &next_acc)
+            .map_err(IvcCircuitError::from)
     }
 
     fn used_chips(&self) -> ZkStdLibArch {
