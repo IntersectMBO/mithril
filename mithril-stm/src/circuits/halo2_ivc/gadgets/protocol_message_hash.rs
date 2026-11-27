@@ -1,7 +1,8 @@
 //! Derives the certificate message from the hash of the protocol message preimage, in-circuit.
 
+use crate::circuits::halo2_ivc::errors::IvcCircuitError;
 use crate::circuits::halo2_ivc::{
-    AssignedByte, AssignedNative, AssignmentInstructions, Error, Layouter, NativeField, ZkStdLib,
+    AssignedByte, AssignedNative, AssignmentInstructions, Layouter, NativeField, ZkStdLib,
 };
 use crate::signature_scheme::DOMAIN_SEPARATION_TAG_SNARK_MESSAGE;
 
@@ -17,28 +18,30 @@ pub(crate) fn protocol_message_hash_to_field_element(
     layouter: &mut impl Layouter<NativeField>,
     hash: &[AssignedByte<NativeField>],
     bases: &[NativeField],
-) -> Result<AssignedNative<NativeField>, Error> {
+) -> Result<AssignedNative<NativeField>, IvcCircuitError> {
     let message_low = combine_bytes(std_lib, layouter, &hash[0..16], bases)?;
     let message_high = combine_bytes(std_lib, layouter, &hash[16..32], bases)?;
     let domain_separation_tag: AssignedNative<NativeField> =
         std_lib.assign_fixed(layouter, DOMAIN_SEPARATION_TAG_SNARK_MESSAGE.0)?;
-    std_lib.poseidon(
-        layouter,
-        &[domain_separation_tag, message_low, message_high],
-    )
+    std_lib
+        .poseidon(
+            layouter,
+            &[domain_separation_tag, message_low, message_high],
+        )
+        .map_err(IvcCircuitError::from)
 }
 
 #[cfg(test)]
 mod tests {
     use ff::Field;
     use midnight_circuits::instructions::{AssertionInstructions, AssignmentInstructions};
-    use midnight_proofs::plonk::Error;
     use midnight_zk_stdlib::ZkStdLibArch;
     use sha2::{Digest, Sha256};
 
     use crate::circuits::halo2::tests::test_helpers::{
         assert_relation_rejected, impl_focused_test_relation, prove_and_verify_relation,
     };
+    use crate::circuits::halo2_ivc::errors::IvcCircuitError;
     use crate::circuits::halo2_ivc::{AssignedByte, AssignedNative, NativeField, PREIMAGE_SIZE};
     use crate::signature_scheme::BaseFieldElement;
 
@@ -56,7 +59,7 @@ mod tests {
     impl_focused_test_relation!(
         ProtocolMessageHashRelation,
         ([u8; PREIMAGE_SIZE], NativeField),
-        error = Error,
+        error = IvcCircuitError,
         sha2_256_poseidon_used_chips(),
         |std_lib, layouter, witness| {
             let message_preimage: Vec<AssignedByte<NativeField>> = std_lib.assign_many(
@@ -77,7 +80,9 @@ mod tests {
 
             let hash = std_lib.sha2_256(layouter, &message_preimage)?;
             let message = protocol_message_hash_to_field_element(std_lib, layouter, &hash, &bases)?;
-            std_lib.assert_equal(layouter, &message, &expected_message)
+            std_lib
+                .assert_equal(layouter, &message, &expected_message)
+                .map_err(IvcCircuitError::from)
         }
     );
 

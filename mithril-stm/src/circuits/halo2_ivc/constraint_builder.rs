@@ -8,6 +8,8 @@
 use ff::Field;
 use group::Group;
 
+use crate::circuits::halo2_ivc::errors::IvcCircuitError;
+
 use super::{
     Accumulator, ArithInstructions, AssertionInstructions, AssignedAccumulator, AssignedBit,
     AssignedForeignPoint, AssignedNative, AssignmentInstructions, BinaryInstructions, CircuitCurve,
@@ -146,7 +148,7 @@ impl<'a> IvcConstraintBuilder<'a> {
         global: &AssignedGlobal,
         state: &AssignedState,
         witness: &AssignedWitness,
-    ) -> Result<AssignedState, Error> {
+    ) -> Result<AssignedState, IvcCircuitError> {
         let step_counter =
             self.native_gadget
                 .add_constant(layouter, &state.step_counter, NativeField::ONE)?;
@@ -241,11 +243,13 @@ impl<'a> IvcConstraintBuilder<'a> {
         message: &AssignedNative<NativeField>,
         witness: &AssignedWitness,
         bases: &[NativeField],
-    ) -> Result<(), Error> {
+    ) -> Result<(), IvcCircuitError> {
         let hash = self.std_lib.sha2_256(layouter, &witness.message_preimage)?;
         let reduced_message =
             protocol_message_hash_to_field_element(self.std_lib, layouter, &hash, bases)?;
-        self.native_gadget.assert_equal(layouter, message, &reduced_message)
+        self.native_gadget
+            .assert_equal(layouter, message, &reduced_message)
+            .map_err(IvcCircuitError::from)
     }
 
     /// Reads the next Merkle-tree commitment, next protocol parameters, and current epoch from the
@@ -255,7 +259,7 @@ impl<'a> IvcConstraintBuilder<'a> {
         layouter: &mut impl Layouter<NativeField>,
         witness: &AssignedWitness,
         bases: &[NativeField],
-    ) -> Result<DecodedProtocolMessageFields, Error> {
+    ) -> Result<DecodedProtocolMessageFields, IvcCircuitError> {
         // The byte ranges index the rigid protocol-message preimage assembled by
         // `mithril-common::ProtocolMessage::rigid_preimage` (label-prefixed value segments).
         // The next Merkle-tree commitment is the first 32 bytes of the aggregate-verification-key value.

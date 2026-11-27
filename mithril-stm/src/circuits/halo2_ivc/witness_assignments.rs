@@ -11,7 +11,7 @@ use super::{
     RecursiveEmulation,
     accumulator::fixed_base_names_from_constraint_system,
     constraint_builder::IvcConstraintBuilder,
-    errors::{IvcCircuitError, to_synthesis_error},
+    errors::IvcCircuitError,
     state::{AssignedGlobal, AssignedState, AssignedWitness, Global, State, Witness},
 };
 
@@ -89,7 +89,7 @@ pub(crate) fn assign_state(
     builder: &IvcConstraintBuilder,
     layouter: &mut impl Layouter<NativeField>,
     state: &CircuitValue<State>,
-) -> Result<AssignedState, Error> {
+) -> Result<AssignedState, IvcCircuitError> {
     let values = state
         .clone()
         .map(|s| {
@@ -118,11 +118,9 @@ pub(crate) fn assign_state(
             .native_gadget
             .assign_many(layouter, &values)?
             .try_into()
-            .map_err(|v: Vec<_>| {
-                to_synthesis_error(IvcCircuitError::AssignedValueCountMismatch {
-                    expected: 7,
-                    actual: v.len(),
-                })
+            .map_err(|v: Vec<_>| IvcCircuitError::AssignedValueCountMismatch {
+                expected: 7,
+                actual: v.len(),
             })?
     };
 
@@ -164,7 +162,7 @@ pub(crate) fn assign_witness(
     builder: &IvcConstraintBuilder,
     layouter: &mut impl Layouter<NativeField>,
     witness: &CircuitValue<Witness>,
-) -> Result<AssignedWitness, Error> {
+) -> Result<AssignedWitness, IvcCircuitError> {
     let genesis_signature = {
         let s: AssignedScalarOfNativeCurve<_> = builder.jubjub_chip.assign(
             layouter,
@@ -192,11 +190,9 @@ pub(crate) fn assign_witness(
             .native_gadget
             .assign_many(layouter, &values)?
             .try_into()
-            .map_err(|v: Vec<_>| {
-                to_synthesis_error(IvcCircuitError::AssignedValueCountMismatch {
-                    expected: 2,
-                    actual: v.len(),
-                })
+            .map_err(|v: Vec<_>| IvcCircuitError::AssignedValueCountMismatch {
+                expected: 2,
+                actual: v.len(),
             })?
     };
 
