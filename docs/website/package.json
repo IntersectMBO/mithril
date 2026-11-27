@@ -51,6 +51,7 @@
     "tailwindcss": "^4.3.3"
   },
   "overrides": {
+    "webpack": "5.112.2",
     "webpackbar": "^7.0.0",
     "js-yaml": "^4.3.0",
     "serialize-javascript": "^7.0.5",
