@@ -16,4 +16,4 @@ default = []
 
 [dependencies]
 quote = "1.0.47"
-syn = { version = "3.0.6", features = ["full"] }
+syn = { version = "3.0.10", features = ["full"] }

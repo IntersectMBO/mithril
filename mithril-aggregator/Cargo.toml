@@ -28,13 +28,13 @@ snark = [
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = "0.23.1"
-blockfrost = { version = "1.3.0", default-features = false, features = ["rustls"] }
+blockfrost = { version = "1.4.0", default-features = false, features = ["rustls"] }
 chrono = { workspace = true }
 ciborium = { version = "0.2.2", optional = true }
 clap = { workspace = true, features = ["cargo"] }
 config = { workspace = true }
 gcloud-kms = { version = "1.5.0", default-features = false, features = ["auth", "jwt-aws-lc-rs"] }
-gcloud-storage = { version = "1.3.0", default-features = false, features = ["auth", "jwt-aws-lc-rs"] }
+gcloud-storage = { version = "1.3.1", default-features = false, features = ["auth", "jwt-aws-lc-rs"] }
 mithril-aggregator-client = { path = "../internal/mithril-aggregator-client" }
 mithril-cardano-node-chain = { path = "../internal/cardano-node/mithril-cardano-node-chain" }
 mithril-cardano-node-internal-database = { path = "../internal/cardano-node/mithril-cardano-node-internal-database" }
@@ -56,7 +56,7 @@ pastey = "0.2.3"
 percent-encoding = "2.3.2"
 rand_core = { workspace = true, optional = true }
 rayon = { workspace = true }
-regex = "1.13.1"
+regex = "1.13.2"
 reqwest = { workspace = true, features = ["charset", "http2", "system-proxy", "gzip", "zstd", "deflate", "brotli"] }
 rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs"] }
 semver = { workspace = true }
@@ -68,8 +68,8 @@ slog-bunyan = { workspace = true }
 sqlite = { version = "0.37.4", features = ["bundled"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
-tokio-util = { version = "0.7.19", features = ["codec"] }
-uuid = { version = "1.27.0", features = ["v4", "fast-rng", "macro-diagnostics"] }
+tokio-util = { version = "0.7.20", features = ["codec"] }
+uuid = { version = "1.29.3", features = ["v4", "fast-rng", "macro-diagnostics"] }
 warp = { workspace = true }
 
 [target.'cfg(all(not(target_os = "windows"), not(all(target_os = "linux", target_arch = "aarch64"))))'.dependencies]
@@ -84,7 +84,7 @@ axum-test = "21.1.0"
 criterion = { version = "0.8.2", features = ["html_reports", "async_tokio"] }
 hex = { workspace = true }
 http = "1.5.0"
-httpmock = "0.8.3"
+httpmock = "0.9.0"
 mithril-api-spec = { path = "../internal/tests/mithril-api-spec" }
 mithril-common = { path = "../mithril-common", features = ["allow_skip_signer_certification"] }
 mockall = { workspace = true }

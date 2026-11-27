@@ -15,14 +15,14 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 mithril-aggregator-client = { path = "../mithril-aggregator-client", version = "0.4.0" }
 mithril-common = { path = "../../mithril-common", version = "0.9.3" }
-rand = { version = "0.10.3" }
+rand = { version = "0.10.4" }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt-multi-thread"] }
 
 [dev-dependencies]
-httpmock = "0.8.3"
+httpmock = "0.9.0"
 mockall = { workspace = true }
 slog-async = { workspace = true }
 slog-term = { workspace = true }

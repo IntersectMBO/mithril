@@ -31,10 +31,10 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
-cli-table = "0.5.0"
+cli-table = "0.6.0"
 config = { workspace = true }
 dirs = "7.0.0"
-flate2 = "1.1.10"
+flate2 = "1.1.11"
 fs2 = "0.4.3"
 futures = "0.3.34"
 hex = { workspace = true }
@@ -43,19 +43,19 @@ indicatif = { version = "0.18.6", features = ["tokio"] }
 mithril-cli-helper = { path = "../internal/mithril-cli-helper" }
 mithril-client = { path = "../mithril-client", features = ["fs", "unstable"] }
 mithril-doc = { path = "../internal/mithril-doc" }
-rand = "0.10.3"
+rand = "0.10.4"
 reqwest = { workspace = true, features = ["charset", "http2", "system-proxy", "gzip", "zstd", "deflate", "brotli"] }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = "0.11.0"
+sha2 = "0.11.2"
 slog = { workspace = true, features = ["max_level_trace", "release_max_level_debug"] }
 slog-async = { workspace = true }
 slog-bunyan = { workspace = true }
 slog-term = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process", "rt-multi-thread", "signal"] }
-zip = "9.1.1"
+zip = "9.8.2"
 
 [target.'cfg(all(not(target_os = "windows"), not(all(target_os = "linux", target_arch = "aarch64"))))'.dependencies]
 tikv-jemallocator = { version = "0.7.0" }
@@ -64,7 +64,7 @@ tikv-jemallocator = { version = "0.7.0" }
 mimalloc = { version = "0.1.52" }
 
 [dev-dependencies]
-httpmock = "0.8.3"
+httpmock = "0.9.0"
 mithril-common = { path = "../mithril-common" }
 mockall = { workspace = true }
 tar = "0.4.46"

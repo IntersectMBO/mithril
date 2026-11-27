@@ -22,8 +22,8 @@ blake2 = "0.11.0"
 hex = { workspace = true }
 mithril-cardano-node-chain = { path = "../cardano-node/mithril-cardano-node-chain" }
 mithril-common = { path = "../../mithril-common" }
-pallas-codec = { version = "1.4.0" }
-pallas-network = { version = "1.4.0" }
+pallas-codec = { version = "1.5.0" }
+pallas-network = { version = "1.5.0" }
 serde = { workspace = true }
 serde_bytes = "0.11.19"
 slog = { workspace = true }
